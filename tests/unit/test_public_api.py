@@ -250,9 +250,9 @@ def _dummy_args(fn: Callable[..., Any]) -> tuple[list[Any], dict[str, Any]]:
     return args, kwargs
 
 
-# Implemented modules leave this list (TAB-010 errors, TAB-011 sql, TAB-012 config); the rest are M1 stubs.
+# Implemented modules leave this list (TAB-010 errors, TAB-011 sql, TAB-012 config, TAB-013/TAB-014 sqlite); the
+# rest are M1 stubs.
 STUB_MODULES = [
-    "tabrion.sqlite",
     "tabrion.postgres",
     "tabrion.check",
 ]

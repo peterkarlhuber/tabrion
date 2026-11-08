@@ -238,6 +238,13 @@ def test_c08_directory_is_not_a_regular_file(tmp_path: Path) -> None:
     assert info.value.code == expected
 
 
+def test_c08_device_is_not_a_regular_file() -> None:
+    """``os.devnull`` (``/dev/null``, Windows ``nul``) opens everywhere and is refused by ``fstat``."""
+    with pytest.raises(ConfigurationError) as info:
+        url_from_env(NAME, environ={NAME + "_FILE": os.devnull})
+    assert info.value.code == "config.not_regular_file"
+
+
 def _open_fds() -> int | None:
     for directory in ("/proc/self/fd", "/dev/fd"):
         if os.path.isdir(directory):
