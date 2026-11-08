@@ -28,8 +28,10 @@ LEVUVO_PREFIXES = ("orkexa", "axentra", "nodestro", "levuvo", "tabrion_studio")
 def _lint_imports(cwd: Path, src: Path) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
     env["PYTHONPATH"] = str(src)
-    exe = Path(sys.executable).with_name("lint-imports")
-    cmd = [str(exe)] if exe.exists() else [sys.executable, "-m", "importlinter.cli"]
+    # The console script's entry point, called through the running interpreter: ``python -m importlinter.cli`` does
+    # nothing (the module has no ``__main__`` block), and the script's location differs between POSIX and Windows.
+    entry = "import sys; from importlinter.cli import lint_imports_command; sys.exit(lint_imports_command())"
+    cmd = [sys.executable, "-c", entry]
     return subprocess.run(
         [*cmd, "--config", str(cwd / "pyproject.toml"), "--no-cache"],
         cwd=cwd,
@@ -64,6 +66,7 @@ def test_unmodified_copy_is_kept(tmp_path: Path) -> None:
     root = _copy(tmp_path)
     result = _lint_imports(root, root / "src")
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "0 broken" in result.stdout, "lint-imports produced no report"
 
 
 NO_LEVUVO = "Tabrion depends on no Levuvo platform"
