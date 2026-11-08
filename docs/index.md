@@ -12,7 +12,7 @@ inside the application's process: no server, no service, no pool of its own, no 
 !!! warning "Pre-release: M1 foundation"
     This is the API freeze milestone. Every public name exists with its final signature, but each function still
     raises `NotImplementedError`. The implementation follows in milestone M2 (Tabrion 0.1). Nothing is published
-    on PyPI.
+    on PyPI: Tabrion is installed from Git, pinned to a commit SHA.
 
 ## Two layers in one distribution
 
