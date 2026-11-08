@@ -50,9 +50,10 @@ Accepted residual risks (documented, not vulnerabilities):
     world-writable (`sqlite.unsafe_owner`, `sqlite.unsafe_mode`; POSIX, unless `allow_shared_file`), but accepts a
     group- or world-*readable* one (existing Nodestro files are 0644) and leaves its mode as it is;
   - SQLite opens `-wal`, `-shm` and `-journal` by name when it first needs them, after `connect` has checked them;
-    a link planted later in the database's directory is followed. Keep databases in a directory that only the
-    owner can write: `diagnose` logs a warning for a world-writable directory without the sticky bit (TM-03), and
-    a `tabrion.check` finding for it is TODO TB-043;
+    a link or file planted later in the database's directory is used, also in a sticky shared directory such as
+    `/tmp`, where another user can create a `-journal` that then receives page data. Keep databases in a directory
+    that only the owner can write: `diagnose` logs a warning for a directory the group or others can write (TM-03,
+    sticky or not), and a `tabrion.check` finding for it is TODO TB-043;
   - a `read_only` connection to a WAL database may create `-wal` and `-shm` with the main file's mode, which an
     existing world-readable file passes on; `connect` never changes the mode of an existing file (MIG-NOD-9 does
     that for Nodestro);
@@ -68,6 +69,27 @@ Accepted residual risks (documented, not vulnerabilities):
     of the error text, are not removed: the filter removes only `DETAIL`, `HINT`, `CONTEXT`, `QUERY`, `LINE n` and
     SQLAlchemy `[parameters]`, or replaces a database error it finds as an object;
   - (R-2) values passed through `extra=` are not inspected;
+  - when a formatter or a handler's `emit` fails while a database error is being handled, `logging`'s
+    `Handler.handleError` prints the failure's chain, with that error's `DETAIL`, to `sys.stderr`; no filter sees
+    that output (Axentra review F-2). A broken call (too few arguments, a missing key, a wrong type) is covered: the
+    filter rewrites it when a database error or its text is being handled, or is in the template or an argument, so
+    `logging` never reports it. Set `logging.raiseExceptions = False` in production entry points; a redacting
+    `handleError` needs a public install function (TODO TB-050);
+  - installed through the log record factory, the filter sets `db_sqlstate` and `db_constraint` before
+    `Logger.makeRecord` applies `extra=`, so these two names are reserved: passing them in `extra=` raises
+    `KeyError` from the logging call. Installed on a handler or logger, the filter overwrites them instead (TODO
+    TB-050 covers a `makeRecord` that accepts them);
+  - `db_sqlstate`/`db_constraint` name the first database error found in the record, also one in a suppressed
+    context (`raise ... from None`); `classify` of the logged exception follows I-13 and may say `UNKNOWN` there;
+  - a mapping-message value whose `repr` is clean but whose `str` embeds a database error is kept, and a renderer
+    that uses `str` (`json.dumps(..., default=str)`) prints it; an argument whose `__str__` returns clean text on
+    the first call and the error text on the second is printed (the filter does not freeze the message). Both need
+    such objects in the application; log database errors as objects;
+  - structlog's native processor chain renders `exc_info` itself; the filter covers structlog's stdlib integration
+    (`ProcessorFormatter`), not native structlog loggers (TODO TB-051);
+  - a value line that is exactly a traceback structure line ends a removed part early, but only inside a formatted
+    traceback; a removed part is marked `[redacted: database server text]`, and attacker-controlled input with a
+    label can still cut the rest of a message (visibly);
   - a wrapper that quotes `TabrionError.original` without chaining it is not recognized (TODO TB-030).
 
   Log database errors as objects (`logger.exception(...)`, `%s` with the exception as an argument), never as text

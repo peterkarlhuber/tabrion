@@ -4,7 +4,8 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, second M2 lane C pull request (TAB-030, TAB-034, reviews DL-1 and of #6; branch
+> **Last update:** 2026-11-08, TB-031 port to `tabrion.errors` (branch `claude/project-thread-rdo6g3-errfix`, after
+> #6 merged). Before: second M2 lane C pull request [#6](https://github.com/peterkarlhuber/tabrion/pull/6) (TAB-030, TAB-034, reviews DL-1 and of #6; branch
 > `claude/project-thread-rdo6g3-pg2`) after [#4](https://github.com/peterkarlhuber/tabrion/pull/4) merged (`af0f3dc`). Before: M2 lane B pull request [#4](https://github.com/peterkarlhuber/tabrion/pull/4) (TAB-013, TAB-014; branch `claude/project-thread-rdo6g3`), after
 > the M2 lane A pull request [#3](https://github.com/peterkarlhuber/tabrion/pull/3) (TAB-010..TAB-012) merged (`6b99604`;
 > independent review accepted at `ece7572`).
@@ -541,6 +542,39 @@ the same pull request, after merging `master` with lane C (`b34abb2`):
 Lane C's IDs come first after the merge: lane B's contract notes I-14..I-24 are now I-21..I-31, its deviations
 D-28..D-33 are D-34..D-39 (new: D-40), and its TODO items TB-032..TB-039 are TB-038..TB-045 (new: TB-046..TB-049).
 
+#### Axentra TB-031 review fixes ported to `tabrion.errors` (after #4)
+
+Axentra's TB-031 pull request (#62, merged at `ea7aa9f`) fixed the findings of `reviews/axe-tb031-review.md` in its
+copy of the filter. Each one was first reproduced against Tabrion with a probe (real 23505/23514 from PostgreSQL 16,
+real structlog 25 in a scratch environment) and then ported, or marked as not applicable:
+
+| Finding | Before (probe against `af0f3dc`) | Now | Tests |
+|---|---|---|---|
+| F-1 traceback text without an error object | Leaks: retry loop, `RuntimeError(e)`, `RuntimeError("b", [e])`, a note, a holder with `__str__` | Clean; errors in `args` are found as objects (`db_sqlstate`) | `test_f1_*` (5 shapes); 2 probes |
+| F-2 `handleError` | Leaks: broken call inside `except`, failing formatter | Broken calls clean (rewritten, names the handled error) when a database error or its text is handled, or is in the template or an argument (fix round T-1, T-2); a formatter/`emit` failure is a residual (D-44, TB-050, SECURITY.md) | `test_f2_broken_call_while_a_database_error_is_handled`, `test_t1_*` (3 calls, stderr), `test_t2_*`; 3 probes |
+| F-3 ReDoS | 20,000 blanks: 1.6 s | 1 ms (look-behind) | `test_f3_long_run_of_blanks_is_linear` (50,000 blanks); 1 probe |
+| F-4 boundaries only after a header | Leaks: `+------+`, `File "a", line 1` (a lone `+` and `\| +---` were already clean) | Clean; this also closes re-review N-1 (TODO TB-038 deleted) | `test_f4_*`; 1 probe |
+| F-5 mapping `msg` | Became a `str` (structlog's `ProcessorFormatter` breaks) | Stays a mapping with scrubbed values | `test_f5_mapping_message_stays_a_mapping`; 1 probe |
+| F-6 `extra={"db_sqlstate": ...}` | No `KeyError`: Tabrion sets the fields in the filter, not in a record factory | Not applicable | none |
+| F-7 silent truncation | `login failed user=mallory` | `... user=mallory [redacted: database server text]` | `test_f7_removed_text_is_marked`; 1 probe |
+| F-8 two unpinned branches | n/a | Pinned | `test_f8_*` |
+| D-1 mapping `msg` with `exc_info` | Clean (no mapping branch yet) | Clean; the mapping branch runs after the traceback block | `test_d1_*` |
+| D-2 structlog `exc_info` | stdlib `ProcessorFormatter` broke (F-5) | stdlib integration clean (`format_exc_info`, `dict_tracebacks`, `ConsoleRenderer`); native structlog clean with the internal processor, which stays internal (D-45, TB-051) | `test_d2_*`; 1 probe |
+| D-3 guarded attribute access | Clean (`_attr` was already guarded) | Clean with the new F-1 code | `test_d3_*` |
+| R2-1 processor fallback | n/a | Only `event` is returned | `test_r2_1_*`; 1 probe |
+
+`diagnose` also follows #4 re-review DL-1: a group- or other-writable database directory warns whatever the sticky
+bit ("other users can create files next to the database (side files)"); the non-sticky world-writable case keeps
+"can replace the database file"; no path in either message (`test_m2_world_writable_directory_without_sticky_bit`,
+8 modes; 1 more probe). TODO TB-031 (the cross-repository port) is done and deleted; new items TB-050, TB-051.
+
+Review of the port (`reviews/tab-errfix-review.md`, at `4faa636`, ACCEPTED WITH CONDITIONS), fix round: T-1 fixed (a
+broken call with server text in an argument is rewritten, so `logging`'s "Arguments:" report on stderr never runs:
+`log.error("... %s ... %s", str(e))`, a missing mapping key and `%d` with a `str`; `test_t1_*`, 1 probe); T-2 pinned
+(`test_t2_broken_call_while_database_text_is_handled` kills the `leaky = False` mutant, 1 probe); T-3, T-4 and T-5
+documented in SECURITY.md and contract I-6 (`extra=` with a record-factory install, the two `__str__` residuals, the
+label from a suppressed context). After merging #6 the deviations of this port are D-44 and D-45 (were D-41, D-42).
+
 ## Deviation log
 
 Deviations from the plan, with the reason. A deviation that changes a decision needs an ADR note under "Changes from
@@ -591,6 +625,8 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-41 | TAB-034 | Planning documents 07 (K7) and 09: a public `tabrion.testing.faults` | The internal, unstable `tabrion.testing._faults` (contract I-33) | Decision TB-033: the frozen surface is not extended in 0.1; a public module is a 0.2 decision by contract addendum and review |
 | D-42 | TAB-030 | Contract 4.7, L13: `CREATE INDEX CONCURRENTLY` "in a third session" | L13 runs it in the holder's session, the Axentra migration case, with a control: a blocking `pg_advisory_lock` waiter makes the server fail one side (deadlock or timeout) | The holder's own index build is where a blocked waiter's snapshot deadlocks; a third session would complete in either design. L12 accepts the moment between an attempt and its rollback without autocommit (contract I-32) |
 | D-43 | TAB-030 | Contract 4.7: after a lost connection "every count is cleared" and the lock is replaced | Also: a key held on the lost connection raises `UsageError("postgres.lock_lost")` in `try_acquire`/`acquire` until `holds` or `release` acknowledges the loss (contract I-32) | Review L-3 of #6: a nested section would otherwise take a fresh hold and its `release` free the lock the outer section relies on. Additive: a new error code, no signature change |
+| D-44 | TAB-010 | Axentra TB-031 F-2: `install_db_error_redaction` replaces `Handler.handleError` process-wide | The filter rewrites a broken call made while a database error is handled; formatter and `emit` failures are a documented residual (SECURITY.md) | Tabrion installs nothing and has no install function; a new public name is a surface change; TB-050 |
+| D-45 | TAB-010 | Axentra TB-031 D-2: a public `redact_db_errors_processor` for native structlog | The processor is internal (`tabrion.errors._redact_db_errors_processor`); the filter's mapping branch covers structlog's stdlib integration | A new public name extends the frozen surface (`surface.json` unchanged); TB-051 |
 
 ## Score review
 

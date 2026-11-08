@@ -8,15 +8,16 @@
 >
 > **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M2 lane B pull request: TABRION
 > TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`). Lane C entries (TB-032..TB-037)
-> updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged).
+> updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged); the TB-031 port
+> (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`.
 
 ## Summary
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 1 |
-| P1 High | 13 |
-| P2 Medium | 9 |
+| P1 High | 12 |
+| P2 Medium | 10 |
 | P3 Low | 19 |
 | P4 Optional | 3 |
 
@@ -291,17 +292,6 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Next step:** guard the import (`sqlite3 = None` and skip SQLite recognition) with an isolation test; follow
   `original` in the filter's chain walk with a canary test.
 
-### TB-031 · Port the H-2 redaction fix to Axentra's filter (and check the H-1 analog) (MIG-AXE-3)
-
-- **Priority:** P1 High · **Status:** Open (scheduled after this pull request is accepted) · **Refs:** TABRION
-  MIG-AXE-0, MIG-AXE-3, review H-1, H-2, B-06-1
-- **What:** Tabrion's filter follows Axentra's reviewed MIG-AXE-0 filter, which has the identical H-2 gap: a
-  `DETAIL` value survives in `repr`/`%r` form (escaped `\nDETAIL:`), inside list, tuple, set or dict arguments, in
-  `e.args`, in a dict `msg`, and as a SQLAlchemy error inside a list. Axentra's error handling may also have the H-1
-  analog (a lost COMMIT classified by the `__context__` error being handled) and must be checked.
-- **Next step:** an Axentra pull request ports the collection and escaped-form scrubbing of contract I-6 and the
-  H-2 tests, checks its chain rule against I-13, or replaces the filter by `tabrion.errors` with MIG-AXE-3.
-
 ### TB-032 · Independent review of TAB-015 and TAB-016 (planning document 07 section 6)
 
 - **Priority:** P1 High · **Status:** Done (accepted after the delta re-review of 4be19b2; merged as b34abb2) · **Refs:** TABRION TAB-015, TAB-016, T-NOTX, R-SET, TM-07, TM-08, SR-02, SR-10, planning folder
@@ -377,16 +367,6 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Next step:** with layer B (TAB-018), recommend calling the checks outside a transaction in the guide; make
   `_milliseconds` return `None` for an unknown format if a server ever prints one.
 
-### TB-038 · Redaction: multi-line `DETAIL` skipping ends at a value line that looks like a boundary (review N-1)
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-010, contract I-6, review N-1
-- **What:** in pre-formatted text, `_strip_server_text` skips from a `DETAIL:` line to the next line starting with
-  one of `_BOUNDARIES` (`[SQL: `, `File "`, `+-`, `Traceback ...`). A value with an embedded newline followed by such
-  a token (`"a\n+-SECRET"`) ends the skip early and the rest is printed. Errors found as objects and `repr` forms are
-  redacted correctly.
-- **Next step:** end the skip only at a boundary followed by its expected structure (for example
-  `File "<path>", line N`), or accept it as a residual next to R-1 in SECURITY.md.
-
 ### TB-039 · Redaction: each record is formatted twice (review N-3)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-010, review N-3
@@ -433,7 +413,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   checked them, so such a directory is the remaining way to redirect them (SECURITY.md).
 - **Next step:** TAB-017 checks the directory of `SQLiteDiagnosis.path` itself and reports a finding (a new code
   next to TAB-SQ-003/004 needs a contract addendum); 0.2 may add a `directory_unsafe` field to `SQLiteDiagnosis`
-  by contract addendum.
+  by contract addendum. Since #4 re-review DL-1 the warning also covers a group- or other-writable directory with
+  the sticky bit ("other users can create files next to the database"): in `/tmp` another user can plant the
+  `-journal` that SQLite then writes page data into; the finding must cover both cases.
 
 ### TB-044 · Independent review of TAB-013 and TAB-014 (planning document 07 section 6)
 
@@ -486,6 +468,30 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   dependency. (I-4: review N-3, the double formatting cost, stays TB-039.)
 - **Next step:** add `pytest-timeout` with QA-4 and mark the backup and migration tests with a timeout.
 
+### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
+
+- **Priority:** P2 Medium · **Status:** Needs decision (contract addendum) · **Refs:** TABRION TAB-010, contract
+  I-6, SECURITY.md, `axe-tb031-review.md` F-2
+- **What:** when a formatter or a handler's `emit` fails while a database error is handled, the standard
+  `Handler.handleError` prints the failure's chain with that error's `DETAIL` to stderr. The filter covers the
+  broken-call case (it rewrites the call); the other failures need `handleError` replaced process-wide, as Axentra's
+  `install_db_error_redaction` does. Tabrion installs nothing and has no install function, and a new public name is
+  a surface change.
+- **Next step:** decide for 0.2: a staged `tabrion.errors.install_redaction()` (record factory, `handleError`,
+  optional `makeRecord` for `extra=`) by contract addendum, or keep it documented (`logging.raiseExceptions =
+  False`); MIG-AXE-3 needs the answer before Axentra drops its own install function.
+
+### TB-051 · Public structlog processor for native structlog loggers (Axentra review D-2)
+
+- **Priority:** P3 Low · **Status:** Needs decision (contract addendum) · **Refs:** TABRION TAB-010, contract I-6,
+  `axe-tb031-review.md` D-2, R2-1
+- **What:** native structlog loggers render `exc_info` in their own processor chain, which the logging filter never
+  sees. The port has the processor as the internal `tabrion.errors._redact_db_errors_processor` (duck-typed, tested,
+  including the R2-1 fallback); Axentra exports it as `redact_db_errors_processor`. Exporting it extends the frozen
+  surface.
+- **Next step:** decide with TB-050 whether 0.2 exports it (contract addendum, `surface.json`); until then consumers
+  that use native structlog keep Axentra's processor or render no tracebacks.
+
 ### TB-024 · Circular import of the staged 0.2 mixins (G-T1 condition check CC-2)
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** CC-2, TABRION TAB-033, TB-013
@@ -503,7 +509,6 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 | TB-015 | nodestro-runtime | TABRION NOD-CR-5 | Uses the schema fingerprint |
 | TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need `v0.1.0` final (RC-8) |
 | TB-008 | nodestro-studio | TABRION QA-20 (AC-5) | Consumer compat gates Tabrion tags |
-| TB-031 | axentra | TABRION MIG-AXE-3 | Axentra's redaction filter has the identical H-2 gap (and possibly the H-1 analog); port the fix of this pull request |
 | TB-035 | axentra, nodestro-runtime | TABRION MIG-AXE, MIG-NOD | Their role checks miss roles reachable with `SET ROLE` (review H-1); fix in their MIG waves or earlier |
 | TB-006 | axentra | TABRION MIG-AXE-2, MIG-AXE-3 | Re-export `split_statements` and use `tabrion.errors`; the splitter differences of contract I-9 go into Axentra's CHANGELOG as a fix |
 

@@ -90,7 +90,7 @@ PROBES = [
     # H-2: the escaped (repr) form of DETAIL.
     (
         "errors.py",
-        '    text = _ESCAPED_SERVER_TEXT.sub("", text)\n',
+        '    text = _ESCAPED_SERVER_TEXT.sub(" " + _SERVER_TEXT_MARK, text)\n',
         "",
         "tests/unit/test_errors.py::test_m3_inline_single_line_server_text_is_stripped",
     ),
@@ -193,6 +193,83 @@ PROBES = [
         "tests/unit/test_config.py::test_c08_fifo_is_rejected_without_blocking"
         if hasattr(os, "mkfifo")
         else "tests/unit/test_config.py::test_c08_device_is_not_a_regular_file",
+    ),
+    # Axentra review F-3 (TB-031 port): the look-behind keeps the inline label search linear.
+    (
+        "errors.py",
+        "|(?<![ \\t])[ \\t]*\\b(?:DETAIL",
+        "|[ \\t]*\\b(?:DETAIL",
+        "tests/unit/test_errors.py::test_f3_long_run_of_blanks_is_linear",
+    ),
+    # Axentra review F-4: structure lines end a removal only inside a traceback.
+    (
+        "errors.py",
+        "            if not in_traceback or _BOUNDARY.fullmatch(line) is None:\n",
+        "            if _BOUNDARY.fullmatch(line) is None:\n",
+        "tests/unit/test_errors.py::test_f4_structure_lines_end_a_removal_only_inside_a_traceback",
+    ),
+    # Axentra review F-1: a traceback that carries database text without a database error object.
+    (
+        "errors.py",
+        "            if not found and _exception_may_hold_server_text(exc):\n",
+        "            if False:\n",
+        "tests/unit/test_errors.py::test_f1_traceback_of_a_non_database_exception_with_database_text",
+    ),
+    # Axentra review F-1: database errors in the exception's args.
+    (
+        "errors.py",
+        "            _collect(exc, found)\n            if not found",
+        "            found.extend(_db_errors_in(exc))\n            if not found",
+        "tests/unit/test_errors.py::test_f1_traceback_of_a_non_database_exception_with_database_text",
+    ),
+    # Axentra review F-2: a broken call while a database error is handled.
+    (
+        "errors.py",
+        "            _collect(failure, found)\n",
+        "",
+        "tests/unit/test_errors.py::test_f2_broken_call_while_a_database_error_is_handled",
+    ),
+    # Review T-2: server text in the exception being handled.
+    (
+        "errors.py",
+        "            leaky = isinstance(handled, BaseException) and _exception_may_hold_server_text(handled)\n",
+        "            leaky = False\n",
+        "tests/unit/test_errors.py::test_t2_broken_call_while_database_text_is_handled",
+    ),
+    # Review T-1: server text in an argument of a broken call.
+    (
+        "errors.py",
+        '            leaky = leaky or _may_hold_server_text(_safe_text(repr, record.args) or "")\n',
+        "",
+        "tests/unit/test_errors.py::test_t1_broken_call_with_database_text_in_an_argument",
+    ),
+    # Axentra review F-5: a mapping message stays a mapping.
+    (
+        "errors.py",
+        "        if isinstance(record.msg, Mapping) and not record.args:\n",
+        "        if False:\n",
+        "tests/unit/test_errors.py::test_f5_mapping_message_stays_a_mapping",
+    ),
+    # Axentra review D-2: an event dict's exc_info is replaced.
+    (
+        "errors.py",
+        '            del out["exc_info"]\n',
+        "",
+        "tests/unit/test_errors.py::test_d2_exc_info_inside_an_event_dict",
+    ),
+    # Axentra review F-7: removed text is marked.
+    (
+        "errors.py",
+        '_SERVER_TEXT_MARK = "[redacted: database server text]"\n',
+        '_SERVER_TEXT_MARK = ""\n',
+        "tests/unit/test_errors.py::test_f7_removed_text_is_marked",
+    ),
+    # Axentra re-review R2-1: the processor's fallback holds only the event.
+    (
+        "errors.py",
+        "    if redacted is not None:\n        return redacted\n    try:\n",
+        "    if redacted is not None:\n        return redacted\n    return event_dict\n    try:\n",
+        "tests/unit/test_errors.py::test_r2_1_processor_fallback_keeps_only_the_event",
     ),
 ]
 
