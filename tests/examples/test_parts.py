@@ -415,13 +415,23 @@ def test_a_failing_upgrade_leaves_nothing_behind(db: Database, tmp_path: Path, m
         raw.close()
 
 
-def test_upgrade_waits_for_a_concurrent_writer_on_sqlite(tmp_path: Path) -> None:
-    """Review M-2 of #22: ``upgrade`` runs in ``Database.transaction()`` (``BEGIN IMMEDIATE``), so it waits for a
-    writer that holds the database instead of failing on a stale read snapshot."""
+def _cli_upgrade(url: str) -> None:
+    config = Config(str(EXAMPLES / "parts" / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(config, "head")
+
+
+@pytest.mark.parametrize("operation", ["upgrade", "downgrade", "command line"])
+def test_migrations_wait_for_a_concurrent_writer_on_sqlite(tmp_path: Path, operation: str) -> None:
+    """Review M-2 and N-3 of #22: ``upgrade``, ``downgrade`` and the ``env.py`` command line branch run in
+    ``Database.transaction()`` (``BEGIN IMMEDIATE``), so each waits for a writer that holds the database instead of
+    failing on a stale read snapshot."""
     url = f"sqlite:///{tmp_path / 'busy.db'}"
     with open_database(url) as other, open_database(url) as database:
         with other.transaction() as tx:
             tx.connection.exec_driver_sql("CREATE TABLE t_other (x INTEGER)")
+        if operation == "downgrade":
+            upgrade(database)
         holding = threading.Event()
 
         def hold() -> None:
@@ -434,7 +444,12 @@ def test_upgrade_waits_for_a_concurrent_writer_on_sqlite(tmp_path: Path) -> None
         writer.start()
         try:
             assert holding.wait(5)
-            upgrade(database)
+            if operation == "upgrade":
+                upgrade(database)
+            elif operation == "downgrade":
+                downgrade(database, "base")
+            else:
+                _cli_upgrade(url)
         finally:
             writer.join()
-        assert require_current(database).is_current
+        assert status(database).current == (() if operation == "downgrade" else ("0001",))

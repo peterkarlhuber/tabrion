@@ -174,8 +174,8 @@ required (owner decision of 2026-11-08 11:26Z).
   it for `mypy --strict src tests scripts`.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-A-1 review fixes (#22), then RA-A-2 (functions, stacked on #22) and RA-A-3 (baseline); RA-B-2..4
-  in `examples/measurements` (lane H).
+- **Next step:** RA-A-1 is accepted (#22, delta re-review of `0ab3134`; its notes N-1 to N-3 are done on #22); then
+  RA-A-2 (#29) and RA-A-3 (baseline); RA-B-2..4 in `examples/measurements` (lane H).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
