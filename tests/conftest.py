@@ -6,9 +6,12 @@ pytest, and the PostgreSQL fixtures import psycopg when they run), and pytest's 
 
 from __future__ import annotations
 
+from importlib.util import find_spec
 from pathlib import Path
 
-pytest_plugins = ["tabrion.testing", "pytester"]
+# The packaging jobs run pytest without Tabrion installed (they test built wheels in fresh environments): the plugin is
+# activated only where the package can be imported.
+pytest_plugins = ["pytester", *(["tabrion.testing"] if find_spec("tabrion") is not None else [])]
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
