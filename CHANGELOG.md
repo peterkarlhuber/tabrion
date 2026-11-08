@@ -182,10 +182,18 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   (fails when required); a require variable counts unless it is empty or `0`; `tabrion_sqlite_path` and
   `tabrion_sqlite`. Tabrion's own PostgreSQL suites run on it and check after each test that nothing they created is
   left on the server.
+- Consumer protection (TAB-022): golden files of the consumers' behavior for every category A/B row of contract
+  section 8 (`tests/golden/{axentra,nodestro,nodestro_api,orkexa}.json`, each with the full commit), recorded by
+  `scripts/record_golden.py` from the consumers' own code in throwaway environments and replayed against Tabrion in
+  every test run, each naming the consumer's full 40-character commit; `scripts/downstream.py` runs the consumers'
+  database tests against Tabrion HEAD, which `uv pip install --override` puts in place of any Tabrion requirement
+  the consumer has (a Git commit pin), with a timeout on every step.
 - `tabrion.testing` re-review fixes (#11): `truncate_tables` without `schema=` empties only a schema the plugin created
   and refuses a `CASCADE` into another schema; a schema teardown that would drop an extension is rolled back; the
   fixtures work under a `NOINHERIT` admin on PostgreSQL 16+, try every role at the end and drop the roles' grants in
-  the admin's database.
+  the admin's database. `truncate_tables` locks the selected tables before its check and names why a table in
+  another schema would be emptied (foreign key, partition, inheritance child); it checks again after the `TRUNCATE`
+  and rolls it back when a foreign key was added in between (review L-1 of #19).
 - `tabrion.testing` database per session and roles without superuser (TAB-032): `tabrion_postgres_database` creates a
   throwaway database with an owner and an app role as `tabrion_role_setup` describes (`RoleSetup()`, `split=False`,
   named roles, or none) and drops database and roles at the end; `tabrion_postgres_roles` gives the same two roles in
@@ -207,8 +215,8 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 94 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
-  pool tests.
+  transaction state, and carry 101 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  pool tests and `uv` for `scripts/downstream.py`.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`
   and `all`; ruff, mypy `--strict` and import-linter contracts (layers, stdlib-only core, no Levuvo platform).
