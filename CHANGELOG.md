@@ -8,6 +8,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- User guides for 0.1 (TAB-041): a quickstart and guides for SQLite, PostgreSQL, layer B (`Database`, `Profile`),
+  transactions, errors, `tabrion.sql`, `tabrion.config`, migrations, `tabrion.check`, `tabrion.testing`,
+  portability, security, the PostgreSQL infrastructure baseline, existing platforms and troubleshooting. Every code
+  example runs in the test suite (`tests/docs/`, PostgreSQL pages in the pg jobs). Installation stays Git-SHA pins,
+  no PyPI.
+
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
   `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`

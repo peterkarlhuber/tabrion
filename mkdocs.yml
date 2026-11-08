@@ -61,6 +61,23 @@ nav:
   - Home: index.md
   - Getting started:
       - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
+  - Guides:
+      - SQLite: guides/sqlite.md
+      - PostgreSQL: guides/postgresql.md
+      - Database and Profile (layer B): guides/database.md
+      - Transactions: guides/transactions.md
+      - Errors: guides/errors.md
+      - Splitting SQL scripts: guides/sql.md
+      - Connection URLs and secrets: guides/config.md
+      - Migrations: guides/migrations.md
+      - Diagnosis: guides/check.md
+      - Testing: guides/testing.md
+      - Portability: guides/portability.md
+      - Security: guides/security.md
+      - PostgreSQL infrastructure baseline: guides/infrastructure-baseline.md
+      - Existing platforms: guides/integration-existing-platforms.md
+      - Troubleshooting: guides/troubleshooting.md
   - Specification: specification.md
   - API contract: api/contract.md
   - Architecture decisions:
