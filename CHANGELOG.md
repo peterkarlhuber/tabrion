@@ -78,7 +78,19 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   for example `SQLITE_CONSTRAINT_DATATYPE` of a STRICT table on Python 3.13) by its number: `DATA` instead of
   `UNKNOWN` (contract I-75).
 - The PostgreSQL fixtures of `tabrion.testing` no longer print the password when the server is unreachable: pytest
-  showed the conninfo argument of psycopg's frames; the test now fails with the masked URL (contract I-75).
+  showed the conninfo argument of psycopg's frames; the test now fails with the masked URL (contract I-75). A failed
+  `CREATE ROLE` or membership `GRANT` (an admin without `CREATEROLE`) fails the test the same way, without the
+  generated role password. A caller of `truncate_tables` with an unreachable URL gets pytest's `Failed` instead of
+  `psycopg.OperationalError`.
+- Layer B and `tabrion.config` keep values out of the frame locals of their tracebacks, which Sentry, `rich` and
+  `pytest -l` show: the statement parameters and SQL text (`execute`, `fetch_*`, on `Database` and `Transaction`),
+  the fetched rows of `MultipleRowsError`, the URL and `engine_options` of `from_url` and `from_env` (a
+  `ConfigurationError` from `from_url` is raised without the frames of its helpers), the environment and the file
+  content in `url_from_env`, and the original error of `BackupFailed` and `MigrationFailed` in `tabrion.sqlite.migrate`
+  (contract I-76).
+- `Database.from_url` creates its engine with `hide_parameters=True`: SQLAlchemy's `sqlalchemy.engine` log records
+  and the `[parameters: ...]` part of its error messages leave the values out (`engine_options={"hide_parameters":
+  False}` turns them back on; contract I-76).
 
 ## [0.1.0a1] - internal pre-release, not published
 

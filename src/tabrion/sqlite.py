@@ -687,7 +687,9 @@ def migrate(
         except Exception as exc:
             backup_error = exc
         if backup_error is not None:
-            raise BackupFailed("sqlite.backup_failed", details=versions, original=backup_error)
+            failed = BackupFailed("sqlite.backup_failed", details=versions, original=backup_error)
+            backup_error = None  # kept as ``original`` only, not as a frame local of the traceback (I-76)
+            raise failed
         backed_up = True
 
     step = current
@@ -713,7 +715,9 @@ def migrate(
             raise  # BEGIN IMMEDIATE failed (busy, read-only file): the driver error passes through unchanged
         failure = exc
     if failure is not None:
-        raise MigrationFailed("sqlite.migration_failed", details={**versions, "step": step}, original=failure)
+        error = MigrationFailed("sqlite.migration_failed", details={**versions, "step": step}, original=failure)
+        failure = None  # I-76
+        raise error
     if late is not None:
         raise late
     return MigrationResult(found if found == target else current, target, backed_up)

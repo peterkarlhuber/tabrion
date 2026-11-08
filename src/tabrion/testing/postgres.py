@@ -399,33 +399,53 @@ class _RoleSet:
         self._roles: list[_Role] = []
 
     def create(self, name: str) -> _Role:
+        """``CREATE ROLE`` and the admin's membership; a failure fails the test without the password.
+
+        The password is only in the returned ``_Role``, whose ``repr`` leaves it out: a driver error of ``execute``
+        would put it into the report (the ``Composed`` query is an argument of psycopg's frames, review L-2 of #25),
+        so every failure becomes the safe message of the driver error, as in ``_connect`` (contract I-75).
+        """
         import psycopg
         from psycopg import sql
 
-        password = secrets.token_urlsafe(24)
+        from tabrion.errors import classify, safe_message
+
+        role = _Role(name, secrets.token_urlsafe(24))
+        duplicate = False
+        failure: str | None = None
         with _connect(self._admin_url) as conn:
             try:
                 conn.execute(
                     sql.SQL(
                         "CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD {}"
-                    ).format(sql.Identifier(name), sql.Literal(password))
+                    ).format(sql.Identifier(name), sql.Literal(role.password))
                 )
             except psycopg.errors.DuplicateObject:
-                pytest.fail(
-                    f"tabrion.testing: the role {name!r} already exists; the fixture creates its roles itself and"
-                    " never changes or drops a role it did not create",
-                    pytrace=False,
-                )
-            role = _Role(name, password)
-            self._roles.append(role)
-            # Membership lets a non-superuser admin (CREATEROLE) create the database for the role and drop what
-            # it owns; DROP ROLE ends it. From PostgreSQL 16 a membership has its own INHERIT option, which by
-            # default follows the admin's rolinherit: a NOINHERIT admin would get a membership whose privileges
-            # it does not use, and could neither hand the role a schema nor drop its database (review L-1).
-            grant = "GRANT {} TO CURRENT_USER"
-            if conn.info.server_version >= _MEMBERSHIP_OPTIONS:
-                grant += " WITH INHERIT TRUE, SET TRUE"
-            conn.execute(sql.SQL(grant).format(sql.Identifier(name)))
+                duplicate = True
+            except psycopg.Error as exc:
+                failure = safe_message(classify(exc))
+            else:
+                self._roles.append(role)
+                # Membership lets a non-superuser admin (CREATEROLE) create the database for the role and drop
+                # what it owns; DROP ROLE ends it. From PostgreSQL 16 a membership has its own INHERIT option,
+                # which by default follows the admin's rolinherit: a NOINHERIT admin would get a membership whose
+                # privileges it does not use, and could neither hand the role a schema nor drop its database
+                # (review L-1).
+                grant = "GRANT {} TO CURRENT_USER"
+                if conn.info.server_version >= _MEMBERSHIP_OPTIONS:
+                    grant += " WITH INHERIT TRUE, SET TRUE"
+                try:
+                    conn.execute(sql.SQL(grant).format(sql.Identifier(name)))
+                except psycopg.Error as exc:
+                    failure = safe_message(classify(exc))
+        if duplicate:
+            pytest.fail(
+                f"tabrion.testing: the role {name!r} already exists; the fixture creates its roles itself and"
+                " never changes or drops a role it did not create",
+                pytrace=False,
+            )
+        if failure is not None:
+            pytest.fail(f"tabrion.testing: cannot create the role {name!r}: {failure}", pytrace=False)
         return role
 
     @property
