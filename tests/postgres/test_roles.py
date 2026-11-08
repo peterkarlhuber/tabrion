@@ -11,6 +11,7 @@ The roles under test are LOGIN roles without superuser (``make_role``), next to 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+import dataclasses
 from typing import Any
 
 import pytest
@@ -58,6 +59,16 @@ def _oracle_role_info(conn: Any, scope: str) -> RoleInfo:
     if not conn.autocommit:
         conn.rollback()
     return RoleInfo(role=name, superuser=bool(superuser), bypass_rls=bool(bypass), table_owner=bool(owner))
+
+
+def _any_bypassrls_role(conn: Any) -> bool:
+    """Whether any role has BYPASSRLS: a superuser can become it (contract I-20)."""
+    with conn.cursor(row_factory=tuple_row) as cur:
+        cur.execute("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolbypassrls)")
+        found = bool(cur.fetchone()[0])
+    if not conn.autocommit:
+        conn.rollback()
+    return found
 
 
 def _axentra_inspect_role(conn: Any, role: str, schema: str | None = None) -> dict[str, Any]:
@@ -173,7 +184,11 @@ def test_r02_superuser(connect: Callable[..., Any], schema: str, setup: Any, sco
     conn = connect(options=f"-c search_path={schema}")
     info = role_info(conn, owner_scope=scope)  # type: ignore[arg-type]
     assert info.superuser and info.table_owner and not info.restricted
-    assert info == _oracle_role_info(conn, scope)
+    # DL-2: the references read rolbypassrls of the superuser itself, which a superuser created NOBYPASSRLS lacks; a
+    # superuser is a member of every role, so Tabrion reports bypass_rls when any role has BYPASSRLS (contract I-20).
+    oracle = _oracle_role_info(conn, scope)
+    assert dataclasses.replace(info, bypass_rls=oracle.bypass_rls) == oracle
+    assert info.bypass_rls is _any_bypassrls_role(conn)
     with pytest.raises(RoleUnsafe) as refused:
         check_role(conn, owner_scope=scope)  # type: ignore[arg-type]
     assert refused.value.code == "postgres.role_unsafe"
@@ -380,7 +395,9 @@ def test_r10_schema_parameter_privileges_and_superuser(
         assert inspect_role(scratch, runtime.name).connect is False
         superuser = inspect_role(scratch, scratch.info.user)
         assert superuser.superuser and not superuser.restricted
-        assert superuser.as_dict() == _nodestro_inspect_role(scratch, scratch.info.user)
+        nodestro = _nodestro_inspect_role(scratch, scratch.info.user)
+        assert {**superuser.as_dict(), "bypass_rls": nodestro["bypass_rls"]} == nodestro  # DL-2, see R02
+        assert superuser.bypass_rls is _any_bypassrls_role(scratch)
 
 
 def test_r10_runtime_role_inspects_itself(

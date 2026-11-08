@@ -98,7 +98,7 @@ Planned effort: 60.75 + 21.25 agent days.
 | TAB-038 | Internal pre-release v0.1.0a1 (errors, sql, config) for unmerged integration branches (RC-8) | tabrion | TAB-010, TAB-011, TAB-012, TAB-005 | - | 0.25 + 0.25 | Core | Not started |  |
 | QA-22 | Conventions audit of the new repositories | tabrion, tabrion-studio | TAB-004, STU-018 | - | 0.5 + 0 | QA | Not started |  |
 | TAB-016 | tabrion.postgres reading roles | tabrion | TAB-015 | - | 1.5 + 0.75 | Core | Done | `src/tabrion/postgres/roles.py`; `tests/postgres/test_roles.py` (R01..R10 against the verbatim Axentra and Nodestro queries; R11/R12 roles a session can become), G01/G02; [M2 lane C evidence](#m2-lane-c-evidence). Independent review (TB-032): accepted after the delta re-review; merged in [#5](https://github.com/peterkarlhuber/tabrion/pull/5) (`b34abb2`); DL-1 fixed in the second lane C pull request |
-| TAB-030 | SessionLock and advisory lock helpers (0.1) | tabrion | TAB-015 | - | 2 + 1 | Core | In review | `src/tabrion/postgres/locks.py`; `tests/postgres/test_locks.py` (L01..L15, G01), `tests/postgres/test_faults.py` (locks under faults), `tests/unit/test_locks_and_faults_unit.py`, mutation probes; contract I-32; [M2 lane C2 evidence](#m2-lane-c2-evidence). Independent review required (TB-032) |
+| TAB-030 | SessionLock and advisory lock helpers (0.1) | tabrion | TAB-015 | - | 2 + 1 | Core | In review | `src/tabrion/postgres/locks.py`; `tests/postgres/test_locks.py` (L01..L15, G01), `tests/postgres/test_faults.py` (locks under faults), `tests/unit/test_locks_and_faults_unit.py`, mutation probes; contract I-32; [M2 lane C2 evidence](#m2-lane-c2-evidence). Independent review of #6: accepted with conditions at 0cd79eb, fix round in the same pull request (TB-032) |
 | TAB-034 | Fault-injection proxy (includes QA-3), internal `tabrion.testing._faults` (TB-033) | tabrion | TAB-015 | - | 1.5 + 0.5 | Core | In review | `src/tabrion/testing/_faults.py`; `tests/postgres/test_faults.py` (TAB-T-170, every fault three times), E14 in `tests/postgres/test_errors_postgres.py` on the proxy; contract I-33; [M2 lane C2 evidence](#m2-lane-c2-evidence) |
 | TAB-014 | tabrion.sqlite transactions, migrate, backup, checks | tabrion | TAB-013 | - | 3 + 1.5 | Core | In review | `src/tabrion/sqlite.py` (transactions, `migrate`, `backup`, checks, `diagnose`); `tests/sqlite/test_transactions.py` (S16..S21), `test_migrate.py` (S22..S30), `test_backup.py` (S31..S34), `test_checks.py` (S35..S41), `test_notx.py` (T-NOTX); contract I-24..I-31; [lane B evidence](#m2-lane-b-evidence-tab-013-tab-014). Independent review pending (TB-044) |
 | TAB-020 | tabrion.testing 0.1 | tabrion | TAB-015, TAB-013 | - | 2 + 0.5 | Core | Not started |  |
@@ -400,13 +400,31 @@ subprocesses.
 | 4. No parameter value or secret in new log or error paths | `repr` without conninfo; error codes `postgres.lock_closed`, `postgres.lock_in_transaction` | Test-only |
 | 5. Rollback path | Revert of this pull request (no consumer uses it yet) | Same |
 | 6. STATUS.md and TODO.md updated | Yes | Yes |
-| Review model | **Independent review agent required** (`postgres` locks; TB-032) | Self-review (test infrastructure) |
+| Review model | Independent review of 0cd79eb: accepted with conditions (planning folder `reviews/tab-030-034-review.md`); M-1, L-1..L-4 and Info I-1..I-5 fixed in this pull request (table below) | Same review |
 
 Mutation probes (`tests/postgres/test_postgres_mutation_probes.py`): 9 new, 33 in all, each turns its test red: the
 pipeline sync of DL-1; a blocking `pg_advisory_lock` in `wait_advisory_lock` (L13), counts kept after a lost
 connection (L04), unlock at the first release (L02), waiting inside a transaction (L15), a non-autocommit lock
 connection (unit); the fault proxy forwarding the reply of a `reply` fault, forwarding a `request` fault, and not
-delaying.
+delaying. The review fix round adds 10 (43 in all): ping's sync inside its `try` (M-1), no sync after an attempt (L-1),
+no sync before the status check (L-4 mutant 14), a lost key taken again (L-3), no new internal lock after a fork
+(L-2), `held_keys` without its probe (mutant 10), no default `connect_timeout` (mutant 21), `acquire` polling without
+the internal lock (mutant 22), the key range checked on `int(key)` (I-1), and the surrogate error (I-2).
+
+Review of #6 (0cd79eb, accepted with conditions) and the fix round:
+
+| Finding | Fix | Evidence |
+|---|---|---|
+| M-1 ping swallowed the caller's queued pipeline error | `settle()` before ping's `try`; contract I-34, ping docstring | `test_m1_6_pipeline_error_of_the_caller_propagates` (ping, `role_info`, both lock helpers; with and without autocommit): `UniqueViolation` raised, the aborted work visible to the caller; a probe moves the sync back |
+| L-1 waiting in an autocommit pipeline held a statement and snapshot | `settle()` after each attempt | `test_l12_pipeline_autocommit_holds_no_snapshot_while_waiting`; probe |
+| L-2 fork while another thread holds the internal lock | `os.register_at_fork` replaces the internal lock of every live `SessionLock` in the child | `test_l10_fork_while_the_internal_lock_is_held` (the child answers instead of hanging), unit test of the hook; probe |
+| L-3 re-entrant `try_acquire` after a loss | `UsageError("postgres.lock_lost")` until `holds`/`release` acknowledge (D-43, I-32) | `test_l04_reentrant_acquire_after_a_loss_is_refused`; probe |
+| L-4 surviving mutants 10, 14, 21, 22 and the comment in `settle()` | Tests for each; comment corrected | `test_l04_held_keys_probes_the_connection`, `test_l15_pipeline_with_queued_statements`, `test_session_lock_connects_with_the_documented_arguments`, `test_l09_threads_acquire_on_a_fresh_lock` (16 threads, 4 busy keys, one connection, counts 4); four probes |
+| I-1 an `int` subclass lying about its value | range check on `int.__index__(key)` | `test_keys_are_checked_by_their_exact_value`; probe |
+| I-2 `lock_key` with an unpaired surrogate | `ValueError` without the value | `test_lock_key_unpaired_surrogate`; probe |
+| I-3 threads share the holds; I-4 half-open TCP | Documented (I-32, `SessionLock` docstring; SECURITY.md keepalives in `connect_kwargs`) | |
+| I-5 the proxy's framing assumptions | Documented in the `FaultProxy` docstring (connect only through `dsn()`; `reply` also drops earlier unrelayed replies) | |
+| DL-2 of #4: R02/R10 assumed the admin has BYPASSRLS | The oracle comparison takes the reference's `bypass_rls` for superusers; `bypass_rls` asserted as "any role has BYPASSRLS" (I-20) | `test_r02_superuser`, `test_r10_schema_parameter_privileges_and_superuser` |
 
 ## G-T1 conditions
 
@@ -572,6 +590,7 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-40 | TAB-014 | 07 TM-03 / review M-2: a field for a world-writable database directory without the sticky bit | A WARNING on the logger `tabrion.sqlite` from `diagnose` (path only at DEBUG); `SQLiteDiagnosis` unchanged (contract I-30) | `SQLiteDiagnosis` is in the frozen API surface; the `tabrion.check` finding or a 0.2 field is TB-043 |
 | D-41 | TAB-034 | Planning documents 07 (K7) and 09: a public `tabrion.testing.faults` | The internal, unstable `tabrion.testing._faults` (contract I-33) | Decision TB-033: the frozen surface is not extended in 0.1; a public module is a 0.2 decision by contract addendum and review |
 | D-42 | TAB-030 | Contract 4.7, L13: `CREATE INDEX CONCURRENTLY` "in a third session" | L13 runs it in the holder's session, the Axentra migration case, with a control: a blocking `pg_advisory_lock` waiter makes the server fail one side (deadlock or timeout) | The holder's own index build is where a blocked waiter's snapshot deadlocks; a third session would complete in either design. L12 accepts the moment between an attempt and its rollback without autocommit (contract I-32) |
+| D-43 | TAB-030 | Contract 4.7: after a lost connection "every count is cleared" and the lock is replaced | Also: a key held on the lost connection raises `UsageError("postgres.lock_lost")` in `try_acquire`/`acquire` until `holds` or `release` acknowledges the loss (contract I-32) | Review L-3 of #6: a nested section would otherwise take a fresh hold and its `release` free the lock the outer section relies on. Additive: a new error code, no signature change |
 
 ## Score review
 

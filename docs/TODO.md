@@ -317,8 +317,10 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Delta re-review:** accepted; one new Low, DL-1 (in psycopg pipeline mode no savepoint was opened, so a failing
   reader aborted the caller's pipeline transaction). Fixed in the second lane C pull request (contract I-34, test
   `test_dl1_*`, a mutation probe).
-- **Next step:** none for TAB-015/TAB-016. TAB-030 (locks) needs the same independent review: the second lane C pull
-  request carries the self-review ([M2 lane C2 evidence](program/STATUS.md#m2-lane-c2-evidence)).
+- **TAB-030/TAB-034:** the independent review of #6 at 0cd79eb was "accepted with conditions" (M-1: `ping` in
+  pipeline mode swallowed the caller's queued error; L-1..L-4, Info I-1..I-5); all fixed or documented in the same
+  pull request ([M2 lane C2 evidence](program/STATUS.md#m2-lane-c2-evidence)), together with DL-2 of #4.
+- **Next step:** confirmation of the fix round by the reviewer.
 
 ### TB-033 · Public `tabrion.testing.faults`: a 0.2 surface decision (TABRION TAB-034)
 

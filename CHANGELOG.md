@@ -74,9 +74,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   autocommit connection (lazy, counted holds, liveness probe, counts cleared on a lost connection, thread-safe, safe
   across `fork`, conninfo never in `repr`), and `try_advisory_lock`, `wait_advisory_lock` (polling, refused inside a
   transaction, no open snapshot between attempts, compatible with `CREATE INDEX CONCURRENTLY`), `advisory_unlock` on a
-  given connection. Errors are never retried.
+  given connection. Errors are never retried. A key held on a lost connection raises
+  `UsageError("postgres.lock_lost")` until `holds` or `release` acknowledges the loss; a forked child gets a fresh
+  internal lock; `lock_key` raises `ValueError` for a string without a UTF-8 form.
 - In psycopg pipeline mode every `tabrion.postgres` function syncs the caller's pipeline first, so a failing statement
-  no longer aborts the caller's pipeline transaction (review DL-1 of #5).
+  no longer aborts the caller's pipeline transaction (review DL-1 of #5); an error of a statement the caller queued
+  propagates from every function, `ping` included, and `wait_advisory_lock` syncs each attempt before it sleeps.
 - Every `tabrion.postgres` function reads through its own `tuple_row` cursor, leaves the transaction state, row
   factory and `autocommit` of a handed-in connection unchanged (T-NOTX), runs under a savepoint inside the caller's
   transaction so that a failing statement does not abort it, and qualifies catalog functions, types and operators
@@ -87,7 +90,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 33 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  transaction state, and carry 43 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`

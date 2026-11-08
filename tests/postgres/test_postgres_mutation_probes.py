@@ -210,8 +210,8 @@ PROBES = [
     # TAB-030: a lost connection clears every count.
     (
         "postgres/locks.py",
-        "        connection, self._connection = self._connection, None\n        self._held.clear()\n",
-        "        connection, self._connection = self._connection, None\n",
+        "            self._lost.update(self._held)\n        self._held.clear()\n",
+        "            self._lost.update(self._held)\n",
         "tests/postgres/test_locks.py::test_l04_connection_loss_clears_every_count",
     ),
     # TAB-030: the unlock comes at the last hold, not the first release.
@@ -255,6 +255,78 @@ PROBES = [
         "                        time.sleep(max(0.0, until - time.monotonic()))\n",
         "                        pass\n",
         "tests/postgres/test_faults.py::test_t170_delay_keeps_the_connection",
+    ),
+    # Review M-1 (#6): ping syncs the caller's pipeline outside its try, so the caller's error propagates.
+    (
+        "postgres/__init__.py",
+        "    settle(connection)\n    try:\n        if connection.info.transaction_status",
+        "    try:\n        settle(connection)\n        if connection.info.transaction_status",
+        "tests/postgres/test_contract_rules.py::test_m1_6_pipeline_error_of_the_caller_propagates",
+    ),
+    # Review L-1 (#6): in pipeline mode each attempt is synced before the sleep.
+    (
+        "postgres/locks.py",
+        "        # statement and no snapshot stay open while waiting (review L-1).\n        settle(connection)\n",
+        "        # statement and no snapshot stay open while waiting (review L-1).\n",
+        "tests/postgres/test_locks.py::test_l12_pipeline_autocommit_holds_no_snapshot_while_waiting",
+    ),
+    # Review L-4 (#6), mutant 14: the sync before the status check.
+    (
+        "postgres/locks.py",
+        "        settle(connection)  # pipeline mode: ACTIVE until a sync, then the real status (review DL-1)\n",
+        "",
+        "tests/postgres/test_locks.py::test_l15_pipeline_with_queued_statements",
+    ),
+    # Review L-3 (#6): a key lost with its connection is not taken again silently.
+    (
+        "postgres/locks.py",
+        '        if key in self._lost:\n            raise UsageError("postgres.lock_lost")\n',
+        "",
+        "tests/postgres/test_locks.py::test_l04_reentrant_acquire_after_a_loss_is_refused",
+    ),
+    # Review L-2 (#6): a forked child gets a fresh internal lock.
+    (
+        "postgres/locks.py",
+        "        lock._guard = threading.Lock()\n",
+        "        pass\n",
+        "tests/postgres/test_locks.py::test_l10_fork_while_the_internal_lock_is_held",
+    ),
+    # Review L-4 (#6), mutant 10: held_keys probes the connection.
+    (
+        "postgres/locks.py",
+        "            if self._held:\n                self._alive()\n",
+        "",
+        "tests/postgres/test_locks.py::test_l04_held_keys_probes_the_connection",
+    ),
+    # Review L-4 (#6), mutant 21: the default connect_timeout.
+    (
+        "postgres/locks.py",
+        '        kwargs.setdefault("connect_timeout", _CONNECT_TIMEOUT)\n',
+        "",
+        "tests/unit/test_locks_and_faults_unit.py::test_session_lock_connects_with_the_documented_arguments",
+    ),
+    # Review L-4 (#6), mutant 22: acquire polls under the internal lock.
+    (
+        "postgres/locks.py",
+        "            with self._guard:\n                self._check_open()\n                if self._try(key):\n"
+        "                    return True\n            if not _sleep_until_next",
+        "            if True:\n                self._check_open()\n                if self._try(key):\n"
+        "                    return True\n            if not _sleep_until_next",
+        "tests/postgres/test_locks.py::test_l09_threads_acquire_on_a_fresh_lock",
+    ),
+    # Review Info I-1 (#6): the key's exact value is checked.
+    (
+        "postgres/locks.py",
+        "    value = int.__index__(key)\n",
+        "    value = int(key)\n",
+        "tests/unit/test_locks_and_faults_unit.py::test_keys_are_checked_by_their_exact_value",
+    ),
+    # Review Info I-2 (#6): an unpaired surrogate gives the documented ValueError.
+    (
+        "postgres/locks.py",
+        "    except UnicodeEncodeError:\n",
+        "    except LookupError:\n",
+        "tests/unit/test_locks_and_faults_unit.py::test_lock_key_unpaired_surrogate",
     ),
 ]
 

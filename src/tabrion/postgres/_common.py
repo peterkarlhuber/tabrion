@@ -61,7 +61,9 @@ def settle(connection: psycopg.Connection[Any]) -> None:
     from psycopg import pq
 
     if connection.pgconn.pipeline_status != pq.PipelineStatus.OFF:
-        with connection.pipeline() as pipeline:  # the caller's pipeline, one level deeper; ending it sends nothing
+        # The caller's pipeline, one level deeper. The explicit sync does not depend on psycopg also syncing when the
+        # nested block ends (it does; the second sync then has nothing left to send).
+        with connection.pipeline() as pipeline:
             pipeline.sync()
 
 

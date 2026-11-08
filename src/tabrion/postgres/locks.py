@@ -19,6 +19,7 @@ import os
 import threading
 import time
 from typing import TYPE_CHECKING, Any
+import weakref
 
 from tabrion.errors import UsageError
 from tabrion.postgres._common import one_row, reading, require_connection, require_psycopg, settle
@@ -39,18 +40,27 @@ child's use nor its garbage collection can send anything on the parent's session
 
 
 def lock_key(name: str) -> int:
-    """A stable int64 key: the first 8 bytes of SHA-256(name), signed big-endian."""
+    """A stable int64 key: the first 8 bytes of SHA-256(name), signed big-endian.
+
+    ``TypeError`` for a non-``str``; ``ValueError`` for a ``str`` that has no UTF-8 form (an unpaired surrogate).
+    """
     if not isinstance(name, str):
         raise TypeError("name must be a str")
-    return int.from_bytes(hashlib.sha256(name.encode("utf-8")).digest()[:8], "big", signed=True)
+    try:
+        data = name.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("name must be encodable as UTF-8 (no unpaired surrogates)") from None
+    return int.from_bytes(hashlib.sha256(data).digest()[:8], "big", signed=True)
 
 
 def _key(key: object) -> int:
     if isinstance(key, bool) or not isinstance(key, int):
         raise TypeError("key must be an int")
-    if not _INT64_MIN <= key <= _INT64_MAX:
+    # The exact value first: an int subclass may override comparisons, __int__ and __index__ (review I-1).
+    value = int.__index__(key)
+    if not _INT64_MIN <= value <= _INT64_MAX:
         raise ValueError("key must fit in a signed 64-bit integer (see lock_key)")
-    return int(key)
+    return value
 
 
 def _poll_interval(value: object) -> float:
@@ -85,6 +95,22 @@ def _sleep_until_next(deadline: float | None, poll_interval: float) -> bool:
     return True
 
 
+_INSTANCES: weakref.WeakSet[SessionLock] = weakref.WeakSet()
+"""Every live ``SessionLock``: a forked child gives each a fresh internal lock (review L-2)."""
+
+
+def _after_fork_in_child() -> None:
+    # Only the forking thread exists in the child. A thread of the parent may have held an internal lock at the
+    # moment of the fork; that lock would stay acquired forever in the child, so every instance gets a new one. The
+    # connection and the counts are left to _check_open, which detaches them without a round trip.
+    for lock in list(_INSTANCES):
+        lock._guard = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):  # POSIX
+    os.register_at_fork(after_in_child=_after_fork_in_child)
+
+
 def _detach_in_child(connection: Any) -> None:
     """In a forked child: make the inherited connection harmless without talking to the server (see ``_ABANDONED``)."""
     with suppress(Exception):
@@ -100,14 +126,20 @@ def _detach_in_child(connection: Any) -> None:
 class SessionLock:
     """Advisory locks on an own, unpooled autocommit connection (opened lazily, thread-safe, counted holds).
 
-    A lost connection is replaced and every count is cleared (``holds()`` is then ``False``). After ``close()``
-    every operation raises ``UsageError("postgres.lock_closed")``.
+    A lost connection is replaced and every count is cleared (``holds()`` is then ``False``). A key that was held on
+    the lost connection cannot be taken again silently: ``try_acquire`` and ``acquire`` raise
+    ``UsageError("postgres.lock_lost")`` for it until ``holds(key)`` or ``release(key)`` has acknowledged the loss
+    (review L-3; otherwise a nested section would take a fresh hold, and its ``release`` would free the lock that the
+    outer section still relies on). After ``close()`` every operation raises ``UsageError("postgres.lock_closed")``.
+    Threads of one process share the holds: advisory locks are re-entrant per session, so a ``SessionLock`` does not
+    exclude its own threads from each other.
 
     The connection is ``psycopg.connect(conninfo, autocommit=True, connect_timeout=10, **connect_kwargs)`` (a
     ``connect_timeout`` in ``connect_kwargs`` wins; ``autocommit`` stays ``True``), configured by ``configure`` or
     by default with ``tabrion.postgres.configure(conn, SessionSettings(application_name="tabrion-lock"))``. Before
     every operation on held locks a ``SELECT 1`` checks that it is alive. Not fork-safe: a child process (another
-    PID) leaves the parent's connection alone and opens its own, holding nothing.
+    PID) leaves the parent's connection alone and opens its own, holding nothing; its internal lock is new, also when
+    another thread of the parent was inside a method at the fork.
     """
 
     def __init__(
@@ -134,8 +166,11 @@ class SessionLock:
         self._guard = threading.Lock()
         self._connection: psycopg.Connection[Any] | None = None
         self._held: dict[int, int] = {}
+        self._lost: set[int] = set()
+        """Keys held when a connection was lost, until ``holds`` or ``release`` acknowledges the loss."""
         self._pid = os.getpid()
         self._closed = False
+        _INSTANCES.add(self)
 
     def __repr__(self) -> str:
         # Never the conninfo: it may hold a password.
@@ -153,11 +188,14 @@ class SessionLock:
                 _detach_in_child(self._connection)
             self._connection = None
             self._held.clear()
+            self._lost.clear()
             self._pid = os.getpid()
 
     def _drop(self) -> None:
         """Forget a lost (or failing) connection: its locks are gone with it."""
         connection, self._connection = self._connection, None
+        if not self._closed:
+            self._lost.update(self._held)
         self._held.clear()
         if connection is not None:
             with suppress(Exception):
@@ -205,6 +243,8 @@ class SessionLock:
         if self._held.get(key):
             self._held[key] += 1
             return True
+        if key in self._lost:
+            raise UsageError("postgres.lock_lost")
         try:
             with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:
                 cursor.execute("SELECT pg_catalog.pg_try_advisory_lock(%s)", (key,))
@@ -248,10 +288,12 @@ class SessionLock:
         key = _key(key)
         with self._guard:
             self._check_open()
-            if not self._held.get(key):
-                return False
-            self._alive()
-            return bool(self._held.get(key))
+            if self._held.get(key):
+                self._alive()
+            if self._held.get(key):
+                return True
+            self._lost.discard(key)  # the caller has seen that it no longer holds the key
+            return False
 
     def release(self, key: int) -> None:
         """Give up one hold of ``key``; ``pg_advisory_unlock`` follows at the last one. Not held: nothing happens."""
@@ -266,9 +308,11 @@ class SessionLock:
                 self._held[key] = count - 1
                 return
             if not count:
+                self._lost.discard(key)  # the release of a hold that a lost connection ended
                 return
             connection = self._alive()
             if connection is None:  # lost: the lock is gone already, and so are the counts
+                self._lost.discard(key)  # this release acknowledges the loss of this key
                 return
             del self._held[key]
             try:
@@ -297,6 +341,7 @@ class SessionLock:
                 self._connection = None
             self._closed = True
             self._drop()
+            self._lost.clear()
 
     def __enter__(self) -> SessionLock:
         with self._guard:
@@ -347,6 +392,9 @@ def wait_advisory_lock(
             raise UsageError("postgres.lock_in_transaction")
         if try_advisory_lock(connection, key):
             return True
+        # Pipeline mode: the attempt is only flushed; the sync ends its implicit transaction before the sleep, so no
+        # statement and no snapshot stay open while waiting (review L-1).
+        settle(connection)
         if not _sleep_until_next(deadline, interval):
             return False
 

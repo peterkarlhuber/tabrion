@@ -58,6 +58,10 @@ class FaultProxy:
     (``reply``), right after the cut (``inflight``, ``request``) or before the delayed answer goes out (``delay``).
     What it raises is kept for :meth:`check`. :attr:`fired_backend` is the server process of the connection the
     fault fired on (from its ``BackendKeyData``). Every other connection and statement passes through unchanged.
+
+    Connect only through :meth:`dsn`: it disables TLS and GSS encryption, whose negotiation (``SSLRequest`` and the
+    server's one-byte answer) the framing does not follow. With ``reply``, server messages of earlier statements in
+    the same batch that were not relayed yet are dropped too.
     """
 
     def __init__(self, upstream_host: str, upstream_port: int) -> None:

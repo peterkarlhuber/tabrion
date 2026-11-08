@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 import contextlib
 import os
+import signal
 import subprocess
 import sys
 import textwrap
@@ -208,6 +209,50 @@ def test_l04_connection_loss_clears_every_count(
     assert lock.holds(key)
 
 
+def test_l04_held_keys_probes_the_connection(locks: Callable[..., SessionLock], admin: Any, key: int) -> None:
+    """Review L-4 (#6): ``held_keys`` alone notices a lost connection (no ``holds`` call before it)."""
+    lock = locks()
+    assert lock.try_acquire(key) and lock.try_acquire(key ^ 2)
+    admin.execute("SELECT pg_terminate_backend(%s)", (lock._connection.info.backend_pid,))  # type: ignore[union-attr]
+    time.sleep(0.2)
+    assert lock.held_keys() == frozenset()
+
+
+def test_l04_reentrant_acquire_after_a_loss_is_refused(
+    locks: Callable[..., SessionLock], admin: Any, admin_url: str, key: int
+) -> None:
+    """Review L-3 (#6): a nested section must not take a fresh hold of a key that the outer section lost; its
+    release would free the lock while the outer section still relies on it."""
+    lock = locks()
+    other = key ^ 64
+    assert lock.try_acquire(key)  # the outer section
+    admin.execute("SELECT pg_terminate_backend(%s)", (lock._connection.info.backend_pid,))  # type: ignore[union-attr]
+    time.sleep(0.2)
+    with pytest.raises(UsageError) as lost:
+        lock.try_acquire(key)  # the nested section
+    assert lost.value.code == "postgres.lock_lost"
+    with pytest.raises(UsageError) as lost_again:
+        lock.acquire(key, timeout=1)
+    assert lost_again.value.code == "postgres.lock_lost"
+    assert lock.try_acquire(other) is True  # a key that was not held is not affected
+    assert _free(admin_url, key), "nothing took the lost key again"
+    # Acknowledged by holds() (the outer section checks and sees the loss): the key can be taken again.
+    assert lock.holds(key) is False
+    assert lock.try_acquire(key) is True
+    lock.release(key)
+    lock.release(other)
+    # Acknowledged by release() (the outer section ends): the same.
+    assert lock.try_acquire(key)
+    admin.execute("SELECT pg_terminate_backend(%s)", (lock._connection.info.backend_pid,))  # type: ignore[union-attr]
+    time.sleep(0.2)
+    lock.release(key)
+    assert lock.try_acquire(key) is True
+    lock.close()
+    with pytest.raises(UsageError) as closed:
+        lock.try_acquire(key)
+    assert closed.value.code == "postgres.lock_closed"
+
+
 def test_l04_loss_while_unlocking(locks: Callable[..., SessionLock], admin: Any, admin_url: str, key: int) -> None:
     """``release`` finds the connection dead at its probe: the lock is gone already, no error."""
     lock = locks()
@@ -359,6 +404,77 @@ def test_l09_threads(locks: Callable[..., SessionLock], admin_url: str, key: int
     assert not errors
     assert lock.held_keys() == frozenset()
     assert _free(admin_url, key)
+
+
+def test_l09_threads_acquire_on_a_fresh_lock(locks: Callable[..., SessionLock], admin: Any, admin_url: str) -> None:
+    """Review L-4 (#6): many threads ``acquire`` at once on a SessionLock that has no connection yet, with keys that
+    are busy for a moment: one connection, consistent counts (``acquire`` polls under the internal lock)."""
+    lock = locks()
+    keys = [lock_key(f"tabrion-l09-{uuid.uuid4().hex}") for _ in range(4)]
+    blocker = psycopg.connect(admin_url, autocommit=True)
+    try:
+        for k in keys:
+            assert try_advisory_lock(blocker, k)
+        start = threading.Barrier(16)
+        errors: list[BaseException] = []
+
+        def work(k: int) -> None:
+            try:
+                start.wait(10)
+                assert lock.acquire(k, timeout=20, poll_interval=0.01)
+            except BaseException as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=work, args=(keys[i % 4],)) for i in range(16)]
+        for thread in threads:
+            thread.start()
+        time.sleep(0.3)
+        blocker.close()  # frees the keys at once
+        for thread in threads:
+            thread.join(30)
+        assert not errors, errors
+        assert lock.held_keys() == frozenset(keys)
+        assert lock._held == dict.fromkeys(keys, 4)
+        backends = admin.execute(
+            "SELECT count(DISTINCT pid) FROM pg_locks WHERE locktype = 'advisory' AND granted AND objsubid = 1"
+            " AND ((classid::bigint << 32) | objid::bigint)"
+            "   = ANY (SELECT k & x'ffffffffffffffff'::bigint FROM unnest(%s::bigint[]) AS k)",
+            (keys,),
+        ).fetchone()[0]
+        assert backends == 1, "every thread used the one connection"
+        for k in keys:
+            for _ in range(4):
+                lock.release(k)
+        assert lock.held_keys() == frozenset()
+        assert all(_free(admin_url, k) for k in keys)
+    finally:
+        blocker.close()
+
+
+@pytest.mark.skipif(not hasattr(os, "register_at_fork"), reason="needs os.register_at_fork")
+def test_l10_fork_while_the_internal_lock_is_held(locks: Callable[..., SessionLock], key: int) -> None:
+    """Review L-2 (#6): a fork while another thread is inside a method (simulated by holding the internal lock): the
+    child gets a fresh internal lock and does not hang."""
+    lock = locks()
+    assert lock.try_acquire(key)
+    read, write = os.pipe()
+    with lock._guard:  # as if another thread were inside try_acquire at the fork
+        child = os.fork()
+        if child == 0:  # pragma: no cover - runs in the child
+            code = 1
+            try:
+                signal.alarm(5)  # a hang would end the child, not the test run
+                os.write(write, str(lock.holds(key)).encode())
+                code = 0
+            finally:
+                os._exit(code)
+    os.close(write)
+    _, status = os.waitpid(child, 0)
+    answer = os.read(read, 20).decode()
+    os.close(read)
+    assert os.waitstatus_to_exitcode(status) == 0, "the child hung on the inherited internal lock"
+    assert answer == "False"
+    assert lock.holds(key)
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="needs os.fork")
@@ -565,3 +681,53 @@ def test_session_lock_on_its_own_database(scratch_database: str, key: int) -> No
         with psycopg.connect(with_params(scratch_database, dbname="postgres"), autocommit=True) as elsewhere:
             assert try_advisory_lock(elsewhere, key) is True
             assert advisory_unlock(elsewhere, key) is True
+
+
+def test_l12_pipeline_autocommit_holds_no_snapshot_while_waiting(
+    connect: Callable[..., Any], admin: Any, url: str, key: int
+) -> None:
+    """Review L-1 (#6): in an autocommit pipeline each attempt is synced before the sleep, so the waiting session is
+    idle without a snapshot, as outside pipeline mode."""
+    holder = Holder(url, key)
+    try:
+        conn = connect(url, autocommit=True)
+        pid = conn.info.backend_pid
+        result: list[bool] = []
+
+        def wait() -> None:
+            with conn.pipeline():
+                result.append(wait_advisory_lock(conn, key, timeout=2.0, poll_interval=0.2))
+
+        waiter = threading.Thread(target=wait)
+        waiter.start()
+        samples = []
+        for _ in range(12):
+            time.sleep(0.1)
+            samples.append(
+                admin.execute(
+                    "SELECT state, backend_xmin IS NULL FROM pg_stat_activity WHERE pid = %s", (pid,)
+                ).fetchone()
+            )
+        waiter.join(10)
+        assert result == [False]
+        assert sum(s == ("idle", True) for s in samples) >= 9, samples
+    finally:
+        holder.stop()
+
+
+@pytest.mark.parametrize("autocommit", [True, False])
+def test_l15_pipeline_with_queued_statements(connect: Callable[..., Any], url: str, key: int, autocommit: bool) -> None:
+    """Review L-4 (#6): in pipeline mode the status is ACTIVE until a sync; ``wait_advisory_lock`` syncs first. With
+    autocommit the queued statement has ended and the wait proceeds; in a transaction it is refused."""
+    conn = connect(url, autocommit=autocommit)
+    with conn.pipeline():
+        conn.execute("SELECT 1")  # queued, not yet synced
+        if autocommit:
+            assert wait_advisory_lock(conn, key, timeout=1) is True
+            assert advisory_unlock(conn, key) is True
+        else:
+            with pytest.raises(UsageError) as refused:
+                wait_advisory_lock(conn, key, timeout=1)
+            assert refused.value.code == "postgres.lock_in_transaction"
+    if not autocommit:
+        conn.rollback()

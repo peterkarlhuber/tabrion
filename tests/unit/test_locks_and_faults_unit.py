@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 import hashlib
 import math
+import os
 from typing import Any
 
 import pytest
@@ -143,3 +144,74 @@ def test_fault_proxy_is_not_public() -> None:
     surface = (Path(__file__).parents[2] / "docs" / "api" / "surface.json").read_text(encoding="utf-8")
     assert "_faults" not in surface and "FaultProxy" not in surface
     json.loads(surface)
+
+
+def test_lock_key_unpaired_surrogate() -> None:
+    """Review Info I-2 (#6): the documented ``ValueError``, without the value."""
+    with pytest.raises(ValueError, match="UTF-8") as info:
+        lock_key("tabrion-\ud800")
+    assert type(info.value) is ValueError
+    assert "\ud800" not in str(info.value)
+
+
+class _Lying(int):
+    """An int subclass whose comparisons and conversions lie (review Info I-1 of #6)."""
+
+    def __le__(self, other: object) -> bool:
+        return True
+
+    def __ge__(self, other: object) -> bool:
+        return True
+
+    def __int__(self) -> int:
+        return 2**70
+
+    def __index__(self) -> int:
+        return 2**70
+
+
+def test_keys_are_checked_by_their_exact_value() -> None:
+    from tabrion.postgres.locks import _key
+
+    assert _key(_Lying(5)) == 5 and type(_key(_Lying(5))) is int
+    with pytest.raises(ValueError, match="64-bit"):
+        _key(_Lying(2**63))
+
+
+def test_session_lock_connects_with_the_documented_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review L-4 (#6): ``autocommit=True`` and ``connect_timeout=10`` unless ``connect_kwargs`` names its own."""
+    seen: list[tuple[str, dict[str, Any]]] = []
+
+    class Stop(Exception):
+        pass
+
+    def fake_connect(conninfo: str, **kwargs: Any) -> Any:
+        seen.append((conninfo, kwargs))
+        raise Stop
+
+    monkeypatch.setattr(psycopg, "connect", fake_connect)
+    for kwargs, timeout in (({}, 10), ({"connect_timeout": 3, "keepalives_idle": 30}, 3)):
+        with pytest.raises(Stop):
+            SessionLock("dbname=x", connect_kwargs=kwargs).try_acquire(1)
+        conninfo, used = seen[-1]
+        assert conninfo == "dbname=x"
+        assert used["autocommit"] is True and used["connect_timeout"] == timeout
+        assert {k: v for k, v in used.items() if k not in ("autocommit", "connect_timeout")} == {
+            k: v for k, v in kwargs.items() if k != "connect_timeout"
+        }
+
+
+@pytest.mark.skipif(not hasattr(os, "register_at_fork"), reason="POSIX only")
+def test_fork_hook_replaces_the_internal_lock() -> None:
+    """Review L-2 (#6): the hook that runs in a forked child gives every live SessionLock a new internal lock."""
+    from tabrion.postgres import locks
+
+    lock = SessionLock("dbname=x")
+    held = lock._guard
+    held.acquire()
+    try:
+        locks._after_fork_in_child()
+        assert lock._guard is not held and lock._guard.acquire(blocking=False)
+        lock._guard.release()
+    finally:
+        held.release()

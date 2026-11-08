@@ -82,7 +82,9 @@ Accepted residual risks (documented, not vulnerabilities):
 - `tabrion.postgres.ping` bounds the server's work (`SET LOCAL statement_timeout`) and the pool checkout, not a
   network that stops answering in the middle of a statement, nor a connection another thread holds (psycopg's
   connection lock); set TCP keepalives or `tcp_user_timeout` on the connection, or run the check in a thread, when a
-  hard deadline matters (TODO TB-034).
+  hard deadline matters (TODO TB-034). The same holds for `tabrion.postgres.SessionLock`: after a half-open TCP loss
+  the server keeps the old session and its locks until TCP gives up, so pass keepalives (`keepalives_idle`,
+  `keepalives_interval`, `keepalives_count`) or `tcp_user_timeout` in `connect_kwargs`.
 - `tabrion.postgres` qualifies every catalog function, relation, type and operator it uses with `pg_catalog`
   (`::pg_catalog.text`, `OPERATOR(pg_catalog.=)`), so a schema that a caller's `search_path` names *before*
   `pg_catalog` (the CVE-2018-1058 pattern) can neither change its answers nor run its owner's code as the role that
