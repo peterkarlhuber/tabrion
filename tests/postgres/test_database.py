@@ -391,3 +391,71 @@ def test_b09_failed_checkout_is_retryable_with_outcome_known(url: Any) -> None:
     assert classification is not None and classification.kind is Kind.CONNECTION
     assert classification.retryable and not classification.outcome_unknown
     assert info.value.__cause__ is None and info.value.__context__ is None
+
+
+# Re-review of #12 (second fix round): N-1 (TB-061), N-3, N-4.
+
+
+@pytest.mark.security
+@pytest.mark.parametrize(
+    "restore", ["SET transaction_read_only = on", "SELECT set_config('transaction_read_only', 'on', true)"]
+)
+def test_b12_documents_the_gap_lift_write_restore(
+    open_db: Callable[..., Database], db: Database, schema: str, restore: str
+) -> None:
+    """Documents the gap of contract I-56 and TB-061: the read-back sees the state at the end only."""
+    database = open_db(Profile(pool_size=1))
+    with database.read() as tx:
+        tx.execute("SET TRANSACTION READ WRITE")
+        tx.execute(f"INSERT INTO {schema}.items (id, n) VALUES (1, 1)")
+        tx.execute(restore)
+    assert db.fetch_scalar(f"SELECT count(*) FROM {schema}.items") == 1
+
+
+@pytest.mark.security
+def test_b12_documents_the_gap_session_default_restored_locally(open_db: Callable[..., Database]) -> None:
+    """Documents I-56/TB-061: SET LOCAL hides a session default switched off in the same read()."""
+    database = open_db(Profile(read_only=True, pool_size=1))
+    with database.read() as tx:
+        tx.execute("SET default_transaction_read_only = off")
+        tx.execute("SET LOCAL default_transaction_read_only = on")
+    # Committed: the session default is off on the pooled connection. The next read() sees it, refuses, and
+    # invalidates the connection, so the one after gets a fresh connection with the profile again.
+    with pytest.raises(UsageError, match=r"database\.read_only"):
+        database.fetch_scalar("SHOW default_transaction_read_only")
+    assert database.fetch_scalar("SHOW default_transaction_read_only") == "on"
+
+
+def test_b06_from_engine_read_only_without_listeners_reads(url: Any, schema: str) -> None:
+    """Re-review N-3: without listeners nobody sets default_transaction_read_only; read() still works."""
+    engine = sqlalchemy.create_engine(url.set(drivername="postgresql+psycopg"), pool_size=1, max_overflow=0)
+    try:
+        with Database.from_engine(engine, profile=Profile.readonly(), install_listeners=False) as database:
+            assert database.fetch_scalar("SELECT 41 + 1") == 42
+            with pytest.raises(UsageError, match=r"database\.read_only"), database.read() as tx:
+                tx.execute("SET TRANSACTION READ WRITE")
+            with pytest.raises(UsageError, match=r"database\.read_only"), database.transaction():
+                pass  # pragma: no cover
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.security
+def test_b12_read_back_ignores_the_callers_row_factory(db: Database, schema: str, admin: Any) -> None:
+    with pytest.raises(UsageError, match=r"database\.read_only"), db.read() as tx:
+        dbapi = tx.connection.connection.dbapi_connection
+        assert dbapi is not None
+        dbapi.row_factory = lambda cursor: lambda values: ("on", "on")
+        tx.execute("SET TRANSACTION READ WRITE")
+        tx.execute(f"INSERT INTO {schema}.items (id, n) VALUES (1, 1)")
+    assert admin.execute(f"SELECT count(*) FROM {schema}.items").fetchone() == (0,)
+
+
+def test_b12_a_failing_read_back_does_not_commit(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
+    import tabrion._sa.database
+
+    monkeypatch.setattr(tabrion._sa.database, "_READ_ONLY_STATE_SQL", "SELECT no_such_column")
+    with pytest.raises(UsageError, match=r"database\.read_only"), db.read() as tx:
+        assert tx.fetch_scalar("SELECT 1") == 1
+    monkeypatch.undo()
+    assert db.fetch_scalar("SELECT 1") == 1  # the pool hands out a working connection again

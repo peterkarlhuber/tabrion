@@ -478,7 +478,12 @@ def _tls(url: sqlalchemy.URL, connect_args: Mapping[str, Any], mode: TLSMode) ->
 
 
 def _sqlite_creator(path: str, profile: Profile) -> sqlite3.Connection:
-    return _sqlite.connect(path, profile=profile.sqlite, read_only=profile.read_only, check_same_thread=False)
+    connection = _sqlite.connect(path, profile=profile.sqlite, read_only=profile.read_only, check_same_thread=False)
+    if profile.read_only:
+        # mode=ro covers the main file only: an ATTACH of the same file (or any other) opens it read-write, so a
+        # read-only profile allows no attached database at all (I-56, re-review N-2 of #12).
+        connection.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED, 0)
+    return connection
 
 
 def _sqlite_engine(url: sqlalchemy.URL, profile: Profile, options: dict[str, Any]) -> tuple[sqlalchemy.Engine, bool]:
@@ -601,6 +606,7 @@ class Database:
     _listeners: list[_events.Listener]
     _local: threading.local
     _serial: threading.RLock | None
+    _profile_applied: bool
 
     def __new__(cls, *args: object, **kwargs: object) -> Database:
         _no_constructor("Database", "Database.from_url(), Database.from_env() or Database.from_engine()")
@@ -629,6 +635,7 @@ class Database:
         self._local = threading.local()
         self._serial = threading.RLock() if serial else None
         self._listeners = _events.install(engine, profile, owned=owned, apply=install_listeners)
+        self._profile_applied = install_listeners
         self._closed = False
         return self
 
@@ -817,6 +824,11 @@ class Database:
                 # The caller's SQL lifted read-only (SET TRANSACTION READ WRITE, PRAGMA query_only = OFF, ...):
                 # nothing of it is committed (I-56). A guard against accidents, not a security boundary.
                 _rollback(connection)
+                if postgres:
+                    # A session default switched off earlier and committed (TB-061) would stay on this pooled
+                    # connection; the pool opens a fresh one instead (re-review N-1 of #12).
+                    with contextlib.suppress(Exception):
+                        connection.invalidate()
                 raise UsageError("database.read_only") from None
             error = None
             try:
@@ -845,17 +857,26 @@ class Database:
 
                 if dbapi.info.transaction_status != pq.TransactionStatus.INTRANS:
                     return True  # an aborted transaction commits nothing; an idle one has nothing to commit
-                cursor = dbapi.cursor()
-                try:
+                import psycopg
+                from psycopg.rows import tuple_row
+
+                # Its own cursor and row factory: whatever the caller set on the connection cannot answer for it.
+                with psycopg.Cursor(dbapi, row_factory=tuple_row) as cursor:
                     cursor.execute(_READ_ONLY_STATE_SQL)
                     row = cursor.fetchone()
-                finally:
-                    cursor.close()
-                session_ok = not self._profile.read_only or row[1] == "on"
+                if row is None:  # pragma: no cover - the statement always returns one row
+                    return False
+                # default_transaction_read_only is Tabrion's only where its listener set it (re-review N-3).
+                session_ok = not (self._profile.read_only and self._profile_applied) or row[1] == "on"
                 return bool(row[0] == "on" and session_ok)
-            if self._profile.read_only:
-                return True  # mode=ro holds whatever query_only says
-            return bool(dbapi.execute("PRAGMA query_only").fetchone()[0] == 1)
+            # The begin listener set query_only = ON for every read(), also under a read-only profile (I-38).
+            cursor = dbapi.cursor()  # SQLite (the PostgreSQL branch returned above)
+            try:
+                cursor.row_factory = None
+                value = cursor.execute(_QUERY_ONLY_SQL).fetchone()[0]
+            finally:
+                cursor.close()
+            return bool(value == 1)
         except Exception:
             return False  # cannot tell: roll back rather than commit
 
@@ -992,6 +1013,8 @@ def _profile(profile: object) -> Profile:
         raise TypeError(f"profile must be a tabrion.Profile, not {type(profile).__name__}")
     return profile
 
+
+_QUERY_ONLY_SQL = "PRAGMA query_only"
 
 _READ_ONLY_STATE_SQL = (
     "SELECT pg_catalog.current_setting('transaction_read_only'),"
