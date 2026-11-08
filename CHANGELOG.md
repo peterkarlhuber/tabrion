@@ -6,6 +6,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Added
+
+- `tabrion.check.check` (TAB-017) for `sqlite3` and psycopg connections, read only and without changing the
+  connection's transaction or row factory: the finding codes TAB-SQ-001..009 and TAB-PG-001..011, 020, 021 and 030
+  of specification section 9. `expect="owner"` suppresses TAB-PG-003 and TAB-PG-009, `expect="any"` reports them
+  as `info`; a missing privilege or an unreadable file gives an `info` finding "Not checked"; no detail names a
+  path. A `Database` target, TAB-PG-012 and TAB-B-001/002 follow with layer B (TODO TB-060).
+
 ### Changed
 
 - Master builds as `0.1.0a2.dev0` after the `0.1.0a1` commit (TB-053), so later commits never build as the
