@@ -1,6 +1,6 @@
 {
  "comment": "Axentra's splitter output for every SQL file Axentra ships (TAB-T-Q02). Regenerate only from a new Axentra commit; see axentra_splitter.py.",
- "axentra_commit": "9c4666f",
+ "axentra_commit": "9c4666fe5a44b158ffa9f0149b7bcd6008b1cd7e",
  "files": [
   {
    "path": "deploy/compose/initdb/01-roles.sql",

@@ -131,7 +131,7 @@ def test_nodestro_api_database_check(tmp_path: Path) -> None:
 
 def test_nodestro_url_from_env(tmp_path: Path) -> None:
     """``server_settings.py`` (``*_FILE``): ``url_from_env``, the same rule (both forms refused, an unreadable or
-    empty file refused, an empty value is missing) with one difference (finding TB-073): Nodestro strips white
+    empty file refused, an empty value is missing) with one difference (deviation D-76): Nodestro strips white
     space around the value and the file's content, ``url_from_env`` removes only the file's trailing newline. A
     connection string with spaces around it still works for libpq, so the wrapper strips at adoption."""
     replay = scenarios.url_file_scenario(
@@ -293,7 +293,7 @@ def test_every_category_a_b_row_has_a_golden_record() -> None:
     for row, places in COVERAGE.items():
         for file, key in places:
             data = json.loads((GOLDEN / file).read_text(encoding="utf-8"))
-            assert any(re.fullmatch(r"[0-9a-f]{7,40}", str(data.get(k, ""))) for k in _COMMIT_KEYS), (row, file)
+            assert any(re.fullmatch(r"[0-9a-f]{40}", str(data.get(k, ""))) for k in _COMMIT_KEYS), (row, file)
             if key != "*":
                 records = data.get("records", data)
                 assert key in records, (row, file, key)

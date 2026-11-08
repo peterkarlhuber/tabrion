@@ -619,11 +619,12 @@ PROBES = [
         "        if False:\n",
         f"{DB}::test_m1_default_schema_must_be_a_test_schema",
     ),
-    # Re-review M-1 (#11): a CASCADE into another schema is refused.
+    # Re-review M-1 (#11): a CASCADE into another schema is refused (both checks gone: either one alone refuses, the
+    # second one after the TRUNCATE with a rollback, review L-1 of #19).
     (
         "testing/postgres.py",
-        "        _refuse_cascade_out_of(conn, namespace, name, [int(oid) for oid, _ in found])\n",
-        "",
+        '    it empties, a partition or an inheritance child (each reason is named)."""\n',
+        '    it empties, a partition or an inheritance child (each reason is named)."""\n    return\n',
         f"{DB}::test_m1_cascade_into_another_schema_is_refused[direct]",
     ),
     # Re-review M-1 (#11): ... also through tables of the schema the CASCADE reaches (one step only: no recursion).
@@ -717,6 +718,12 @@ PROBES = [
         "            finally:\n                roles.drop_all()\n\n\ndef _role_names",
         "                pass\n            finally:\n                roles.drop_all()\n\n\ndef _role_names",
         f"{DB}::test_rr2_database_fixture_drops_the_roles_grants_in_the_admin_database",
+    ),
+    (  # review L-1 of #19: without the second check a foreign key committed after the first one is emptied
+        "testing/postgres.py",
+        "(review L-1 of #19).\n        _refuse_cascade_out_of(conn, namespace, name, oids)\n",
+        "(review L-1 of #19).\n",
+        f"{DB}::test_l1_a_foreign_key_committed_after_the_check_is_refused_and_rolled_back[idle]",
     ),
 ]
 

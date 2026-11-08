@@ -19,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 11 |
-| P3 Low | 31 |
+| P3 Low | 30 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -662,7 +662,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **What:** the golden tests run today in the existing unit and `pg` jobs. The plan wants a job `golden files` in
   `ci.yml` (blocking) and a job `downstream` in `nightly.yml` that runs `python scripts/downstream.py --summary
   "$GITHUB_STEP_SUMMARY"` against a PostgreSQL service (not blocking; its result is a release-gate criterion of
-  TAB-040). Lane C does not change `.github/`.
+  TAB-040). Lane C does not change `.github/`. The script installs each consumer with `uv pip install --override`,
+  so HEAD replaces the consumer's Tabrion requirement (a Git commit pin; Tabrion is not published to an index),
+  and checks that it did (review M-1 of #19, fixed). The job needs network access for the clones and installs.
 - **Next step:** whoever may change `.github/` adds both jobs (with the label `workflow-change-reviewed`) and lists
   them in `.github/ci-manifest.json`; the release gate reads the last nightly result.
 
@@ -687,13 +689,13 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-073 · `url_from_env` keeps white space that Nodestro strips (TABRION TAB-022, TAB-012)
 
-- **Priority:** P3 Low · **Status:** Needs decision · **Refs:** TABRION TAB-012, TAB-022, contract 2.3, 8.2
+- **Priority:** P3 Low · **Status:** Done (decided: deviation D-76) · **Refs:** TABRION TAB-012, TAB-022, contract 2.3, 8.2
 - **What:** the golden test `test_nodestro_url_from_env` shows that Nodestro's `server_settings.py` strips white
   space around `NODESTRO_DATABASE_URL` and around the content of `_FILE`; `url_from_env` removes only the file's
   trailing newline. The contract row said "identical rule". A value such as `" postgresql://..."` from a
   hand-edited secret file therefore reaches libpq with its spaces (libpq accepts them in a URL only at the end).
-- **Next step:** decide for 0.1: strip in `url_from_env` (a behavior change of an a1 function, contract 2.3 and
-  CHANGELOG), or keep it and let Nodestro's wrapper strip (the contract row says so now).
+- **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
+  Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
 ## Cross-repository dependencies
 

@@ -591,6 +591,7 @@ def _truncate(conn: psycopg.Connection[Any], schema: str | None, like: str | Non
         if not found:
             return 0
         tables = sorted(str(table) for _, table in found)
+        oids = [int(oid) for oid, _ in found]
         # The selected tables first (ONLY: their children elsewhere are not locked before the refusal), so no
         # foreign key, partition or child can be added to them between the check and the TRUNCATE (re-review Info).
         conn.execute(
@@ -598,12 +599,17 @@ def _truncate(conn: psycopg.Connection[Any], schema: str | None, like: str | Non
                 sql.SQL(", ").join(sql.Identifier(name, table) for table in tables)
             )
         )
-        _refuse_cascade_out_of(conn, namespace, name, [int(oid) for oid, _ in found])
+        _refuse_cascade_out_of(conn, namespace, name, oids)  # the early refusal: nothing emptied yet
         conn.execute(
             sql.SQL("TRUNCATE TABLE {} RESTART IDENTITY CASCADE").format(
                 sql.SQL(", ").join(sql.Identifier(name, table) for table in tables)
             )
         )
+        # A table CASCADE reaches without being selected (an excluded one, one LIKE filters out, a further hop) was
+        # not locked, so a foreign key to it may have been committed in between. The TRUNCATE now holds ACCESS
+        # EXCLUSIVE on every table it reached, so this second look sees a final catalog; a hit raises and the
+        # transaction (or savepoint) undoes the TRUNCATE (review L-1 of #19).
+        _refuse_cascade_out_of(conn, namespace, name, oids)
     return len(tables)
 
 

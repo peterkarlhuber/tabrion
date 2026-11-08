@@ -50,6 +50,8 @@ dev = [
     "mkdocs-material>=9.5",
     "build>=1.2",
     "twine>=6",
+    # scripts/downstream.py: --override puts Tabrion HEAD in place of a consumer's Tabrion pin.
+    "uv>=0.5",
 ]
 
 [project.urls]

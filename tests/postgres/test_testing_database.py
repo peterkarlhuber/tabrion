@@ -747,6 +747,52 @@ def test_m1_selected_tables_are_locked_before_the_check(scratch_database: str) -
             truncate_tables(conn)
 
 
+@pytest.mark.parametrize("inside", [False, True], ids=["idle", "in_transaction"])
+def test_l1_a_foreign_key_committed_after_the_check_is_refused_and_rolled_back(
+    scratch_database: str, monkeypatch: pytest.MonkeyPatch, inside: bool
+) -> None:
+    """Review L-1 of #19: ``middle`` (excluded, so not locked) references the selected ``parent``. Right after the
+    first catalog check another session commits ``public.audit REFERENCES middle`` with a row. The ``TRUNCATE``
+    reaches ``audit``; the second check after it refuses, and the rollback keeps every row, ``audit``'s too."""
+    from tabrion.testing import postgres as module
+
+    test_schema = new_name()
+    real = module._refuse_cascade_out_of
+    calls: list[int] = []
+
+    def check_then_race(conn: Any, namespace: int, name: str, tables: list[int]) -> None:
+        calls.append(1)
+        real(conn, namespace, name, tables)
+        if len(calls) == 1:
+            with psycopg.connect(scratch_database, autocommit=True) as other:
+                statement = (
+                    "CREATE TABLE public.audit (ref int REFERENCES {}.middle); INSERT INTO public.audit VALUES (1)"
+                )
+                other.execute(sql.SQL(statement).format(sql.Identifier(test_schema)))
+
+    with psycopg.connect(scratch_database, autocommit=True) as conn:
+        conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(test_schema)))
+        conn.execute(sql.SQL("SET search_path = {}").format(sql.Identifier(test_schema)))
+        conn.execute(
+            "CREATE TABLE parent (id int PRIMARY KEY); INSERT INTO parent VALUES (1);"
+            " CREATE TABLE middle (id int PRIMARY KEY REFERENCES parent); INSERT INTO middle VALUES (1)"
+        )
+        conn.execute("SET lock_timeout = '10s'")
+        monkeypatch.setattr(module, "_refuse_cascade_out_of", check_then_race)
+        with pytest.raises(ValueError, match=re.escape('would also empty "public"."audit" (foreign key)')):
+            if inside:
+                with conn.transaction():
+                    truncate_tables(conn, exclude=["middle"])
+            else:
+                truncate_tables(conn, exclude=["middle"])
+        assert calls == [1, 1]
+        assert conn.info.transaction_status == pq.TransactionStatus.IDLE
+        counts = conn.execute(
+            "SELECT (SELECT count(*) FROM parent), (SELECT count(*) FROM middle), (SELECT count(*) FROM public.audit)"
+        ).fetchone()
+        assert counts == (1, 1, 1)
+
+
 # --- Re-review L-2: the teardown steps of the roles ------------------------------------------------------------------
 
 
