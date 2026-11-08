@@ -22,6 +22,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   calls `tabrion.check.check`. The layer-A profile runs on the same DBAPI connection through `tabrion.sqlite.connect`
   and SQLAlchemy events (no second connection). Tested on SQLAlchemy 2.0.30 and 2.1, with mutation probes.
 
+- `tabrion.testing.profiles` (TAB-021): `sqlite_profile_cases()` (TAB-T-F01..F06: foreign keys, WAL, busy
+  timeout, `0600` files, symlink refusal, no DEFERRED writes) for any SQLite connect function, and
+  `portability_cases()` (TAB-T-D01..D09, the data type rules of specification section 6) for SQLite and PostgreSQL.
+
 ### Changed
 
 - `classify(error, during_commit=True)` on a `TabrionError` whose stored classification is a connection error now

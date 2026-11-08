@@ -262,7 +262,7 @@ STUB_MODULES = [
 IMPLEMENTED: set[str] = set()
 
 
-@pytest.mark.parametrize("module_name", [*STUB_MODULES, "tabrion.migrations", "tabrion.testing.profiles"])
+@pytest.mark.parametrize("module_name", [*STUB_MODULES, "tabrion.migrations"])
 def test_stubs_raise_not_implemented(module_name: str) -> None:
     """M1 delivers signatures only: every function raises NotImplementedError (implementation in M2)."""
     module = importlib.import_module(module_name)

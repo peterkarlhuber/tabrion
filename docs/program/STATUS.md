@@ -115,7 +115,7 @@ Planned effort: 60.75 + 21.25 agent days.
 | QA-2 | Canary value suite (no values in errors or logs) | tabrion | TAB-010, TAB-018 | - | 1 + 0.5 | QA | Not started |  |
 | RA-B-2 | Measurements: idempotent transfer to PostgreSQL | tabrion (examples/measurements) | RA-B-1, TAB-018 | - | 2 + 0.5 | Ref-Apps | Not started |  |
 | TAB-019 | tabrion.migrations status/require_current | tabrion | TAB-018 | - | 1 + 0.25 | Core | Not started |  |
-| TAB-021 | Profile and portability test cases | tabrion | TAB-018 | - | 1 + 0.25 | Core | Not started |  |
+| TAB-021 | Profile and portability test cases | tabrion | TAB-018 | - | 1 + 0.25 | Core | In review | `src/tabrion/testing/profiles.py`; `tests/unit/test_profile_cases.py` (F01..F06 pass for `tabrion.sqlite.connect` and fail for broken connect functions; D01..D09 on SQLite file and memory), `tests/postgres/test_portability_postgres.py` (D01..D09 on PostgreSQL); contract I-58, deviation D-62. Stacked on the TAB-018 branch (#12) |
 | RA-A-1 | Parts: portable schema and Alembic | tabrion (examples/parts) | TAB-019 | - | 1.5 + 0.5 | Ref-Apps | Not started |  |
 | TAB-041 | Complete 0.1 documentation (guides) | tabrion | TAB-019, TAB-020, TAB-017 | - | 3 + 0.75 | Core | Not started |  |
 | RA-B-3 | Measurements: offline and failure tests | tabrion (examples/measurements) | RA-B-2, TAB-034 | - | 1.5 + 0.5 | Ref-Apps | Not started |  |
@@ -696,6 +696,7 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-52 | TAB-018 | Specification 3.1: the SQLite `connect` event calls `tabrion.sqlite.apply_profile` | An engine from `from_url` opens every connection through `tabrion.sqlite.connect` as its `creator`; `from_engine` applies `apply_profile` on checkout | `connect` also runs the path checks, the `0600` creation, the opened-file check and `mode=ro` for each connection, which a listener on an already opened connection cannot; still one connection, no second pool (contract I-37, I-38) |
 | D-53 | TAB-018 | Specification 3.1: PostgreSQL needs nothing at `reset`/`checkin` ("transaction ended = READ ONLY ended") | A `checkin` listener gives psycopg's `read_only` back to `None` after a Tabrion `read()` | SQLAlchemy resets `postgresql_readonly` to `read_only = False`, so psycopg sends `BEGIN READ WRITE` afterwards and overrides `default_transaction_read_only` of `Profile.readonly()` (contract I-42) |
 | D-61 | TAB-018 | Contract 5.2 and I-37: `from_engine(engine, profile=...)` with any profile; the listener applies it to connections already in the pool | A read-only profile with `install_listeners=True` raises `ConfigurationError("config.invalid_profile", details={"field": "read_only"})` | The listener would make the host's whole pool read-only, also after `close()` (T-NOTX rule 2, plan 10; review M-2); with `install_listeners=False` the profile still refuses `transaction()` |
+| D-62 | TAB-021 | Specification section 6, UUID row: "text (36 characters) in SQLite, `uuid` in PostgreSQL; SQLAlchemy `Uuid`" | TAB-T-D04 maps UUIDs to `String(36)` on SQLite and `Uuid` on PostgreSQL | SQLAlchemy's `Uuid` stores 32 hex characters without hyphens on SQLite, which is not the 36-character text of the rule; the case follows the stored format the rule names (contract I-58) |
 
 ## Score review
 
