@@ -74,6 +74,7 @@ markers = [
     "postgres: needs TABRION_TEST_POSTGRES",
     "pgvector: needs the vector extension (image pgvector/pgvector)",
     "slow: concurrency and fault-injection tests (> 2 s)",
+    "stress: concurrency and stress suite (QA-4); TABRION_STRESS_REPEAT repetitions, 5 by default, 200 nightly",
     "conformance: runs the Levuvo Database Profile vectors",
     "security: leak, permission and symlink regressions",
     "packaging: builds wheels and creates fresh virtual environments (slow)",
@@ -109,6 +110,9 @@ extend-immutable-calls = [
 [tool.ruff.lint.per-file-ignores]
 # Tests assert, start subprocesses with fixed arguments and use throwaway credentials.
 "tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+# The stress suites define their thread bodies inside the repetition loop; each runs and is joined within its own
+# repetition, so the late binding B023 warns about cannot happen.
+"tests/**/test_stress_*.py" = ["B023"]
 
 [tool.mypy]
 python_version = "3.11"
