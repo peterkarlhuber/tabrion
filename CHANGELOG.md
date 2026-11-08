@@ -42,13 +42,16 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   Nodestro's semantics for `probe_type`.
 - `tabrion.postgres` reading role functions (TAB-016): `role_info` with `owner_scope="schema"` (Nodestro) or
   `"rls"` (Axentra), `check_role` raising `RoleUnsafe` with reason codes, `inspect_role` returning a `RoleReport`
-  whose `as_dict()` has the keys of both existing formats; `RoleMissing` without the role name.
+  whose `as_dict()` has the keys of both existing formats; `RoleMissing` without the role name. A role counts as
+  superuser or BYPASSRLS also when it, or the session's login role, can become one with `SET ROLE` (also as a
+  NOINHERIT member), which the Axentra and Nodestro checks miss; a `schema` that does not exist gives an empty report.
 - Every `tabrion.postgres` function reads through its own `tuple_row` cursor, leaves the transaction state, row
-  factory and `autocommit` of a handed-in connection unchanged (T-NOTX) and names catalog functions with
-  `pg_catalog`, so a hostile `search_path` cannot replace them.
+  factory and `autocommit` of a handed-in connection unchanged (T-NOTX), runs under a savepoint inside the caller's
+  transaction so that a failing statement does not abort it, and qualifies catalog functions, types and operators
+  with `pg_catalog`, so a hostile `search_path` can neither replace them nor run its code as the caller.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 15 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  transaction state, and carry 24 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`

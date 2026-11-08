@@ -10,7 +10,7 @@ The roles under test are LOGIN roles without superuser (``make_role``), next to 
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
@@ -398,3 +398,161 @@ def test_r10_no_current_schema(connect: Callable[..., Any]) -> None:
     conn = connect(options="-c search_path=t_does_not_exist")
     report = inspect_role(conn, conn.info.user)
     assert (report.schema, report.tables, report.owned_tables, report.can_create) == ("", 0, (), False)
+
+
+def test_r06_noinherit_member_of_the_owner(
+    connect: Callable[..., Any], make_role: Callable[..., Role], admin_url: str, schema: str, setup: Any
+) -> None:
+    """Review L-2: a NOINHERIT member does not use the owner's privileges, but may ``SET ROLE`` to it: an owner
+    (``pg_has_role(..., 'MEMBER')``, not ``'USAGE'``)."""
+    owner = make_role()
+    member = make_role("NOINHERIT NOBYPASSRLS")
+    setup(
+        "ALTER TABLE {s}.parts ENABLE ROW LEVEL SECURITY",
+        f'ALTER TABLE {{s}}.parts OWNER TO "{owner.name}"',
+        f'GRANT "{owner.name}" TO "{member.name}"',
+    )
+    conn = _as(connect, member, schema)
+    for scope in ("schema", "rls"):
+        assert role_info(conn, owner_scope=scope).table_owner is True
+        with pytest.raises(RoleUnsafe) as refused:
+            check_role(conn, owner_scope=scope)
+        assert refused.value.details["reasons"] == "table_owner"
+    owner_conn = connect(admin_url, options=f"-c search_path={schema}")
+    assert inspect_role(owner_conn, member.name).owned_tables == ("parts",)
+
+
+# --- TAB-T-R11, R12: roles a session can become (contract I-20, review finding H-1) --------------------------------
+
+
+@pytest.fixture
+def group_role(admin: Any) -> Iterator[Callable[[str], str]]:
+    """``group_role(attributes)``: a NOLOGIN role (``SUPERUSER``, ``BYPASSRLS``), dropped afterwards."""
+    made: list[str] = []
+
+    def factory(attributes: str) -> str:
+        name = new_name()
+        admin.execute(f'CREATE ROLE "{name}" NOLOGIN {attributes}')
+        made.append(name)
+        return name
+
+    yield factory
+    for name in made:
+        admin.execute(f'DROP ROLE IF EXISTS "{name}"')
+
+
+@pytest.mark.parametrize("inherit", ["INHERIT", "NOINHERIT"])
+@pytest.mark.parametrize(("attribute", "reason"), [("SUPERUSER", "superuser"), ("NOSUPERUSER BYPASSRLS", "bypass_rls")])
+def test_r11_member_of_a_privileged_role(
+    connect: Callable[..., Any],
+    make_role: Callable[..., Role],
+    group_role: Callable[[str], str],
+    admin_url: str,
+    schema: str,
+    setup: Any,
+    attribute: str,
+    reason: str,
+    inherit: str,
+) -> None:
+    """A login role that may ``SET ROLE`` to a superuser or BYPASSRLS role is reported as one, in both scopes.
+
+    The reference queries of Axentra and Nodestro miss this (they read the attributes of current_user only)."""
+    privileged = group_role(attribute)
+    member = make_role(f"{inherit} NOBYPASSRLS")
+    setup(f'GRANT "{privileged}" TO "{member.name}"')
+    conn = _as(connect, member, schema)
+    for scope in ("schema", "rls"):
+        info = role_info(conn, owner_scope=scope)
+        assert info.role == member.name
+        assert (info.superuser, info.bypass_rls) == (reason == "superuser", reason == "bypass_rls")
+        assert not info.restricted
+        oracle = _oracle_role_info(conn, scope)
+        assert (oracle.superuser, oracle.bypass_rls) == (False, False)  # the gap of the references
+        with pytest.raises(RoleUnsafe) as refused:
+            check_role(conn, owner_scope=scope, allow_table_owner=True)
+        assert refused.value.details["reasons"] == reason
+        assert check_role(conn, allow_superuser=True, owner_scope=scope) == info
+    # The membership is real: the role becomes the privileged one with SET ROLE.
+    conn.execute(f'SET ROLE "{privileged}"')
+    flags = conn.execute("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user").fetchone()
+    assert flags == (reason == "superuser", reason == "bypass_rls")
+    conn.execute("RESET ROLE")
+    report = inspect_role(connect(admin_url, options=f"-c search_path={schema}"), member.name)
+    assert (report.superuser, report.bypass_rls, report.restricted) == (
+        reason == "superuser",
+        reason == "bypass_rls",
+        False,
+    )
+
+
+def test_r11_indirect_membership(
+    connect: Callable[..., Any],
+    make_role: Callable[..., Role],
+    group_role: Callable[[str], str],
+    schema: str,
+    setup: Any,
+) -> None:
+    """Membership counts through an intermediate role."""
+    privileged = group_role("BYPASSRLS")
+    middle = group_role("NOBYPASSRLS")
+    member = make_role()
+    setup(f'GRANT "{privileged}" TO "{middle}"', f'GRANT "{middle}" TO "{member.name}"')
+    conn = _as(connect, member, schema)
+    assert role_info(conn).bypass_rls is True
+    with pytest.raises(RoleUnsafe):
+        check_role(conn)
+
+
+def test_r12_superuser_session_after_set_role(
+    connect: Callable[..., Any], make_role: Callable[..., Role], schema: str, setup: Any
+) -> None:
+    """A superuser login with ``SET ROLE app``: ``RESET ROLE`` gives the superuser back, so it is one."""
+    runtime = make_role()
+    conn = connect(autocommit=True, options=f"-c search_path={schema}")
+    conn.execute(f'SET ROLE "{runtime.name}"')
+    for scope in ("schema", "rls"):
+        info = role_info(conn, owner_scope=scope)
+        assert info.role == runtime.name and info.superuser and not info.restricted
+        with pytest.raises(RoleUnsafe) as refused:
+            check_role(conn, owner_scope=scope)
+        assert str(refused.value.details["reasons"]).split(",")[0] == "superuser"
+    # inspect_role judges the named role, not the session: the runtime role itself stays restricted.
+    assert inspect_role(conn, runtime.name).restricted
+
+
+def test_r12_login_role_that_can_become_bypassrls_after_set_role(
+    connect: Callable[..., Any],
+    make_role: Callable[..., Role],
+    group_role: Callable[[str], str],
+    schema: str,
+    setup: Any,
+) -> None:
+    """SESSION_USER counts too: a login role that switched to a plain role may switch back and on to BYPASSRLS."""
+    privileged = group_role("BYPASSRLS")
+    plain = group_role("NOBYPASSRLS")
+    login = make_role()
+    setup(f'GRANT "{privileged}" TO "{login.name}"', f'GRANT "{plain}" TO "{login.name}"')
+    conn = _as(connect, login, schema, autocommit=True)
+    conn.execute(f'SET ROLE "{plain}"')
+    info = role_info(conn)
+    assert info.role == plain and info.bypass_rls is True and info.superuser is False
+    with pytest.raises(RoleUnsafe) as refused:
+        check_role(conn)
+    assert refused.value.details["reasons"] == "bypass_rls"
+
+
+def test_r11_plain_membership_stays_restricted(
+    connect: Callable[..., Any],
+    make_role: Callable[..., Role],
+    group_role: Callable[[str], str],
+    schema: str,
+    setup: Any,
+) -> None:
+    """Control: membership of an unprivileged role changes nothing."""
+    plain = group_role("NOBYPASSRLS")
+    member = make_role()
+    setup(f'GRANT "{plain}" TO "{member.name}"')
+    conn = _as(connect, member, schema)
+    for scope in ("schema", "rls"):
+        assert role_info(conn, owner_scope=scope).restricted
+        assert check_role(conn, owner_scope=scope).restricted

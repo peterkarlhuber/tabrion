@@ -27,7 +27,7 @@ import time
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from tabrion.errors import Classification, ConfigurationError, classify
-from tabrion.postgres._common import one_row, quote_ident, reading, require_connection, require_psycopg
+from tabrion.postgres._common import guarded, one_row, quote_ident, reading, require_connection, require_psycopg
 from tabrion.postgres.locks import (
     SessionLock,
     advisory_unlock,
@@ -163,7 +163,10 @@ def _validated(settings: SessionSettings) -> tuple[tuple[str, str], ...]:
 
 
 def _apply(connection: psycopg.Connection[Any], pairs: tuple[tuple[str, str], ...]) -> None:
-    """One ``SELECT set_config(%s, %s, false), ...`` round trip on the connection's own cursor (T-NOTX)."""
+    """One ``SELECT set_config(%s, %s, false), ...`` round trip on the connection's own cursor (T-NOTX).
+
+    Inside the caller's running transaction it runs under a savepoint (two more round trips, contract I-15).
+    """
     require_connection(connection, "configure")
     import psycopg
     from psycopg.rows import tuple_row
@@ -175,7 +178,9 @@ def _apply(connection: psycopg.Connection[Any], pairs: tuple[tuple[str, str], ..
         return
     sql = "SELECT " + ", ".join("pg_catalog.set_config(%s, %s, false)" for _ in pairs)
     params = [item for pair in pairs for item in pair]
-    with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:
+    # In the caller's running transaction a savepoint: a value the server rejects (an unknown time zone) fails the
+    # call but leaves the caller's transaction usable (review finding M-1).
+    with guarded(connection), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:
         cursor.execute(sql, params)
 
 
@@ -241,10 +246,15 @@ def _timeout_ms(seconds: float) -> int:
 
 def _ping_connection(connection: psycopg.Connection[Any], seconds: float) -> PingResult:
     import psycopg
-    from psycopg import sql
+    from psycopg import pq, sql
     from psycopg.rows import tuple_row
 
     try:
+        if connection.info.transaction_status == pq.TransactionStatus.INERROR:
+            # An aborted transaction takes no savepoint (psycopg would log the failed rollback of it, review I-1):
+            # the SELECT fails there like any statement, with InFailedSqlTransaction, and ends nothing.
+            with psycopg.Cursor(connection, row_factory=tuple_row) as cur:
+                cur.execute(_PING_SQL)
         # A transaction of its own (BEGIN ... ROLLBACK), or a savepoint inside a running transaction that is rolled
         # back: the SET LOCAL ends with it, and a timeout leaves the caller's transaction usable (contract I-14).
         with connection.transaction(force_rollback=True), psycopg.Cursor(connection, row_factory=tuple_row) as cur:
@@ -346,8 +356,9 @@ def diagnose(connection: psycopg.Connection[Any]) -> PostgresDiagnosis:
     with reading(connection, "diagnose") as cur:
         cur.execute(
             "SELECT pg_catalog.current_setting('server_version_num')::int,"
-            " pg_catalog.current_setting('server_version'), pg_catalog.current_database()::text, CURRENT_USER::text,"
-            " pg_catalog.current_schema()::text, pg_catalog.current_setting('search_path'),"
+            " pg_catalog.current_setting('server_version'), pg_catalog.current_database()::pg_catalog.text,"
+            " CURRENT_USER::pg_catalog.text, pg_catalog.current_schema()::pg_catalog.text,"
+            " pg_catalog.current_setting('search_path'),"
             " pg_catalog.pg_is_in_recovery(), pg_catalog.current_setting('application_name'),"
             " pg_catalog.current_setting('statement_timeout'), pg_catalog.current_setting('lock_timeout'),"
             " pg_catalog.current_setting('idle_in_transaction_session_timeout'),"
@@ -362,7 +373,8 @@ def diagnose(connection: psycopg.Connection[Any]) -> PostgresDiagnosis:
         if settings_readable:
             # pg_settings hides the rows a role may not see (GUC_SUPERUSER_ONLY); a missing row gives None.
             cur.execute(
-                "SELECT s.name::text, s.setting FROM pg_catalog.pg_settings s WHERE s.name = ANY (%s)",
+                "SELECT s.name::pg_catalog.text, s.setting FROM pg_catalog.pg_settings s"
+                " WHERE s.name::pg_catalog.text OPERATOR(pg_catalog.=) ANY (%s::pg_catalog.text[])",
                 (["statement_timeout", "lock_timeout", "idle_in_transaction_session_timeout", "archive_mode",
                   "wal_level"],),
             )  # fmt: skip
@@ -374,7 +386,10 @@ def diagnose(connection: psycopg.Connection[Any]) -> PostgresDiagnosis:
             wal_level = found.get("wal_level")
         ssl: bool | None = None
         if ssl_readable:
-            cur.execute("SELECT s.ssl FROM pg_catalog.pg_stat_ssl s WHERE s.pid = pg_catalog.pg_backend_pid()")
+            cur.execute(
+                "SELECT s.ssl FROM pg_catalog.pg_stat_ssl s"
+                " WHERE s.pid OPERATOR(pg_catalog.=) pg_catalog.pg_backend_pid()"
+            )
             row = cur.fetchone()
             ssl = bool(row[0]) if row is not None and row[0] is not None else None
         role = _read_role_info(cur, "schema")
@@ -414,6 +429,24 @@ class ExtensionStatus:
     """SQL that fixes the state (superuser or owner); ``None`` when there is nothing to do."""
 
 
+def _read_extension(connection: psycopg.Connection[Any], name: str, probe_type: str | None) -> tuple[Any, ...]:
+    with reading(connection, "extension_status") as cur:
+        cur.execute(
+            "SELECT e.extversion::pg_catalog.text, n.nspname::pg_catalog.text,"
+            " COALESCE(n.nspname OPERATOR(pg_catalog.=) ANY (pg_catalog.current_schemas(true)), false),"
+            " (SELECT a.default_version::pg_catalog.text FROM pg_catalog.pg_available_extensions a"
+            "   WHERE a.name::pg_catalog.text OPERATOR(pg_catalog.=) %(name)s::pg_catalog.text),"
+            " pg_catalog.current_schema()::pg_catalog.text,"
+            " pg_catalog.to_regtype(%(probe)s::pg_catalog.text) IS NOT NULL"
+            " FROM (VALUES (1)) AS one (x)"
+            " LEFT JOIN pg_catalog.pg_extension e"
+            "   ON e.extname::pg_catalog.text OPERATOR(pg_catalog.=) %(name)s::pg_catalog.text"
+            " LEFT JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) e.extnamespace",
+            {"name": name, "probe": probe_type},
+        )
+        return one_row(cur)
+
+
 def extension_status(
     connection: psycopg.Connection[Any], name: str, *, probe_type: str | None = None
 ) -> ExtensionStatus:
@@ -424,7 +457,8 @@ def extension_status(
     * ``installable``: in ``pg_available_extensions``; ``command`` creates it in ``current_schema()``;
     * ``unavailable``: neither; the server needs the package first (``command`` is ``None``).
 
-    The commands name ``"public"`` when the connection has no current schema (Nodestro ``pgvector_status``).
+    The commands name ``"public"`` when the connection has no current schema (Nodestro ``pgvector_status``). A
+    ``probe_type`` the server cannot parse raises ``ValueError`` (contract I-18).
     """
     if not isinstance(name, str):
         raise TypeError("name must be a str")
@@ -432,18 +466,15 @@ def extension_status(
         raise ValueError("name must match [a-z_][a-z0-9_]*")
     if probe_type is not None and not isinstance(probe_type, str):
         raise TypeError("probe_type must be a str or None")
-    with reading(connection, "extension_status") as cur:
-        cur.execute(
-            "SELECT e.extversion::text, n.nspname::text,"
-            " COALESCE(n.nspname = ANY (pg_catalog.current_schemas(true)), false),"
-            " (SELECT a.default_version::text FROM pg_catalog.pg_available_extensions a WHERE a.name = %(name)s),"
-            " pg_catalog.current_schema()::text, pg_catalog.to_regtype(%(probe)s) IS NOT NULL"
-            " FROM (VALUES (1)) AS one (x)"
-            " LEFT JOIN pg_catalog.pg_extension e ON e.extname = %(name)s"
-            " LEFT JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace",
-            {"name": name, "probe": probe_type},
-        )
-        installed, extension_schema, visible, available, schema, probe_ok = one_row(cur)
+    try:
+        row = _read_extension(connection, name, probe_type)
+    except Exception as exc:
+        # to_regtype raises (42601) on a type name it cannot parse, the only syntax error this statement can meet;
+        # the reader's savepoint or rollback has already left the connection as it was (review finding M-1).
+        if probe_type is not None and getattr(exc, "sqlstate", None) == "42601":
+            raise ValueError("probe_type is not a type name the server can parse") from None
+        raise
+    installed, extension_schema, visible, available, schema, probe_ok = row
     target = quote_ident(str(schema) if schema is not None else "public")
     state: Literal["active", "other_schema", "installable", "unavailable"]
     command: str | None = None

@@ -1,4 +1,4 @@
-"""Mutation probes for TAB-015 and TAB-016 (planning document 07 section 7), against a real PostgreSQL.
+"""Mutation probes for TAB-015 and TAB-016 (planning document 07 section 7, with the review fixes), against PostgreSQL.
 
 Like ``tests/unit/test_mutation_probes.py``: a copy of the package with one rule broken must turn the named test
 red (exit code 1: a failure, not a skip, since ``TABRION_TEST_POSTGRES`` reaches the subprocess). Each anchor must
@@ -37,8 +37,8 @@ PROBES = [
     # Own tuple_row cursor, whatever the connection's row and cursor factories.
     (
         "postgres/_common.py",
-        "        with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n",
-        "        with connection.cursor() as cursor:\n",
+        "        with guarded(connection), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n",
+        "        with guarded(connection), connection.cursor() as cursor:\n",
         f"{READERS}[superuser-inspect_role-idle-autocommit-dict_row]",
     ),
     # configure never commits.
@@ -102,8 +102,8 @@ PROBES = [
     # The rls scope counts only tables with row-level security.
     (
         "postgres/roles.py",
-        '    + "c.relrowsecurity AND n.nspname = ANY (pg_catalog.current_schemas(false))"\n',
-        '    + "n.nspname = ANY (pg_catalog.current_schemas(false))"\n',
+        '    + "c.relrowsecurity AND n.nspname OPERATOR(pg_catalog.=) ANY (pg_catalog.current_schemas(false))"\n',
+        '    + "n.nspname OPERATOR(pg_catalog.=) ANY (pg_catalog.current_schemas(false))"\n',
         "tests/postgres/test_roles.py::test_r04_table_owner_without_rls",
     ),
     # allow_superuser implies allow_table_owner (Axentra).
@@ -126,6 +126,71 @@ PROBES = [
         "        owned_tables=tuple(str(name) for name, owned in tables if owned),\n",
         "        owned_tables=(),\n",
         "tests/postgres/test_roles.py::test_r09_inspect_role_report",
+    ),
+    # Review M-1: a reader in the caller's running transaction runs under a savepoint.
+    (
+        "postgres/_common.py",
+        "    if connection.info.transaction_status == pq.TransactionStatus.INTRANS:\n",
+        "    if False:\n",
+        "tests/postgres/test_contract_rules.py::test_g01_failure_keeps_the_callers_transaction",
+    ),
+    # Review M-1: inspect_role passes the schema's oid, never its name, to has_schema_privilege.
+    (
+        "postgres/roles.py",
+        "            (role_oid, role_oid, schema_oid),\n",
+        "            (role_oid, role_oid, schema_oid if schema_oid is not None else schema_name),\n",
+        "tests/postgres/test_contract_rules.py::test_m1_defined_results",
+    ),
+    # Review M-2: operators are qualified.
+    (
+        "postgres/roles.py",
+        '    "   ON n.oid OPERATOR(pg_catalog.=) c.relnamespace"\n',
+        '    "   ON n.oid = c.relnamespace"\n',
+        "tests/postgres/test_contract_rules.py::test_catalog_functions_cannot_be_hijacked",
+    ),
+    # Review M-2: types are qualified.
+    (
+        "postgres/__init__.py",
+        '            " pg_catalog.current_schema()::pg_catalog.text,"\n            " pg_catalog.to_regtype(',
+        '            " pg_catalog.current_schema()::text,"\n            " pg_catalog.to_regtype(',
+        "tests/postgres/test_contract_rules.py::test_catalog_functions_cannot_be_hijacked",
+    ),
+    # Review H-1 / I-20: SESSION_USER counts (a superuser session after SET ROLE).
+    (
+        "postgres/roles.py",
+        "_ROLE_INFO_SQL = {\n",
+        '_ROLE_INFO_HEAD = _ROLE_INFO_HEAD.replace("SESSION_USER", "CURRENT_USER")\n_ROLE_INFO_SQL = {\n',
+        "tests/postgres/test_roles.py::test_r12_superuser_session_after_set_role",
+    ),
+    # Review H-1 / I-20: superuser through membership, not the attribute of current_user alone.
+    (
+        "postgres/roles.py",
+        "_ROLE_INFO_SQL = {\n",
+        '_ROLE_INFO_HEAD = _ROLE_INFO_HEAD.replace("WHERE r.rolsuper", "WHERE r.rolsuper'
+        ' AND r.rolname OPERATOR(pg_catalog.=) CURRENT_USER")\n_ROLE_INFO_SQL = {\n',
+        "tests/postgres/test_roles.py::test_r11_member_of_a_privileged_role",
+    ),
+    # Review H-1: inspect_role judges membership of BYPASSRLS roles too.
+    (
+        "postgres/roles.py",
+        '            " EXISTS (SELECT 1 FROM pg_catalog.pg_roles s WHERE s.rolbypassrls"\n',
+        '            " EXISTS (SELECT 1 FROM pg_catalog.pg_roles s WHERE s.rolbypassrls'
+        ' AND s.oid OPERATOR(pg_catalog.=) r.oid"\n',
+        "tests/postgres/test_roles.py::test_r11_member_of_a_privileged_role",
+    ),
+    # Review L-2: MEMBER, not USAGE (a NOINHERIT member may SET ROLE to the owner).
+    (
+        "postgres/roles.py",
+        "_ROLE_INFO_SQL = {\n",
+        "_ROLE_INFO_TAIL = _ROLE_INFO_TAIL.replace(\"'MEMBER'\", \"'USAGE'\")\n_ROLE_INFO_SQL = {\n",
+        "tests/postgres/test_roles.py::test_r06_noinherit_member_of_the_owner",
+    ),
+    # Review I-1: ping takes no savepoint in an aborted transaction.
+    (
+        "postgres/__init__.py",
+        "        if connection.info.transaction_status == pq.TransactionStatus.INERROR:\n",
+        "        if False:\n",
+        "tests/postgres/test_contract_rules.py::test_i1_ping_in_failed_transaction_logs_nothing",
     ),
 ]
 

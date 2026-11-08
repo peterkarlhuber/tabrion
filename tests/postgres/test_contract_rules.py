@@ -16,11 +16,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import contextlib
 from typing import Any
 
 import pytest
 
+import tabrion.errors
 from tabrion.postgres import (
+    RoleReport,
     SessionSettings,
     check_role,
     configure,
@@ -172,8 +175,69 @@ def test_g01_failed_transaction_is_left_alone(connect: Callable[..., Any]) -> No
         conn.rollback()
 
 
+FAILING: dict[str, Callable[[Any], object]] = {
+    # Review finding M-1: valid-looking inputs whose statement fails (or used to fail) on the server.
+    "inspect_role(missing schema)": lambda c: inspect_role(c, c.info.user, schema="t_no_such_schema"),
+    "extension_status(bad probe_type)": lambda c: extension_status(c, "plpgsql", probe_type="int["),
+    "configure(unknown time zone)": lambda c: configure(c, SessionSettings(timezone="Mars/Olympus")),
+    "inspect_role(missing role)": lambda c: inspect_role(c, "t_no_such_role_4711"),
+}
+
+
+@pytest.mark.parametrize("explicit", [False, True], ids=["implicit", "transaction()"])
+@pytest.mark.parametrize("name", list(FAILING))
+def test_g01_failure_keeps_the_callers_transaction(
+    connect: Callable[..., Any], url: str, admin: Any, schema: str, name: str, explicit: bool
+) -> None:
+    """T-NOTX: whatever the function raises or returns, the caller's open write stays and can be committed."""
+    conn = _prepare(connect, url, "idle-autocommit" if explicit else "intrans", {"row_factory": dict_row}, schema)
+    with conn.transaction() if explicit else contextlib.nullcontext():
+        if explicit:
+            conn.execute(f"INSERT INTO {schema}.parts VALUES (7, 'open')")
+        timezone = _value(conn, "SELECT pg_catalog.current_setting('TimeZone')")
+        try:
+            result = FAILING[name](conn)
+        except (ValueError, psycopg.Error, tabrion.errors.TabrionError):
+            result = None
+        assert conn.info.transaction_status == INTRANS, name
+        assert _value(conn, f"SELECT count(*) FROM {schema}.parts WHERE id = 7") == 1
+        assert _value(conn, "SELECT pg_catalog.current_setting('TimeZone')") == timezone
+        if not explicit:
+            conn.commit()
+    assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id = 7").fetchone() == (1,)
+    if name.startswith("inspect_role(missing schema)"):
+        assert isinstance(result, RoleReport)
+        assert (result.schema, result.tables, result.owned_tables, result.can_create) == (
+            "t_no_such_schema",
+            0,
+            (),
+            False,
+        )
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m1_defined_results(connect: Callable[..., Any], admin_url: str, state: str, schema: str) -> None:
+    """The defined results of review finding M-1 in every state: a report for a missing schema, ``ValueError`` (or,
+    on a server whose to_regtype returns NULL for it, an unresolved probe) for a malformed type name."""
+    conn = _prepare(connect, admin_url, state, {}, schema)
+    if state == "idle":
+        conn.rollback()
+    before = conn.info.transaction_status
+    report = inspect_role(conn, conn.info.user, schema="t_no_such_schema")
+    assert (report.tables, report.can_create, report.superuser) == (0, False, True)
+    try:
+        status = extension_status(conn, "plpgsql", probe_type="int[")
+    except ValueError as exc:
+        assert "probe_type" in str(exc) and "int[" not in str(exc)
+    else:
+        assert status.state == "other_schema"
+    assert conn.info.transaction_status == before
+    conn.rollback()
+
+
 def test_catalog_functions_cannot_be_hijacked(connect: Callable[..., Any], admin: Any, schema: str) -> None:
-    """A schema before pg_catalog in search_path with functions of the same names changes nothing."""
+    """A schema before pg_catalog in search_path with functions, operators and types (domains) of the same names
+    changes nothing: none of them runs (contract I-16, review finding M-2)."""
     for signature in (
         "current_setting(text)",
         "current_setting(text, boolean)",
@@ -187,6 +251,9 @@ def test_catalog_functions_cannot_be_hijacked(connect: Callable[..., Any], admin
         "has_schema_privilege(text, text, text)",
         "pg_has_role(name, oid, text)",
         "pg_has_role(text, oid, text)",
+        "pg_has_role(oid, oid, text)",
+        "has_database_privilege(oid, text, text)",
+        "has_schema_privilege(oid, oid, text)",
         "to_regtype(text)",
         "pg_backend_pid()",
     ):
@@ -195,17 +262,74 @@ def test_catalog_functions_cannot_be_hijacked(connect: Callable[..., Any], admin
             f"CREATE FUNCTION {schema}.{signature} RETURNS {returns} LANGUAGE plpgsql AS"
             " $$BEGIN RAISE EXCEPTION 'hijacked'; END$$"
         )
+    # Review finding M-2: operators and types resolve through search_path too. Every operator Tabrion's SQL uses,
+    # for every pair of argument types it meets, and domains named like the types it casts to; any use raises.
+    for number, (left, right) in enumerate(
+        (
+            ("name", "name"),
+            ("name", "text"),
+            ("text", "text"),
+            ("oid", "oid"),
+            ('"char"', '"char"'),
+            ("int4", "int4"),
+        )
+    ):
+        admin.execute(
+            f"CREATE FUNCTION {schema}.trap_op{number}(pg_catalog.{left}, pg_catalog.{right}) RETURNS boolean"
+            " LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'hijacked operator'; END$$"
+        )
+        admin.execute(
+            f"CREATE OPERATOR {schema}.= (leftarg = pg_catalog.{left}, rightarg = pg_catalog.{right},"
+            f" function = {schema}.trap_op{number})"
+        )
+    for domain in ("text", "name", "oid", "regtype"):
+        admin.execute(
+            f"CREATE FUNCTION {schema}.trap_{domain}(pg_catalog.{domain}) RETURNS boolean LANGUAGE plpgsql AS"
+            " $$BEGIN RAISE EXCEPTION 'hijacked type'; END$$"
+        )
+        admin.execute(f"CREATE DOMAIN {schema}.{domain} AS pg_catalog.{domain} CHECK ({schema}.trap_{domain}(VALUE))")
     admin.execute(f"GRANT USAGE ON SCHEMA {schema} TO PUBLIC")
     conn = connect(autocommit=True, options=f"-c search_path={schema},pg_catalog")
     with pytest.raises(psycopg.errors.RaiseException):
         conn.execute("SELECT current_setting('server_version_num')")  # the trap works for unqualified calls
+    for probe in (
+        "SELECT 'a'::pg_catalog.name = 'b'::pg_catalog.name",
+        "SELECT 1::pg_catalog.oid = 2::pg_catalog.oid",
+        "SELECT 'r'::pg_catalog.\"char\" = 'p'",
+        "SELECT CURRENT_USER::text",
+        "SELECT 'x'::name",
+    ):
+        with pytest.raises(psycopg.errors.RaiseException):
+            conn.execute(probe)  # each trap works for unqualified use
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("SELECT 'a'::pg_catalog.name = 'b'::pg_catalog.text")
     assert ping(conn).ok
     diagnosis = diagnose(conn)
     assert diagnosis.schema == schema
     assert extension_status(conn, "plpgsql", probe_type="int4").state == "active"
     assert role_info(conn).superuser and role_info(conn, owner_scope="rls").superuser
     assert inspect_role(conn, conn.info.user, schema=schema).tables == 1
+    assert inspect_role(conn, conn.info.user).superuser
+    assert check_role(conn, allow_superuser=True).superuser
+    assert extension_status(conn, "plpgsql").state == "active"
+    assert extension_status(conn, "t_no_such_extension").state == "unavailable"
     configure(conn, SessionSettings(statement_timeout_ms=1_000, search_path=schema))
     assert _value(conn, "SELECT pg_catalog.current_setting('statement_timeout')") == "1s"
     session_configurator(SessionSettings(lock_timeout_ms=2_000))(conn)
     assert _value(conn, "SELECT pg_catalog.current_setting('lock_timeout')") == "2s"
+
+
+def test_i1_ping_in_failed_transaction_logs_nothing(
+    connect: Callable[..., Any], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Review I-1: in an aborted transaction ``ping`` opens no savepoint, so psycopg logs no failed rollback."""
+    conn = connect()
+    with pytest.raises(psycopg.errors.DivisionByZero):
+        conn.execute("SELECT 1 / 0")
+    with caplog.at_level("DEBUG", logger="psycopg"):
+        result = ping(conn)
+    assert result.ok is False and result.classification is not None
+    assert result.classification.sqlstate == "25P02"
+    assert [r.getMessage() for r in caplog.records if r.name.startswith("psycopg")] == []
+    assert conn.info.transaction_status == pq.TransactionStatus.INERROR
+    conn.rollback()
