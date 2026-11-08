@@ -252,6 +252,10 @@ _GRANTS = (
 )
 
 
+_NAME_BYTES = 63
+"""``NAMEDATALEN - 1``: PostgreSQL truncates a longer name, so the grants would name another object (review L-2)."""
+
+
 def _grant_arguments(role: object, schema: object, protected_tables: object, grant_connect: object) -> tuple[str, ...]:
     if not isinstance(role, str) or not role:
         raise TypeError("role must be a non-empty str")
@@ -264,6 +268,10 @@ def _grant_arguments(role: object, schema: object, protected_tables: object, gra
         raise TypeError("protected_tables must hold non-empty str table names")
     if not isinstance(grant_connect, bool):
         raise TypeError("grant_connect must be a bool")
+    # The names stay out of the messages (the caller has them).
+    for argument, names in (("role", (role,)), ("schema", (schema,) if schema else ()), ("protected_tables", tables)):
+        if any(len(name.encode("utf-8")) > _NAME_BYTES for name in names):
+            raise ValueError(f"{argument}: a name longer than {_NAME_BYTES} bytes (PostgreSQL would truncate it)")
     return tables
 
 
@@ -287,10 +295,16 @@ def grant_runtime_role(
     ``connect=False`` in the result. Returns a fresh :func:`inspect_role`.
 
     Refused before anything is granted (``RoleUnsafe``, details ``reasons``): ``table_owner`` when ``role`` is the
-    connecting role, can become it (``SET ROLE``, contract I-20), or owns tables of the schema; ``superuser`` and
-    ``bypass_rls`` as :func:`inspect_role` reports them (also through membership). ``RoleMissing`` for an unknown
-    role. Needs a transaction of its own: ``UsageError("postgres.nested_transaction")`` while the caller's
-    transaction runs (contract T-NOTX, I-35). ``ValueError`` when neither ``schema`` nor a current schema names one.
+    connecting role or can become it (``SET ROLE``, contract I-20), owns the schema or can become its owner, or owns
+    tables of the schema; ``superuser`` and ``bypass_rls`` as :func:`inspect_role` reports them (also through
+    membership). ``RoleMissing`` for an unknown role, ``UsageError("postgres.schema_missing")`` for a schema that
+    does not exist. Needs a transaction of its own: ``UsageError("postgres.nested_transaction")`` while the caller's
+    transaction runs (contract T-NOTX, I-35). ``ValueError`` when neither ``schema`` nor a current schema names one,
+    and for a name longer than 63 bytes (PostgreSQL would truncate it to another object's name).
+
+    Check the result, not only for exceptions: ``connect`` is ``False`` when the owner may not grant ``CONNECT``
+    (PostgreSQL only warns), and ``can_create=True`` (``CREATE`` on the schema, granted by someone else) is not
+    restricted, although ``restricted`` does not include it: such a role can plant objects in the schema.
     """
     tables = _grant_arguments(role, schema, protected_tables, grant_connect)
     require_connection(connection, "grant_runtime_role")
@@ -305,21 +319,28 @@ def grant_runtime_role(
     if not before.schema:
         raise ValueError("grant_runtime_role needs a schema: pass schema= or connect with a search_path")
     with reading(connection, "grant_runtime_role") as cursor:
-        # The connecting (owner) role itself, or a role that can become it: it owns, or will own, the tables.
+        # Whether the role is, or can become (NOINHERIT members too), the connecting (owner) role, which owns or will
+        # own the tables (D-46), or the owner of the schema, which may drop or alter every object in it (review M-1,
+        # D-49); and whether the schema exists (review L-4).
         cursor.execute(
-            "SELECT pg_catalog.pg_has_role(r.oid, CURRENT_USER, 'MEMBER')"
-            " FROM pg_catalog.pg_roles r WHERE r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text",
-            (role,),
+            "SELECT pg_catalog.pg_has_role(r.oid, CURRENT_USER, 'MEMBER'), n.oid IS NOT NULL,"
+            " COALESCE(pg_catalog.pg_has_role(r.oid, n.nspowner, 'MEMBER'), false)"
+            " FROM pg_catalog.pg_roles r LEFT JOIN pg_catalog.pg_namespace n"
+            "   ON n.nspname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
+            " WHERE r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text",
+            (before.schema, role),
         )
         row = cursor.fetchone()
     if row is None:
         raise RoleMissing("postgres.role_missing")  # dropped since inspect_role
+    if not row[1]:
+        raise UsageError("postgres.schema_missing")  # the name stays out of the error (D-50)
     reasons = [
         reason
         for reason, flag in (
             ("superuser", before.superuser),
             ("bypass_rls", before.bypass_rls),
-            ("table_owner", role == before.owner or bool(row[0]) or bool(before.owned_tables)),
+            ("table_owner", role == before.owner or bool(row[0]) or bool(row[2]) or bool(before.owned_tables)),
         )
         if flag
     ]

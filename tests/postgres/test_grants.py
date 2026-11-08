@@ -316,7 +316,16 @@ def _nothing_granted(admin: Any, fixture: Fixture, role: str) -> None:
         assert [row for row in taken[key] if row["grantor"] != "<runtime>"] == [], key
 
 
-CASES = ["owner", "superuser_member", "bypassrls", "bypassrls_member", "owns_table", "owner_of_table_member"]
+CASES = [
+    "owner",
+    "superuser_member",
+    "bypassrls",
+    "bypassrls_member",
+    "owns_table",
+    "owner_of_table_member",
+    "schema_owner",
+    "schema_owner_member",
+]
 
 
 @pytest.mark.parametrize("case", CASES)
@@ -337,6 +346,8 @@ def test_r14_refusals(
         "bypassrls_member": "bypass_rls",
         "owns_table": "table_owner",
         "owner_of_table_member": "table_owner",
+        "schema_owner": "table_owner",
+        "schema_owner_member": "table_owner",
     }[case]
     reference_refuses = case in ("owner", "bypassrls", "owns_table", "owner_of_table_member")
     ident = sql.Identifier(target)
@@ -350,6 +361,20 @@ def test_r14_refusals(
     elif case == "bypassrls_member":
         admin.execute(sql.SQL("ALTER ROLE {} NOINHERIT").format(ident))
         admin.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(nologin_role("BYPASSRLS")), ident))
+    elif case in ("schema_owner", "schema_owner_member"):
+        # The schema's owner (or a NOINHERIT member of it) may drop every table in it (review M-1, D-49). The
+        # connecting role keeps its tables and may grant on the schema.
+        holder = target if case == "schema_owner" else nologin_role()
+        nsp = sql.Identifier(fixture.schema)
+        admin.execute(sql.SQL("ALTER SCHEMA {} OWNER TO {}").format(nsp, sql.Identifier(holder)))
+        admin.execute(
+            sql.SQL("GRANT USAGE, CREATE ON SCHEMA {} TO {} WITH GRANT OPTION").format(
+                nsp, sql.Identifier(fixture.owner.name)
+            )
+        )
+        if case == "schema_owner_member":
+            admin.execute(sql.SQL("ALTER ROLE {} NOINHERIT").format(ident))
+            admin.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(holder), ident))
     elif case == "owns_table":
         admin.execute(sql.SQL("ALTER TABLE {}.plain OWNER TO {}").format(sql.Identifier(fixture.schema), ident))
     else:  # a NOINHERIT member of a role (not the owner) that owns a table of the schema
@@ -382,8 +407,17 @@ def test_r14_member_of_the_owner_is_refused_in_an_empty_schema(
 ) -> None:
     """A role that can ``SET ROLE`` to the owner will own every table the owner creates (contract I-35, D-46).
 
-    The references see no owned table in an empty schema and grant; Tabrion refuses (also NOINHERIT members)."""
+    The references see no owned table in an empty schema and grant; Tabrion refuses (also NOINHERIT members). The
+    schema belongs to another role here, so the check of the schema's owner (D-49) does not hide this one."""
     fixture = make_fixture(objects=())
+    holder = nologin_role()
+    nsp = sql.Identifier(fixture.schema)
+    admin.execute(sql.SQL("ALTER SCHEMA {} OWNER TO {}").format(nsp, sql.Identifier(holder)))
+    admin.execute(
+        sql.SQL("GRANT USAGE, CREATE ON SCHEMA {} TO {} WITH GRANT OPTION").format(
+            nsp, sql.Identifier(fixture.owner.name)
+        )
+    )
     member = nologin_role("NOINHERIT")
     admin.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(fixture.owner.name), sql.Identifier(member)))
     conn = owner_connection(connect, fixture)
@@ -393,6 +427,7 @@ def test_r14_member_of_the_owner_is_refused_in_an_empty_schema(
     _nothing_granted(admin, fixture, member)
     axentra_grant_runtime_role(conn, member)  # the reference grants
     assert snapshot(admin, fixture, role=member)["nspacl"]
+    admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(nsp))  # before the roles it names go
 
 
 def test_r14_role_missing(connect: Callable[..., Any], make_fixture: Callable[..., Fixture]) -> None:
@@ -616,3 +651,134 @@ def test_r18_quoted_names_and_a_hostile_search_path(
             grant_runtime_role(owner, odd, schema=fixture.schema)
     finally:
         admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(trap)))
+
+
+# --- Review of #8: M-1 (above, R14), L-1..L-4 ---------------------------------------------------------------------
+
+
+def test_r14_can_create_is_reported(
+    admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture]
+) -> None:
+    """Review L-1: CREATE on the schema, granted by someone else, is kept and reported; the caller checks it."""
+    fixture = make_fixture()
+    admin.execute(
+        sql.SQL("GRANT CREATE ON SCHEMA {} TO {}").format(
+            sql.Identifier(fixture.schema), sql.Identifier(fixture.runtime.name)
+        )
+    )
+    report = grant_runtime_role(owner_connection(connect, fixture), fixture.runtime.name)
+    assert report.can_create is True
+    assert report.restricted is True  # frozen definition: superuser, BYPASSRLS, owned tables only
+
+
+def test_r14_schema_name_over_63_bytes(
+    admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture]
+) -> None:
+    """Review L-2: a 64-byte name would be truncated to the 63-byte schema next to it; refused before any grant."""
+    name = "t_long_" + uuid.uuid4().hex[:8]
+    name += "x" * (63 - len(name))
+    fixture = make_fixture(schema=name)
+    conn = owner_connection(connect, fixture)
+    for schema in (name + "Z", name + "é"):  # 64 characters, 65 bytes
+        with pytest.raises(ValueError, match="63 bytes") as info:
+            grant_runtime_role(conn, fixture.runtime.name, schema=schema)
+        assert name not in str(info.value)
+    _nothing_granted(admin, fixture, fixture.runtime.name)
+    with pytest.raises(ValueError, match="63 bytes"):
+        grant_runtime_role(conn, fixture.runtime.name, protected_tables=("p" * 64,))
+    with pytest.raises(ValueError, match="63 bytes"):
+        grant_runtime_role(conn, "r" * 64)
+    assert grant_runtime_role(conn, fixture.runtime.name, schema=name).schema == name  # 63 bytes are fine
+
+
+def test_r14_schema_missing(admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture]) -> None:
+    """Review L-4: a schema that does not exist is refused before any grant, without its name."""
+    fixture = make_fixture()
+    missing = "t_missing_" + uuid.uuid4().hex[:8]
+    conn = owner_connection(connect, fixture, autocommit=False)
+    with pytest.raises(UsageError) as info:
+        grant_runtime_role(conn, fixture.runtime.name, schema=missing)
+    assert info.value.code == "postgres.schema_missing" and missing not in str(info.value)
+    assert conn.info.transaction_status == IDLE
+    path = owner_connection(connect, fixture, path=[missing])  # a search_path naming it: no current schema
+    with pytest.raises(ValueError, match="needs a schema"):
+        grant_runtime_role(path, fixture.runtime.name)
+
+
+def test_r15_truncate_granted_before_is_revoked(
+    admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture]
+) -> None:
+    """Review L-3 (mutant 13): on a schema that is not fresh the REVOKE also takes back TRUNCATE."""
+    fixture = make_fixture()
+    for table in ("axentra_schema_migrations", "plain"):
+        admin.execute(
+            sql.SQL("GRANT TRUNCATE ON {}.{} TO {}").format(
+                sql.Identifier(fixture.schema), sql.Identifier(table), sql.Identifier(fixture.runtime.name)
+            )
+        )
+    grant_runtime_role(owner_connection(connect, fixture), fixture.runtime.name, protected_tables=AXENTRA_PROTECTED)
+    held = {(r["relname"], r["privilege_type"]) for r in snapshot(admin, fixture)["relacl"]}
+    assert ("axentra_schema_migrations", "TRUNCATE") not in held
+    assert ("axentra_schema_migrations", "SELECT") in held
+    assert ("plain", "TRUNCATE") in held  # not protected: left as it was
+
+
+@pytest.fixture
+def owned_database(closed_database: Any) -> tuple[Any, Fixture]:
+    """``closed_database`` owned by its owner role, which may then grant ``CONNECT``."""
+    admin, fixture = closed_database
+    admin.execute(
+        sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
+            sql.Identifier(str(admin.info.dbname)), sql.Identifier(fixture.owner.name)
+        )
+    )
+    return admin, fixture
+
+
+def test_r16_connect_through_public_adds_no_acl_entry(connect: Callable[..., Any], owned_database: Any) -> None:
+    """Review L-3 (mutant 15): a role that may connect already (PUBLIC) gets no entry of its own."""
+    admin, fixture = owned_database
+    database = sql.Identifier(str(admin.info.dbname))
+    admin.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO PUBLIC").format(database))
+    report = grant_runtime_role(owner_connection(connect, fixture), fixture.runtime.name)
+    assert report.connect
+    assert snapshot(admin, fixture)["database"] == [{"connect": True, "granted": False}]
+
+
+def test_r16_other_errors_of_the_connect_step_propagate(
+    admin_url: str, connect: Callable[..., Any], owned_database: Any
+) -> None:
+    """Review L-3 (mutant 17): only InsufficientPrivilege is ignored; a lost connection during the CONNECT step
+    propagates, and the grants of the first transaction stay (contract I-35)."""
+    if str(psycopg.conninfo.conninfo_to_dict(admin_url).get("host") or "").startswith("/"):
+        pytest.skip("the fault proxy needs a TCP server address")
+    admin, fixture = owned_database
+    with FaultProxy.in_front_of(admin_url) as proxy:
+        conn = owner_connection(connect, fixture, url=proxy.dsn(fixture.owner.url))
+        proxy.arm(b"GRANT CONNECT", fault="request")
+        with pytest.raises(psycopg.OperationalError):
+            grant_runtime_role(conn, fixture.runtime.name)
+        assert proxy.fired == 1
+    proxy.check()
+    taken = snapshot(admin, fixture)
+    assert taken["nspacl"] and taken["database"] == [{"connect": False, "granted": False}]
+
+
+def test_r16_a_failing_connect_step_propagates(connect: Callable[..., Any], owned_database: Any) -> None:
+    """Review L-3 (mutant 17): an error other than InsufficientPrivilege is the caller's. Here the database row is
+    locked by another transaction and the owner's ``lock_timeout`` ends the wait (55P03); the connection stays
+    usable, the grants of the first transaction stay."""
+    admin, fixture = owned_database
+    database = sql.Identifier(str(admin.info.dbname))
+    blocker = connect(admin.info.dsn + " password=" + str(admin.info.password or ""))
+    blocker.execute(sql.SQL("GRANT TEMPORARY ON DATABASE {} TO PUBLIC").format(database))  # holds the row lock
+    conn = owner_connection(connect, fixture)
+    conn.execute("SELECT pg_catalog.set_config('lock_timeout', '300ms', false)")
+    try:
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            grant_runtime_role(conn, fixture.runtime.name)
+    finally:
+        blocker.rollback()
+    assert conn.info.transaction_status == IDLE
+    assert snapshot(admin, fixture)["nspacl"]
+    assert grant_runtime_role(conn, fixture.runtime.name).connect  # a second run completes

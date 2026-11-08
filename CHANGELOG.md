@@ -83,8 +83,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `protected_tables` that exists in the schema, all in one transaction, then grants `CONNECT` where the owner may,
   and returns a fresh `inspect_role`. Idempotent; never `CREATE`. Refuses (`RoleUnsafe`, nothing granted) the owner
   itself, a role that can become the owner or a superuser or BYPASSRLS role (also as a NOINHERIT member), and a role
-  owning tables of the schema; refuses to run inside the caller's transaction
-  (`UsageError("postgres.nested_transaction")`). The catalog afterwards equals the Axentra and Nodestro results
+  owning tables of the schema or owning the schema itself (or able to become its owner); refuses a schema that does
+  not exist (`UsageError("postgres.schema_missing")`), names over 63 bytes (`ValueError`) and running inside the
+  caller's transaction (`UsageError("postgres.nested_transaction")`). The catalog afterwards equals the Axentra and Nodestro results
   (golden files of both reference functions).
 - In psycopg pipeline mode every `tabrion.postgres` function syncs the caller's pipeline first, so a failing statement
   no longer aborts the caller's pipeline transaction (review DL-1 of #5); an error of a statement the caller queued
@@ -99,7 +100,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 52 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  transaction state, and carry 58 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`

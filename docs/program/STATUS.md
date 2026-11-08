@@ -452,7 +452,23 @@ catalog is read by the superuser.
 Mutation probes (`tests/postgres/test_postgres_mutation_probes.py`): 9 new, 52 in all, each turns its test red: the
 two DL-1 mutants; the member-of-owner refusal (R14), the revoke of protected tables (R15), the `nested_transaction`
 refusal (R17), the pipeline sync before the status check (R17), the single transaction (R17 atomicity), the
-`InsufficientPrivilege` handling of `GRANT CONNECT` (R16) and the `grant_connect` flag (R16).
+`InsufficientPrivilege` handling of `GRANT CONNECT` (R16) and the `grant_connect` flag (R16). The review fix round
+adds 6 (58 in all): the schema-owner refusal (M-1), the 63-byte check (L-2), the missing schema (L-4), `TRUNCATE` in
+the revoke, no `CONNECT` grant for a role that may connect through PUBLIC, and only `InsufficientPrivilege` ignored
+(L-3, mutants 13, 15, 17).
+
+Review of #8 (4402d33, accepted with conditions, planning folder `reviews/tab-031-review.md`) and the fix round:
+
+| Finding | Fix | Evidence |
+|---|---|---|
+| M-1 a role that owns the schema, or can become its owner, was granted | `table_owner` also for `pg_has_role(role, nspowner, 'MEMBER')` (D-49, I-35); TB-035 for the references | `test_r14_refusals[schema_owner]` and `[schema_owner_member]` (NOINHERIT): refused, nothing granted, the reference grants (asserted); the D-46 test now uses a schema owned by another role, so each check has its own case; probe |
+| L-1 `CREATE` on the schema is kept and reported only | Documented: I-35, the docstring and SECURITY.md (callers check `can_create`) | `test_r14_can_create_is_reported` |
+| L-2 a 64-byte schema name granted on the 63-byte schema | `ValueError` for a `role`, `schema` or protected table name over 63 bytes in UTF-8, without the name (D-50) | `test_r14_schema_name_over_63_bytes` (64 characters and 64 characters with 65 bytes next to a 63-byte schema: nothing granted; 63 bytes work); probe |
+| L-4 a missing schema surfaced as `InvalidSchemaName` | `UsageError("postgres.schema_missing")` before anything is granted (D-50) | `test_r14_schema_missing`; probe |
+| L-3 mutants 13, 15, 17 | Tests | `test_r15_truncate_granted_before_is_revoked`, `test_r16_connect_through_public_adds_no_acl_entry` (database ACL unchanged), `test_r16_a_failing_connect_step_propagates` (a `lock_timeout` in the CONNECT step propagates, the first transaction's grants stay; a second run completes) and `test_r16_other_errors_of_the_connect_step_propagate` (a cut connection); three probes |
+| I-1 checks before the grant transaction | TODO TB-053 | |
+| I-3 a grantor without grant option gets a WARNING | Documented: check `report.connect` (docstring, I-35, SECURITY.md) | `test_r16_owner_without_the_right_to_grant_connect` |
+| Teardown on a shared server | `make_role` skips a database another run dropped meanwhile | |
 
 ## G-T1 conditions
 
@@ -621,6 +637,8 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-43 | TAB-030 | Contract 4.7: after a lost connection "every count is cleared" and the lock is replaced | Also: a key held on the lost connection raises `UsageError("postgres.lock_lost")` in `try_acquire`/`acquire` until `holds` or `release` acknowledges the loss (contract I-32) | Review L-3 of #6: a nested section would otherwise take a fresh hold and its `release` free the lock the outer section relies on. Additive: a new error code, no signature change |
 | D-46 | TAB-031 | Contract 4.6: refuse `role == owner`, superuser, `BYPASSRLS` or `owned_tables` | Also `table_owner` when `role` can become the connecting role (`pg_has_role(role, CURRENT_USER, 'MEMBER')`, NOINHERIT members too; contract I-35) | Such a role owns every table the owner creates later (I-20, review H-1); the references only notice it once the schema has a table. The reason set stays unchanged |
 | D-47 | TAB-031 | Contract 4.6: protected tables "schema-qualified through `to_regclass`"; Nodestro resolves them through the `search_path` | Each name is looked up by its exact text in the target schema in `pg_class`/`pg_namespace` (qualified operators); the `REVOKE` names `schema.table` | `to_regclass` parses its argument as an identifier (case folding, quotes) and an unqualified name resolves through the `search_path`; on the reference fixtures the result is identical (R11, R12) |
+| D-49 | TAB-031 | Contract 4.6: refuse `role == owner`, superuser, `BYPASSRLS` or `owned_tables` | Also `table_owner` when `role` is or can become the owner of the target schema (`pg_has_role(role, nspowner, 'MEMBER')`, NOINHERIT members too; contract I-35) | Review M-1 of #8: the schema's owner may drop or alter every object in it, the power `table_owner` exists to catch; the reason set stays unchanged. Axentra and Nodestro share the gap (TODO TB-035) |
+| D-50 | TAB-031 | Contract 4.6 names `RoleMissing` and `RoleUnsafe` only | `UsageError("postgres.schema_missing")` for a schema that does not exist and `ValueError` for a name over 63 bytes, both before anything is granted (contract I-35) | Review L-2/L-4 of #8: a 64-byte name is truncated by the server and granted on another schema; a missing schema surfaced as a raw `InvalidSchemaName`. Additive: a new error code, no signature change |
 | D-48 | TAB-031 | Test IDs: the H-1 tests of #5 were named TAB-T-R11/R12, which contract 4.6 gives to the grant | Renamed to R19/R20 (`test_roles.py`, probes, STATUS, TODO TB-035); R11..R18 are the grant's | The contract numbering wins; the review references to "R11/R12" of #5 mean R19/R20 |
 
 ## Score review

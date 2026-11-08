@@ -99,7 +99,11 @@ Accepted residual risks (documented, not vulnerabilities):
   become the owner, a superuser or a BYPASSRLS role (contract I-35); Axentra's and Nodestro's own grant functions
   accept such members (TODO TB-035). It runs as the owner role; it never reads a name through the `search_path`. A
   later run without `protected_tables` gives the runtime role write access to the bookkeeping tables again: pass the
-  same `protected_tables` every time.
+  same `protected_tables` every time. It also refuses a role that owns the schema or can become its owner, a
+  schema that does not exist and names over 63 bytes (which the server would truncate to another object's name).
+  Check the returned report: `can_create=True` (`CREATE` on the schema, granted by someone else and kept) lets the
+  role plant objects that shadow others on a `search_path`, although `restricted` holds; `connect=False` means the
+  owner could not grant `CONNECT` (PostgreSQL only warns).
 - `tabrion.testing._faults` (internal, for tests only) listens on `127.0.0.1` and relays the PostgreSQL protocol in
   plain text: its `dsn()` disables TLS and GSS encryption, so the password travels unencrypted over loopback. Never
   point it at a production server or use it outside a test.

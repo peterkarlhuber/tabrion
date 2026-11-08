@@ -345,8 +345,8 @@ PROBES = [
     # TAB-031 / I-35: a role that can become the owner is refused.
     (
         "postgres/roles.py",
-        "role == before.owner or bool(row[0]) or bool(before.owned_tables)",
-        "role == before.owner or bool(before.owned_tables)",
+        "role == before.owner or bool(row[0]) or bool(row[2]) or bool(before.owned_tables)",
+        "role == before.owner or bool(row[2]) or bool(before.owned_tables)",
         "tests/postgres/test_grants.py::test_r14_member_of_the_owner_is_refused_in_an_empty_schema",
     ),
     # TAB-031: the protected tables lose their write privileges.
@@ -391,6 +391,48 @@ PROBES = [
         "    if grant_connect and not before.connect:\n",
         "    if not before.connect:\n",
         "tests/postgres/test_grants.py::test_r16_database_owner_grants_connect",
+    ),
+    # Review M-1 of #8: a role that is, or can become, the schema's owner is refused.
+    (
+        "postgres/roles.py",
+        "role == before.owner or bool(row[0]) or bool(row[2]) or bool(before.owned_tables)",
+        "role == before.owner or bool(row[0]) or bool(before.owned_tables)",
+        "tests/postgres/test_grants.py::test_r14_refusals",
+    ),
+    # Review L-2 of #8: names over 63 bytes are refused.
+    (
+        "postgres/roles.py",
+        '        if any(len(name.encode("utf-8")) > _NAME_BYTES for name in names):\n',
+        "        if False:\n",
+        "tests/postgres/test_grants.py::test_r14_schema_name_over_63_bytes",
+    ),
+    # Review L-4 of #8: a schema that does not exist is refused.
+    (
+        "postgres/roles.py",
+        "    if not row[1]:\n",
+        "    if False:\n",
+        "tests/postgres/test_grants.py::test_r14_schema_missing",
+    ),
+    # Review L-3 of #8 (mutant 13): the REVOKE includes TRUNCATE.
+    (
+        "postgres/roles.py",
+        '"REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON {}.{} FROM {}"',
+        '"REVOKE INSERT, UPDATE, DELETE ON {}.{} FROM {}"',
+        "tests/postgres/test_grants.py::test_r15_truncate_granted_before_is_revoked",
+    ),
+    # Review L-3 of #8 (mutant 15): no CONNECT grant for a role that may connect already.
+    (
+        "postgres/roles.py",
+        "    if grant_connect and not before.connect:\n",
+        "    if grant_connect:\n",
+        "tests/postgres/test_grants.py::test_r16_connect_through_public_adds_no_acl_entry",
+    ),
+    # Review L-3 of #8 (mutant 17): only InsufficientPrivilege is ignored in the CONNECT step.
+    (
+        "postgres/roles.py",
+        "        except psycopg.errors.InsufficientPrivilege:\n",
+        "        except psycopg.Error:\n",
+        "tests/postgres/test_grants.py::test_r16_a_failing_connect_step_propagates",
     ),
 ]
 

@@ -17,7 +17,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 9 |
-| P3 Low | 20 |
+| P3 Low | 21 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -355,7 +355,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   then does not protect against SQL that runs as that role. Tabrion's fix (I-20) shows the gap: TAB-T-R19 asserts
   that the reference queries miss it. Their `grant_runtime_role` functions share it: TAB-T-R14 asserts that both
   grant a NOINHERIT member of a SUPERUSER or BYPASSRLS role and of another table's owner, and Axentra's grants a
-  member of the owner in an empty schema (D-46).
+  member of the owner in an empty schema (D-46). Both also grant a role that owns the target schema, or can become
+  its owner (NOINHERIT too), which may then drop every table in it (review M-1 of #8, D-49; asserted in TAB-T-R14),
+  and grant on a different schema when a 64-byte schema name is truncated by the server (review L-2, D-50).
 - **Next step:** fix both in their MIG waves (MIG-AXE, MIG-NOD) by moving to `tabrion.postgres.check_role` and
   `inspect_role`, or earlier with the membership query of I-20 and the R19/R20 cases in their own suites.
 
@@ -509,6 +511,16 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Next step:** in the MIG-NOD wave, when Nodestro moves to `tabrion.postgres.SessionLock`: catch the code in the
   scheduler loop and add a test for the window.
 
+### TB-053 · `grant_runtime_role`: the checks run before the grant transaction (review I-1 of #8)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-031, contract I-35, planning folder
+  `reviews/tab-031-review.md` (I-1)
+- **What:** the refusal checks read the catalog in `inspect_role`'s and an own read transaction; the grants run in a
+  later one. A membership granted in between (for example `GRANT superuser_role TO runtime`) is not seen. Whoever can
+  do that already has the power, so it is no escalation; running the checks inside the grant transaction would make
+  the guarantee exact.
+- **Next step:** decide with the next change of `grant_runtime_role` (a contract note for the order of statements).
+
 ## Cross-repository dependencies
 
 | This repo item | Other repo | Other item | Relation |
@@ -519,7 +531,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 | TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need `v0.1.0` final (RC-8) |
 | TB-008 | nodestro-studio | TABRION QA-20 (AC-5) | Consumer compat gates Tabrion tags |
 | TB-031 | axentra | TABRION MIG-AXE-3 | Axentra's redaction filter has the identical H-2 gap (and possibly the H-1 analog); port the fix of this pull request |
-| TB-035 | axentra, nodestro-runtime | TABRION MIG-AXE, MIG-NOD | Their role checks miss roles reachable with `SET ROLE` (review H-1); fix in their MIG waves or earlier |
+| TB-035 | axentra, nodestro-runtime | TABRION MIG-AXE, MIG-NOD | Their role checks miss roles reachable with `SET ROLE` (review H-1), and their grants accept the schema's owner and its members (review M-1 of #8); fix in their MIG waves or earlier |
 | TB-052 | nodestro-runtime | TABRION MIG-NOD | Catch the one-shot `lock_lost` of the scheduler pattern after a lost lock connection |
 | TB-006 | axentra | TABRION MIG-AXE-2, MIG-AXE-3 | Re-export `split_statements` and use `tabrion.errors`; the splitter differences of contract I-9 go into Axentra's CHANGELOG as a fix |
 
