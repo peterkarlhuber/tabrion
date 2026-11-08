@@ -676,6 +676,20 @@ PROBES = [
         "",
         f"{DB}::test_l2_drop_owned_fails_within_its_lock_timeout",
     ),
+    # TAB-022a: the golden files catch Nodestro's role_info scope (every table of current_schema()) ...
+    (
+        "postgres/roles.py",
+        '"n.nspname OPERATOR(pg_catalog.=) pg_catalog.current_schema()" + _ROLE_INFO_TAIL',
+        '"c.relrowsecurity AND n.nspname OPERATOR(pg_catalog.=) pg_catalog.current_schema()" + _ROLE_INFO_TAIL',
+        "tests/postgres/test_golden_consumers.py::test_nodestro_role_info",
+    ),
+    # ... and Nodestro's counted session locks.
+    (
+        "postgres/locks.py",
+        "            self._held[key] = 1\n",
+        "            self._held[key] = 0\n",
+        "tests/postgres/test_golden_consumers.py::test_nodestro_session_locks",
+    ),
 ]
 
 

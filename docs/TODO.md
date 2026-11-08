@@ -18,8 +18,8 @@
 |---|---|
 | P0 Critical | 1 |
 | P1 High | 13 |
-| P2 Medium | 10 |
-| P3 Low | 25 |
+| P2 Medium | 11 |
+| P3 Low | 28 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -140,7 +140,10 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   and the nightly `downstream` job (TAB-022); the internal "Levuvo Database Profile" with `conformance/SPEC.md`,
   vectors, manifest and the job `conformance` (TAB-050); the API stability policy and a deprecation helper
   (TAB-051).
-- **Next step:** TAB-022 after TAB-014, TAB-016 and TAB-030; TAB-050 after TAB-016; TAB-051 after TAB-023.
+- **Status note:** TAB-022 is in the fifth lane C pull request (stacked on #11; contract I-61, D-74, D-75): the
+  consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
+  The CI jobs are TB-070.
+- **Next step:** TAB-050 after TAB-016; TAB-051 after TAB-023.
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
@@ -612,6 +615,45 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tabrion_postgres_roles` and `tabrion_postgres_database` where the cases allow it (most role cases need several
   roles per test with chosen attributes, which the session fixtures do not give); the SQLite suites follow when
   lane B next touches them.
+
+### TB-070 · CI jobs `golden files` and nightly `downstream` (TABRION TAB-022)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-022, TB-017, specification S-7, contract I-61
+- **What:** the golden tests run today in the existing unit and `pg` jobs. The plan wants a job `golden files` in
+  `ci.yml` (blocking) and a job `downstream` in `nightly.yml` that runs `python scripts/downstream.py --summary
+  "$GITHUB_STEP_SUMMARY"` against a PostgreSQL service (not blocking; its result is a release-gate criterion of
+  TAB-040). Lane C does not change `.github/`.
+- **Next step:** whoever may change `.github/` adds both jobs (with the label `workflow-change-reviewed`) and lists
+  them in `.github/ci-manifest.json`; the release gate reads the last nightly result.
+
+### TB-071 · Record `pgvector_status` on a server with pgvector (TABRION TAB-022)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-022, contract 8.2, I-61
+- **What:** `tests/golden/nodestro.json` was recorded on a server without pgvector, so only the `unavailable` case of
+  Nodestro's `pgvector_status` is recorded; on a server with pgvector the replay test checks the states the contract
+  lists instead (`other_schema`, `active`).
+- **Next step:** run `scripts/record_golden.py --consumer nodestro` against the pgvector server of CI (the `pg`
+  job with pgvector 17) and commit the file.
+
+### TB-072 · The pgvector switch of the consumers' test suites (TABRION TAB-022)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-022, TAB-020, contract 8.2, 8.3, I-36
+- **What:** Nodestro and Orkexa have `<PREFIX>_REQUIRE_PGVECTOR=1` as a flag; `tabrion.testing` reads a list,
+  `<PREFIX>_REQUIRE_EXTENSIONS=vector` (golden test `test_testing_environment_names`). With `configure(env_prefix=...)`
+  alone, the consumers' CI switch would be ignored and a missing pgvector would skip instead of fail.
+- **Next step:** at adoption (MIG-NOD, MIG-ORK) the consumers' CI jobs set `<PREFIX>_REQUIRE_EXTENSIONS=vector`
+  instead of `<PREFIX>_REQUIRE_PGVECTOR=1` (pointing `require_extensions_env` at the old name would read its `1` as
+  an extension name).
+
+### TB-073 · `url_from_env` keeps white space that Nodestro strips (TABRION TAB-022, TAB-012)
+
+- **Priority:** P3 Low · **Status:** Needs decision · **Refs:** TABRION TAB-012, TAB-022, contract 2.3, 8.2
+- **What:** the golden test `test_nodestro_url_from_env` shows that Nodestro's `server_settings.py` strips white
+  space around `NODESTRO_DATABASE_URL` and around the content of `_FILE`; `url_from_env` removes only the file's
+  trailing newline. The contract row said "identical rule". A value such as `" postgresql://..."` from a
+  hand-edited secret file therefore reaches libpq with its spaces (libpq accepts them in a URL only at the end).
+- **Next step:** decide for 0.1: strip in `url_from_env` (a behavior change of an a1 function, contract 2.3 and
+  CHANGELOG), or keep it and let Nodestro's wrapper strip (the contract row says so now).
 
 ## Cross-repository dependencies
 

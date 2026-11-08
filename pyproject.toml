@@ -117,6 +117,12 @@ packages = ["tabrion"]
 mypy_path = "src"
 warn_unused_ignores = true
 
+# The consumer recorders (tests/golden/consumers/record_*.py) import the consumers, which are installed only in
+# the throwaway environments of scripts/record_golden.py, never next to Tabrion.
+[[tool.mypy.overrides]]
+module = ["axentra.*", "nodestro_runtime.*", "nodestro_api.*", "orkexa.*"]
+ignore_missing_imports = true
+
 # Import contracts (AC-1 = QA-16, 05 §2.3 and §4.2, edge list K-33). CI runs `lint-imports` (jobs "lint" and
 # "architecture"); tests/architecture checks that the lists below name every module of the package and that a
 # forbidden import turns the run red (mutation probe). Imports under `if TYPE_CHECKING:` are only for type checkers
