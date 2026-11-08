@@ -289,3 +289,96 @@ def test_backup_does_not_change_the_source(tmp_path: Path) -> None:
     assert digest(path) == before
     if POSIX:
         assert mode(tmp_path / "copy.db") == 0o600
+
+
+@pytest.mark.security
+def test_m3_link_swapped_in_before_sqlite_opens_the_copy(
+    tmp_path: Path, source: sqlite3.Connection, symlinks: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review M-3 (probe ``bkrace.py``): the temporary file is replaced by a link to the attacker's file just before
+    SQLite opens it by name. The identity check runs before ``connection.backup``, so not one page reaches it."""
+    attacker = tmp_path / "attacker.db"
+    attacker.write_bytes(b"")
+    attacker.chmod(0o644)
+    original = ts._open
+
+    def swap_then_open(name: str, **kwargs: Any) -> sqlite3.Connection:
+        if name.endswith(".tmp"):
+            os.unlink(name)
+            os.symlink(attacker, name)
+        return original(name, **kwargs)
+
+    monkeypatch.setattr(ts, "_open", swap_then_open)
+    before = files(tmp_path)
+    with pytest.raises(UnsafePath):
+        ts.backup(source, tmp_path / "copy.db")
+    assert attacker.read_bytes() == b""
+    assert files(tmp_path) == before
+
+
+@pytest.mark.security
+def test_m3_file_replaced_before_sqlite_opens_the_copy(
+    tmp_path: Path, source: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same with another regular file (a different inode) put in place of the temporary file; the attacker
+    keeps a second hard link to it, which must stay empty."""
+    original = ts._open
+    planted: list[Path] = []
+    kept = tmp_path / "kept"
+
+    def replace_then_open(name: str, **kwargs: Any) -> sqlite3.Connection:
+        if name.endswith(".tmp"):
+            other = tmp_path / "other"
+            other.write_bytes(b"")
+            os.link(other, kept)
+            os.replace(other, name)
+            planted.append(Path(name))
+        return original(name, **kwargs)
+
+    monkeypatch.setattr(ts, "_open", replace_then_open)
+    if os.lstat(tmp_path / "a.db").st_ino == 0:
+        pytest.skip("no file index on this file system")
+    with pytest.raises(UnsafePath) as info:
+        ts.backup(source, tmp_path / "copy.db")
+    assert info.value.code == "sqlite.unsafe_path"
+    assert planted and not planted[0].exists() and not (tmp_path / "copy.db").exists()
+    assert kept.read_bytes() == b""
+
+
+@pytest.mark.security
+def test_m3_copy_replaced_before_it_is_published(
+    tmp_path: Path, source: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy replaced after the check (between ``_verify`` and ``fsync``) is never published."""
+    real = ts._verify
+    target = tmp_path / "copy.db"
+
+    def replace_after_verify(path: str) -> str:
+        result = real(path)
+        other = tmp_path / "other"
+        other.write_bytes(b"planted")
+        os.replace(other, path)
+        return result
+
+    monkeypatch.setattr(ts, "_verify", replace_after_verify)
+    if os.lstat(tmp_path / "a.db").st_ino == 0:
+        pytest.skip("no file index on this file system")
+    with pytest.raises(UnsafePath):
+        ts.backup(source, target)
+    assert not target.exists() and not [n for n in files(tmp_path) if n.endswith(".tmp")]
+
+
+def test_l3_existing_target_is_refused_before_the_copy(
+    tmp_path: Path, source: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review L-3: without ``overwrite`` an existing target is refused before a temporary file is even created."""
+    target = tmp_path / "copy.db"
+    target.write_bytes(b"keep")
+
+    def no_copy(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("the copy must not start")
+
+    monkeypatch.setattr(ts, "_create", no_copy)
+    with pytest.raises(FileExistsError):
+        ts.backup(source, target)
+    assert target.read_bytes() == b"keep"

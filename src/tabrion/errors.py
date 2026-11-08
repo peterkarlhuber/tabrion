@@ -1128,4 +1128,7 @@ class RoleUnsafe(TabrionError):
 
 
 class UnsafePath(TabrionError):
-    """Codes ``sqlite.symlink`` and ``sqlite.unsafe_path``. The message never names the path."""
+    """Codes ``sqlite.symlink``, ``sqlite.unsafe_path``, ``sqlite.unsafe_owner`` and ``sqlite.unsafe_mode``.
+
+    The message never names the path.
+    """

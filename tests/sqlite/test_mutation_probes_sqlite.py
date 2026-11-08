@@ -59,8 +59,8 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TM-04: the file that was checked is the file that was opened (same inode).
     (
-        "    if expected[1] and (info.st_dev, info.st_ino) != expected:\n",
-        "    if False:\n",
+        "    if expected[1] and (info.st_dev, info.st_ino) != expected:\n        return False\n",
+        "    if False:\n        return False\n",
         _T + "test_connect.py::test_s07_file_replaced_between_check_and_open",
         True,
         False,
@@ -115,8 +115,8 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TAB-T-S31 / TAB-T-122: the backup's temporary file is 0600.
     (
-        "    if _create(temporary, _PRIVATE_MODE) is None:\n",
-        "    if _create(temporary, 0o644) is None:\n",
+        "    created = _create(temporary, _PRIVATE_MODE)\n",
+        "    created = _create(temporary, 0o644)\n",
         _T + "test_backup.py::test_s31_backup_is_0600",
         True,
         False,
@@ -159,6 +159,78 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         "        pass\n",
         _T + "test_notx.py::test_readers_keep_the_state",
         False,
+        False,
+    ),
+    # Review M-1 (TM-03): an existing file owned by another user is refused.
+    (
+        "    if info.st_uid != os.geteuid():\n",
+        "    if False:\n",
+        _T + "test_connect.py::test_m1_foreign_owner_is_refused",
+        True,
+        False,
+    ),
+    # Review M-1: an existing group- or world-writable file is refused.
+    (
+        "    if info.st_mode & _SHARED_WRITE:\n",
+        "    if False:\n",
+        _T + "test_connect.py::test_m1_group_or_world_writable_file_is_refused",
+        True,
+        False,
+    ),
+    # Review M-1: the existing side files follow the same rules.
+    (
+        "        _check_side_files(name, allow_shared_file=profile.allow_shared_file)\n",
+        "        pass\n",
+        _T + "test_connect.py::test_m1_side_file_owner_and_mode",
+        True,
+        False,
+    ),
+    # Review L-3 (mutant 4): the path is checked again after the profile was applied.
+    (
+        "            if not memory:\n                check_path(name)\n",
+        "            if not memory:\n                pass\n",
+        _T + "test_connect.py::test_l3_link_planted_while_the_profile_is_applied",
+        False,
+        True,
+    ),
+    # Review M-3: the copy SQLite opened is the temporary file that was created, before a page is written.
+    (
+        "            if not _same_file(temporary, created, copy):\n",
+        "            if False:\n",
+        _T + "test_backup.py::test_m3_file_replaced_before_sqlite_opens_the_copy",
+        False,
+        False,
+    ),
+    # Review M-3: the copy is checked again when it is synced, before it is published.
+    (
+        "        if expected[1] and expected != (info.st_dev, info.st_ino):\n",
+        "        if False:\n",
+        _T + "test_backup.py::test_m3_copy_replaced_before_it_is_published",
+        False,
+        False,
+    ),
+    # Review L-3 (mutant 15): an existing target is refused before the copy starts.
+    (
+        "    if os.path.lexists(destination) and not overwrite:\n",
+        "    if False:\n",
+        _T + "test_backup.py::test_l3_existing_target_is_refused_before_the_copy",
+        False,
+        False,
+    ),
+    # Review L-2: an idle connection with driver-managed transactions can run the checks.
+    (
+        "    if connection.in_transaction or not _is_autocommit(connection):\n",
+        "    if connection.in_transaction:\n",
+        _T + "test_checks.py::test_l2_checks_on_a_legacy_connection",
+        False,
+        False,
+    ),
+    # Review M-2 (TM-03): a world-writable directory without the sticky bit is reported.
+    (
+        "    return bool(mode & stat.S_IWOTH) and not mode & stat.S_ISVTX\n",
+        "    return False\n",
+        _T + "test_checks.py::test_m2_world_writable_directory_without_sticky_bit",
+        True,
         False,
     ),
 ]

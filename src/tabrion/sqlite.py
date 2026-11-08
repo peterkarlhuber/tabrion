@@ -258,8 +258,41 @@ def create_private_file(path: str | os.PathLike[str]) -> None:
     _create(name, _PRIVATE_MODE)
 
 
-def _identity(path: str) -> tuple[int, int]:
-    """``(dev, ino)`` of the existing regular file ``path``, opened without following a link (``UnsafePath``)."""
+_SHARED_WRITE = 0o022
+"""Group and other write bits: such a file (or one owned by another user) can be read or changed by someone else."""
+
+
+def _owner_and_mode(path: str, info: os.stat_result, *, allow_shared_file: bool) -> None:
+    """POSIX: refuse a file owned by another user or writable by group or others (review M-1, TM-03).
+
+    ``allow_shared_file`` lifts both rules. A group- or world-*readable* file is accepted (existing Nodestro files
+    are 0644, B-06-5; MIG-NOD-9 tightens them); ``diagnose`` reports its mode (TAB-SQ-003).
+    """
+    if not _POSIX or allow_shared_file:
+        return
+    if info.st_uid != os.geteuid():
+        raise _unsafe("sqlite.unsafe_owner", path)
+    if info.st_mode & _SHARED_WRITE:
+        raise _unsafe("sqlite.unsafe_mode", path)
+
+
+def _check_side_files(path: str, *, allow_shared_file: bool) -> None:
+    """The existing ``-wal``, ``-shm`` and ``-journal`` files follow the same owner and mode rules."""
+    if not _POSIX or allow_shared_file:
+        return
+    for candidate in (path + suffix for suffix in _SIDE_FILES):
+        try:
+            info = os.lstat(candidate)
+        except OSError:
+            continue
+        _owner_and_mode(candidate, info, allow_shared_file=False)
+
+
+def _identity(path: str, *, allow_shared_file: bool = True) -> tuple[int, int]:
+    """``(dev, ino)`` of the existing regular file ``path``, opened without following a link (``UnsafePath``).
+
+    Without ``allow_shared_file`` the file must belong to this user and not be group- or world-writable.
+    """
     if _POSIX:
         failure: int | None = None
         try:
@@ -285,6 +318,7 @@ def _identity(path: str) -> tuple[int, int]:
             return 0, 0
     if not stat.S_ISREG(info.st_mode):
         raise _unsafe("sqlite.unsafe_path", path)
+    _owner_and_mode(path, info, allow_shared_file=allow_shared_file)
     return info.st_dev, info.st_ino
 
 
@@ -373,9 +407,11 @@ def connect(
             if read_only or not create:
                 raise FileNotFoundError(errno.ENOENT, "the database file does not exist")
             created = _create(name, profile.file_mode)
-            expected = created if created is not None else _identity(name)
+            shared = profile.allow_shared_file
+            expected = created if created is not None else _identity(name, allow_shared_file=shared)
         else:
-            expected = _identity(name)
+            expected = _identity(name, allow_shared_file=profile.allow_shared_file)
+        _check_side_files(name, allow_shared_file=profile.allow_shared_file)
     if read_only and not memory:
         target, uri = Path(name).absolute().as_uri() + "?mode=ro", True
     else:
@@ -443,7 +479,9 @@ def loading_extensions(connection: sqlite3.Connection) -> Iterator[None]:
     """Enable extension loading inside the block only. ``UsageError("sqlite.extensions_unavailable")``.
 
     The ``sqlite3`` build of some Python distributions has no ``enable_load_extension``; then the block is never
-    entered. Loading is disabled again on every exit, an exception included (Orkexa ``index.py:176-194``).
+    entered. Loading is disabled again on every exit, an exception included (Orkexa ``index.py:176-194``), even
+    when it was enabled before the block: ``sqlite3`` has no getter for the setting, so it cannot be restored
+    (review I-3, contract I-23).
     """
     enable: Callable[[bool], None] | None = getattr(connection, "enable_load_extension", None)
     if enable is None:
@@ -460,11 +498,16 @@ def loading_extensions(connection: sqlite3.Connection) -> Iterator[None]:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def _require_own_transaction(connection: sqlite3.Connection) -> None:
-    """The connection must be in autocommit mode (no driver transactions) and idle (T-NOTX)."""
+def _is_autocommit(connection: sqlite3.Connection) -> bool:
+    """No driver-managed transactions: ``isolation_level=None``, or Python 3.12 ``autocommit=True``."""
     autocommit = getattr(connection, "autocommit", getattr(sqlite3, "LEGACY_TRANSACTION_CONTROL", -1))
     legacy = autocommit == getattr(sqlite3, "LEGACY_TRANSACTION_CONTROL", -1)
-    if autocommit is False or (legacy and connection.isolation_level is not None):
+    return not (autocommit is False or (legacy and connection.isolation_level is not None))
+
+
+def _require_own_transaction(connection: sqlite3.Connection) -> None:
+    """The connection must be in autocommit mode (no driver transactions) and idle (T-NOTX)."""
+    if not _is_autocommit(connection):
         raise UsageError("sqlite.not_autocommit")
     if connection.in_transaction:
         raise UsageError("sqlite.nested_transaction")
@@ -543,8 +586,13 @@ def read_transaction(connection: sqlite3.Connection, *, enforce: bool = True) ->
 
 @contextmanager
 def _reading(connection: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
-    """Inside the caller's transaction as it is (T-NOTX), else a short enforced read transaction of our own."""
-    if connection.in_transaction:
+    """Inside the caller's transaction as it is (T-NOTX), else a short enforced read transaction of our own.
+
+    An idle connection with driver-managed transactions (``isolation_level=""``, the ``sqlite3`` default) cannot
+    take one of ours; the checks are single read-only ``PRAGMA`` statements that the driver runs without opening a
+    transaction, so they run as they are (review L-2, contract I-29).
+    """
+    if connection.in_transaction or not _is_autocommit(connection):
         yield connection
     else:
         with read_transaction(connection) as own:
@@ -613,6 +661,11 @@ def migrate(
     steps that are still needed run (none when it reached ``target``), so two processes migrating at once apply
     each step once (contract I-26). ``BackupFailed`` and ``MigrationFailed`` carry the exception as ``original``,
     never as ``__cause__`` or ``__context__``, and never its text.
+
+    A step must not end the transaction: no ``commit``, no ``rollback`` and no ``executescript``, which commits
+    before it runs its script. The lost transaction is detected after the step (``MigrationFailed`` with
+    ``UsageError("sqlite.transaction_ended")`` as ``original``), but what the step committed stays while
+    ``user_version`` is unchanged (review L-1, contract I-26). Run several statements with one ``execute`` each.
     """
     _require_own_transaction(connection)
     target = _check_version(target, "target")
@@ -699,9 +752,13 @@ def _fsync_directory(directory: str) -> None:
         os.close(descriptor)
 
 
-def _fsync_file(path: str) -> None:
+def _fsync_file(path: str, expected: tuple[int, int]) -> None:
+    """``fsync`` the finished copy; it must still be the file that was created (``UnsafePath`` otherwise)."""
     descriptor = os.open(path, os.O_RDWR | _O_NOFOLLOW | _O_BINARY | _O_CLOEXEC)
     try:
+        info = os.fstat(descriptor)
+        if expected[1] and expected != (info.st_dev, info.st_ino):
+            raise _unsafe("sqlite.unsafe_path", path)
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
@@ -773,11 +830,16 @@ def backup(
     directory = os.path.dirname(os.path.abspath(destination))
     temporary = f"{destination}.{secrets.token_hex(8)}.tmp"
     check_path(temporary)
-    if _create(temporary, _PRIVATE_MODE) is None:
+    created = _create(temporary, _PRIVATE_MODE)
+    if created is None:
         raise FileExistsError(errno.EEXIST, "the temporary backup file exists")
     try:
-        copy = sqlite3.connect(temporary, isolation_level=None)
+        copy = _open(temporary, uri=False, timeout=5.0, check_same_thread=True)
         try:
+            # Review M-3: the name is opened again, so check that SQLite opened the file created above before a
+            # single page is written (a link swapped in would receive the whole database).
+            if not _same_file(temporary, created, copy):
+                raise _unsafe("sqlite.unsafe_path", temporary)
             connection.backup(copy, pages=pages_per_step)
             copy.execute("PRAGMA journal_mode = DELETE").fetchall()
             pages = int(copy.execute("PRAGMA page_count").fetchone()[0])
@@ -786,8 +848,8 @@ def backup(
         result = _verify(temporary) if verify else _NOT_CHECKED
         if verify and result != "ok":
             raise TabrionError("sqlite.backup_corrupt", details={"pages": pages})
-        _fsync_file(temporary)
-        size = os.stat(temporary).st_size
+        _fsync_file(temporary, created)
+        size = os.lstat(temporary).st_size
         check_path(destination)
         _publish(temporary, destination, overwrite=overwrite)
     except BaseException:
@@ -940,6 +1002,28 @@ def _int(value: object) -> int:
     return int(value) if isinstance(value, (int, str)) else 0
 
 
+def _unsafe_directory(path: str) -> bool:
+    """TM-03: the directory of ``path`` is writable by others without the sticky bit (POSIX), so any local user can
+    rename or replace the database and its side files between Tabrion's checks."""
+    if not _POSIX:
+        return False
+    try:
+        mode = os.stat(os.path.dirname(os.path.abspath(path))).st_mode
+    except OSError:
+        return False
+    return bool(mode & stat.S_IWOTH) and not mode & stat.S_ISVTX
+
+
+def _warn_about_directory(path: str) -> None:
+    """Review M-2: a warning on the logger ``tabrion.sqlite`` (the frozen ``SQLiteDiagnosis`` has no field for it)."""
+    if _unsafe_directory(path):
+        _log.debug("world-writable directory without the sticky bit: %s", os.path.dirname(os.path.abspath(path)))
+        _log.warning(
+            "the database directory is writable by other users and has no sticky bit (TM-03): another user can "
+            "replace the database file; use a directory only the owner can write"
+        )
+
+
 def diagnose(connection: sqlite3.Connection, *, run_quick_check: bool = False) -> SQLiteDiagnosis:
     """Read-only diagnosis of a connection and its file; the basis of ``tabrion.check`` (TAB-SQ-*).
 
@@ -958,6 +1042,7 @@ def diagnose(connection: sqlite3.Connection, *, run_quick_check: bool = False) -
                 file_mode = stat.S_IMODE(os.stat(name).st_mode)
         with contextlib.suppress(OSError):
             wal_bytes = os.stat(name + "-wal").st_size
+        _warn_about_directory(name)
     options = tuple(
         option
         for option in (_str(row[0]) for row in _rows(connection, "PRAGMA compile_options"))

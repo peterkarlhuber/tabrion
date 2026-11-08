@@ -46,9 +46,13 @@ Accepted residual risks (documented, not vulnerabilities):
     `lstat` check (reparse points included, also right before a new file is created, because `CREATE_NEW` follows a
     dangling link) and the inode comparison after opening protect the file, not the resolved-name comparison of
     POSIX (contract I-22);
+  - `connect` refuses an existing database or side file that belongs to another user or is group- or
+    world-writable (`sqlite.unsafe_owner`, `sqlite.unsafe_mode`; POSIX, unless `allow_shared_file`), but accepts a
+    group- or world-*readable* one (existing Nodestro files are 0644) and leaves its mode as it is;
   - SQLite opens `-wal`, `-shm` and `-journal` by name when it first needs them, after `connect` has checked them;
     a link planted later in the database's directory is followed. Keep databases in a directory that only the
-    owner can write (a world-writable directory without the sticky bit is a TM-03 finding, TODO TB-043);
+    owner can write: `diagnose` logs a warning for a world-writable directory without the sticky bit (TM-03), and
+    a `tabrion.check` finding for it is TODO TB-043;
   - a `read_only` connection to a WAL database may create `-wal` and `-shm` with the main file's mode, which an
     existing world-readable file passes on; `connect` never changes the mode of an existing file (MIG-NOD-9 does
     that for Nodestro);

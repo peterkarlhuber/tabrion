@@ -460,9 +460,9 @@ defensive error paths).
 | 4. No parameter value or secret in new log or error paths | No path in any error (`UnsafePath`, `FileNotFoundError`, `FileExistsError`); paths only at DEBUG | `BackupFailed`/`MigrationFailed` carry no text and no chain; check messages without row data (canary); `backup_corrupt` with the page count only |
 | 5. Rollback path | Revert of this pull request (no consumer uses `tabrion.sqlite` yet; MIG-NOD-6 and MIG-ORK-3 come later) | Same |
 | 6. STATUS.md and TODO.md updated | Yes | Yes |
-| Review model | **Independent review agent required** (TAB package in `sqlite`: file permissions); self-review with the DoD and TM-03, TM-04, TM-12, DI-01, DI-02, DI-06, DI-11, SR-08, SR-09; pending (TODO TB-044) | **Independent review agent required** (transactions); pending (TB-044) |
+| Review model | **Independent review agent required** (TAB package in `sqlite`: file permissions); self-review with the DoD and TM-03, TM-04, TM-12, DI-01, DI-02, DI-06, DI-11, SR-08, SR-09; accepted with conditions at `8e78e9c`, fixed in the fix round below (TODO TB-044) | **Independent review agent required** (transactions); same (TB-044) |
 
-Mutation probes (`tests/sqlite/test_mutation_probes_sqlite.py`): 17 probes, each a SQLite safety rule broken in a copy
+Mutation probes (`tests/sqlite/test_mutation_probes_sqlite.py`): 26 probes (17, plus 9 of the review fix round below), each a SQLite safety rule broken in a copy
 of the package that turns its test red: `fchmod` (umask independence), `O_EXCL`/`O_NOFOLLOW`, the side-file check,
 the resolved-name and inode checks after opening, `foreign_keys`, the `file_mode` rule, `BEGIN IMMEDIATE` (lost
 update), rollback on `BaseException`, the `query_only` reset, the version re-read in `migrate`, the 0600 temporary
@@ -474,6 +474,24 @@ Delta re-review of TAB-010..TAB-012 (`reviews/tab-010-012-review.md`, accepted a
 container walk is guarded and lazy: `test_n2_container_whose_iteration_raises_keeps_the_record`,
 `test_n3_containers_are_not_copied_in_full`), N-5 fixed (docstring placement); N-1, N-3, N-4, N-6 and N-7 are TODO
 TB-038..TB-042, N-4 as a prerequisite of TAB-018.
+
+#### Review fix round (TAB-013, TAB-014)
+
+The independent review at `8e78e9c` (`reviews/tab-013-014-review.md`) is ACCEPTED WITH CONDITIONS. The fix round in
+the same pull request, after merging `master` with lane C (`b34abb2`):
+
+| Finding | Fix | Evidence |
+|---|---|---|
+| M-1 (Medium) an existing file of another user, or group-/world-writable, is opened | `_identity` refuses it on POSIX unless `allow_shared_file`: `UnsafePath("sqlite.unsafe_owner")` / `("sqlite.unsafe_mode")`; existing `-wal`/`-shm`/`-journal` follow the same rules; a readable 0644 file stays accepted (B-06-5) (contract I-22) | `test_m1_foreign_owner_is_refused` (normal and `read_only`, file byte-identical, no path in the error; accepted with `allow_shared_file`), `test_m1_group_or_world_writable_file_is_refused` (0620, 0602, 0664, 0666), `test_m1_readable_but_not_writable_file_is_accepted`, `test_m1_side_file_owner_and_mode`; 3 probes |
+| M-2 (Medium) no TM-03 directory check | `diagnose` logs a WARNING on `tabrion.sqlite` for a world-writable directory without the sticky bit, the path only at DEBUG (contract I-30, deviation D-40; the field or check finding is TB-043) | `test_m2_world_writable_directory_without_sticky_bit` (0777 warns; 1777, 0775, 0755, 0700 do not), `test_m2_memory_has_no_directory`; 1 probe |
+| M-3 (Medium) `backup` writes into a swapped temporary file | The `(dev, ino)` of `_create` is kept; after SQLite opened the copy and before `connection.backup`, `_same_file` checks it (no link, same inode, the resolved name); `_fsync_file` checks the inode again before publishing (contract I-27) | `test_m3_link_swapped_in_before_sqlite_opens_the_copy` (the attacker file stays empty), `test_m3_file_replaced_before_sqlite_opens_the_copy` (the attacker's hard link stays empty), `test_m3_copy_replaced_before_it_is_published`; the probe `bkrace.py` now gives `UnsafePath sqlite.symlink`, attacker file size 0, secret not in it; 2 probes |
+| L-1 (Low) `executescript` in a migration step commits | Documented in the `migrate` docstring and contract I-26 (the former I-19): steps must not use `commit`, `rollback` or `executescript`; the lost transaction is still detected | Docs only; the existing `sqlite.transaction_ended` test covers the detection |
+| L-2 (Low) the checks refuse idle legacy connections | Fixed: an idle connection with driver-managed transactions runs the check `PRAGMA`s as they are, without a transaction of Tabrion's own (contract I-29) | `test_l2_checks_on_a_legacy_connection` (`""`, `DEFERRED`, `IMMEDIATE`: idle and inside the driver's transaction, state unchanged); 1 probe |
+| L-3 (Low) three surviving mutants | Mutant 4 (`check_path` after `_apply`) and mutant 15 (the early existing-target check) are killed by new seam tests; mutant 18 (`_fsync_file` removed) is not observable without a power-loss harness, but the identity check now inside `_fsync_file` is killed by its own probe; mutant 8 (hang) needs a timeout plugin, TB-049 | `test_l3_link_planted_while_the_profile_is_applied`, `test_l3_existing_target_is_refused_before_the_copy`, `test_m3_copy_replaced_before_it_is_published`; 3 probes |
+| I-1..I-4 (Info) | I-3 documented (`loading_extensions` docstring, contract I-23); all four recorded | TODO TB-046..TB-049 (I-4 points to TB-039) |
+
+Lane C's IDs come first after the merge: lane B's contract notes I-14..I-24 are now I-21..I-31, its deviations
+D-28..D-33 are D-34..D-39 (new: D-40), and its TODO items TB-032..TB-039 are TB-038..TB-045 (new: TB-046..TB-049).
 
 ## Deviation log
 
@@ -521,6 +539,7 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-37 | TAB-014 | Contract 3.5: Nodestro semantics (the version read once) | The version is read again after `BEGIN IMMEDIATE` (contract I-26) | The contract's test for two processes ("the second sees the new version and does nothing") fails with a single read: the second process would run the steps again |
 | D-38 | TAB-014 | Contract 3.6: `UsageError` for an open write transaction | For any open transaction; the copy in `journal_mode=DELETE` (contract I-27, I-28) | `sqlite3` cannot tell a read from a write transaction; a WAL-mode copy would leave `-wal`/`-shm` next to the target |
 | D-39 | TAB-013, TAB-014 | Test IDs: doc 02 gives S13..S35 to TAB-014; doc 07 a 1 000-repetition race test (TAB-T-123) | S13..S15 under TAB-013 (contract 3.3 names them for `apply_profile`, `check_path`, `loading_extensions`, which are TAB-013 functions); the race windows tested deterministically, the randomized test is TB-045 | The contract is the more specific source; a randomized race test is timing-dependent on pull requests |
+| D-40 | TAB-014 | 07 TM-03 / review M-2: a field for a world-writable database directory without the sticky bit | A WARNING on the logger `tabrion.sqlite` from `diagnose` (path only at DEBUG); `SQLiteDiagnosis` unchanged (contract I-30) | `SQLiteDiagnosis` is in the frozen API surface; the `tabrion.check` finding or a 0.2 field is TB-043 |
 
 ## Score review
 

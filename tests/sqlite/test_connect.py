@@ -180,6 +180,93 @@ def test_s02_existing_file_keeps_its_mode(tmp_path: Path, opened: Opened) -> Non
     assert mode(path) == 0o644
 
 
+@posix_only
+def test_m1_foreign_owner_is_refused(tmp_path: Path, opened: Opened, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review M-1 (TM-03): an existing file owned by another user is never opened, unless ``allow_shared_file``."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    before = digest(path)
+    me = os.geteuid()
+    monkeypatch.setattr(os, "geteuid", lambda: me + 1)  # the file now belongs to "another user"
+    for read_only in (False, True):
+        with pytest.raises(UnsafePath) as info:
+            ts.connect(path, read_only=read_only)
+        assert info.value.code == "sqlite.unsafe_owner"
+        assert str(tmp_path) not in str(info.value) and str(tmp_path) not in repr(info.value)
+    assert digest(path) == before
+    shared = SQLiteProfile(allow_shared_file=True)
+    opened(ts.connect(path, profile=shared)).execute("SELECT count(*) FROM parent").fetchone()
+
+
+@posix_only
+@pytest.mark.parametrize("bits", [0o620, 0o602, 0o664, 0o666])
+def test_m1_group_or_world_writable_file_is_refused(tmp_path: Path, opened: Opened, bits: int) -> None:
+    """Review M-1: a group- or world-writable file is refused; ``allow_shared_file`` accepts it as it is."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    path.chmod(bits)
+    before = digest(path)
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path)
+    assert info.value.code == "sqlite.unsafe_mode"
+    assert digest(path) == before and mode(path) == bits
+    opened(ts.connect(path, profile=SQLiteProfile(allow_shared_file=True)))
+    assert mode(path) == bits
+
+
+@posix_only
+@pytest.mark.parametrize("bits", [0o640, 0o644, 0o604])
+def test_m1_readable_but_not_writable_file_is_accepted(tmp_path: Path, opened: Opened, bits: int) -> None:
+    """Existing Nodestro files are 0644 (B-06-5): readable by others is accepted and reported by ``diagnose``."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    path.chmod(bits)
+    assert ts.diagnose(opened(ts.connect(path))).file_mode == bits
+
+
+@posix_only
+@pytest.mark.parametrize("suffix", ["-wal", "-shm", "-journal"])
+def test_m1_side_file_owner_and_mode(
+    tmp_path: Path, opened: Opened, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    """An existing side file follows the same rules: a writable or foreign one is refused before SQLite opens it."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    side = tmp_path / f"a.db{suffix}"
+    side.write_bytes(b"")
+    side.chmod(0o666)
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path)
+    assert info.value.code == "sqlite.unsafe_mode"
+    side.chmod(0o600)
+    real = os.lstat
+
+    def foreign(candidate: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        info = real(candidate, *args, **kwargs)
+        if os.fspath(candidate).endswith(suffix):
+            values = list(info)
+            values[stat.ST_UID] = os.geteuid() + 1
+            return os.stat_result(values)
+        return info
+
+    monkeypatch.setattr(os, "lstat", foreign)
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path)
+    assert info.value.code == "sqlite.unsafe_owner"
+    monkeypatch.undo()
+    side.unlink()
+    opened(ts.connect(path, profile=SQLiteProfile(allow_shared_file=True)))
+
+
+@posix_only
+def test_m1_new_file_is_not_checked_twice(tmp_path: Path, opened: Opened) -> None:
+    """A file Tabrion creates with a shared ``file_mode`` is fine (``allow_shared_file`` is required for it)."""
+    profile = SQLiteProfile(file_mode=0o664, allow_shared_file=True)
+    with umask(0):
+        opened(ts.connect(tmp_path / "a.db", profile=profile))
+    assert mode(tmp_path / "a.db") == 0o664
+
+
 def test_s09_memory(tmp_path: Path, opened: Opened, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     for name in (":memory:", ""):
@@ -514,6 +601,33 @@ def test_s07_file_replaced_between_check_and_open(tmp_path: Path, monkeypatch: p
     with pytest.raises(UnsafePath) as info:
         ts.connect(path)
     assert info.value.code == "sqlite.unsafe_path"
+
+
+def test_l3_link_planted_while_the_profile_is_applied(
+    tmp_path: Path, symlinks: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review L-3: the path is checked again after ``_apply`` (WAL opens the side files then); a link planted
+    while the profile is applied is refused and the connection is closed (defence in depth on Linux, whose VFS
+    refuses linked side files itself)."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    victim = tmp_path / "victim"
+    victim.write_bytes(b"victim")
+    original = ts._apply
+    seen: list[sqlite3.Connection] = []
+
+    def apply_then_plant(connection: sqlite3.Connection, *args: Any, **kwargs: Any) -> None:
+        original(connection, *args, **kwargs)
+        seen.append(connection)
+        (tmp_path / "a.db-journal").symlink_to(victim)
+
+    monkeypatch.setattr(ts, "_apply", apply_then_plant)
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path)
+    assert info.value.code == "sqlite.symlink"
+    assert victim.read_bytes() == b"victim"
+    with pytest.raises(sqlite3.ProgrammingError):
+        seen[0].execute("SELECT 1")  # closed
 
 
 def test_s12_o_nofollow_by_platform() -> None:

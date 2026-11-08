@@ -45,8 +45,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   takes a connection follows rule T-NOTX. Contract section 3.9 lists what the implementation settled (I-21..I-31).
 - Tests `tests/sqlite/` (TAB-T-S01..S41): file modes under several umasks, symbolic-link and race cases, the
   five-thread lost-update scenario, two processes migrating at once, byte-identical files after failed migrations,
-  backups under concurrent writes, damaged files, T-NOTX in every state, and 17 mutation probes; the platforms
+  backups under concurrent writes, damaged files, T-NOTX in every state, and the mutation probes; the platforms
   workflow runs them on macOS and Windows.
+- Fixes from the independent review of TAB-013/TAB-014: `connect` refuses an existing file (or side file) owned by
+  another user or writable by group or others unless `allow_shared_file` (M-1); `diagnose` warns when the database
+  directory is world-writable without the sticky bit (M-2); `backup` checks that SQLite opened the temporary file it
+  created before the first page is written, and again before publishing (M-3); the checks run on idle connections
+  with driver-managed transactions (L-2); `executescript` in a migration step and `loading_extensions` documented
+  (L-1, I-3); 26 mutation probes (L-3).
 - Fixes from the delta re-review of TAB-010..TAB-012: `DbErrorRedactionFilter` no longer replaces a record whose
   container argument raises while it is iterated, and reads containers lazily (at most 1,000 items, review N-2 and
   the `islice` part of N-3); a misplaced docstring in `tabrion.errors` (N-5).

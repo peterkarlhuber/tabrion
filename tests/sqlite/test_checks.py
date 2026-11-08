@@ -6,8 +6,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+import logging
+import os
 from pathlib import Path
 import sqlite3
+from typing import Any
 
 import pytest
 
@@ -255,3 +258,61 @@ def test_s41_quick_check_message_of_a_damaged_file(tmp_path: Path, opened: Opene
     d = ts.diagnose(opened(ts.connect(path, read_only=True)), run_quick_check=True)
     assert d.quick_check not in (None, "ok")
     assert CANARY not in str(d.quick_check)
+
+
+# --- review L-2: idle connections with driver-managed transactions -------------------------------------------------
+
+
+@pytest.mark.parametrize("level", ["", "DEFERRED", "IMMEDIATE"])
+def test_l2_checks_on_a_legacy_connection(tmp_path: Path, level: Any) -> None:
+    """``sqlite3.connect`` defaults (``isolation_level=""``): the checks run as they are and open no transaction."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    legacy = sqlite3.connect(str(path), isolation_level=level)
+    try:
+        assert ts.integrity_check(legacy).ok and ts.quick_check(legacy).ok
+        assert ts.foreign_key_check(legacy) == []
+        assert ts.diagnose(legacy, run_quick_check=True).quick_check == "ok"
+        assert not legacy.in_transaction and legacy.isolation_level == level
+        assert legacy.execute("PRAGMA query_only").fetchone()[0] == 0
+        legacy.execute("INSERT INTO parent (id) VALUES (100)")  # the driver opens its transaction
+        assert legacy.in_transaction
+        assert ts.integrity_check(legacy).ok  # inside the caller's transaction, which stays open
+        assert legacy.in_transaction
+        legacy.rollback()
+    finally:
+        legacy.close()
+
+
+# --- review M-2: the database directory (TM-03) ----------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not POSIX, reason="POSIX directory modes")
+@pytest.mark.parametrize(
+    ("bits", "warned"), [(0o777, True), (0o1777, False), (0o775, False), (0o755, False), (0o700, False)]
+)
+def test_m2_world_writable_directory_without_sticky_bit(
+    tmp_path: Path, opened: Opened, caplog: pytest.LogCaptureFixture, bits: int, warned: bool
+) -> None:
+    directory = tmp_path / "data"
+    directory.mkdir()
+    connection = opened(ts.connect(directory / "a.db"))
+    os.chmod(directory, bits)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="tabrion.sqlite"):
+            ts.diagnose(connection)
+    finally:
+        os.chmod(directory, 0o700)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert bool(warnings) is warned
+    if warned:
+        assert "TM-03" in warnings[0].getMessage() and str(tmp_path) not in warnings[0].getMessage()
+        debug = [r for r in caplog.records if r.levelno == logging.DEBUG]
+        assert any(str(directory) in r.getMessage() for r in debug)  # the path only at DEBUG
+
+
+@pytest.mark.skipif(not POSIX, reason="POSIX directory modes")
+def test_m2_memory_has_no_directory(opened: Opened, caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.DEBUG, logger="tabrion.sqlite"):
+        ts.diagnose(opened(ts.connect(":memory:")))
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]

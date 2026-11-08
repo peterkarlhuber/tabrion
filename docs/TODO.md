@@ -7,17 +7,17 @@
 > that backlog.
 >
 > **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M2 lane B pull request: TABRION
-> TAB-013, TAB-014, after the M2 lane A pull request #3 merged at `6b99604`)
+> TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`)
 
 ## Summary
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 1 |
-| P1 High | 11 |
-| P2 Medium | 8 |
-| P3 Low | 13 |
-| P4 Optional | 2 |
+| P1 High | 13 |
+| P2 Medium | 10 |
+| P3 Low | 18 |
+| P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
 before G-R in any case; there is no published version.
@@ -423,18 +423,22 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-013, TAB-017, TM-03, TAB-SQ-003, TAB-SQ-004,
   contract I-22, SECURITY.md
 - **What:** planning document 07 TM-03 asks for a warning when the database's directory is world-writable without
-  the sticky bit. `SQLiteDiagnosis` (frozen) has no field for it, and SQLite opens `-wal`/`-shm`/`-journal` by name
-  after `connect` checked them, so such a directory is the remaining way to redirect them (SECURITY.md).
+  the sticky bit. Since the review fix round (M-2) `diagnose` logs a WARNING on `tabrion.sqlite` for it; the frozen
+  `SQLiteDiagnosis` has no field (deviation D-40). SQLite opens `-wal`/`-shm`/`-journal` by name after `connect`
+  checked them, so such a directory is the remaining way to redirect them (SECURITY.md).
 - **Next step:** TAB-017 checks the directory of `SQLiteDiagnosis.path` itself and reports a finding (a new code
-  next to TAB-SQ-003/004 needs a contract addendum).
+  next to TAB-SQ-003/004 needs a contract addendum); 0.2 may add a `directory_unsafe` field to `SQLiteDiagnosis`
+  by contract addendum.
 
 ### TB-044 · Independent review of TAB-013 and TAB-014 (planning document 07 section 6)
 
-- **Priority:** P1 High · **Status:** Needs external review · **Refs:** TABRION TAB-013, TAB-014, B-06-3, B-06-5,
-  MIG-NOD-6
+- **Priority:** P1 High · **Status:** In progress (fix round in pull request #4) · **Refs:** TABRION TAB-013, TAB-014,
+  B-06-3, B-06-5, MIG-NOD-6, `reviews/tab-013-014-review.md`
 - **What:** the review model requires an independent review agent for TAB packages in `sqlite` (file permissions,
-  transactions). The M2 lane B pull request carries the self-review ([STATUS.md](program/STATUS.md#m2-lane-b-evidence-tab-013-tab-014)).
-- **Next step:** review the pull request head; findings go into a fix round in the same pull request.
+  transactions). The review at `8e78e9c` is ACCEPTED WITH CONDITIONS (M-1..M-3); the fix round fixes M-1..M-3 and
+  L-1..L-3 in the same pull request ([STATUS.md](program/STATUS.md#review-fix-round-tab-013-tab-014)); the Info
+  items are TB-046..TB-049.
+- **Next step:** delta re-review of the fix round, then merge.
 
 ### TB-045 · Randomized symlink race (TAB-T-123) in the nightly stress suite (QA-4)
 
@@ -444,6 +448,38 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   creation, after the check, while SQLite opens and swapped back, an inode swap); a randomized repetition test would
   be timing-dependent on pull requests.
 - **Next step:** add it to the nightly stress job with QA-4.
+
+### TB-046 · ATTACH on a read-only SQLite connection creates an empty file (review I-1)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-013, contract I-22, review I-1
+- **What:** `ATTACH 'other.db'` on a `connect(read_only=True)` connection creates an empty file at the attached
+  path. `query_only` blocks writes into it, and the main file stays byte-identical, but the file appears.
+- **Next step:** set `SQLITE_LIMIT_ATTACHED` to 0 for read-only connections (`Connection.setlimit`, Python 3.11+), or
+  document it in I-22; decide with TAB-017.
+
+### TB-047 · Windows: file modes are cosmetic, the `CREATE_NEW` race remains (review I-2)
+
+- **Priority:** P3 Low · **Status:** Open (accepted for M2) · **Refs:** TABRION TAB-013, TAB-T-S12, contract I-22,
+  SECURITY.md, review I-2
+- **What:** Windows does not enforce 0600 (ACLs are inherited from the directory), and between the `_is_link` check
+  and `CREATE_NEW` (which follows a dangling link) a link can still be planted.
+- **Next step:** with S4 (Desktop), set an owner-only ACL on new files (`SetSecurityInfo`) and create through
+  `CreateFileW` with `FILE_FLAG_OPEN_REPARSE_POINT`; both need `ctypes` code in the core, so an ADR first.
+
+### TB-048 · `loading_extensions` cannot restore an enabled state (review I-3)
+
+- **Priority:** P4 Optional · **Status:** Open (documented) · **Refs:** TABRION TAB-013, contract I-23, review I-3
+- **What:** the block always disables extension loading on exit, even when the caller had enabled it before;
+  `sqlite3` has no getter. Documented in the docstring and I-23 in the fix round.
+- **Next step:** none unless a consumer needs it; then track the state on the connection in a `WeakKeyDictionary`.
+
+### TB-049 · Backup tests have no explicit timeout (review L-3, mutant 8; I-4)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-014, QA-4, review L-3, I-4
+- **What:** removing the `in_transaction` guard of `backup` makes the backup block on its own lock: the suite hangs
+  instead of failing (the review counts it as caught, CI times out). `pytest-timeout` is not a development
+  dependency. (I-4: review N-3, the double formatting cost, stays TB-039.)
+- **Next step:** add `pytest-timeout` with QA-4 and mark the backup and migration tests with a timeout.
 
 ### TB-024 · Circular import of the staged 0.2 mixins (G-T1 condition check CC-2)
 
