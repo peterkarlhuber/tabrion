@@ -30,6 +30,35 @@ extra, status}`. Each library carries a copy of its outgoing edges; Tabrion's is
 Operating rule: a new edge follows the order ADR, owner approval, policy pull request in the integrator, manifest
 pull request.
 
+### `tabrion.check` and the import contracts (G-T1 condition C-1)
+
+`tabrion.check` must reach the PostgreSQL checks and layer B, but it belongs to the standard-library core. import-linter
+(grimp) also records imports inside functions, so the lazy import that plan document 05 section 2.3 describes would
+break the core and the layers contract (G-T1 finding F-01). Decision (fix B): the collectors live in
+`tabrion.postgres._check` and `tabrion._sa._check`; `tabrion.check` keeps a fixed table from the module of the
+target's type to the collector module and loads it with `importlib.import_module`. The contracts stay unchanged and
+use no `ignore_imports`. `tests/architecture/test_import_contracts.py` checks that `check.py` has no non-stdlib import
+outside `TYPE_CHECKING` and that the table names exactly these two modules; the mutation probe "`import
+tabrion.postgres` in `check.py` is BROKEN" stays.
+
+### Merge gate (G-T1 condition C-7)
+
+`ci-ok.yml` runs through `workflow_run`, so GitHub always takes it, `ci_ok.py` and the manifest from the default
+branch, and a pull request cannot change its own gate. Its own check run is attached to the default branch's commit,
+never to the pull request's head, so it cannot be a required check (G-T1 finding F-06). Decision: after each
+evaluation, `.github/scripts/ci_ok_status.py` posts the verdict as the commit status `ci-ok` on the head SHA
+(`statuses: write`): `success` for OK, `pending` while listed workflows run, `failure` for NOT OK, `error` when no
+report exists. The evaluation runs with `CI_OK_ENFORCE=1`. Branch protection on `master` requires the status `ci-ok`
+(owner action O-1). `ci_ok.py` stays byte-identical to the canonical copy in nodestro-studio; the status script is the
+Tabrion addition.
+
+Residual risk: a commit status can be posted by any workflow with `statuses: write`, so a pull request could add such
+a workflow and forge `ci-ok`. The nodestro-studio design note prefers a check run (`checks: write`) for that reason;
+a check run created with the workflow token belongs to the GitHub Actions app as well, so it does not close this path
+either. Countermeasures: a unit test fails when any workflow other than `ci-ok.yml` requests `statuses: write`;
+`CODEOWNERS` for `/.github/**` with code-owner review (owner action O-1); and every pull request in this repository
+is reviewed by the owner before the merge.
+
 ## Rationale
 
 - The checks replace the blanket bans (plan document 00 section 9, lifted) with a positive list that satisfies P8.
@@ -57,8 +86,8 @@ pull request.
 ## Verification
 
 - Every AC check has a negative test or a mutation probe that must be red (plan document 07 section 7).
-- In this repository (M1): AC-1 through `lint-imports` and `tests/architecture/test_import_contracts.py` (one
-  mutation probe per forbidden edge, each must name its broken contract); AC-3 through
+- In this repository (M1): AC-1 through `lint-imports` and `tests/architecture/test_import_contracts.py` (six
+  contracts, one mutation probe per forbidden edge, each must name its broken contract); AC-3 through
   `tests/unit/test_import_isolation.py`, `tests/packaging/test_isolation_probe.py` and the CI job
   `core without extras`; the Tabrion part of AC-4 through `tests/packaging/test_extras_matrix.py`.
 
@@ -70,6 +99,12 @@ pull request.
 
 ## Changes from the plan
 
+- `tabrion.check` reaches `tabrion.postgres` and layer B through private collector modules loaded by name, not by a
+  lazy import (plan document 05 section 2.3; G-T1 condition C-1, see "Decision").
+- Two additional contracts from plan document 02 section 2: layer B needs only SQLAlchemy, and `tabrion.migrations`
+  never imports pytest (G-T1 condition C-5).
+- `ci-ok` posts a commit status on the pull request's head; the plan names `ci-ok` as the required check without
+  saying how a `workflow_run` result reaches the pull request (G-T1 condition C-7).
 - The Tabrion contracts additionally forbid `levuvo_nextcloud_mcp` and `nodestro_client` and run an AST prefix scan
   for `nodestro*`, `orkexa*`, `axentra*`, `levuvo*` and `tabrion_studio*`, because import-linter cannot express a
   prefix.

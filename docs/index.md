@@ -16,7 +16,7 @@ inside the application's process: no server, no service, no pool of its own, no 
 | A, driver core | `tabrion.errors`, `tabrion.sql`, `tabrion.config`, `tabrion.sqlite`, `tabrion.check` | the standard library only |
 | A, PostgreSQL helpers | `tabrion.postgres` | psycopg 3.2 or later (`tabrion[postgres]`) |
 | A, test support | `tabrion.testing` | pytest (`tabrion[testing]`) |
-| B, SQLAlchemy integration | `tabrion.Database`, `Profile`, `Transaction`, `Result`; `tabrion.migrations` | SQLAlchemy 2.0.30 or later (`tabrion[sqlalchemy]`); Alembic for `tabrion.migrations` (`tabrion[migrations]`) |
+| B, SQLAlchemy integration | `tabrion.Database`, `Profile`, `Transaction` (`Result` from 0.2); `tabrion.migrations` | SQLAlchemy 2.0.30 or later (`tabrion[sqlalchemy]`); Alembic for `tabrion.migrations` (`tabrion[migrations]`) |
 
 Layer B applies the layer A profile to the same DBAPI connection through SQLAlchemy events; layer A never imports
 layer B ([ADR 0002](adr/0002-two-layers-one-distribution.md)).

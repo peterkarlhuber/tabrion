@@ -6,23 +6,26 @@
 > planning documents 09 and 14); this file is the entry point and summary. "TABRION <WP-ID>" names a work package of
 > that backlog.
 >
-> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M1 pull request)
+> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (G-T1 follow-up pull request, after
+> M1 pull request #1 merged)
 
 ## Summary
 
 | Priority | Count |
 |---|---|
-| P0 Critical | 2 |
+| P0 Critical | 1 |
 | P1 High | 9 |
-| P2 Medium | 5 |
-| P3 Low | 2 |
+| P2 Medium | 6 |
+| P3 Low | 5 |
 | P4 Optional | 0 |
 
-**Release blockers:** TB-001 (manual trademark register check before G-T2) and TB-002 (G-T1 review of the API
-contract). Nothing is released from this repository before G-R in any case; there is no published version.
+**Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
+before G-R in any case; there is no published version.
 
-M1 delivers the package skeleton, the frozen API as typed stubs, CI, the import contracts, the documentation and the
-program files. Every function raises `NotImplementedError`; the implementation is M2 (Tabrion 0.1).
+M1 is merged: the package skeleton, the frozen API as typed stubs, CI, the import contracts, the documentation and the
+program files. G-T1 passed with conditions on 2026-11-08; the follow-up pull request closes C-1..C-6 and the
+repository part of C-7 and C-8 ([STATUS.md](program/STATUS.md#g-t1-conditions)). Every function raises
+`NotImplementedError`; the implementation is M2 (Tabrion 0.1).
 
 ## Priorities and statuses
 
@@ -47,14 +50,6 @@ Statuses: `Open`, `In progress` (PR linked), `Blocked` (names the blocker), `Nee
   conflict.** Until then no PyPI name, no announcement, and the profile file extension of TABRION TAB-CR-1 stays
   unfrozen.
 
-### TB-002 · G-T1 review of the API contract (TABRION TAB-002)
-
-- **Priority:** P0 Critical · **Status:** Needs decision · **Refs:** TABRION TAB-002, G-T1
-- **What:** [contract.md](api/contract.md) and the stubs freeze every public signature. Eight open points (G-1..G-8)
-  are proposals the stubs had to make.
-- **Next step:** owner review; then M2 starts (TABRION TAB-010 onward). A change after G-T1 is an API change and
-  updates the contract, the stubs and `tests/unit/test_public_api.py` together.
-
 ## Owner actions
 
 Things only the owner can do; the agent lacks the rights or must not do them. Mirrored in
@@ -62,10 +57,14 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-003 · Repository settings: branch protection, environment `pypi`, private vulnerability reporting
 
-- **Priority:** P1 High · **Status:** Open · **Refs:** TABRION GOV-2, TABRION GOV-3, TABRION TAB-043, G-R
-- **What:** branch protection on `master` (required check `ci-ok`, no force pushes, no deletion; the agent proxy gets
-  HTTP 403); the same for tabrion-studio; a GitHub environment `pypi` with the owner as required reviewer before any
-  run of `release.yml` with `publish: true`; private vulnerability reporting switched on (SECURITY.md points to it).
+- **Priority:** P1 High · **Status:** Open · **Refs:** TABRION GOV-2, TABRION GOV-3, TABRION TAB-043, G-R, G-T1 C-7,
+  C-8; owner actions O-1, O-2, O-5, O-7
+- **What:** branch protection on `master`: the required status check `ci-ok` is the commit status that `ci-ok.yml`
+  posts on the PR head SHA (C-7; it exists only after the follow-up pull request is merged), plus no force pushes and
+  no deletion (the agent proxy gets HTTP 403); recommended `CODEOWNERS` for `/.github/**` with code-owner review. The
+  same for tabrion-studio. The environment `pypi` (C-8): the owner as required reviewer, "prevent self-review",
+  deployment refs restricted to tags `v*`, no secrets, and later the trusted publisher bound to `release.yml` and
+  `pypi` (ADR 0009, "Release environment"). Private vulnerability reporting switched on (SECURITY.md points to it).
 - **Next step:** set them in the repository settings; then mark GOV-2 done in STATUS.md.
 
 ### TB-004 · Confirm the CR-DB decisions E-CR-1..E-CR-7
@@ -77,30 +76,29 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   recommendations but no recorded confirmation.
 - **Next step:** owner confirms or changes each; ARC-CR-1 records the new edge.
 
-## M1 remainder
+### TB-023 · Planning errata from G-T1 (F-17)
 
-### TB-005 · API surface check (TABRION TAB-023)
-
-- **Priority:** P1 High · **Status:** Open · **Refs:** TABRION TAB-023, S-6, TABRION TAB-051
-- **What:** `scripts/api_surface.py` compares `__all__` and the signatures with `docs/api/surface.json`; CI fails on
-  an unintended API change; job `api surface`. Until then `tests/unit/test_public_api.py` guards the `__all__` lists
-  only, not the signatures.
-- **Next step:** after G-T1, generate `surface.json` from the frozen stubs and add the job to `ci.yml` and the
-  manifest.
+- **Priority:** P3 Low · **Status:** Open · **Refs:** G-T1 F-17, owner action O-8
+- **What:** planning document 05 section 2.3 describes a lazy import in `tabrion.check` that import-linter would flag
+  (replaced by condition C-1); planning document 02 section 9 writes `tabrion.check(target)` (G-6: the function is
+  `tabrion.check.check`).
+- **Next step:** the owner records both in the planning errata.
 
 ## M2: Tabrion 0.1
 
 ### TB-006 · Layer A implementation (TABRION TAB-010..TAB-017, TAB-030, TAB-031)
 
-- **Priority:** P1 High · **Status:** Blocked (G-T1) · **Refs:** TABRION TAB-010, TAB-011, TAB-012, TAB-013,
+- **Priority:** P1 High · **Status:** Open · **Refs:** TABRION TAB-010, TAB-011, TAB-012, TAB-013,
   TAB-014, TAB-015, TAB-016, TAB-017, TAB-030, TAB-031
 - **What:** replace the stubs in order of the critical path: `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011),
   `tabrion.config` (TAB-012), `tabrion.sqlite` connection and profile (TAB-013) then transactions, `migrate`,
   `backup` and checks (TAB-014), `tabrion.postgres` configure, ping, diagnose, extension status (TAB-015), roles
   (TAB-016), `tabrion.check` and finding codes (TAB-017), `SessionLock` and advisory helpers (TAB-030),
   `grant_runtime_role` (TAB-031). Each with the TAB-T test IDs of the contract.
-- **Next step:** TAB-010 after G-T1. `test_stubs_raise_not_implemented` shrinks module by module as stubs are
-  replaced.
+- **Next step:** TAB-010 once the G-T1 follow-up pull request is merged (C-6: the API surface check must be on
+  `master` first). `test_stubs_raise_not_implemented` shrinks module by module as stubs are replaced; every change
+  to a signature also runs `scripts/api_surface.py --write` and updates the contract. TAB-017 follows the dispatch of
+  C-1 (contract section 7); TAB-010 takes the G-1 notes and F-12.
 
 ### TB-007 · Layer B, migrations, testing (TABRION TAB-018..TAB-021, TAB-032, TAB-034)
 
@@ -110,7 +108,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tabrion.testing` 0.1 (TAB-020) with a database per session, roles without superuser, truncate and runtime-role
   mode (TAB-032), profile and portability cases (TAB-021), the fault-injection proxy `tabrion.testing.faults`
   (TAB-034, includes QA-3).
-- **Next step:** after TAB-014 and TAB-015.
+- **Next step:** after TAB-014 and TAB-015. TAB-018 also settles F-11 (TB-020) and F-14 (`Database()` without a
+  factory raises `TypeError`); TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture `tabrion_role_setup`
+  (G-10).
 
 ### TB-008 · Consumer protection, conformance, stability policy (TABRION TAB-022, TAB-050, TAB-051)
 
@@ -147,6 +147,14 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   A tag needs TB-001 done first; no GitHub release and no PyPI upload without G-R.
 - **Next step:** TAB-038 after TAB-010..TAB-012 and TAB-005.
 
+### TB-022 · Release check: no 0.1 name is still a stub (TABRION TAB-040, G-T1 F-08)
+
+- **Priority:** P1 High · **Status:** Open · **Refs:** TABRION TAB-040, TAB-023, G-T2, G-T1 F-08
+- **What:** before the tag `v0.1.0`, a check that no name of `docs/api/surface.json` with `since` at or below the
+  package version raises `NotImplementedError` (today every name does, by design). `scripts/api_surface.py` already
+  keeps names with a newer `since` out of the exported surface.
+- **Next step:** with TAB-040, as a mode of `scripts/api_surface.py` run by `release.yml`.
+
 ## M3, M5 and M8: work in this repository
 
 ### TB-012 · Architecture checks and ecosystem documentation (TABRION QA-16, QA-17, QA-18, QA-19, QA-21, QA-23, QA-24)
@@ -165,7 +173,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 - **Priority:** P1 High · **Status:** Blocked (TAB-040) · **Refs:** TABRION TAB-033, TAB-042
 - **What:** `query`/`Result`, `stream`, `cancel`, `inspector` (TAB-033), then the release 0.2.0 with the 0.2
-  documentation (TAB-042). The critical path to Studio runs through these.
+  documentation (TAB-042). The critical path to Studio runs through these. The frozen 0.2 stubs are staged in
+  `tabrion._sa._v02`; TAB-033 mixes them into `Database` and `Transaction`, exports `Result` and `Column` from
+  `tabrion` and drops the `staged` keys from `surface.json` when the version becomes 0.2.
 - **Next step:** after G-T2 for 0.1.
 
 ### TB-014 · Connection profile format v1 (TABRION TAB-CR-1)
@@ -195,9 +205,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-017 · CI jobs that arrive with later work packages
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-022, TAB-023, TAB-034, TAB-050, QA-4, RA-A-1,
-  RA-B-1; deviation D-2
-- **What:** `api surface`, `conformance`, `golden files` and `examples` in `ci.yml`; fault injection, stress and
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-022, TAB-034, TAB-050, QA-4, RA-A-1, RA-B-1;
+  deviation D-2
+- **What:** `conformance`, `golden files` and `examples` in `ci.yml` (`api surface` arrived with TAB-023); fault injection, stress and
   `downstream` in `nightly.yml`. Each is added with its work package and listed in `.github/ci-manifest.json`.
 - **Next step:** with each work package.
 
@@ -207,6 +217,31 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **What:** all eight PostgreSQL jobs (16, 17, 18, pgvector 17 on Python 3.11 and 3.14) run on every pull request,
   following planning document 05; planning document 07 runs 16 and 18 only nightly. Cheap while the suite is small.
 - **Next step:** revisit when the PostgreSQL suite of M2 makes the jobs slow.
+
+### TB-019 · Core imports by allowlist (G-T1 F-09, F-10)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** G-T1 F-09, F-10, TABRION QA-16
+- **What:** "stdlib-only" is enforced by a denylist, so another third-party import (for example `pluggy`) passes; the
+  root package `tabrion` is in no contract, so `from tabrion import Database` inside a core function reaches layer B
+  unseen. An AST test over `errors`, `sql`, `config`, `sqlite` and `check` that allows only `sys.stdlib_module_names`
+  and these core modules, and forbids `import tabrion`/`from tabrion import` outside `tabrion/__init__.py`.
+  `check.py` already has the first half (C-1).
+- **Next step:** with the first M2 implementation pull request (TAB-010).
+
+### TB-020 · Export `Statement` and `Params`, or make them documentation-only (G-T1 F-11)
+
+- **Priority:** P3 Low · **Status:** Needs decision · **Refs:** G-T1 F-11, G-5, TABRION TAB-018
+- **What:** both aliases appear in public layer-B signatures and in `tabrion._sa.database.__all__`, but not in
+  `tabrion.__all__`, against the G-5 rule.
+- **Next step:** decide in TAB-018; update the contract and `surface.json` together.
+
+### TB-021 · Platform path filters too narrow (G-T1 F-15)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** G-T1 F-15, TABRION TAB-004
+- **What:** macOS and Windows run on pull requests only when `sqlite.py` or `tests/sqlite/**` change; `config.py`,
+  `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms.
+- **Next step:** add the paths to `platforms.yml` and to the manifest's `path_filters` in one pull request merged
+  before the change that needs them (ci-ok judges by the default branch's manifest).
 
 ## Cross-repository dependencies
 
