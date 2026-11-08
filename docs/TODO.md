@@ -14,9 +14,9 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 1 |
-| P1 High | 11 |
-| P2 Medium | 6 |
-| P3 Low | 10 |
+| P1 High | 13 |
+| P2 Medium | 8 |
+| P3 Low | 12 |
 | P4 Optional | 0 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -90,7 +90,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-006 · Layer A implementation (TABRION TAB-010..TAB-017, TAB-030, TAB-031)
 
-- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-012 in the M2 lane A pull request) · **Refs:**
+- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-012 in the M2 lane A pull request; TAB-015 and
+  TAB-016 in the M2 lane C pull request) · **Refs:**
   TABRION TAB-010, TAB-011, TAB-012, TAB-013, TAB-014, TAB-015, TAB-016, TAB-017, TAB-030, TAB-031
 - **What:** replace the stubs in order of the critical path: `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011),
   `tabrion.config` (TAB-012), `tabrion.sqlite` connection and profile (TAB-013) then transactions, `migrate`,
@@ -101,7 +102,10 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   is TB-026). TAB-013 and TAB-015 can start once they are merged. `test_stubs_raise_not_implemented` shrinks module
   by module as stubs are replaced (`errors`, `sql`, `config` have left it); every change to a signature also runs
   `scripts/api_surface.py --write` and updates the contract. TAB-017 follows the dispatch of C-1 (contract section
-  7). Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
+  7). TAB-015 and TAB-016 are in review (contract I-14..I-19, [M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence),
+  independent review TB-032); `IMPLEMENTED` in `tests/unit/test_public_api.py` lists the functions of the partly
+  implemented `tabrion.postgres`. TAB-030 (locks) follows in the next lane C pull request, then TAB-031 on
+  `role_info`/`inspect_role`. Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
   `sent=False` for checkout errors.
 
 ### TB-007 · Layer B, migrations, testing (TABRION TAB-018..TAB-021, TAB-032, TAB-034)
@@ -305,6 +309,77 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Next step:** an Axentra pull request ports the collection and escaped-form scrubbing of contract I-6 and the
   H-2 tests, checks its chain rule against I-13, or replaces the filter by `tabrion.errors` with MIG-AXE-3.
 
+### TB-032 · Independent review of TAB-015 and TAB-016 (planning document 07 section 6)
+
+- **Priority:** P1 High · **Status:** In progress (not accepted at e0060a6; fixes in the pull request, delta
+  re-review pending) · **Refs:** TABRION TAB-015, TAB-016, T-NOTX, R-SET, TM-07, TM-08, SR-02, SR-10, planning folder
+  `reviews/tab-015-016-review.md`
+- **What:** the review model requires an independent review agent for TAB packages in `postgres` (roles, locks);
+  `configure` and `session_configurator` sit next to R-SET (settings on shared pools, M10). The M2 lane C pull request
+  carries the self-review ([M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence)).
+- **Result so far:** the review of e0060a6 was "not accepted": H-1 (roles reachable with `SET ROLE` reported safe),
+  M-1 (a failing reader aborted the caller's transaction), M-2 (unqualified types and operators). The fix round in the
+  same pull request implements H-1 as decided by the owner (contract I-20, D-32), M-1 with a savepoint (I-15, I-16,
+  D-33), M-2 by qualifying every type and operator, L-2 (NOINHERIT member test) and I-1 (ping without a savepoint in
+  an aborted transaction); L-1 is documented in I-14 and I-16; I-2..I-4 are in TB-034, TB-036 and TB-037.
+- **Next step:** delta re-review on the new head.
+
+### TB-033 · `tabrion.testing.faults` is not in the frozen API surface (TABRION TAB-034)
+
+- **Priority:** P2 Medium · **Status:** Needs decision · **Refs:** TABRION TAB-034, QA-3, RA-B-3, MIG-T-AXE-8,
+  `docs/api/surface.json`
+- **What:** planning documents 07 (K7: `tabrion.testing.faults.DropReplyProxy`) and 09 (TAB-034) make the
+  fault-injection proxy a public module, and RA-B-3 and the Axentra test MIG-T-AXE-8 would use it; planning document 04
+  and the frozen contract place it in `tests/support/` and `surface.json` has no `tabrion.testing.faults`. A new public
+  module is an API addition after G-T1.
+- **Next step:** owner decides before TAB-034: (a) a contract addendum with `surface.json` entries (`since: "0.1"`,
+  stability X) and a short G-T1 style review, or (b) an internal helper under `tests/support/` and a public module
+  later.
+
+### TB-034 · `ping` has no client-side deadline (TABRION TAB-015)
+
+- **Priority:** P3 Low · **Status:** Accepted risk · **Refs:** TABRION TAB-015, contract I-14, SECURITY.md
+- **What:** `ping` bounds the server's work (`SET LOCAL statement_timeout`) and a pool checkout, but a network that
+  stops answering mid-statement blocks until TCP gives up, because psycopg has no client-side statement deadline.
+- **Reason for accepting:** the contract defines the limit on the server; callers that need a hard deadline run the
+  check in a thread (as Nodestro's `DatabaseHealth` does) and set TCP keepalives or `tcp_user_timeout`. Revisit with
+  the delay mode of TAB-034. The same holds for a connection another thread is using: `ping` waits for psycopg's
+  connection lock without a bound, which `timeout` does not cover (review I-2; SECURITY.md).
+
+### TB-035 · Axentra and Nodestro role checks miss roles reachable with `SET ROLE` (review H-1)
+
+- **Priority:** P1 High · **Status:** Open · **Refs:** TABRION TAB-016, MIG-AXE, MIG-NOD, contract I-20, D-32,
+  planning folder `reviews/tab-015-016-review.md` H-1
+- **What:** Axentra (`data/database.py:359-405` `role_info`/start check, `data/roles.py:72-104` `inspect_role`) and
+  Nodestro (`storage_postgres.py:757-768` `role_info`, `947-984` `inspect_role`) read `rolsuper` and `rolbypassrls`
+  of `current_user` (or the named role) only. A login role that is a member of a superuser or BYPASSRLS role
+  (INHERIT or NOINHERIT), and a superuser session after `SET ROLE app`, pass their start checks; row-level security
+  then does not protect against SQL that runs as that role. Tabrion's fix (I-20) shows the gap: TAB-T-R11 asserts
+  that the reference queries miss it.
+- **Next step:** fix both in their MIG waves (MIG-AXE, MIG-NOD) by moving to `tabrion.postgres.check_role` and
+  `inspect_role`, or earlier with the membership query of I-20 and the R11/R12 cases in their own suites.
+
+### TB-036 · Superuser-equivalent predefined roles and `CREATEROLE` are not reported (review I-4)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-016, TAB-017, contract I-20, review H-1
+  (optional part), I-4
+- **What:** membership of `pg_execute_server_program`, `pg_write_server_files` or `pg_read_server_files`, and
+  `CREATEROLE` on servers before 16, are ways to superuser-equivalent power that `check_role` does not name.
+  `pg_read_all_data` and `pg_write_all_data` do not bypass row-level security. A new reason code would extend the
+  frozen reason set (a contract addendum); a finding of `tabrion.check` (TAB-017) would not.
+- **Next step:** decide with TAB-017: a `tabrion.check` finding for these memberships (preferred, no API change), or a
+  reason code in 0.2 by contract addendum.
+
+### TB-037 · Review follow-ups L-1 and I-3 of TAB-015/TAB-016
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-015, contract I-14, I-16, I-17, review L-1, I-3
+- **What:** (L-1) a reader or `ping` that runs first in a caller's fresh transaction takes its snapshot; a later
+  `SET TRANSACTION ISOLATION LEVEL` fails and REPEATABLE READ sees the data as of the check. Documented in I-14 and
+  I-16; nothing in T-NOTX forbids it. (I-3) `diagnose._milliseconds` raises `ValueError` on a time format it does not
+  know; reached only without `pg_settings`, where `current_setting` always prints one unit.
+- **Next step:** with layer B (TAB-018), recommend calling the checks outside a transaction in the guide; make
+  `_milliseconds` return `None` for an unknown format if a server ever prints one.
+
 ### TB-024 · Circular import of the staged 0.2 mixins (G-T1 condition check CC-2)
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** CC-2, TABRION TAB-033, TB-013
@@ -323,6 +398,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 | TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need `v0.1.0` final (RC-8) |
 | TB-008 | nodestro-studio | TABRION QA-20 (AC-5) | Consumer compat gates Tabrion tags |
 | TB-031 | axentra | TABRION MIG-AXE-3 | Axentra's redaction filter has the identical H-2 gap (and possibly the H-1 analog); port the fix of this pull request |
+| TB-035 | axentra, nodestro-runtime | TABRION MIG-AXE, MIG-NOD | Their role checks miss roles reachable with `SET ROLE` (review H-1); fix in their MIG waves or earlier |
 | TB-006 | axentra | TABRION MIG-AXE-2, MIG-AXE-3 | Re-export `split_statements` and use `tabrion.errors`; the splitter differences of contract I-9 go into Axentra's CHANGELOG as a fix |
 
 ## Maintaining this file

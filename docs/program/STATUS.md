@@ -92,10 +92,10 @@ Planned effort: 60.75 + 21.25 agent days.
 | JQ-4 | Docs, CHANGELOG, export adjustment, pin wave W7 (JQ) | runtime, api, studio | JQ-3 | G-M | 1 + 0.5 | JQ | Not started |  |
 | QA-11 | Release workflow without publishing | tabrion | TAB-005 | - | 1 + 0.25 | QA | Not started |  |
 | TAB-013 | tabrion.sqlite connection and profile | tabrion | TAB-010 | - | 2 + 1 | Core | Not started |  |
-| TAB-015 | tabrion.postgres configure, ping, diagnose, extension_status | tabrion | TAB-010, TAB-012 | - | 2 + 0.5 | Core | Not started |  |
+| TAB-015 | tabrion.postgres configure, ping, diagnose, extension_status | tabrion | TAB-010, TAB-012 | - | 2 + 0.5 | Core | In review | `src/tabrion/postgres/__init__.py`, `_common.py`; `tests/postgres/test_session.py` (P01..P05, P16, G03), `tests/postgres/test_health.py` (P06..P15), `tests/postgres/test_contract_rules.py` (G01, G02, `search_path` hijack), `tests/unit/test_postgres_unit.py`, PostgreSQL mutation probes; [M2 lane C evidence](#m2-lane-c-evidence). Independent review required (TB-032) |
 | TAB-038 | Internal pre-release v0.1.0a1 (errors, sql, config) for unmerged integration branches (RC-8) | tabrion | TAB-010, TAB-011, TAB-012, TAB-005 | - | 0.25 + 0.25 | Core | Not started |  |
 | QA-22 | Conventions audit of the new repositories | tabrion, tabrion-studio | TAB-004, STU-018 | - | 0.5 + 0 | QA | Not started |  |
-| TAB-016 | tabrion.postgres reading roles | tabrion | TAB-015 | - | 1.5 + 0.75 | Core | Not started |  |
+| TAB-016 | tabrion.postgres reading roles | tabrion | TAB-015 | - | 1.5 + 0.75 | Core | In review | `src/tabrion/postgres/roles.py`; `tests/postgres/test_roles.py` (R01..R10 against the verbatim Axentra and Nodestro queries; R11/R12 roles a session can become), G01/G02; [M2 lane C evidence](#m2-lane-c-evidence). Independent review (TB-032): not accepted at e0060a6 (H-1, M-1, M-2), fixes in the same pull request, delta re-review pending |
 | TAB-030 | SessionLock and advisory lock helpers (0.1) | tabrion | TAB-015 | - | 2 + 1 | Core | Not started |  |
 | TAB-034 | Fault-injection proxy tabrion.testing.faults (includes QA-3) | tabrion | TAB-015 | - | 1.5 + 0.5 | Core | Not started |  |
 | TAB-014 | tabrion.sqlite transactions, migrate, backup, checks | tabrion | TAB-013 | - | 3 + 1.5 | Core | Not started |  |
@@ -338,6 +338,45 @@ in a URL password, the regular-file rule); a positive control passes on the unch
 M-1, M-2, M-3, L-2, L-6). Three new import-linter
 probes for the new bottom layer `tabrion.errors` (contract I-12).
 
+## M2 lane C evidence
+
+What the M2 lane C pull request (TABRION TAB-015, TAB-016) delivers against planning document 09. Local run on
+2026-11-08: Python 3.13, PostgreSQL 16.15, psycopg 3.3; CI runs PostgreSQL 16, 17, 18 and pgvector 17 on Python 3.11
+and 3.14. Every PostgreSQL suite runs as the superuser **and** as LOGIN roles without superuser (`NOSUPERUSER
+NOBYPASSRLS`, created per test in `tests/postgres/conftest.py`); privilege and extension cases use a throwaway
+database.
+
+| WP | Acceptance criterion (plan document 09) | Evidence |
+|---|---|---|
+| TAB-015 | TAB-T-P01..P15 against PostgreSQL 16/17/18; `transaction_timeout` only from 17; one round trip for `configure` | P01 values through `SHOW`/`pg_settings` (quoted `search_path`, defaults, `unchanged()` sends nothing, `transaction_timeout` set from 17 and skipped on 16); P02 `configure` never commits, `session_configurator` commits only its own transaction; P03 inside a transaction; P04 validation (unit: every field and bound; server: nothing reaches it, an unknown time zone passes through as a driver error); P05 one round trip counted with libpq's protocol tracer (with a positive control); P06 ok with and without autocommit, `SET LOCAL` gone afterwards; P07 terminated backend, closed connection, unreachable server through a pool (`sent=False`); P08 a real server-side wait (safe snapshot of a `SERIALIZABLE READ ONLY DEFERRABLE` session) cancelled by the timeout, TIMEOUT 57014, connection IDLE and usable; P09 `psycopg_pool` source, exhausted pool, a Nodestro-style `SharedPool`; P10..P12 `diagnose` as superuser, without `pg_settings`/`pg_stat_ssl` privileges (fields `None`, timeouts from `current_setting`), as a runtime role, SSL on and off; P13..P15 every state with `pg_trgm`/`gtrgm`, `other_schema` and its command executed, quoted odd schema names, and equality with Nodestro's `pgvector_status` query for every state (`vector` in the pgvector job, which must not skip); P16 a `psycopg_pool` with `session_configurator` shared by two consumers (same backend, same GUCs, no tenant leaks) |
+| TAB-016 | TAB-T-R01..R10; `owner_scope` schema/rls gives Nodestro- and Axentra-identical results | Every `role_info` case is compared with the verbatim Axentra (`rls`) and Nodestro (`schema`) queries: R01 restricted role, R02 superuser, R03 `BYPASSRLS`, R04 owner of a table without RLS (schema yes, rls no), R05 owner of a table with FORCE RLS, R06 owner through membership and a partitioned table, R07 reasons and flags (`allow_superuser` implies table ownership), R08 `current_schema()` versus `current_schemas(false)`, invalid scope; R09/R10 `inspect_role` equals Nodestro's dict and Axentra's report key by key (owned tables, `schema=`, CREATE on the schema, revoked CONNECT, a superuser target, a runtime role inspecting itself, no current schema), `RoleMissing` without the name. Review fixes (contract I-20, D-32): R06 a NOINHERIT member of the owner is an owner (L-2); R11 a member of a SUPERUSER or BYPASSRLS role, INHERIT and NOINHERIT, directly and through an intermediate role, is reported and refused in both scopes, by `role_info`, `check_role` and `inspect_role`, while the reference queries miss it (asserted); R12 a superuser session after `SET ROLE app` and a login role that switched to a plain role but can become a BYPASSRLS role; a control with an unprivileged membership stays restricted |
+| Both | T-NOTX, R-SET (TAB-T-G01..G03) | `test_contract_rules.py`: every implemented function in IDLE with autocommit, IDLE without autocommit and INTRANS, with tuple, `dict_row`, `namedtuple_row` + `ClientCursor` and `RawCursor` connections, as superuser and runtime role (204 cases): status, `autocommit`, row and cursor factory, backend unchanged; a caller's open write neither committed nor rolled back; `app.tenant_id` (transaction-local), a session `app.*` setting, `current_user`, `session_user` unchanged; `configure` on IDLE without autocommit is the one documented INTRANS. INERROR is left alone (ping logs nothing there, review I-1). Failure paths (review M-1, D-33): `inspect_role` with a missing schema, `extension_status` with a malformed `probe_type`, `configure` with an unknown time zone and `inspect_role` of a missing role, in an implicit and in a `connection.transaction()` transaction, as superuser and runtime role: the caller's write stays and commits, the time zone is unchanged; defined results in every state. A hostile schema before `pg_catalog` with functions, operators `=` (name, name/text, text, oid, "char", int4) and domains `text`, `name`, `oid`, `regtype` runs none of them (contract I-16, review M-2; the traps are shown to fire on unqualified use). G03: a subclass field outside the allowlist is refused, and the one statement sent names exactly the allowlisted settings |
+| Both | Installation without psycopg (G-7) | `test_postgres_functions_give_the_installation_hint_without_psycopg` under the extras blockade |
+
+| DoD point (07 section 6) | TAB-015 | TAB-016 |
+|---|---|---|
+| 1. English; acceptance criteria checked one by one with test IDs | Yes (table above) | Yes |
+| 2. Required CI jobs green; no new skip without a reason | CI of this pull request; no new skip (the pgvector job fails instead of skipping) | CI |
+| 3. Public API documented, CHANGELOG; security notes | Contract 4.1..4.4, I-14..I-18, CHANGELOG, SECURITY.md (server-side ping limit, qualified types and operators) | Contract 4.5, 4.6, I-19, I-20, CHANGELOG |
+| 4. No parameter value or secret in new log or error paths | Errors carry the field name only (`postgres.invalid_setting`); no logging | `RoleMissing` without the role name; `RoleUnsafe` with reason codes only |
+| 5. Rollback path | Revert of this pull request (no consumer uses it yet) | Same |
+| 6. STATUS.md and TODO.md updated | Yes | Yes |
+| Review model | Independent review agent (TODO TB-032): not accepted at e0060a6; H-1, M-1, M-2, L-2, I-1 fixed, L-1 documented, I-2..I-4 in TODO; delta re-review pending | Same |
+
+Mutation probes (`tests/postgres/test_postgres_mutation_probes.py`, against the server): 15 probes, each turns its
+test red: the reader's rollback of its own transaction, a rollback of the caller's transaction, the own `tuple_row`
+cursor, a commit in `configure`, the commit of `session_configurator`, the R-SET allowlist, `search_path`
+validation, ping's server-side limit, `pg_catalog` qualification, the `pg_stat_ssl` privilege check, schema
+visibility in `extension_status`, the `relrowsecurity` filter of the `rls` scope, `allow_superuser` implying table
+ownership, the `bypass_rls` refusal and the owned tables of `inspect_role`; plus a positive control. The probe for
+schema visibility found a gap in P14 (only checked with a probe type), fixed before this pull request.
+
+Review fixes add 9 probes (24 in all): the savepoint of readers in a running transaction (M-1), the schema oid in
+`inspect_role` (M-1), a qualified operator and a qualified type (M-2), `session_user` and membership of a superuser
+role in `role_info`, membership of a BYPASSRLS role in `inspect_role` (H-1), `MEMBER` instead of `USAGE` (L-2) and
+ping without a savepoint in an aborted transaction (I-1). Each new R11/R12, M-1 and M-2 test was also run against the
+reviewed head e0060a6 and fails there.
+
 ## G-T1 conditions
 
 The independent G-T1 review (2026-11-08, planning folder `reviews/g-t1-review.md`) passed the API freeze with eight
@@ -432,30 +471,9 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-25 | TAB-010 | `outcome_unknown` whenever `kind == CONNECTION` and (`sent` or `during_commit`) | Not for SQLSTATE 53300 | The mapping table makes 53300 retryable without condition; it occurs only while connecting (contract I-2) |
 | D-26 | TAB-010 | Contract 1.3 "Chains": the first error with a SQLSTATE along `.orig`, `__cause__` and `__context__` | `.orig` and `__cause__` first; `__context__` only as a fallback and not under `__suppress_context__`; an outer connection loss wins (contract I-13) | Review H-1: `__context__` is the error being handled, so a COMMIT lost inside an `except` block for 40001 was classified as retryable, which breaks R-NORETRY |
 | D-27 | TAB-012 | Codes of `url_from_env` (D-22) | Also `config.too_large` for a file over 64 KiB (contract I-11) | Review L-6: a huge file or a procfs file was read completely and returned as the URL |
-
-## Score review
-
-QA-12 reviews the risk scores at the end of every milestone.
-
-| Milestone | Date | Result |
-|---|---|---|
-| M1 | 2026-11-08 | Scores of planning document 11 unchanged. R-13 updated with the GOV-1 result. New R-36 (prior use of the name by a third-party Excel/CSV app), score 12, owner Peter, countermeasure O-3. R-CR-1..R-CR-6 from CR-DB added unrated; rating due at the M4 review. Top risks: R-07 (16); R-01, R-12 (15); R-09, R-10, R-11, R-26, R-30, R-31, R-36 (12) |
-
-## Definition of Ready and Definition of Done
-
-From planning document 09 section 9.
-
-**Definition of Ready (before a work package starts):**
-
-1. Every predecessor work package is "Done" in this file.
-2. The gate of the predecessor has passed (column "Gate").
-3. The affected repositories are on the current master, and no open competing pull request touches the same files
-   (coordination rule).
-4. The acceptance criteria are measurable and the test IDs reserved.
-5. The rollback path from planning document 11 is known (MIG, JQ, PIN).
-6. For security-relevant work packages, the relevant TM, DI and SR IDs of planning document 07 are noted.
-
-**Definition of Done:** planning document 07 section 6 (six mandatory points, review model) applies unchanged to
-every work package. In addition, for MIG, JQ and PIN: the rollback probe QA-14 is documented in the pull request, and
-QA-15 (AC-6, one Tabrion version) and QA-16..QA-18 (AC-1..AC-3, edge list K-33) are green; for MIG-AXE also QA-25
-before and after the step.
+| D-28 | TAB-015 | Contract 4.2: `SET LOCAL statement_timeout` "in a short transaction of its own" | In a running transaction ping uses a savepoint that it rolls back (contract I-14) | A `SET LOCAL` in the caller's transaction would last until that transaction ends (T-NOTX), and a timeout would abort it |
+| D-29 | TAB-015, TAB-016 | Contract 4.2: ping raises only `TypeError` | A `timeout` that is not positive and finite, an `owner_scope` or extension name outside its domain raise `ValueError` (contract I-14, I-16) | Programming errors of the same kind as `TypeError`; no database is involved |
+| D-30 | TAB-015 | Nodestro `pgvector_status`: `CREATE EXTENSION vector SCHEMA "<schema>";` | `CREATE EXTENSION "vector" SCHEMA "<schema>";` (contract I-18) | Contract 4.4: "identifiers are quoted"; the states are identical (TAB-T-P15), the message text stays Nodestro's |
+| D-31 | TAB-015 | Development dependencies of TAB-005 | `psycopg-pool` added to the extra `dev` | P09 and P16 need a real `psycopg_pool.ConnectionPool`; Tabrion itself never imports it (import contract `postgres-psycopg-only`) |
+| D-32 | TAB-016 | Axentra `database.py:359-405`, `roles.py:72-104` and Nodestro `storage_postgres.py:757-768`, `947-984`: `rolsuper`/`rolbypassrls` of `current_user` (or the named role) only | `superuser` and `bypass_rls` also when `current_user` or `session_user` (or the named role) is a member of a role with that attribute; `table_owner` also through `session_user` (contract I-20, review H-1, decided by the owner) | A member can `SET ROLE` to that role (NOINHERIT too), a session can `RESET ROLE` to `session_user`: the references report such roles as safe. Signatures and reason codes unchanged (within the G-T1 freeze); TODO TB-035 carries the fix to Axentra and Nodestro |
+| D-33 | TAB-015, TAB-016 | Contract 4 (T-NOTX): readers run their statements in the caller's transaction | In the caller's running transaction readers and `configure` run under a savepoint (contract I-15, I-16, review M-1) | A failing statement would otherwise abort the caller's transaction and cost it its writes; two more round trips in that state only |
