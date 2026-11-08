@@ -10,7 +10,6 @@ an upstream SQLite file, with the same code (metric MW-8). RA-B-3 adds real netw
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
 import io
 from pathlib import Path
@@ -22,62 +21,18 @@ from measurements import Measurement, Store, open_database
 from measurements.cli import _read_csv, main
 from measurements.store import synthetic
 from measurements.transfer import Report, transfer
-from measurements.upstream import UPSTREAM, URL_ENV, create_upstream, insert_new, open_upstream
+from measurements.upstream import UPSTREAM, URL_ENV, insert_new, open_upstream
 import pytest
 import sqlalchemy as sa
 
 from tabrion import Database
 from tabrion.errors import TabrionError
-from tabrion.testing import PostgresSchema
 
-ENGINES = ["sqlite", pytest.param("postgresql", marks=pytest.mark.postgres)]
+from . import measurements_upstream as support
 
-
-def postgres_url(conninfo: str) -> sa.URL:
-    """A SQLAlchemy URL for a libpq conninfo, ``options`` (the schema's ``search_path``) included."""
-    from psycopg.conninfo import conninfo_to_dict
-
-    params = {key: str(value) for key, value in conninfo_to_dict(conninfo).items() if value is not None}
-    port = params.get("port")
-    query = {"options": params["options"]} if params.get("options") else {}
-    return sa.URL.create(
-        "postgresql",
-        username=params.get("user"),
-        password=params.get("password"),
-        host=params.get("host") or params.get("hostaddr"),
-        port=int(port) if port else None,
-        database=params.get("dbname"),
-        query=query,
-    )
-
-
-@pytest.fixture(params=ENGINES)
-def upstream_url(request: pytest.FixtureRequest, tmp_path: Path) -> sa.URL:
-    """An empty upstream with the measurement table: a PostgreSQL schema of its own, or a SQLite file."""
-    if request.param == "postgresql":
-        schema: PostgresSchema = request.getfixturevalue("tabrion_postgres_schema")
-        url = postgres_url(schema.owner_url)
-    else:
-        url = sa.make_url(f"sqlite:///{tmp_path / 'upstream.db'}")
-    with open_upstream(url) as database:
-        create_upstream(database)
-        create_upstream(database)  # idempotent
-    return url
-
-
-@pytest.fixture
-def upstream(upstream_url: sa.URL) -> Iterator[Database]:
-    with open_upstream(upstream_url) as database:
-        yield database
-
-
-@pytest.fixture
-def store(tmp_path: Path) -> Iterator[Store]:
-    connection = open_database(tmp_path / "local.db", backup_dir=tmp_path / "backups")
-    try:
-        yield Store(connection)
-    finally:
-        connection.close()
+upstream_url = support.upstream_url
+upstream = support.upstream
+store = support.store
 
 
 def capture_2500(store: Store) -> None:
