@@ -68,21 +68,21 @@ FIXTURE_OBJECTS = (
 SNAPSHOT = {
     "nspacl": "SELECT a.privilege_type, a.is_grantable, pg_get_userbyid(a.grantor)::text AS grantor"
     " FROM pg_namespace n, aclexplode(n.nspacl) a"
-    " WHERE n.nspname = %(schema)s AND a.grantee = %(oid)s ORDER BY 1",
+    " WHERE n.nspname = %(schema)s AND a.grantee = %(oid)s",
     "relacl": "SELECT c.relname::text, c.relkind::text, a.privilege_type, a.is_grantable,"
     " pg_get_userbyid(a.grantor)::text AS grantor"
     " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, aclexplode(c.relacl) a"
-    " WHERE n.nspname = %(schema)s AND a.grantee = %(oid)s ORDER BY 1, 3",
+    " WHERE n.nspname = %(schema)s AND a.grantee = %(oid)s",
     "role_table_grants": "SELECT table_name::text, privilege_type::text, is_grantable::text, grantor::text"
     " FROM information_schema.role_table_grants"
-    " WHERE table_schema = %(schema)s AND grantee = %(role)s ORDER BY 1, 2",
+    " WHERE table_schema = %(schema)s AND grantee = %(role)s",
     "role_routine_grants": "SELECT routine_name::text, privilege_type::text, is_grantable::text, grantor::text"
     " FROM information_schema.role_routine_grants"
-    " WHERE routine_schema = %(schema)s AND grantee = %(role)s ORDER BY 1, 2",
+    " WHERE routine_schema = %(schema)s AND grantee = %(role)s",
     "pg_default_acl": "SELECT d.defaclobjtype::text, a.privilege_type, a.is_grantable,"
     " pg_get_userbyid(d.defaclrole)::text AS grantor"
     " FROM pg_default_acl d JOIN pg_namespace n ON n.oid = d.defaclnamespace, aclexplode(d.defaclacl) a"
-    " WHERE n.nspname = %(schema)s AND a.grantee = %(oid)s ORDER BY 1, 2",
+    " WHERE n.nspname = %(schema)s AND a.grantee = %(oid)s",
     "database": "SELECT has_database_privilege(%(oid)s, current_database(), 'CONNECT') AS connect,"
     " EXISTS (SELECT 1 FROM pg_database d, aclexplode(d.datacl) a"
     "   WHERE d.datname = current_database() AND a.grantee = %(oid)s) AS granted",
@@ -105,7 +105,9 @@ def snapshot(admin: Any, fixture: Fixture, *, role: str | None = None, schema: s
         result: dict[str, Any] = {}
         for key, query in SNAPSHOT.items():
             rows = cur.execute(query, {"schema": schema, "role": role, "oid": oid}).fetchall()
-            result[key] = [{k: names.get(v, v) if k == "grantor" else v for k, v in row.items()} for row in rows]
+            normalized = [{k: names.get(v, v) if k == "grantor" else v for k, v in row.items()} for row in rows]
+            # Sorted here, not by ORDER BY: the order of names depends on the server's collation ("Mixed Case").
+            result[key] = sorted(normalized, key=lambda row: json.dumps(row, sort_keys=True))
     return result
 
 

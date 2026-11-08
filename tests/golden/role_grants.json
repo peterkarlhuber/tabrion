@@ -63,8 +63,50 @@
     "grantor": "<owner>",
     "is_grantable": false,
     "privilege_type": "DELETE",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
     "relkind": "r",
     "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "p",
+    "relname": "events"
    },
    {
     "grantor": "<owner>",
@@ -76,16 +118,30 @@
    {
     "grantor": "<owner>",
     "is_grantable": false,
-    "privilege_type": "SELECT",
+    "privilege_type": "INSERT",
     "relkind": "r",
-    "relname": "Mixed Case"
+    "relname": "events_2026"
    },
    {
     "grantor": "<owner>",
     "is_grantable": false,
-    "privilege_type": "UPDATE",
+    "privilege_type": "INSERT",
     "relkind": "r",
-    "relname": "Mixed Case"
+    "relname": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "v",
+    "relname": "plain_labels"
    },
    {
     "grantor": "<owner>",
@@ -97,9 +153,30 @@
    {
     "grantor": "<owner>",
     "is_grantable": false,
-    "privilege_type": "USAGE",
+    "privilege_type": "SELECT",
     "relkind": "S",
-    "relname": "Mixed Case_id_seq"
+    "relname": "counter"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "S",
+    "relname": "plain_id_seq"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "Mixed Case"
    },
    {
     "grantor": "<owner>",
@@ -112,8 +189,78 @@
     "grantor": "<owner>",
     "is_grantable": false,
     "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE",
     "relkind": "S",
-    "relname": "counter"
+    "relname": "Mixed Case_id_seq"
    },
    {
     "grantor": "<owner>",
@@ -125,156 +272,9 @@
    {
     "grantor": "<owner>",
     "is_grantable": false,
-    "privilege_type": "DELETE",
-    "relkind": "p",
-    "relname": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "INSERT",
-    "relkind": "p",
-    "relname": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "SELECT",
-    "relkind": "p",
-    "relname": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "UPDATE",
-    "relkind": "p",
-    "relname": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "DELETE",
-    "relkind": "r",
-    "relname": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "INSERT",
-    "relkind": "r",
-    "relname": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "SELECT",
-    "relkind": "r",
-    "relname": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "UPDATE",
-    "relkind": "r",
-    "relname": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "DELETE",
-    "relkind": "r",
-    "relname": "nodestro_schema_migrations"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "INSERT",
-    "relkind": "r",
-    "relname": "nodestro_schema_migrations"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "SELECT",
-    "relkind": "r",
-    "relname": "nodestro_schema_migrations"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "UPDATE",
-    "relkind": "r",
-    "relname": "nodestro_schema_migrations"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "DELETE",
-    "relkind": "r",
-    "relname": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "INSERT",
-    "relkind": "r",
-    "relname": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "SELECT",
-    "relkind": "r",
-    "relname": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "UPDATE",
-    "relkind": "r",
-    "relname": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "SELECT",
-    "relkind": "S",
-    "relname": "plain_id_seq"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
     "privilege_type": "USAGE",
     "relkind": "S",
     "relname": "plain_id_seq"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "DELETE",
-    "relkind": "v",
-    "relname": "plain_labels"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "INSERT",
-    "relkind": "v",
-    "relname": "plain_labels"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "SELECT",
-    "relkind": "v",
-    "relname": "plain_labels"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "UPDATE",
-    "relkind": "v",
-    "relname": "plain_labels"
    }
   ],
   "role_routine_grants": [
@@ -295,19 +295,73 @@
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
     "privilege_type": "INSERT",
     "table_name": "Mixed Case"
    },
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "SELECT",
-    "table_name": "Mixed Case"
+    "privilege_type": "INSERT",
+    "table_name": "events"
    },
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "UPDATE",
+    "privilege_type": "INSERT",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
     "table_name": "Mixed Case"
    },
    {
@@ -319,38 +373,8 @@
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "DELETE",
-    "table_name": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "INSERT",
-    "table_name": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
     "privilege_type": "SELECT",
     "table_name": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "UPDATE",
-    "table_name": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "DELETE",
-    "table_name": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "INSERT",
-    "table_name": "events_2026"
    },
    {
     "grantor": "<owner>",
@@ -361,74 +385,50 @@
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "UPDATE",
-    "table_name": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "DELETE",
-    "table_name": "nodestro_schema_migrations"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "INSERT",
-    "table_name": "nodestro_schema_migrations"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
     "privilege_type": "SELECT",
     "table_name": "nodestro_schema_migrations"
    },
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "UPDATE",
-    "table_name": "nodestro_schema_migrations"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "DELETE",
-    "table_name": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "INSERT",
-    "table_name": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
     "privilege_type": "SELECT",
     "table_name": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "UPDATE",
-    "table_name": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "DELETE",
-    "table_name": "plain_labels"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "INSERT",
-    "table_name": "plain_labels"
    },
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
     "privilege_type": "SELECT",
     "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "plain"
    },
    {
     "grantor": "<owner>",
@@ -502,8 +502,43 @@
     "grantor": "<owner>",
     "is_grantable": false,
     "privilege_type": "DELETE",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
     "relkind": "r",
     "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "p",
+    "relname": "events"
    },
    {
     "grantor": "<owner>",
@@ -515,16 +550,23 @@
    {
     "grantor": "<owner>",
     "is_grantable": false,
-    "privilege_type": "SELECT",
+    "privilege_type": "INSERT",
     "relkind": "r",
-    "relname": "Mixed Case"
+    "relname": "events_2026"
    },
    {
     "grantor": "<owner>",
     "is_grantable": false,
-    "privilege_type": "UPDATE",
+    "privilege_type": "INSERT",
     "relkind": "r",
-    "relname": "Mixed Case"
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "v",
+    "relname": "plain_labels"
    },
    {
     "grantor": "<owner>",
@@ -536,9 +578,30 @@
    {
     "grantor": "<owner>",
     "is_grantable": false,
-    "privilege_type": "USAGE",
+    "privilege_type": "SELECT",
     "relkind": "S",
-    "relname": "Mixed Case_id_seq"
+    "relname": "counter"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "S",
+    "relname": "plain_id_seq"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "Mixed Case"
    },
    {
     "grantor": "<owner>",
@@ -551,69 +614,6 @@
     "grantor": "<owner>",
     "is_grantable": false,
     "privilege_type": "SELECT",
-    "relkind": "S",
-    "relname": "counter"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "USAGE",
-    "relkind": "S",
-    "relname": "counter"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "DELETE",
-    "relkind": "p",
-    "relname": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "INSERT",
-    "relkind": "p",
-    "relname": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "SELECT",
-    "relkind": "p",
-    "relname": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "UPDATE",
-    "relkind": "p",
-    "relname": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "DELETE",
-    "relkind": "r",
-    "relname": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "INSERT",
-    "relkind": "r",
-    "relname": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "SELECT",
-    "relkind": "r",
-    "relname": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "UPDATE",
     "relkind": "r",
     "relname": "events_2026"
    },
@@ -627,14 +627,7 @@
    {
     "grantor": "<owner>",
     "is_grantable": false,
-    "privilege_type": "DELETE",
-    "relkind": "r",
-    "relname": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "INSERT",
+    "privilege_type": "SELECT",
     "relkind": "r",
     "relname": "plain"
    },
@@ -642,8 +635,29 @@
     "grantor": "<owner>",
     "is_grantable": false,
     "privilege_type": "SELECT",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
     "relkind": "r",
-    "relname": "plain"
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "events_2026"
    },
    {
     "grantor": "<owner>",
@@ -655,9 +669,23 @@
    {
     "grantor": "<owner>",
     "is_grantable": false,
-    "privilege_type": "SELECT",
+    "privilege_type": "UPDATE",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE",
     "relkind": "S",
-    "relname": "plain_id_seq"
+    "relname": "Mixed Case_id_seq"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE",
+    "relkind": "S",
+    "relname": "counter"
    },
    {
     "grantor": "<owner>",
@@ -665,34 +693,6 @@
     "privilege_type": "USAGE",
     "relkind": "S",
     "relname": "plain_id_seq"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "DELETE",
-    "relkind": "v",
-    "relname": "plain_labels"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "INSERT",
-    "relkind": "v",
-    "relname": "plain_labels"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "SELECT",
-    "relkind": "v",
-    "relname": "plain_labels"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": false,
-    "privilege_type": "UPDATE",
-    "relkind": "v",
-    "relname": "plain_labels"
    }
   ],
   "role_routine_grants": [
@@ -713,19 +713,61 @@
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
     "privilege_type": "INSERT",
     "table_name": "Mixed Case"
    },
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "SELECT",
-    "table_name": "Mixed Case"
+    "privilege_type": "INSERT",
+    "table_name": "events"
    },
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "UPDATE",
+    "privilege_type": "INSERT",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
     "table_name": "Mixed Case"
    },
    {
@@ -737,49 +779,13 @@
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "DELETE",
-    "table_name": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "INSERT",
-    "table_name": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
     "privilege_type": "SELECT",
     "table_name": "events"
    },
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "UPDATE",
-    "table_name": "events"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "DELETE",
-    "table_name": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "INSERT",
-    "table_name": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
     "privilege_type": "SELECT",
-    "table_name": "events_2026"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "UPDATE",
     "table_name": "events_2026"
    },
    {
@@ -791,44 +797,38 @@
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
-    "privilege_type": "DELETE",
-    "table_name": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "INSERT",
+    "privilege_type": "SELECT",
     "table_name": "plain"
    },
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
     "privilege_type": "SELECT",
-    "table_name": "plain"
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "events_2026"
    },
    {
     "grantor": "<owner>",
     "is_grantable": "NO",
     "privilege_type": "UPDATE",
     "table_name": "plain"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "DELETE",
-    "table_name": "plain_labels"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "INSERT",
-    "table_name": "plain_labels"
-   },
-   {
-    "grantor": "<owner>",
-    "is_grantable": "NO",
-    "privilege_type": "SELECT",
-    "table_name": "plain_labels"
    },
    {
     "grantor": "<owner>",
