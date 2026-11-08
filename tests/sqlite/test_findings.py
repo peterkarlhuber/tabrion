@@ -84,6 +84,22 @@ def test_k03_file_readable_by_others(good: sqlite3.Connection, path: Path) -> No
     assert wal.exists()
     os.chmod(wal, 0o640)
     assert "the -wal file" in only(check(good), "TAB-SQ-003").detail
+    os.chmod(wal, 0o600)
+    os.chmod(path, 0o602)  # noqa: S103 - writable by others, not readable (review L-4 of #13)
+    assert "read or write the database file" in only(check(good), "TAB-SQ-003").detail
+    os.chmod(path, 0o600)
+
+
+@posix_only
+def test_k03_attached_database_file(good: sqlite3.Connection, tmp_path: Path) -> None:
+    other = tmp_path / "other.db"
+    sqlite3.connect(other).close()
+    os.chmod(other, 0o644)
+    good.execute("ATTACH DATABASE ? AS extra", (str(other),))
+    finding = only(check(good), "TAB-SQ-003")
+    assert "the attached database extra file" in finding.detail and str(tmp_path) not in finding.detail
+    os.chmod(other, 0o600)
+    assert "TAB-SQ-003" not in codes(check(good))
 
 
 @pytest.mark.security
@@ -120,6 +136,30 @@ def test_k06_quick_check(tmp_path: Path) -> None:
         assert only(check(damaged), "TAB-SQ-006").severity is Severity.ERROR
     finally:
         damaged.close()
+
+
+def test_k06_locked_database_is_not_checked(tmp_path: Path) -> None:
+    """Review M-1 of #13: a lock held by another connection is no damage."""
+    path = tmp_path / "locked.db"
+    writer = sqlite3.connect(path, isolation_level=None)
+    writer.execute("CREATE TABLE t (a INTEGER)")
+    writer.execute("BEGIN EXCLUSIVE")
+    writer.execute("INSERT INTO t VALUES (1)")
+    reader = sqlite3.connect(path, timeout=0.05)
+    try:
+        finding = only(check(reader), "TAB-SQ-006")
+        assert finding.severity is Severity.INFO and finding.title == "Not checked"
+    finally:
+        reader.close()
+        writer.execute("ROLLBACK")
+        writer.close()
+
+
+def test_safe_name_escapes_control_ansi_and_bidi() -> None:
+    assert tabrion.check._safe_name("plain_name") == "plain_name"
+    escaped = tabrion.check._safe_name("a\nb\x1b[2J\u202e\\")
+    assert escaped == "a\\nb\\x1b[2J\\u202e\\\\" or escaped == "a\\x0ab\\x1b[2J\\u202e\\\\"
+    assert escaped.isprintable()
 
 
 def test_k07_sqlite_version(good: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,6 +208,13 @@ def test_k29_dispatch_and_arguments(good: sqlite3.Connection) -> None:
         check(object())  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="expect"):
         check(good, expect="admin")  # type: ignore[arg-type]
+
+
+def test_k30_dict_row_factory(good: sqlite3.Connection) -> None:
+    """Review L-5 of #13: a row factory that gives dicts does not break the checks."""
+    good.row_factory = lambda cursor, row: dict(zip([c[0] for c in cursor.description], row, strict=True))
+    good.execute("PRAGMA foreign_keys = OFF")
+    assert codes(check(good)) == ["TAB-SQ-001"]
 
 
 @pytest.mark.parametrize("legacy", [False, True])

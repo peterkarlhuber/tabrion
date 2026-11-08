@@ -23,6 +23,7 @@ pytestmark = pytest.mark.postgres
 
 psycopg = pytest.importorskip("psycopg")
 
+from psycopg import sql  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
 from tabrion.check import Finding, Severity, check  # noqa: E402
@@ -67,7 +68,9 @@ def patched(monkeypatch: pytest.MonkeyPatch, **changes: Any) -> None:
 
 def test_runtime_role_with_tuned_settings_is_clean(connect: Callable[..., Any], runtime: Role, schema: str) -> None:
     findings = check(open_as(connect, runtime.url, schema))
-    assert set(codes(findings)) <= {"TAB-PG-020"}  # archive_mode is the server's, not the session's
+    # archive_mode is the server's and TAB-PG-030 the whole database's (other runs' extensions on a shared server):
+    # this test controls neither (review L-5 of #13).
+    assert set(codes(findings)) <= {"TAB-PG-020", "TAB-PG-030"}
 
 
 def test_k10_k11_superuser_and_bypassrls(
@@ -99,6 +102,31 @@ def test_k12_k18_owner_findings_and_expect(
         assert only(check(connection, expect="any"), code).severity is Severity.INFO
     clean = codes(check(open_as(connect, runtime.url, schema)))
     assert "TAB-PG-003" not in clean and "TAB-PG-009" not in clean
+
+
+def test_k18_create_through_noinherit_membership_and_later_schemas(
+    connect: Callable[..., Any], runtime: Role, make_role: Callable[..., Role], schema: str, admin: Any
+) -> None:
+    """Review L-1 of #13: CREATE reachable with SET ROLE (NOINHERIT, I-20), and CREATE on a later path schema."""
+    creator = make_role()
+    admin.execute(f'GRANT USAGE, CREATE ON SCHEMA {schema} TO "{creator.name}"')
+    member = make_role("NOINHERIT")
+    admin.execute(f'GRANT USAGE ON SCHEMA {schema} TO "{member.name}"')
+    admin.execute(f'GRANT "{creator.name}" TO "{member.name}"')
+    finding = only(check(open_as(connect, member.url, schema)), "TAB-PG-009")
+    assert finding.severity is Severity.WARNING and schema in finding.detail
+    later = new_name()
+    admin.execute(f"CREATE SCHEMA {later}")
+    try:
+        admin.execute(f"GRANT USAGE, CREATE ON SCHEMA {later} TO PUBLIC")
+        connection = connect(
+            with_params(runtime.url, options=f"{TUNED} -c search_path={schema},{later}", application_name="t_app")
+        )
+        finding = only(check(connection), "TAB-PG-009")
+        assert later in finding.detail and schema not in finding.detail
+        connection.close()
+    finally:
+        admin.execute(f"DROP SCHEMA {later} CASCADE")
 
 
 @pytest.mark.parametrize(
@@ -146,16 +174,21 @@ class _FakeConnection:
 def test_k19_k20_tls_of_a_remote_connection(connect: Callable[..., Any], runtime: Role, schema: str) -> None:
     connection = open_as(connect, runtime.url, schema)
     facts = tabrion.postgres.diagnose(connection)
-    local = codes(pg_check._tls_findings(connection, facts))
-    assert local == []  # the CI server is local: neither code
-    remote = dataclasses.replace(facts, host_is_local=False)
-    plain = pg_check._tls_findings(_FakeConnection(False, b"prefer"), remote)  # type: ignore[arg-type]
+    assert pg_check._is_local(connection, facts)  # the CI server is local: neither code
+    assert codes(pg_check._tls_findings(connection, local=True)) == []
+    plain = pg_check._tls_findings(_FakeConnection(False, b"prefer"), local=False)  # type: ignore[arg-type]
     assert codes(plain) == ["TAB-PG-011"] and plain[0].severity is Severity.ERROR
-    require = pg_check._tls_findings(_FakeConnection(True, b"require"), remote)  # type: ignore[arg-type]
+    require = pg_check._tls_findings(_FakeConnection(True, b"require"), local=False)  # type: ignore[arg-type]
     assert codes(require) == ["TAB-PG-010"] and "sslmode=require" in require[0].detail
-    default = pg_check._tls_findings(_FakeConnection(True, None), remote)  # type: ignore[arg-type]
+    default = pg_check._tls_findings(_FakeConnection(True, None), local=False)  # type: ignore[arg-type]
     assert "sslmode=prefer" in default[0].detail
-    assert pg_check._tls_findings(_FakeConnection(True, b"verify-full"), remote) == []  # type: ignore[arg-type]
+    assert pg_check._tls_findings(_FakeConnection(True, b"verify-full"), local=False) == []  # type: ignore[arg-type]
+    # Review L-2 of #13: the address libpq connected to decides, not the host name.
+    remote = dataclasses.replace(facts, host_is_local=False)
+    local = dataclasses.replace(facts, host_is_local=True)
+    assert pg_check._is_local(SimpleNamespace(info=SimpleNamespace(hostaddr="10.1.2.3")), local) is False  # type: ignore[arg-type]
+    assert pg_check._is_local(SimpleNamespace(info=SimpleNamespace(hostaddr="127.0.0.1")), remote) is True  # type: ignore[arg-type]
+    assert pg_check._is_local(SimpleNamespace(info=SimpleNamespace(hostaddr="")), remote) is False  # type: ignore[arg-type]
     assert pg_check._sslmode(connection) in {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
 
 
@@ -191,6 +224,19 @@ def test_k24_extension_outside_the_search_path(connect: Callable[..., Any], scra
     assert "citext" in finding.detail and extensions in finding.detail
     inside = connect(with_params(scratch_database, options=f"-c search_path=public,{extensions}"))
     assert "TAB-PG-030" not in codes(check(inside))
+
+
+def test_k24_hostile_schema_name_is_escaped(connect: Callable[..., Any], scratch_database: str) -> None:
+    """Review L-3 of #13: a schema name cannot forge a finding line or send terminal escapes."""
+    admin = connect(scratch_database, autocommit=True)
+    hostile = "t_x\nTAB-PG-001 error: all good\x1b[2J\u202e"
+    admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(hostile)))
+    admin.execute(sql.SQL("CREATE EXTENSION citext SCHEMA {}").format(sql.Identifier(hostile)))
+    finding = only(check(connect(with_params(scratch_database, options="-c search_path=public"))), "TAB-PG-030")
+    for text in (finding.detail, finding.remedy):
+        assert "\n" not in text and "\x1b" not in text and "\u202e" not in text
+        assert all(char.isprintable() for char in text)
+    assert "t_x\\x0aTAB-PG-001" in finding.detail and "\\x1b[2J\\u202e" in finding.detail
 
 
 def test_k28_missing_privilege_is_not_checked(

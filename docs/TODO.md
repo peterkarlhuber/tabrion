@@ -18,7 +18,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 10 |
-| P3 Low | 19 |
+| P3 Low | 21 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -172,6 +172,27 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   package version raises `NotImplementedError` (today every name does, by design). `scripts/api_surface.py` already
   keeps names with a newer `since` out of the exported surface.
 - **Next step:** with TAB-040, as a mode of `scripts/api_surface.py` run by `release.yml`.
+
+### TB-062 · Checks outside the specification's code table (TAB-017 review Info of #13; 0.2 addendum candidate)
+
+- **Priority:** P3 Low · **Status:** Needs decision (contract addendum) · **Refs:** TABRION TAB-017, specification
+  section 9, planning document 02 line 281, TB-036, contract I-50..I-55
+- **What:** `tabrion.check` reports nothing for: row-level security disabled, or enabled but not forced, on tables in
+  scope (an owner with `expect="owner"` bypasses it, and nothing reports it); `SECURITY DEFINER` functions without a
+  fixed `search_path` (the CVE-2018-1058 pattern); extensions installed in `public` or in a schema the runtime role
+  can create in; TAB-PG-022 ("a role with `pg_read_all_data` exists"), which planning document 02 names in the
+  backup section (TAB-PG-020..022) but not in the code table.
+- **Next step:** a 0.2 contract and specification addendum with codes and severities (owner decision), or align the
+  specification by removing TAB-PG-022; do not implement before.
+
+### TB-063 · Remaining file and host gaps of `tabrion.check` (TAB-017 review L-2, L-4 of #13)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-017, TAB-015, contract I-17, I-52, I-54
+- **What:** TAB-SQ-003 does not report a database file owned by another user (a plain `sqlite3` connection may open
+  one; `tabrion.sqlite.connect` refuses it). `tabrion.postgres.diagnose().host_is_local` (TAB-015, I-17) still looks
+  at `info.host` only; `tabrion.check` uses `info.hostaddr` itself.
+- **Next step:** an owner rule for TAB-SQ-003 (or a new code, by addendum); `diagnose` to prefer `info.hostaddr`
+  when set (lane C, a note in I-17).
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 

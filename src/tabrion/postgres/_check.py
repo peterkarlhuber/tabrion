@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-from tabrion.check import Finding, Severity, _finding, _not_checked
-from tabrion.postgres import diagnose
+from tabrion.check import Finding, Severity, _finding, _not_checked, _safe_name
+from tabrion.postgres import _host_is_local, diagnose
 from tabrion.postgres._common import one_row, reading, require_connection, require_psycopg
 
 if TYPE_CHECKING:
@@ -24,8 +24,16 @@ __all__ = ["collect"]
 _MIN_SERVER_VERSION = 160_000
 _SECURE_SSLMODE = "verify-full"
 
+# Every schema of the search path in which current_user or session_user, or a role either is a member of (also
+# NOINHERIT: SET ROLE reaches it, I-20), may create objects; PUBLIC grants count through has_schema_privilege (I-53).
 _SESSION_SQL = (
-    "SELECT pg_catalog.has_schema_privilege(pg_catalog.current_schema(), 'CREATE'),"
+    "SELECT ARRAY(SELECT s.name::pg_catalog.text"
+    " FROM pg_catalog.unnest(pg_catalog.current_schemas(false)) WITH ORDINALITY AS s(name, position)"
+    " WHERE EXISTS (SELECT 1 FROM pg_catalog.pg_roles r"
+    " WHERE (pg_catalog.pg_has_role(CURRENT_USER, r.oid, 'MEMBER')"
+    " OR pg_catalog.pg_has_role(SESSION_USER, r.oid, 'MEMBER'))"
+    " AND pg_catalog.has_schema_privilege(r.oid, s.name, 'CREATE'))"
+    " ORDER BY s.position),"
     " pg_catalog.current_setting('default_transaction_read_only')"
 )
 _EXTENSIONS_SQL = (
@@ -54,24 +62,33 @@ def collect(
     facts = diagnose(target)
     with reading(target, "check") as cursor:
         cursor.execute(_SESSION_SQL)
-        can_create, default_read_only = one_row(cursor)
+        creatable, default_read_only = one_row(cursor)
         cursor.execute(_EXTENSIONS_SQL)
         outside_path = [(str(name), str(schema)) for name, schema in cursor.fetchall()]
-    findings = _role_findings(facts, expect, can_create)
+    findings = _role_findings(facts, expect, [str(name) for name in creatable or []])
     findings += _setting_findings(facts)
-    findings += _tls_findings(target, facts)
+    findings += _tls_findings(target, local=_is_local(target, facts))
     findings += _server_findings(facts, read_only=str(default_read_only) == "on")
     for name, schema in outside_path:
         findings.append(_finding(
             "TAB-PG-030", Severity.WARNING, "Extension schema not in the search path",
-            f"The extension {name} is installed in schema {schema}, which is not in this session's search_path; "
-            "its types and functions do not resolve unqualified.",
-            f"Add {schema} to the search_path of the role or database, or qualify the extension's objects.",
+            f"The extension {_safe_name(name)} is installed in schema {_safe_name(schema)}, which is not in this "
+            "session's search_path; its types and functions do not resolve unqualified.",
+            f"Add {_safe_name(schema)} to the search_path of the role or database, or qualify the extension's objects.",
         ))  # fmt: skip
     return findings
 
 
-def _role_findings(facts: PostgresDiagnosis, expect: str, can_create: object) -> list[Finding]:
+def _is_local(connection: psycopg.Connection[Any], facts: PostgresDiagnosis) -> bool:
+    """Local by the address libpq connected to when there is one (``hostaddr``; review L-2 of #13), else by host."""
+    try:
+        address = connection.info.hostaddr
+    except Exception:  # a socket connection or an old libpq has no address
+        address = ""
+    return _host_is_local(str(address)) if address else facts.host_is_local
+
+
+def _role_findings(facts: PostgresDiagnosis, expect: str, creatable: list[str]) -> list[Finding]:
     findings: list[Finding] = []
     role = facts.role
     if role.superuser:
@@ -97,10 +114,11 @@ def _role_findings(facts: PostgresDiagnosis, expect: str, can_create: object) ->
             "subject to row-level security unless FORCE ROW LEVEL SECURITY is set.",
             "Use an owner role for migrations and a separate runtime role for the application.",
         ))  # fmt: skip
-    if can_create is True:
+    if creatable:
         findings.append(_finding(
             "TAB-PG-009", severity, "Role may create objects in the schema",
-            "The session's role has CREATE on its current schema.",
+            "The session's role has, or can get through a role membership, CREATE on the search_path schema(s) "
+            f"{', '.join(_safe_name(name) for name in creatable)}; an object created there can shadow others.",
             "REVOKE CREATE ON SCHEMA from the runtime role; only the owner role creates objects.",
         ))  # fmt: skip
     return findings
@@ -135,8 +153,8 @@ def _setting_findings(facts: PostgresDiagnosis) -> list[Finding]:
     return findings
 
 
-def _tls_findings(connection: psycopg.Connection[Any], facts: PostgresDiagnosis) -> list[Finding]:
-    if facts.host_is_local:
+def _tls_findings(connection: psycopg.Connection[Any], *, local: bool) -> list[Finding]:
+    if local:
         return []
     # The client knows whether this connection is encrypted; pg_stat_ssl (facts.ssl) needs a privilege (I-54).
     encrypted = bool(connection.pgconn.ssl_in_use)
