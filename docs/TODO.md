@@ -126,6 +126,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tabrion.testing` 0.1 (TAB-020) with a database per session, roles without superuser, truncate and runtime-role
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
+- **Status note:** TAB-020 and TAB-032 are in the fourth lane C pull request (#11; contract I-36, I-60), after #8
+  (TAB-031) merged. Re-review at `5110c8f`: TAB-020 accepted, TAB-032 accepted with conditions; M-1 (the condition),
+  DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73).
 - **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
   TAB-019 (`tabrion.migrations`, contract I-57) is done (#14). TAB-021 (`tabrion.testing.profiles`, contract I-58,
   deviations D-62 and D-63) is done (#15) after its review fix round (M-1..M-3, L-1..L-3; follow-up TB-064).
@@ -214,14 +217,19 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
-- **Priority:** P1 High · **Status:** Open (after the layer-B core merges) · **Refs:** TABRION TAB-017, TAB-018,
-  TAB-019, contract section 7, I-55, deviation D-60, TAB-T-K21, K25, K26
+- **Priority:** P1 High · **Status:** In review (layer-B follow-up pull request) · **Refs:** TABRION TAB-017,
+  TAB-018, TAB-019, contract section 7, I-44, I-55, deviations D-60, D-66, TAB-T-K21, K25, K26
 - **What:** `tabrion._sa._check.collect` is still a stub, so `check(database)` raises `NotImplementedError`. It must
   run the SQLite or PostgreSQL checks on a raw driver connection of the `Database` (read only, T-NOTX) and add
   TAB-B-001 (pool without `pre_ping`), TAB-B-002 (Alembic schema not current, through `tabrion.migrations`) and
   TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` must call it.
-- **Next step:** after the layer-B core (TAB-018) merges, on a new branch: the collector, K21/K25/K26 and the
-  layer-B part of K27..K30; TAB-B-002 needs TAB-019 (`status`/`require_current`), until then an `info` "not checked".
+- **Done in the follow-up:** `collect` runs the dialect's checks on the pooled driver connection inside one
+  `read()` and adds TAB-PG-012, TAB-B-001 and TAB-B-002 (`tests/unit/test_check_database.py`,
+  `tests/postgres/test_check_layer_b.py`). TAB-B-002 stays an `info` "Not checked" when an `alembic_version` table
+  exists: `check()` has no script directory and layer B never imports Alembic (D-66); `require_current` is the gate.
+- **Next step:** review and merge. D-66 is accepted by the coordinator as the 0.1 design (subject to review).
+- **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
+  options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
 ## M3, M5 and M8: work in this repository
 
@@ -637,6 +645,16 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   do that already has the power, so it is no escalation; running the checks inside the grant transaction would make
   the guarantee exact.
 - **Next step:** decide with the next change of `grant_runtime_role` (a contract note for the order of statements).
+
+### TB-055 · Complete the dogfooding of `tabrion.testing` (TABRION TAB-020, TAB-032)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-020, TAB-032, contract section 6, I-36, D-51
+- **What:** the PostgreSQL suites use the plugin's URL and schema fixtures; `make_role` and `scratch_database` in
+  `tests/postgres/conftest.py` stay local, and the SQLite suites use `tmp_path` instead of `tabrion_sqlite_path`.
+- **Next step:** the fixtures exist now (TAB-032, #11); move `make_role` and `scratch_database` onto
+  `tabrion_postgres_roles` and `tabrion_postgres_database` where the cases allow it (most role cases need several
+  roles per test with chosen attributes, which the session fixtures do not give); the SQLite suites follow when
+  lane B next touches them.
 
 ## Cross-repository dependencies
 

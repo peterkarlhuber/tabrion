@@ -1,7 +1,8 @@
 """Test fixtures and helpers (extra ``testing``). Activate explicitly: ``pytest_plugins = ["tabrion.testing"]``.
 
-There is no ``pytest11`` entry point, so the fixtures never appear in foreign test runs. Contract section 6; stub
-for the API freeze G-T1, implemented in TAB-020, TAB-021 and TAB-032.
+There is no ``pytest11`` entry point, so the fixtures never appear in foreign test runs. Contract section 6;
+implemented in TAB-020 (configuration, SQLite, a PostgreSQL schema per test), TAB-032 (a database per session, roles
+without superuser, ``truncate_tables``, runtime-role mode) and TAB-021 (``profiles``).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ try:
 except ImportError:
     raise ImportError('tabrion.testing needs the extra "testing": pip install "tabrion[testing]"') from None
 
-from tabrion.testing import profiles
+from tabrion.testing import _config, profiles
 from tabrion.testing.postgres import (
     PostgresDatabaseHandle,
     PostgresSchema,
@@ -62,6 +63,17 @@ def configure(
     """Choose the environment variable names (call in ``conftest.py`` before the fixtures are used).
 
     Defaults: ``<prefix>_TEST_POSTGRES``, ``<prefix>_REQUIRE_POSTGRES``, ``<prefix>_TEST_RUNTIME_ROLE`` and
-    ``<prefix>_REQUIRE_EXTENSIONS``.
+    ``<prefix>_REQUIRE_EXTENSIONS``. Each ``*_env`` names one or more variables; the first that is set wins (URL),
+    any that is ``1`` counts (require, runtime-role mode), and the extension variables list names separated by commas
+    or white space. ``schema_prefix`` starts every schema, role and database the fixtures create (``[a-z_][a-z0-9_]*``,
+    at most 24 characters). Every call replaces the whole configuration; a session-scoped fixture that already ran
+    keeps what it read (contract I-36).
     """
-    raise NotImplementedError("tabrion.testing.configure: implemented in TAB-020")
+    _config.current = _config.build(
+        env_prefix=env_prefix,
+        postgres_env=postgres_env,
+        require_env=require_env,
+        runtime_role_env=runtime_role_env,
+        require_extensions_env=require_extensions_env,
+        schema_prefix=schema_prefix,
+    )
