@@ -159,7 +159,7 @@ Planned effort: 4.5 + 1.75 agent days; with CR-DB also TAB-CR-1 and TAB-CR-2 (3.
 
 | WP | Title | Repositories | Depends on | Gate | Effort (impl + review) | Lane | Status | Evidence |
 |---|---|---|---|---|---|---|---|---|
-| TAB-033 | 0.2: query/Result, stream, cancel, inspector (Studio APIs) | tabrion | TAB-040 | - | 3 + 0.75 | Core | Not started |  |
+| TAB-033 | 0.2: query/Result, stream, cancel, inspector (Studio APIs) | tabrion | TAB-040 | - | 3 + 0.75 | Core | In review | Implemented and staged (G-T1 C-6): `tabrion._sa._v02`, contract I-100..I-106, TAB-T-B15, B26..B40 on SQLite and PostgreSQL; public with 0.2 (TAB-042, TB-013) |
 | TAB-043 | PyPI path V-B (bound to G-R): trusted publisher, 0.1.0rc1 | tabrion | TAB-040, GOV-1 | G-R | 0.5 + 0.5 | Core | Not started | Not planned (owner decision of 2026-11-08 11:26Z): consumers use Git SHA pins; only if a publication is decided, then with G-R and the environment `pypi` (O-2) |
 | TAB-042 | Release 0.2.0 (Studio APIs) and 0.2 documentation | tabrion | TAB-033 | G-T2 | 1 + 0.5 | Core | Not started |  |
 
@@ -447,6 +447,23 @@ and PostgreSQL 16, 17, 18.
 | TAB-018 | Mutation probes | 11 probes (`BEGIN IMMEDIATE`, `query_only` on and off, untranslated errors, read-only profile, nesting, deadline removal, path checks in `from_url`, two TLS rules, TB-040) |
 | G-T1 | F-11, F-14, review N-4 | F-11 and TB-020: documentation-only aliases; F-14: `TypeError` from `Database()`/`Transaction()`; N-4 and TB-040: R-NORETRY over a stored classification with `during_commit` (contract I-43) |
 
+## M4 evidence (TAB-033)
+
+What the TAB-033 pull request delivers against planning document 09 (TAB-033: TAB-T-B26..B40; cancel under 1 s on
+both engines; `max_rows` enforced). The methods are implemented and staged: not public before 0.2 (G-T1 condition
+C-6; contract I-106). Local run on 2026-11-08: Python 3.13, SQLAlchemy 2.1.8, psycopg 3.3.8 (libpq 18), PostgreSQL
+16.15. Tests: `tests/unit/test_v02_database.py` (SQLite), `tests/postgres/test_v02_postgres.py`.
+
+| WP | Acceptance criterion | Evidence |
+|---|---|---|
+| TAB-033 | `query`/`Result`, `max_rows` enforced (B26..B30) | `test_b26_*` (columns, Python values, PostgreSQL `format_type` names including arrays and a user enum, DML and DDL kinds), `test_b27_max_rows*` (`truncated`, the exact boundary, an endless statement stops at `max_rows + 1`, argument checks), `test_b28_*` (statement kinds, Core expressions), `test_b29_*` (`Database.query` read-only, nesting, `SECRET-4711` in no error), `test_b30_*` (timeouts, the profile value comes back, `prepare_threshold` restored) |
+| TAB-033 | `cancel` from a second thread under 1 s on both engines (B15, B40) | `test_b15_cancel_from_a_second_thread[query, fetch_scalar, stream]` on SQLite (recursive CTE) and PostgreSQL (`pg_sleep(30)`): stopped within 1 s of `cancel()`, kind `CANCELED`, the write rolled back; `test_b40_*`: a canceled transaction is never committed, a late `cancel()` never reaches the next user of the same pooled server session, `cancel()` from eight threads |
+| TAB-033 | `stream` with a server-side cursor, bounded memory (B34, B35) | `test_b34_stream_uses_a_server_cursor` (`pg_cursors` shows the `DECLARE`d cursor during the batches and none after), `test_b34_stream_is_lazy_and_bounded` (SQLite: two batches of an endless statement in under 1 s), closing early and at the end of the transaction, thread binding, per-batch timeout, cancel between batches |
+| TAB-033 | `inspector` on a read-only connection (B36) | `test_b36_inspector*` (tables, columns, keys; `transaction_read_only = on`, `query_only = 1`; a write raises `ReadOnlyViolation`); a catalog of 500 tables through `get_multi_columns` well under 1 s locally (the test allows 3 s for CI runners) |
+| TAB-033 | Experimental APIs (B31..B33, B37, B38) | `run_transaction`: a real PostgreSQL serialization failure and a real SQLite lock are retried; unique violations, outcome-unknown errors (a `COMMIT` and an `INSERT` cut by the fault proxy) and the caller's own exceptions are not; `on_begin`, `savepoint` |
+| TAB-033 | Multi-statement escape and read-only (Studio review, I-56; B39) | `test_b39_several_commands_are_refused_by_the_server` (`COMMIT; BEGIN READ WRITE; INSERT ...` and three more, in `query` and `stream`: SQLSTATE 42601, nothing written), `test_b39_refused_whatever_the_lexer_thinks` (the H-1 text under `standard_conforming_strings = off`), `test_b39_lifting_read_only_in_one_statement`, SQLite one statement per call |
+| TB-024 | Mixing in at the top has no import cycle (CC-2) | `test_tb024_mixing_in_at_the_top_has_no_import_cycle` (a copy of the package with `class Transaction(_TransactionV02)` and `class Database(_DatabaseV02)` runs `query` and `stream`) |
+
 ## M2 lane C3 evidence
 
 What the third M2 lane C pull request (TABRION TAB-031; DL-1 and the Info items of the delta re-review of #6)
@@ -567,7 +584,7 @@ Recorded here as the review asks; none blocks M2. Each is picked up by the work 
 | Finding | Note | Status |
 |---|---|---|
 | CC-1 | `scripts/api_surface.py` counted only `__all__` as exported, so a 0.2 name reachable through `tabrion.__getattr__` passed | Fixed in #2: any successful attribute lookup counts (class members with inheritance); mutation tests "0.2 name importable through `__getattr__` only" and "0.2 mixin mixed in early" |
-| CC-2 | `tabrion._sa._v02` imports `Isolation`, `Statement` and `Transaction` from `tabrion._sa.database`; in 0.2 `Database`/`Transaction` inherit from the `_v02` mixins, a circular import | Open, before TAB-033: move the aliases to `tabrion._sa._types` and type `fn` against a forward reference (TODO TB-024) |
+| CC-2 | `tabrion._sa._v02` imports `Isolation`, `Statement` and `Transaction` from `tabrion._sa.database`; in 0.2 `Database`/`Transaction` inherit from the `_v02` mixins, a circular import | Closed by TAB-033: the aliases are in `tabrion._sa._types`, `_v02` imports `database` as a module and `Transaction` for the type checker only (contract I-106; TB-024 done) |
 | CC-3 | F-15 still open: macOS and Windows run on PRs only for SQLite paths, so they did not run on #2 | Open, TODO TB-021 |
 | BR-1 | Nothing excluded the logo from the MIT license | Fixed in #2: `TRADEMARKS.md`, linked from the README and `assets/branding/README.md` |
 | BR-2 | The committed master carried a C2PA manifest (`caBX`) and an `eXIf` chunk | Fixed in #2: the chunks are removed without touching the image data; `tests/unit/test_branding.py` pins the new sha256 and the sha256 of the supplied file's decompressed pixel data. The supplied file in the planning folder is unchanged. The designer's original and a vector master for a possible trademark filing stay with the owner |
@@ -756,6 +773,8 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-63 | TAB-021 | Specification section 6, timestamp row: "in SQLite ISO 8601 text `YYYY-MM-DDTHH:MM:SS.ffffffZ`. SQLAlchemy: `DateTime(timezone=True)`" | TAB-T-D01 maps timestamps to `String(32)` holding that text on SQLite (written as UTC with `Z`) and `DateTime(timezone=True)` (`timestamptz`) on PostgreSQL | On SQLite, `DateTime(timezone=True)` stores `2024-01-02 03:04:05.000000` (space, no `Z`) and reads it back naive, dropping the offset without converting to UTC; the two halves of the row cannot both hold, so the case follows the stored format the rule names, as D-62 does for UUIDs. A test of the repository pins the pitfall (contract I-58, review L-2). The application gets a `str` on SQLite and an aware `datetime` on PostgreSQL; portable code uses a `TypeDecorator` that writes the UTC text and parses it back |
 | D-66 | TB-060 | Specification section 9: TAB-B-002 "Alembic schema not current" (error) | `check(database)` reports TAB-B-002 only as "Not checked" (info) when a table `alembic_version` is visible, pointing to `tabrion.migrations.require_current` | `check()` takes no script directory (frozen API), and layer B must not import Alembic or `tabrion.migrations` (import contracts); `require_current` is the gate that raises (contract I-55) |
 | D-67 | GOV-1, TAB-038, TAB-040, TAB-043, GOV-2 | ADR 0009 E-VER: V-B (PyPI) as the goal; G-T2 after the manual register check (O-3); tags `v0.1.0a1` and `v0.1.0` by the owner; branch protection as GOV-2 acceptance | Git SHA pins are the distribution, no PyPI publication planned; `v0.1.0` final is the master merge commit with package version `0.1.0`, pinned by full SHA; tags are optional labels the agent may create; G-T2 without the register check; branch protection, private vulnerability reporting and the social preview optional | Owner decision of 2026-11-08 11:26Z (plan document 00 section 13); ADR 0009 and ADR 0001 amendments of 2026-11-08. G-R per public publication unchanged |
+| D-120 | TAB-033 | Contract 5.4: `Column.type_name` "SQLite: declared type or None"; `nullable: bool \| None` without a rule | SQLite `type_name` is always `None`; `nullable` is `None` on both engines | Python's `sqlite3` does not expose `sqlite3_column_decltype`; result-set nullability is not known from the result (a `NOT NULL` table column is nullable through an outer join), so a value would mislead (contract I-101) |
+| D-121 | TAB-033 | Contract 5.3: `cancel()` cancels the running operation (`interrupt()`, `cancel_safe()`) | `cancel()` cancels the transaction: the running statement is stopped, later statements raise `Canceled` without being sent, and the block's end rolls back and raises `Canceled` even when the caller caught the error | Both engines leave the transaction unusable or rolled back after an interrupt anyway; a cancel that arrives between two statements, or before the server started one, must still stop the work, and nothing of a canceled transaction may be committed (contract I-102) |
 
 ## Score review
 

@@ -8,6 +8,18 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- The 0.2 Studio APIs (TAB-033), implemented and tested on SQLite and PostgreSQL but **not public yet**: they stay
+  staged in `tabrion._sa._v02` until the version is 0.2, so the 0.1 surface does not grow (G-T1 condition C-6).
+  `query` returns a frozen `Result` with `Column` names and PostgreSQL type names, cut at `max_rows`; `stream` yields
+  batches from a PostgreSQL server-side cursor or SQLite `fetchmany`; `cancel()` from another thread stops the
+  running statement within a second (`interrupt()`, `cancel_safe()`), never reaches a later user of the pooled
+  connection, and a canceled transaction is never committed; `inspector()` runs on a read-only connection;
+  `query` and `stream` send user SQL through the extended query protocol, so PostgreSQL refuses a text with several
+  commands (the multi-statement escape of `read()`); experimental `on_begin`, `run_transaction` (retries only
+  retryable errors with a known outcome) and `savepoint`. Contract implementation notes I-100..I-106, deviations
+  D-120 and D-121. Every SQLite statement of a layer-B transaction now runs with Tabrion's progress handler, so a
+  cancel cannot be lost (I-102).
+
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
   `examples/`.
