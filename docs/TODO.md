@@ -16,7 +16,7 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 1 |
-| P1 High | 12 |
+| P1 High | 13 |
 | P2 Medium | 10 |
 | P3 Low | 19 |
 | P4 Optional | 3 |
@@ -158,7 +158,15 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); the tag `v0.1.0` and gate G-T2 (TAB-040).
   A tag needs TB-001 done first; no GitHub release and no PyPI upload without G-R.
-- **Next step:** TAB-038 after TAB-010..TAB-012 and TAB-005.
+- **Next step:** TAB-038 is prepared (version `0.1.0a1`); the owner tags the merge commit. Then TAB-041 and TAB-040.
+
+### TB-053 · Move master's version on after the `v0.1.0a1` tag (TABRION TAB-038)
+
+- **Priority:** P1 High · **Status:** Blocked (on the tag) · **Refs:** TABRION TAB-038, TAB-040, RC-8
+- **What:** the TAB-038 pull request sets `__version__ = "0.1.0a1"` so that its merge commit can be tagged. Every
+  later master commit would otherwise also build as `0.1.0a1`, and a Git pin on a branch would look like the tag.
+- **Next step:** right after the tag, a one-line pull request sets `0.1.0a2.dev0` (PEP 440: after `0.1.0a1`, before
+  `0.1.0`); TAB-040 sets `0.1.0`.
 
 ### TB-022 · Release check: no 0.1 name is still a stub (TABRION TAB-040, G-T1 F-08)
 

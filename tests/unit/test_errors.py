@@ -1144,6 +1144,13 @@ def test_t1_broken_call_with_database_text_in_an_argument(
     assert "log message could not be formatted" in capture.text.getvalue()
 
 
+def test_td1_broken_call_with_database_text_in_the_template(capture: Any, capsys: pytest.CaptureFixture[str]) -> None:
+    """Delta re-review TD-1: the template itself holds the server text (``logging`` prints it as ``Message: %r``)."""
+    capture.logger.error(str(_unique_violation()) + " %s %s", 1)
+    assert CANARY not in _out(capture) + capsys.readouterr().err
+    assert "log message could not be formatted" in capture.text.getvalue()
+
+
 def test_t2_broken_call_while_database_text_is_handled(capture: Any, capsys: pytest.CaptureFixture[str]) -> None:
     """Review T-2: the handled exception carries only the database text (no error object): still rewritten."""
     try:
