@@ -220,7 +220,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `read()` and adds TAB-PG-012, TAB-B-001 and TAB-B-002 (`tests/unit/test_check_database.py`,
   `tests/postgres/test_check_layer_b.py`). TAB-B-002 stays an `info` "Not checked" when an `alembic_version` table
   exists: `check()` has no script directory and layer B never imports Alembic (D-66); `require_current` is the gate.
-- **Next step:** review and merge. A `script_location` for `check()` would be a 0.2 surface decision.
+- **Next step:** review and merge. D-66 is accepted by the coordinator as the 0.1 design (subject to review).
+- **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
+  options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
 ## M3, M5 and M8: work in this repository
 
