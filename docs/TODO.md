@@ -10,20 +10,25 @@
 > TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`). Lane C entries (TB-032..TB-037)
 > updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged); the TB-031 port
 > (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`; layer B (TB-007, TB-020, TB-040, TB-056, TB-061)
-> on branch `claude/project-thread-rdo6g3-layerb` (TABRION TAB-018).
+> on branch `claude/project-thread-rdo6g3-layerb` (TABRION TAB-018). Governance entries (TB-001 closed, TB-003, TB-011,
+> TB-014, TB-016) updated 2026-11-08 on branch `claude/project-thread-rdo6g3` for the owner decision of 2026-11-08
+> 11:26Z.
 
 ## Summary
 
 | Priority | Count |
 |---|---|
-| P0 Critical | 1 |
-| P1 High | 13 |
-| P2 Medium | 10 |
-| P3 Low | 28 |
-| P4 Optional | 3 |
+| P0 Critical | 0 |
+| P1 High | 12 |
+| P2 Medium | 9 |
+| P3 Low | 29 |
+| P4 Optional | 5 |
 
-**Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
-before G-R in any case; there is no published version.
+**Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
+trademark register check from gate G-T2 (TB-001 closed; a later public marketing under the name needs a new
+assessment) and made the repository settings of TB-003 optional. Tabrion is consumed through Git SHA pins; a PyPI
+publication is not planned (TB-016). Every public publication (PyPI, npm, GitHub release, announcement) still needs
+the owner's approval G-R per version; there is no published version.
 
 M1 and the G-T1 follow-up are merged: the package skeleton, the frozen API as typed stubs, CI, the import contracts,
 the documentation and the program files ([STATUS.md](program/STATUS.md#g-t1-conditions)). M2 has started:
@@ -48,26 +53,23 @@ Statuses: `Open`, `In progress` (PR linked), `Blocked` (names the blocker), `Nee
 
 ## Release blockers and critical items
 
-### TB-001 · Manual trademark register check before G-T2 (TABRION GOV-1)
-
-- **Priority:** P0 Critical · **Status:** Needs decision · **Refs:** TABRION GOV-1, R-13, R-36, R-CR-6, ST-10, G-T2
-- **What:** GOV-1 found identical, unregistered prior use of the name "Tabrion" by a Windows Excel/CSV app
-  ([name-check.md](program/reports/name-check.md)). The owner keeps the name for now (GOV-1 "done: conditional").
-  The registers were not searched automatically.
-- **Next step:** owner action: **manual TM register check (TMview/EUIPO/DPMA/WIPO) before G-T2; rename if
-  conflict.** Until then no PyPI name, no announcement, and the profile file extension of TABRION TAB-CR-1 stays
-  unfrozen.
+None open. TB-001 (manual trademark register check before G-T2) is closed: the owner did not order the check and
+removed it from G-T2 (owner decision of 2026-11-08 11:26Z; [STATUS.md](program/STATUS.md#owner-actions), O-3).
 
 ## Owner actions
 
 Things only the owner can do; the agent lacks the rights or must not do them. Mirrored in
-[STATUS.md](program/STATUS.md#owner-actions).
+[STATUS.md](program/STATUS.md#owner-actions). No new owner tasks are added unless they are technically or legally
+required (owner decision of 2026-11-08 11:26Z).
 
-### TB-003 · Repository settings: branch protection, environment `pypi`, private vulnerability reporting
+### TB-003 · Optional repository hardening: branch protection, environment `pypi`, private vulnerability reporting
 
-- **Priority:** P1 High · **Status:** Open · **Refs:** TABRION GOV-2, TABRION GOV-3, TABRION TAB-043, G-R, G-T1 C-7,
-  C-8; owner actions O-1, O-2, O-5, O-7, O-9
-- **What:** branch protection on `master`: the required status check `ci-ok` is the commit status that `ci-ok.yml`
+- **Priority:** P4 Optional · **Status:** Open (optional) · **Refs:** TABRION GOV-2, TABRION GOV-3, TABRION TAB-043,
+  G-R, G-T1 C-7, C-8; owner actions O-1, O-2, O-5, O-7, O-9
+- **What:** by the owner decision of 2026-11-08 11:26Z these settings are useful but optional hardening, never a
+  prerequisite for implementation, a merge or G-T2; the environment `pypi` is needed only if a PyPI publication is
+  decided later (TB-016), and the social preview is not a blocker. Without branch protection, `ci-ok` green stays a
+  merge rule that the person who merges checks (CONTRIBUTING.md). The settings: branch protection on `master`: the required status check `ci-ok` is the commit status that `ci-ok.yml`
   posts on the PR head SHA (C-7; it exists only after the follow-up pull request is merged), plus no force pushes and
   no deletion (the agent proxy gets HTTP 403); recommended `CODEOWNERS` for `/.github/**` with code-owner review. The
   same for tabrion-studio. The environment `pypi` (C-8): the owner as required reviewer, "prevent self-review",
@@ -75,7 +77,10 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `pypi` (ADR 0009, "Release environment"). The label `workflow-change-reviewed` for the ci-ok workflow-change gate
   (set only by the owner or an independent reviewer; ADR 0012). Private vulnerability reporting switched on (SECURITY.md points to it). Upload
   `assets/branding/social-preview.png` as the repository's social preview (O-9).
-- **Next step:** set them in the repository settings; then mark GOV-2 done in STATUS.md.
+- **Next step:** none required. When the owner sets one, record it in STATUS.md. Stale comments: the header of
+  `.github/workflows/release.yml` still calls the environment `pypi` owner action O-2 as if it were required, and
+  `.github/workflows/ci-ok.yml` says branch protection requires `ci-ok` (O-1); reword both in a later pull request
+  with the label `workflow-change-reviewed` (ADR 0012).
 
 ### TB-004 · Confirm the CR-DB decisions E-CR-1..E-CR-7
 
@@ -166,11 +171,13 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 - **Priority:** P1 High · **Status:** Blocked · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
 - **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001); the internal
-  pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); the tag `v0.1.0` and gate G-T2 (TAB-040).
-  The tag `v0.1.0` needs TB-001 done first; no GitHub release and no PyPI upload without G-R.
-- **Next step:** TAB-038 is merged (#9, `a463422`, accepted after independent review); the annotated tag `v0.1.0a1`
-  on that commit is an owner action (the agent's Git proxy only pushes branches). Consumers pin the commit SHA. The
-  internal a1 tag does not need TB-001; the tag `v0.1.0` does. Then TAB-041 and TAB-040.
+  pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); `v0.1.0` final and gate G-T2 (TAB-040).
+  `v0.1.0` final is the master merge commit whose package version is `0.1.0` (not a pre-release); consumers pin it
+  by full commit SHA via `git+https`, and a tag `v0.1.0` is an optional label (ADR 0009, amendment of 2026-11-08).
+  No GitHub release and no PyPI upload without G-R.
+- **Next step:** TAB-038 is merged (#9, `a463422`, accepted after independent review). The agent created the
+  annotated tag `v0.1.0a1` on that commit in its clone; the agent's Git proxy refuses tag pushes, so it is not on
+  GitHub. That is optional: consumers pin the commit SHA and nothing waits on the tag. Then TAB-041 and TAB-040.
 
 ### TB-022 · Release check: no 0.1 name is still a stub (TABRION TAB-040, G-T1 F-08)
 
@@ -252,12 +259,13 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-014 · Connection profile format v1 (TABRION TAB-CR-1)
 
-- **Priority:** P1 High · **Status:** Blocked (G-T1, TB-001 for the file extension) · **Refs:** TABRION TAB-CR-1,
-  CR-DB, R-CR-6
+- **Priority:** P1 High · **Status:** Blocked (G-T1) · **Refs:** TABRION TAB-CR-1, CR-DB, R-CR-6
 - **What:** a Tabrion connection profile format v1: schema, parser, secret references, no storage (storage stays in
   Studio and Nodestro). Studio STU-006 and Nodestro NOD-CR-3 use the same format. 2 + 0.5 agent days. New public API:
   needs a contract addendum and its own G-T1 style review.
-- **Next step:** the format after G-T1; the profile file extension only after the register check (TB-001).
+- **Next step:** the format after G-T1. The profile file extension no longer waits on a register check (owner
+  decision of 2026-11-08 11:26Z); keep the name out of frozen places where a choice exists, so a later rename stays
+  cheap (R-36, R-CR-6).
 
 ### TB-015 · Schema fingerprint and comparison (TABRION TAB-CR-2)
 
@@ -266,12 +274,15 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   it. 1.5 + 0.5 agent days. New public API, like TB-014.
 - **Next step:** after TAB-CR-1 and the inspector of TAB-033.
 
-### TB-016 · PyPI path (TABRION TAB-043)
+### TB-016 · PyPI path (TABRION TAB-043), not planned
 
-- **Priority:** P2 Medium · **Status:** Blocked (G-R) · **Refs:** TABRION TAB-043, E-PyPI, G-R, TB-001, TB-003
-- **What:** trusted publisher and `0.1.0rc1` on PyPI. Every public release needs its own G-R. The `publish` job of
-  `release.yml` fails on purpose until then.
-- **Next step:** only after G-R, the register check (TB-001) and the environment `pypi` (TB-003).
+- **Priority:** P4 Optional · **Status:** Needs decision (only if a publication is decided) · **Refs:** TABRION
+  TAB-043, E-PyPI, G-R, TB-003
+- **What:** trusted publisher and `0.1.0rc1` on PyPI. Not needed now (owner decision of 2026-11-08 11:26Z): the
+  consumers pin Git SHAs or use internal packages, and their CI installs Tabrion from the Git SHA pin. Every public
+  release needs its own G-R. The `publish` job of `release.yml` fails on purpose until then.
+- **Next step:** none, unless the owner decides a publication; then G-R for that version, the environment `pypi`
+  (TB-003) and, before public marketing under the name, a new name assessment.
 
 ## Tests and quality assurance
 
@@ -659,7 +670,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 | TB-012 | orkexa, axentra, tabrion-studio | TABRION QA-16 | Their AC-1 contracts and mutation probes |
 | TB-014 | tabrion-studio, nodestro-runtime | TABRION STU-006, NOD-CR-3 | Use the profile format |
 | TB-015 | nodestro-runtime | TABRION NOD-CR-5 | Uses the schema fingerprint |
-| TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need `v0.1.0` final (RC-8) |
+| TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need the SHA of the `v0.1.0` final commit (RC-8) |
 | TB-008 | nodestro-studio | TABRION QA-20 (AC-5) | Consumer compat gates Tabrion tags |
 | TB-035 | axentra, nodestro-runtime | TABRION MIG-AXE, MIG-NOD | Their role checks miss roles reachable with `SET ROLE` (review H-1), and their grants accept the schema's owner and its members (review M-1 of #8); fix in their MIG waves or earlier |
 | TB-052 | nodestro-runtime | TABRION MIG-NOD | Catch the one-shot `lock_lost` of the scheduler pattern after a lost lock connection |

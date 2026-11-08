@@ -1,18 +1,30 @@
 # Installation
 
-Tabrion needs Python 3.11 or later. It is not on PyPI yet: every public release needs the owner's approval (G-R,
-[ADR 0009](../adr/0009-distribution-and-versioning.md)). Until then, install it from Git, pinned to a commit.
+Tabrion needs Python 3.11 or later. It is distributed through Git: install it pinned to a full commit SHA. A PyPI
+publication is not planned for now; one would need the owner's approval G-R for every version
+([ADR 0009](../adr/0009-distribution-and-versioning.md), amendment of 2026-11-08).
 
 ```bash
 pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"
+```
+
+## Final versions
+
+A final version is the master merge commit whose package version is final; `v0.1.0` final (TABRION TAB-040) is the
+merge commit whose version is `0.1.0`. Consumers pin it by its full commit SHA; a tag `v0.1.0` on it is an optional
+label, never what a pin names. A consumer's CI installs Tabrion from that pin (for a library, the requirements file
+`requirements/tabrion.txt`, installed with `-r`; ADR 0009), not from PyPI:
+
+```text
+tabrion[postgres] @ git+https://github.com/peterkarlhuber/tabrion@<full commit sha of a final version>
 ```
 
 ## Internal pre-release v0.1.0a1
 
 `v0.1.0a1` (TABRION TAB-038) is an internal pre-release of `tabrion.errors`, `tabrion.sql` and `tabrion.config` for
 integration branches that are **not merged** yet (rule RC-8,
-[ADR 0009](../adr/0009-distribution-and-versioning.md)). It is a Git tag only: nothing is on PyPI and there is no
-GitHub release.
+[ADR 0009](../adr/0009-distribution-and-versioning.md)). It is a commit only: nothing is on PyPI and there is no
+GitHub release. An annotated tag `v0.1.0a1` on it is an optional label and may be missing on GitHub.
 
 On such a branch, pin the commit of the tag. A tag name can be moved, so requirement files pin the commit SHA
 (`a463422206485c26ddafc8d0873698854fd1ebef`, the merge commit of the version `0.1.0a1`):
@@ -32,14 +44,15 @@ dependencies = ["tabrion>=0.1.0a1,<0.2"]
 
 The rules:
 
-- **Never on master.** A consumer's master carries only final ranges and pins (`tabrion>=0.1,<0.2`, a final tag).
+- **Never on master.** A consumer's master carries only final ranges and pins (`tabrion>=0.1,<0.2`, plus a SHA pin
+  of a final-version commit).
   The architecture check AC-6 (planned, QA-15) will refuse a pre-release specifier or pin there.
 - A final range rejects the alpha: `tabrion>=0.1,<0.2` does not accept `0.1.0a1` (probe
   `proben/versionierung/`), so a library on master cannot be installed with the a1 pin by accident. A pre-release
   range `>=0.1.0a1,<0.2` accepts `0.1.0a1`, later pre-releases and `0.1.0`, but never `0.2.0a1`.
-- One Tabrion version per installation (K-34): every package of an installation pins the same tag.
-- The first merge of a consumer with a Tabrion edge needs `v0.1.0` final (TAB-040); rebase the integration branch
-  to the final range and pin then.
+- One Tabrion version per installation (K-34): every package of an installation pins the same commit.
+- The first merge of a consumer with a Tabrion edge needs `v0.1.0` final (TAB-040, the merge commit whose version
+  is `0.1.0`); rebase the integration branch to the final range and the SHA pin of that commit then.
 - Only the three modules above carry the a1 promise. The other modules in the tag are work in progress.
 
 ## Extras

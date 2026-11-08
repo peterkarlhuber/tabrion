@@ -23,10 +23,10 @@ decompressed pixel data of the supplied file. The supplied file itself stays unc
 | `favicon.ico` | 16, 32, 48 | browser favicon (symbol on a rounded white tile, readable on light and dark tabs) |
 | `favicon-32.png` | 32 × 32 | PNG favicon (docs site) |
 | `apple-touch-icon.png` | 180 × 180 | home-screen icon (opaque white tile) |
-| `social-preview.png` | 1280 × 640 | GitHub social preview: the on-dark lockup on the shared dark brand template (uploaded manually in the repository settings) |
+| `social-preview.png` | 1280 × 640 | GitHub social preview: the on-dark lockup on the shared dark brand template (uploaded manually in the repository settings; optional, not a blocker) |
 
-The README shows the lockups through absolute `raw.githubusercontent.com` URLs on `master`, because it is also the
-PyPI description, where relative image paths break. The URLs work once this folder is on `master`.
+The README shows the lockups through absolute `raw.githubusercontent.com` URLs on `master`, because it would also be
+the PyPI description if a publication is decided later, where relative image paths break. The URLs work once this folder is on `master`.
 
 The "Tabrion STUDIO" lockup is cropped from the same master by `build.py --studio <file>` and kept in the planning
 folder as `tabrion-studio-logo-master-2026-11-08.png` for the tabrion-studio repository.
