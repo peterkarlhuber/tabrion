@@ -82,4 +82,5 @@ nav:
       - Status: program/STATUS.md
       - Risks and rollback: program/risks.md
       - "Report: name check": program/reports/name-check.md
+      - "Report: QA-8 supply chain": program/reports/qa-8-supply-chain.md
       - Open work: TODO.md

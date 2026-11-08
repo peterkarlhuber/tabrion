@@ -8,6 +8,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Supply chain (QA-8): `scripts/sbom.py` writes a deterministic CycloneDX 1.6 SBOM for a built wheel (standard
+  library only); packaging tests check that two builds give the same wheel hash and that the SBOM describes the
+  wheel. Report `docs/program/reports/qa-8-supply-chain.md`.
+
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
   `examples/`.

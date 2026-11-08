@@ -20,7 +20,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 12 |
-| P2 Medium | 11 |
+| P2 Medium | 12 |
 | P3 Low | 29 |
 | P4 Optional | 5 |
 
@@ -154,7 +154,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
 - **What:** the canary suite (no values in errors or logs, QA-2); concurrency and stress suite, nightly (QA-4);
-  supply chain with SBOM next to the existing `dependency audit` job (QA-8); the release workflow is in place but
+  supply chain with SBOM next to the existing `dependency audit` job (QA-8, in review: SBOM script and
+  reproducible-wheel test; the CI step is TB-130); the release workflow is in place but
   its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22).
 - **Next step:** QA-8 and QA-11 can start now (they depend on TAB-004 and TAB-005 only).
 
@@ -240,6 +241,15 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** review and merge. D-66 is accepted by the coordinator as the 0.1 design (subject to review).
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
+
+### TB-130 · SBOM step in CI and in the release workflow (TABRION QA-8)
+
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request) · **Refs:** TABRION QA-8, QA-11, 07 TM-10
+- **What:** `scripts/sbom.py` writes the CycloneDX SBOM of a wheel and is tested on the CI build's wheel, but no
+  workflow stores it yet.
+- **Next step:** in `ci.yml` job `build and install`, run
+  `python -I scripts/sbom.py dist/tabrion-*.whl --vcs-ref "$GITHUB_SHA" -o dist/tabrion.cdx.json` before the upload;
+  in `release.yml` the same in job `build`, and include the SBOM in the files attested by job `attest`.
 
 ## M3, M5 and M8: work in this repository
 
