@@ -1,0 +1,80 @@
+{
+ "about": "Behavior of orkexa at the commit below for contract section 8.3 (TAB-022a), recorded by scripts/record_golden.py with tests/golden/consumers/record_orkexa.py. Do not edit by hand: change the commit in scripts/record_golden.py and record again.",
+ "commit": "5bf139e41893a4c1a757ed53351466e43da7fec0",
+ "consumer": "orkexa",
+ "recorded_with": {
+  "postgres": "160015",
+  "python": "3.13.18",
+  "sqlite": "3.53.1"
+ },
+ "records": {
+  "source": {
+   "read": {
+    "changed": {},
+    "status": "IDLE"
+   },
+   "rolled_back_on_error": true,
+   "transaction": {
+    "changed": {},
+    "status": "INTRANS"
+   },
+   "write": {
+    "changed": {},
+    "status": "IDLE"
+   }
+  },
+  "sqlite.open": {
+   "busy_timeout": 30000,
+   "file_mode": "0o600",
+   "foreign_keys": 0,
+   "isolation_level": null,
+   "journal_mode": "wal",
+   "secure_delete": 1,
+   "synchronous": 2,
+   "trusted_schema": 1
+  },
+  "sqlite.read.index": {
+   "in_transaction_after": false,
+   "journal_mode": "wal",
+   "one_snapshot": true,
+   "sees_new_rows_after": true
+  },
+  "sqlite.symlink": {
+   "database_is_link": "refused",
+   "target_unchanged": true,
+   "wal_is_link": "refused"
+  },
+  "sqlite.transaction.files": {
+   "committed": true,
+   "in_transaction_after": false,
+   "other_writer_blocked_before_any_write": true,
+   "rolled_back_on_error": true
+  },
+  "sqlite.transaction.index": {
+   "committed": true,
+   "in_transaction_after": false,
+   "other_writer_blocked_before_any_write": true,
+   "rolled_back_on_error": true
+  },
+  "sqlite.transaction.memory": {
+   "committed": true,
+   "in_transaction_after": false,
+   "other_writer_blocked_before_any_write": true,
+   "rolled_back_on_error": true
+  },
+  "testing.environment": {
+   "flag_equal_1": [
+    "ORKEXA_REQUIRE_PGVECTOR",
+    "ORKEXA_REQUIRE_POSTGRES",
+    "ORKEXA_TEST_RUNTIME_ROLE"
+   ],
+   "read": [
+    "ORKEXA_REQUIRE_PGVECTOR",
+    "ORKEXA_REQUIRE_POSTGRES",
+    "ORKEXA_TEST_POSTGRES",
+    "ORKEXA_TEST_RUNTIME_ROLE"
+   ]
+  }
+ },
+ "repository": "https://github.com/peterkarlhuber/orkexa"
+}
