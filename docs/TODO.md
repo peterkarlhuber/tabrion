@@ -126,6 +126,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tabrion.testing` 0.1 (TAB-020) with a database per session, roles without superuser, truncate and runtime-role
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
+- **Status note:** TAB-020 and TAB-032 are in the fourth lane C pull request (#11; contract I-36, I-60), after #8
+  (TAB-031) merged. Re-review at `5110c8f`: TAB-020 accepted, TAB-032 accepted with conditions; M-1 (the condition),
+  DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73).
 - **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
   TAB-019 (`tabrion.migrations`, contract I-57) is done (#14). TAB-021 (`tabrion.testing.profiles`, contract I-58,
   deviations D-62 and D-63) is done (#15) after its review fix round (M-1..M-3, L-1..L-3; follow-up TB-064).
@@ -638,6 +641,16 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   do that already has the power, so it is no escalation; running the checks inside the grant transaction would make
   the guarantee exact.
 - **Next step:** decide with the next change of `grant_runtime_role` (a contract note for the order of statements).
+
+### TB-055 · Complete the dogfooding of `tabrion.testing` (TABRION TAB-020, TAB-032)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-020, TAB-032, contract section 6, I-36, D-51
+- **What:** the PostgreSQL suites use the plugin's URL and schema fixtures; `make_role` and `scratch_database` in
+  `tests/postgres/conftest.py` stay local, and the SQLite suites use `tmp_path` instead of `tabrion_sqlite_path`.
+- **Next step:** the fixtures exist now (TAB-032, #11); move `make_role` and `scratch_database` onto
+  `tabrion_postgres_roles` and `tabrion_postgres_database` where the cases allow it (most role cases need several
+  roles per test with chosen attributes, which the session fixtures do not give); the SQLite suites follow when
+  lane B next touches them.
 
 ## Cross-repository dependencies
 

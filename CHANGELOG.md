@@ -156,6 +156,28 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   not exist (`UsageError("postgres.schema_missing")`), names over 63 bytes (`ValueError`) and running inside the
   caller's transaction (`UsageError("postgres.nested_transaction")`). The catalog afterwards equals the Axentra and Nodestro results
   (golden files of both reference functions).
+- `tabrion.testing` (TAB-020), activated with `pytest_plugins = ["tabrion.testing"]`: `configure` chooses the
+  environment variable names (`env_prefix`, or the consumers' own names) and the name prefix; `tabrion_postgres_url`
+  skips without a server and fails under the require variable, and masks the password in pytest's reports;
+  `tabrion_postgres_schema` gives every test its own schema and drops it afterwards, also after a failure and with a
+  connection of the same role still holding locks (another role's session is waited for, never ended), but never
+  cascades into an extension; `postgres_server_version`; `require_extension` never moves an extension: it creates a
+  missing one in `public` and makes one in another schema visible through the connection's `search_path`, or skips
+  (fails when required); a require variable counts unless it is empty or `0`; `tabrion_sqlite_path` and
+  `tabrion_sqlite`. Tabrion's own PostgreSQL suites run on it and check after each test that nothing they created is
+  left on the server.
+- `tabrion.testing` re-review fixes (#11): `truncate_tables` without `schema=` empties only a schema the plugin created
+  and refuses a `CASCADE` into another schema; a schema teardown that would drop an extension is rolled back; the
+  fixtures work under a `NOINHERIT` admin on PostgreSQL 16+, try every role at the end and drop the roles' grants in
+  the admin's database.
+- `tabrion.testing` database per session and roles without superuser (TAB-032): `tabrion_postgres_database` creates a
+  throwaway database with an owner and an app role as `tabrion_role_setup` describes (`RoleSetup()`, `split=False`,
+  named roles, or none) and drops database and roles at the end; `tabrion_postgres_roles` gives the same two roles in
+  the existing database; the runtime-role mode of `tabrion_postgres_schema` adds a runtime role per test with the
+  grants of `grant_runtime_role`; `truncate_tables` empties a schema's tables in one `TRUNCATE ... RESTART IDENTITY
+  CASCADE`. Every role is `NOSUPERUSER NOBYPASSRLS` with a random password, and a role the fixtures did not create
+  is never changed or dropped. A golden test checks Axentra's `tests/conftest.py` against the same setup on the
+  plugin.
 - In psycopg pipeline mode every `tabrion.postgres` function syncs the caller's pipeline first, so a failing statement
   no longer aborts the caller's pipeline transaction (review DL-1 of #5); an error of a statement the caller queued
   propagates from every function, `ping` included, and `wait_advisory_lock` syncs each attempt before it sleeps.
@@ -169,7 +191,7 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 58 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  transaction state, and carry 94 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`

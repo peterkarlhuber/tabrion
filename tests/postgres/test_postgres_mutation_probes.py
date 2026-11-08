@@ -1,4 +1,4 @@
-"""Mutation probes for TAB-015, TAB-016, TAB-030 and TAB-034 (planning document 07 section 7), against PostgreSQL.
+"""Mutation probes on PostgreSQL (planning document 07 section 7): TAB-015, TAB-016, TAB-020, TAB-030..TAB-032, TAB-034.
 
 Like ``tests/unit/test_mutation_probes.py``: a copy of the package with one rule broken must turn the named test
 red (exit code 1: a failure, not a skip, since ``TABRION_TEST_POSTGRES`` reaches the subprocess). Each anchor must
@@ -13,11 +13,15 @@ import pytest
 
 from tests.unit.test_mutation_probes import _copy, _run
 
-from .conftest import admin_conninfo
-
 pytestmark = [pytest.mark.postgres, pytest.mark.slow]
 
 READERS = "tests/postgres/test_contract_rules.py::test_g01_g02_readers"
+X11 = "tests/postgres/test_testing_database.py::test_x11_database_with_split_roles"
+X14 = "tests/postgres/test_testing_database.py::test_x14_one_statement_restart_identity"
+X16 = "tests/postgres/test_testing_database.py::test_x16_runtime_role_mode"
+X15 = "tests/postgres/test_testing_database.py::test_x15"
+DB = "tests/postgres/test_testing_database.py"
+PLUGIN = "tests/postgres/test_testing_plugin.py"
 
 PROBES = [
     # T-NOTX: the implicit transaction a reader opened is rolled back (IDLE stays IDLE).
@@ -434,12 +438,250 @@ PROBES = [
         "        except psycopg.Error:\n",
         "tests/postgres/test_grants.py::test_r16_a_failing_connect_step_propagates",
     ),
+    # Delta re-review DL-1 of #8: the 63-byte limit counts bytes, not characters.
+    (
+        "postgres/roles.py",
+        '        if any(len(name.encode("utf-8")) > _NAME_BYTES for name in names):\n',
+        "        if any(len(name) > _NAME_BYTES for name in names):\n",
+        "tests/postgres/test_grants.py::test_dl1_multibyte_names_are_measured_in_bytes",
+    ),
+    # Review H-1 (#11): an extension elsewhere is made visible through search_path (a skip would hide this).
+    (
+        "testing/postgres.py",
+        '    if status.state == "other_schema" and status.extension_schema is not None:\n',
+        "    if False:\n",
+        "tests/postgres/test_testing_plugin.py::test_x07_other_schema_is_made_visible_not_moved",
+    ),
+    # Review H-1 (#11): a missing extension is created in public, never in the (test) current schema.
+    (
+        "testing/postgres.py",
+        "                        sql.Identifier(name), sql.Identifier(_EXTENSION_HOME)\n",
+        "                        sql.Identifier(name), sql.Identifier(str(status.schema))\n",
+        "tests/postgres/test_testing_plugin.py::test_h1_teardown_never_reaches_a_shared_extension",
+    ),
+    # Review H-1 (#11): the teardown never cascades into an extension.
+    (
+        "testing/postgres.py",
+        "            if extensions:\n",
+        "            if False:\n",
+        "tests/postgres/test_testing_plugin.py::test_h1_teardown_refuses_a_schema_holding_an_extension",
+    ),
+    # Review L-1 (#11): only sessions of the URL's role are ended.
+    (
+        "testing/postgres.py",
+        '                " AND (a.usesysid OPERATOR(pg_catalog.=) (SELECT r.oid FROM pg_catalog.pg_roles r"\n',
+        '                " AND (true OR a.usesysid OPERATOR(pg_catalog.=) (SELECT r.oid FROM pg_catalog.pg_roles r"\n',
+        "tests/postgres/test_testing_plugin.py::test_l1_another_roles_session_is_waited_for_not_ended",
+    ),
+    # Review L-2 (#11), mutant 2: only sessions in this database.
+    (
+        "testing/postgres.py",
+        '                " AND l.database OPERATOR(pg_catalog.=) (SELECT d.oid FROM pg_catalog.pg_database d"\n'
+        '                "   WHERE d.datname OPERATOR(pg_catalog.=) pg_catalog.current_database())"\n',
+        "",
+        "tests/postgres/test_testing_plugin.py::test_l2_a_lock_in_another_database_is_left_alone",
+    ),
+    # Review L-2 (#11), mutant 3: only locks on the schema and its relations.
+    (
+        "testing/postgres.py",
+        """                " AND ((l.locktype OPERATOR(pg_catalog.=) 'object'"\n""",
+        """                " AND (true OR (l.locktype OPERATOR(pg_catalog.=) 'object'"\n""",
+        "tests/postgres/test_testing_plugin.py::test_l2_a_lock_in_another_schema_is_left_alone",
+    ),
+    # Review Info (#11): a require value other than empty or 0 counts (never a silent skip).
+    (
+        "testing/_config.py",
+        '        return any(os.environ.get(name, "") not in ("", "0") for name in names)\n',
+        '        return any(os.environ.get(name, "") == "1" for name in names)\n',
+        "tests/unit/test_testing_plugin.py::test_x01_variables_first_flag_and_extension_list",
+    ),
+    # TAB-032: runtime-role mode grants through grant_runtime_role.
+    (
+        "testing/postgres.py",
+        "                grant_runtime_role(conn, role.name, schema=name)\n",
+        "                pass\n",
+        X16,
+    ),
+    # TAB-032: the runtime role's sessions are ended before the schema is dropped.
+    (
+        "testing/postgres.py",
+        "                _drop_schema(tabrion_postgres_url, name, also=roles.names)\n",
+        "                _drop_schema(tabrion_postgres_url, name)\n",
+        X16,
+    ),
+    # TAB-032: truncate_tables runs one statement for all tables.
+    (
+        "testing/postgres.py",
+        '        conn.execute(\n            sql.SQL("TRUNCATE TABLE {} RESTART IDENTITY CASCADE").format(\n'
+        '                sql.SQL(", ").join(sql.Identifier(name, table) for table in tables)\n'
+        "            )\n        )\n",
+        "        for table in tables:\n"
+        '            conn.execute(sql.SQL("TRUNCATE TABLE {} RESTART IDENTITY CASCADE").format('
+        "sql.Identifier(name, table)))\n",
+        X14,
+    ),
+    # TAB-032: RESTART IDENTITY.
+    ("testing/postgres.py", '"TRUNCATE TABLE {} RESTART IDENTITY CASCADE"', '"TRUNCATE TABLE {} CASCADE"', X14),
+    # TAB-032: a partition goes with its parent, it is not listed itself.
+    ("testing/postgres.py", " AND NOT c.relispartition", "", X14),
+    # TAB-032: exclude.
+    (
+        "testing/postgres.py",
+        '            " AND NOT c.relname::pg_catalog.text OPERATOR(pg_catalog.=) ANY (%s::pg_catalog.text[])",\n'
+        "            (namespace, like, like, list(exclude)),\n",
+        '            " AND %s::pg_catalog.text[] IS NOT NULL",\n            (namespace, like, like, list(exclude)),\n',
+        f"{X15}_like_and_exclude",
+    ),
+    # TAB-032: like.
+    (
+        "testing/postgres.py",
+        '            " AND (%s::pg_catalog.text IS NULL"\n',
+        '            " AND (%s::pg_catalog.text IS NULL OR true"\n',
+        f"{X15}_like_and_exclude",
+    ),
+    # TAB-032: truncate_tables runs in conn.transaction() (an idle connection is committed).
+    (
+        "testing/postgres.py",
+        "    with conn.transaction():\n        row = conn.execute(\n",
+        "    if True:\n        row = conn.execute(\n",
+        f"{X15}_idle_connection_commits_and_callers_transaction_rolls_back",
+    ),
+    # TAB-032: exclude given as a str is refused.
+    ("testing/postgres.py", "    if isinstance(exclude, str) or not all(", "    if not all(", f"{X15}_errors"),
+    # TAB-032: the owner role owns the database and its schema public.
+    (
+        "testing/postgres.py",
+        '                statement = sql.SQL("{} OWNER {}").format(statement, sql.Identifier(owner.name))\n',
+        "                pass\n",
+        X11,
+    ),
+    (
+        "testing/postgres.py",
+        '                conn.execute(sql.SQL("ALTER SCHEMA public OWNER TO {}").format(sql.Identifier(owner.name)))\n',
+        "                pass\n",
+        X11,
+    ),
+    # TAB-032 / X17: the Axentra layout needs the owner to own public (the golden state shows it).
+    (
+        "testing/postgres.py",
+        '"ALTER SCHEMA public OWNER TO {}"',
+        '"ALTER SCHEMA public OWNER TO CURRENT_USER -- {}"',
+        "tests/postgres/test_testing_database.py::test_x17_axentra_conftest_golden",
+    ),
+    # TAB-032: DROP DATABASE ... WITH (FORCE): a session left open does not keep the database.
+    ("testing/postgres.py", '"DROP DATABASE IF EXISTS {} WITH (FORCE)"', '"DROP DATABASE IF EXISTS {}"', X11),
+    # TAB-032: a named role that exists already is never taken over (and so never dropped).
+    (
+        "testing/postgres.py",
+        "            except psycopg.errors.DuplicateObject:\n                pytest.fail(\n",
+        "            except psycopg.errors.DuplicateObject:\n                (lambda *a, **k: None)(\n",
+        "tests/postgres/test_testing_database.py::test_x12_a_named_role_that_exists_is_left_alone",
+    ),
+    # TAB-032: the admin's membership in the roles it creates (an admin without superuser needs it).
+    (
+        "testing/postgres.py",
+        "            conn.execute(sql.SQL(grant).format(sql.Identifier(name)))\n",
+        "",
+        "tests/postgres/test_testing_database.py::test_x18_both_fixtures_without_superuser",
+    ),
+    # TAB-032: a grant that was only a warning is reported (one privilege per check).
+    (
+        "testing/postgres.py",
+        "            if row is None or not all(row):\n",
+        "            if row is None or not any(row):\n",
+        "tests/postgres/test_testing_database.py::test_x18_roles_fixture_needs_the_grant_option",
+    ),
+    # TAB-032: the roles' sessions are ended before DROP OWNED.
+    (
+        "testing/postgres.py",
+        "            _terminate(conn, self.names)\n",
+        "",
+        "tests/postgres/test_testing_database.py::test_x13_roles_in_the_existing_database",
+    ),
+    # TAB-032: DROP OWNED before DROP ROLE.
+    (
+        "testing/postgres.py",
+        "        try:\n            roles.drop_owned(tabrion_postgres_url)\n",
+        "        try:\n            pass\n",
+        "tests/postgres/test_testing_database.py::test_x13_roles_in_the_existing_database",
+    ),
+    # TAB-032: the runtime role's privileges (default privileges, CONNECT) are dropped before the role.
+    (
+        "testing/postgres.py",
+        "            try:\n                roles.drop_owned(tabrion_postgres_url)\n",
+        "            try:\n                pass\n",
+        X16,
+    ),
+    # Re-review M-1 (#11): without schema= only a schema of this run is emptied, never public of a shared database.
+    (
+        "testing/postgres.py",
+        "        if schema is None and not name.startswith(_config.current.schema_prefix):\n",
+        "        if False:\n",
+        f"{DB}::test_m1_default_schema_must_be_a_test_schema",
+    ),
+    # Re-review M-1 (#11): a CASCADE into another schema is refused.
+    (
+        "testing/postgres.py",
+        "        _refuse_cascade_out_of(conn, namespace, name, [int(oid) for oid, _ in found])\n",
+        "",
+        f"{DB}::test_m1_cascade_into_another_schema_is_refused[direct]",
+    ),
+    # Re-review M-1 (#11): ... also through tables of the schema the CASCADE reaches (one step only: no recursion).
+    (
+        "testing/postgres.py",
+        """    "   WHERE k.confrelid OPERATOR(pg_catalog.=) r.oid AND k.contype OPERATOR(pg_catalog.=) 'f') next)"\n""",
+        """    "   WHERE k.confrelid OPERATOR(pg_catalog.=) r.oid AND k.contype OPERATOR(pg_catalog.=) 'f'"\n"""
+        """    " AND r.oid OPERATOR(pg_catalog.=) ANY (%(tables)s::pg_catalog.oid[])) next)"\n""",
+        f"{DB}::test_m1_cascade_into_another_schema_is_refused[through_an_excluded_table]",
+    ),
+    # Re-review DL-1 (#11): the DROP is rolled back when an extension disappeared with it.
+    (
+        "testing/postgres.py",
+        "            if gone:\n",
+        "            if False:\n",
+        f"{PLUGIN}::test_dl1_teardown_refuses_to_drop_an_extension_member",
+    ),
+    # Re-review L-1 (#11): the membership inherits also for a NOINHERIT admin (PostgreSQL 16+).
+    (
+        "testing/postgres.py",
+        '                grant += " WITH INHERIT TRUE, SET TRUE"\n',
+        "                pass\n",
+        f"{DB}::test_x18_both_fixtures_without_superuser[NOINHERIT]",
+    ),
+    # Re-review L-1 (#11): drop_all tries every role.
+    (
+        "testing/postgres.py",
+        "                    first = first or exc\n",
+        "                    raise\n",
+        f"{DB}::test_l2_drop_all_tries_every_role",
+    ),
+    # Re-review L-2 (#11): drop_all ends the roles' sessions ...
+    (
+        "testing/postgres.py",
+        "            _terminate(conn, self.names, everywhere=True)\n",
+        "",
+        f"{DB}::test_l2_drop_all_ends_the_roles_sessions_everywhere",
+    ),
+    # ... in every database.
+    (
+        "testing/postgres.py",
+        "_terminate(conn, self.names, everywhere=True)",
+        "_terminate(conn, self.names)",
+        f"{DB}::test_l2_drop_all_ends_the_roles_sessions_everywhere",
+    ),
+    # Re-review L-2 (#11): DROP OWNED fails within its lock_timeout.
+    (
+        "testing/postgres.py",
+        "            conn.execute(\"SET lock_timeout = '10s'\")  # an error rather than a teardown that never ends\n",
+        "",
+        f"{DB}::test_l2_drop_owned_fails_within_its_lock_timeout",
+    ),
 ]
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _needs_postgres() -> None:
-    admin_conninfo()
+def _needs_postgres(tabrion_postgres_url: str) -> None:
+    """Skips (or fails under ``TABRION_REQUIRE_POSTGRES=1``) without a server, through the plugin."""
 
 
 def test_unmutated_copy_passes(tmp_path: Path) -> None:
