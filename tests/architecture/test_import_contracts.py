@@ -93,6 +93,9 @@ MIGRATIONS = "Migration helpers never import pytest"
         ("postgres/__init__.py", "import sqlalchemy", POSTGRES),
         ("postgres/locks.py", "import psycopg_pool", POSTGRES),
         ("sqlite.py", "import tabrion._sa.database", LAYERS),
+        ("errors.py", "import tabrion.config", LAYERS),
+        ("errors.py", "import tabrion.sql", LAYERS),
+        ("sql.py", "import tabrion.config", LAYERS),
         ("_sa/profile.py", "import pytest", LAYER_B),
         ("_sa/database.py", "import alembic", LAYER_B),
         ("_sa/_check.py", "import psycopg_pool", LAYER_B),
@@ -272,3 +275,66 @@ def test_prefix_scan_detects_a_probe(tmp_path: Path) -> None:
     probe = tmp_path / "probe.py"
     probe.write_text("from nodestro_server import x\n", encoding="utf-8")
     assert _imported_top_levels(probe) == {"nodestro_server"}
+
+
+# G-T1 F-09 and F-10 (TODO TB-019): "stdlib-only" as an allowlist. import-linter's core contract forbids a list of
+# packages, so any other third-party import (for example ``pluggy``, which comes with pytest) would pass it, and the
+# root package ``tabrion`` (whose ``__getattr__`` reaches layer B) is in no contract at all.
+CORE_FILES = ("errors.py", "sql.py", "config.py", "sqlite.py", "check.py")
+CORE_IMPORTABLE = frozenset({"tabrion.errors", "tabrion.sql", "tabrion.config", "tabrion.sqlite", "tabrion.check"})
+
+
+def _core_import_offenders(source: str, filename: str = "<probe>") -> list[str]:
+    """Imports outside ``if TYPE_CHECKING:`` that are neither standard library nor a layer-A core module."""
+    tree = ast.parse(source, filename=filename)
+    type_checking: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":
+            type_checking.update(id(child) for stmt in node.body for child in ast.walk(stmt))
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if id(node) in type_checking:
+            continue
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                offenders.append("." * node.level + (node.module or ""))
+                continue
+            names = [node.module or ""]
+        else:
+            continue
+        for name in names:
+            root = name.partition(".")[0]
+            if root == "tabrion":
+                if name not in CORE_IMPORTABLE:  # also "import tabrion" and "from tabrion import X"
+                    offenders.append(name)
+            elif root not in sys.stdlib_module_names:
+                offenders.append(name)
+    return offenders
+
+
+@pytest.mark.parametrize("filename", CORE_FILES)
+def test_core_imports_only_the_standard_library_and_core_modules(filename: str) -> None:
+    path = SRC / "tabrion" / filename
+    assert not _core_import_offenders(path.read_text(encoding="utf-8"), str(path)), filename
+
+
+@pytest.mark.parametrize(
+    ("line", "offender"),
+    [
+        ("import pluggy", "pluggy"),
+        ("from tabrion import Database", "tabrion"),
+        ("import tabrion", "tabrion"),
+        ("from tabrion._sa import database", "tabrion._sa"),
+        ("from . import postgres", "."),
+        ("def f():\n    import yaml", "yaml"),
+    ],
+)
+def test_core_allowlist_probe(line: str, offender: str) -> None:
+    """Negative probe: each forbidden import is reported; the same line under ``TYPE_CHECKING`` is not."""
+    assert _core_import_offenders(f"import os\n{line}\n") == [offender]
+    guarded = "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n" + "\n".join(
+        "    " + ln for ln in line.splitlines()
+    )
+    assert _core_import_offenders(guarded) == []
