@@ -114,7 +114,7 @@ Planned effort: 60.75 + 21.25 agent days.
 | TAB-050 | Internal test asset "Levuvo Database Profile" (vectors, no vendoring) | tabrion | TAB-010, TAB-011, TAB-014, TAB-016 | - | 2 + 0.5 | Core | Not started |  |
 | QA-2 | Canary value suite (no values in errors or logs) | tabrion | TAB-010, TAB-018 | - | 1 + 0.5 | QA | Not started |  |
 | RA-B-2 | Measurements: idempotent transfer to PostgreSQL | tabrion (examples/measurements) | RA-B-1, TAB-018 | - | 2 + 0.5 | Ref-Apps | Not started |  |
-| TAB-019 | tabrion.migrations status/require_current | tabrion | TAB-018 | - | 1 + 0.25 | Core | In review | `src/tabrion/migrations.py`; `tests/unit/test_migrations.py` (TAB-T-M01..M08 on SQLite), `tests/postgres/test_migrations_postgres.py` (version table in a schema); contract I-57. Stacked on the TAB-018 branch (#12); green on Alembic 1.13.0 and 1.20 |
+| TAB-019 | tabrion.migrations status/require_current | tabrion | TAB-018 | - | 1 + 0.25 | Core | In review (fix round after the review of #14: H-1 `is_current` through `pending`, L-1..L-4, Info; TB-066) | `src/tabrion/migrations.py`; `tests/unit/test_migrations.py` (TAB-T-M01..M08 on SQLite, `depends_on` after a real upgrade, every broken-script case), `tests/postgres/test_migrations_postgres.py` (version table in a schema); contract I-57. Stacked on the TAB-018 branch (#12); green on Alembic 1.13.0 and 1.20 |
 | TAB-021 | Profile and portability test cases | tabrion | TAB-018 | - | 1 + 0.25 | Core | Not started |  |
 | RA-A-1 | Parts: portable schema and Alembic | tabrion (examples/parts) | TAB-019 | - | 1.5 + 0.5 | Ref-Apps | Not started |  |
 | TAB-041 | Complete 0.1 documentation (guides) | tabrion | TAB-019, TAB-020, TAB-017 | - | 3 + 0.75 | Core | Not started |  |

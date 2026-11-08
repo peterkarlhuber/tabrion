@@ -51,3 +51,13 @@ def test_m01_m03_m08_version_table_in_a_schema(db: Database, schema: str, admin:
     admin.execute(f"UPDATE {schema}.alembic_version SET version_num = 'a3'")
     assert require_current(db, script_location=location, version_table_schema=schema).is_current
     assert not (location / "env_was_run").exists()
+
+
+def test_version_table_schema_typo_looks_fresh(db: Database, schema: str, admin: Any, tmp_path: Path) -> None:
+    """A schema name that does not exist reads as a fresh database, not as an error (documented in I-57)."""
+    location = scripts(tmp_path, CHAIN)
+    admin.execute(f"CREATE TABLE {schema}.alembic_version (version_num varchar(32) PRIMARY KEY)")
+    admin.execute(f"INSERT INTO {schema}.alembic_version VALUES ('a3')")
+    assert status(db, script_location=location, version_table_schema=schema).is_current
+    typo = status(db, script_location=location, version_table_schema=schema + "_typo")
+    assert typo.current == () and typo.pending == ("a1", "a2", "a3") and not typo.is_current
