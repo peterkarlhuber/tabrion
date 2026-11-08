@@ -108,7 +108,7 @@ Planned effort: 60.75 + 21.25 agent days.
 | TAB-032 | testing: database per session, roles without superuser, truncate, runtime-role mode (0.1) | tabrion | TAB-020 | - | 2 + 0.5 | Core | Not started |  |
 | QA-4 | Concurrency and stress suite | tabrion | TAB-014, TAB-015 | - | 1 + 0.25 | QA | Not started |  |
 | RA-B-1 | Measurements: local capture on SQLite | tabrion (examples/measurements) | TAB-014 | - | 1.5 + 0.5 | Ref-Apps | Not started |  |
-| TAB-017 | tabrion.check and finding codes | tabrion | TAB-014, TAB-016 | - | 1.5 + 0.5 | Core | Not started |  |
+| TAB-017 | tabrion.check and finding codes | tabrion | TAB-014, TAB-016 | - | 1.5 + 0.5 | Core | In review | `src/tabrion/check.py` (TAB-SQ-001..009), `src/tabrion/postgres/_check.py` (TAB-PG-001..011, 020, 021, 030); `tests/sqlite/test_findings.py` (K01..K09, K27..K30), `tests/postgres/test_check_findings.py` (K10..K20, K22..K24, K27..K30); contract I-50..I-55. TAB-PG-012 and TAB-B-001/002 (K21, K25, K26) and `Database.check()` follow the layer-B core (D-60, TODO TB-060) |
 | TAB-018 | Layer B core (Database, Profile, Transaction, fetch_*) | tabrion | TAB-014, TAB-015 | - | 4 + 1 | Core | Not started |  |
 | TAB-022 | Consumer protection: golden files (blocking) and nightly downstream | tabrion | TAB-014, TAB-016, TAB-030 | - | 3 + 0.75 | Core | Not started |  |
 | TAB-050 | Internal test asset "Levuvo Database Profile" (vectors, no vendoring) | tabrion | TAB-010, TAB-011, TAB-014, TAB-016 | - | 2 + 0.5 | Core | Not started |  |
@@ -628,6 +628,7 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-43 | TAB-030 | Contract 4.7: after a lost connection "every count is cleared" and the lock is replaced | Also: a key held on the lost connection raises `UsageError("postgres.lock_lost")` in `try_acquire`/`acquire` until `holds` or `release` acknowledges the loss (contract I-32) | Review L-3 of #6: a nested section would otherwise take a fresh hold and its `release` free the lock the outer section relies on. Additive: a new error code, no signature change |
 | D-44 | TAB-010 | Axentra TB-031 F-2: `install_db_error_redaction` replaces `Handler.handleError` process-wide | The filter rewrites a broken call made while a database error is handled; formatter and `emit` failures are a documented residual (SECURITY.md) | Tabrion installs nothing and has no install function; a new public name is a surface change; TB-050 |
 | D-45 | TAB-010 | Axentra TB-031 D-2: a public `redact_db_errors_processor` for native structlog | The processor is internal (`tabrion.errors._redact_db_errors_processor`); the filter's mapping branch covers structlog's stdlib integration | A new public name extends the frozen surface (`surface.json` unchanged); TB-051 |
+| D-60 | TAB-017 | Specification section 9, contract section 7: all codes for every target, TAB-T-K01..K30 | TAB-PG-012, TAB-B-001 and TAB-B-002 (K21, K25, K26) only for a `Database`, in the layer-B collector after TAB-018 (TODO TB-060); `tabrion._sa._check` stays a stub | A raw psycopg connection does not record that a `transaction_timeout` was wanted, and the layer-B codes need a `Database`; the coordinator kept TAB-017 apart from the open layer-B pull request (contract I-55) |
 
 ## Score review
 
