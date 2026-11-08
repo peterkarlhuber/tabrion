@@ -128,7 +128,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
 - **Status note:** TAB-020 and TAB-032 are in the fourth lane C pull request (#11; contract I-36, I-60), after #8
   (TAB-031) merged. Re-review at `5110c8f`: TAB-020 accepted, TAB-032 accepted with conditions; M-1 (the condition),
-  DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73).
+  DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73); both accepted after the second re-review and merged
+  in #11 (`e9da2a3`). Its non-blocking follow-ups (RR2-L1, Info) are in the TAB-022 pull request.
 - **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
   TAB-019 (`tabrion.migrations`, contract I-57) is done (#14). TAB-021 (`tabrion.testing.profiles`, contract I-58,
   deviations D-62 and D-63) is done (#15) after its review fix round (M-1..M-3, L-1..L-3; follow-up TB-064).
@@ -142,7 +143,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   and the nightly `downstream` job (TAB-022); the internal "Levuvo Database Profile" with `conformance/SPEC.md`,
   vectors, manifest and the job `conformance` (TAB-050); the API stability policy and a deprecation helper
   (TAB-051).
-- **Status note:** TAB-022 is in the fifth lane C pull request (stacked on #11; contract I-61, D-74, D-75): the
+- **Status note:** TAB-022 is in the fifth lane C pull request (on master after #11; contract I-61, D-74, D-75): the
   consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
   The CI jobs are TB-070.
 - **Next step:** TAB-050 after TAB-016; TAB-051 after TAB-023.
