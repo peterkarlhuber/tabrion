@@ -712,7 +712,11 @@ def test_l12_pipeline_autocommit_holds_no_snapshot_while_waiting(
             )
         waiter.join(10)
         assert result == [False]
-        assert sum(s == ("idle", True) for s in samples) >= 9, samples
+        # The property: the session never waits in a transaction or with a snapshot. A sample may meet an attempt
+        # while it runs ("active"); how often depends on the runner's speed, so only a majority of idle samples is
+        # required (a CI run saw 8 of 12).
+        assert all(s == ("idle", True) or s[0] == "active" for s in samples), samples
+        assert sum(s == ("idle", True) for s in samples) >= 6, samples
     finally:
         holder.stop()
 
