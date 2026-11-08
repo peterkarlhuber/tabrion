@@ -231,9 +231,11 @@ def test_l04_reentrant_acquire_after_a_loss_is_refused(
     with pytest.raises(UsageError) as lost:
         lock.try_acquire(key)  # the nested section
     assert lost.value.code == "postgres.lock_lost"
+    started = time.monotonic()
     with pytest.raises(UsageError) as lost_again:
-        lock.acquire(key, timeout=1)
+        lock.acquire(key, timeout=30)
     assert lost_again.value.code == "postgres.lock_lost"
+    assert time.monotonic() - started < 5, "acquire raises at once on a lost key, it does not poll"
     assert lock.try_acquire(other) is True  # a key that was not held is not affected
     assert _free(admin_url, key), "nothing took the lost key again"
     # Acknowledged by holds() (the outer section checks and sees the loss): the key can be taken again.
@@ -700,17 +702,24 @@ def test_l12_pipeline_autocommit_holds_no_snapshot_while_waiting(
 
         waiter = threading.Thread(target=wait)
         waiter.start()
-        samples = []
-        for _ in range(12):
-            time.sleep(0.1)
-            samples.append(
-                admin.execute(
-                    "SELECT state, backend_xmin IS NULL FROM pg_stat_activity WHERE pid = %s", (pid,)
-                ).fetchone()
-            )
+        # Sample for the whole wait (2 s), not a fixed count: how many samples meet an attempt while it runs depends
+        # on the runner's scheduling (CI saw 7 or 8 idle of 12 against a threshold of 9).
+        samples: list[tuple[Any, ...]] = []
+        while waiter.is_alive() and len(samples) < 200:
+            time.sleep(0.05)
+            row = admin.execute(
+                "SELECT state, backend_xmin IS NULL FROM pg_stat_activity WHERE pid = %s", (pid,)
+            ).fetchone()
+            if row is not None and waiter.is_alive():
+                samples.append(tuple(row))
         waiter.join(10)
         assert result == [False]
-        assert sum(s == ("idle", True) for s in samples) >= 9, samples
+        # Between attempts the session is idle without a snapshot; a sample may also meet an attempt running
+        # ("active"), never "idle in transaction". Without the sync after each attempt (the mutant of review L-1) every
+        # sample is "active" with a snapshot, for the whole wait: a few idle samples prove the sync, whatever the
+        # scheduling.
+        assert all(s == ("idle", True) or s[0] == "active" for s in samples), samples
+        assert sum(s == ("idle", True) for s in samples) >= 3, samples
     finally:
         holder.stop()
 
@@ -731,3 +740,50 @@ def test_l15_pipeline_with_queued_statements(connect: Callable[..., Any], url: s
             assert refused.value.code == "postgres.lock_in_transaction"
     if not autocommit:
         conn.rollback()
+
+
+def test_l04_release_acknowledges_a_loss_seen_elsewhere(
+    locks: Callable[..., SessionLock], admin: Any, key: int
+) -> None:
+    """Delta review DL-1 (#6), mutant 3: another call noticed the loss first (``held_keys``); ``release(key)`` of the
+    lost hold (count 0 by then) still acknowledges it, and the key can be taken again."""
+    lock = locks()
+    assert lock.try_acquire(key)
+    admin.execute("SELECT pg_terminate_backend(%s)", (lock._connection.info.backend_pid,))  # type: ignore[union-attr]
+    time.sleep(0.2)
+    assert lock.held_keys() == frozenset()  # noticed here; held_keys does not acknowledge
+    with pytest.raises(UsageError):
+        lock.try_acquire(key)
+    lock.release(key)  # the outer section ends
+    assert lock.try_acquire(key) is True
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="needs os.fork")
+def test_l10_fork_after_a_loss(locks: Callable[..., SessionLock], admin: Any, key: int) -> None:
+    """Delta review DL-1 (#6), mutant 5: a child never held the parent's lost key, so it may take it."""
+    lock = locks()
+    assert lock.try_acquire(key)
+    admin.execute("SELECT pg_terminate_backend(%s)", (lock._connection.info.backend_pid,))  # type: ignore[union-attr]
+    time.sleep(0.2)
+    assert lock.held_keys() == frozenset()  # the parent has noticed the loss and not acknowledged it
+    read, write = os.pipe()
+    child = os.fork()
+    if child == 0:  # pragma: no cover - runs in the child
+        code = 1
+        try:
+            answer = "True" if lock.try_acquire(key) else "False"
+            lock.close()
+            os.write(write, answer.encode())
+            code = 0
+        except UsageError as exc:
+            os.write(write, exc.code.encode())
+        finally:
+            os._exit(code)
+    os.close(write)
+    _, status = os.waitpid(child, 0)
+    answer = os.read(read, 50).decode()
+    os.close(read)
+    assert answer == "True", answer
+    assert os.waitstatus_to_exitcode(status) == 0
+    with pytest.raises(UsageError):
+        lock.try_acquire(key)  # the parent's loss is still unacknowledged

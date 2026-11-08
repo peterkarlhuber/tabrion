@@ -111,7 +111,12 @@ def make_role(admin_url: str) -> Iterator[Callable[..., Role]]:
             # Privileges the role holds in other databases block DROP ROLE; drop them where they can be.
             for database in databases:
                 if database == conn.info.dbname or database.startswith("t_"):
-                    with psycopg.connect(with_params(admin_url, dbname=database), autocommit=True) as other:
+                    # Another run on a shared server may drop its database meanwhile (it then holds nothing of ours).
+                    try:
+                        other = psycopg.connect(with_params(admin_url, dbname=database), autocommit=True)
+                    except psycopg.OperationalError:
+                        continue
+                    with other:
                         other.execute(f'DROP OWNED BY "{name}"')
             conn.execute(f'DROP ROLE IF EXISTS "{name}"')
 

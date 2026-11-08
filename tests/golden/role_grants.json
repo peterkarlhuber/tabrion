@@ -1,0 +1,842 @@
+{
+ "about": "Catalog snapshots after the reference grant_runtime_role on the fixture of tests/postgres/test_grants.py (TAB-031, TAB-T-R11/R12); TABRION_RECORD_GOLDEN=1 rewrites them.",
+ "axentra": {
+  "database": [
+   {
+    "connect": true,
+    "granted": false
+   }
+  ],
+  "nspacl": [
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE"
+   }
+  ],
+  "pg_default_acl": [
+   {
+    "defaclobjtype": "S",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT"
+   },
+   {
+    "defaclobjtype": "S",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE"
+   },
+   {
+    "defaclobjtype": "f",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "EXECUTE"
+   },
+   {
+    "defaclobjtype": "r",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE"
+   },
+   {
+    "defaclobjtype": "r",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT"
+   },
+   {
+    "defaclobjtype": "r",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT"
+   },
+   {
+    "defaclobjtype": "r",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE"
+   }
+  ],
+  "relacl": [
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "r",
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "r",
+    "relname": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "S",
+    "relname": "Mixed Case_id_seq"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "S",
+    "relname": "counter"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "S",
+    "relname": "plain_id_seq"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "axentra_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE",
+    "relkind": "S",
+    "relname": "Mixed Case_id_seq"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE",
+    "relkind": "S",
+    "relname": "counter"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE",
+    "relkind": "S",
+    "relname": "plain_id_seq"
+   }
+  ],
+  "role_routine_grants": [
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "EXECUTE",
+    "routine_name": "answer"
+   }
+  ],
+  "role_table_grants": [
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "axentra_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "plain_labels"
+   }
+  ]
+ },
+ "axentra_commit": "1a59c84",
+ "nodestro": {
+  "database": [
+   {
+    "connect": true,
+    "granted": false
+   }
+  ],
+  "nspacl": [
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE"
+   }
+  ],
+  "pg_default_acl": [
+   {
+    "defaclobjtype": "S",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT"
+   },
+   {
+    "defaclobjtype": "S",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE"
+   },
+   {
+    "defaclobjtype": "f",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "EXECUTE"
+   },
+   {
+    "defaclobjtype": "r",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE"
+   },
+   {
+    "defaclobjtype": "r",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT"
+   },
+   {
+    "defaclobjtype": "r",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT"
+   },
+   {
+    "defaclobjtype": "r",
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE"
+   }
+  ],
+  "relacl": [
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "DELETE",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "r",
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "INSERT",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "S",
+    "relname": "Mixed Case_id_seq"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "S",
+    "relname": "counter"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "S",
+    "relname": "plain_id_seq"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "axentra_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "SELECT",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "p",
+    "relname": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "r",
+    "relname": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "UPDATE",
+    "relkind": "v",
+    "relname": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE",
+    "relkind": "S",
+    "relname": "Mixed Case_id_seq"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE",
+    "relkind": "S",
+    "relname": "counter"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": false,
+    "privilege_type": "USAGE",
+    "relkind": "S",
+    "relname": "plain_id_seq"
+   }
+  ],
+  "role_routine_grants": [
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "EXECUTE",
+    "routine_name": "answer"
+   }
+  ],
+  "role_table_grants": [
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "DELETE",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "INSERT",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "axentra_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "nodestro_schema_migrations"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "SELECT",
+    "table_name": "plain_labels"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "Mixed Case"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "events"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "events_2026"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "plain"
+   },
+   {
+    "grantor": "<owner>",
+    "is_grantable": "NO",
+    "privilege_type": "UPDATE",
+    "table_name": "plain_labels"
+   }
+  ]
+ },
+ "nodestro_commit": "6698265"
+}
