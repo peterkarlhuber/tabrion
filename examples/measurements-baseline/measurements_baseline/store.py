@@ -1,0 +1,170 @@
+"""Capture: validated measurements, written in batches of one write transaction each (baseline, SQLAlchemy)."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
+from datetime import UTC, datetime
+import math
+
+import sqlalchemy as sa
+
+from measurements_baseline.db import write_transaction
+
+_INSERT = sa.text(
+    "INSERT INTO measurement (device_id, channel, ts_utc, value, unit, quality) "
+    "VALUES (:device_id, :channel, :ts_utc, :value, :unit, :quality) "
+    "ON CONFLICT (device_id, channel, ts_utc) DO NOTHING"
+)
+_FIELDS = ("device_id", "channel", "ts_utc", "value", "unit", "quality")
+
+Row = tuple[str, str, str, float, str, int]
+
+DEFAULT_TARGET = "upstream"
+"""The name of the transfer target whose high-water mark ``Store.mark`` and ``Store.advance`` keep."""
+
+
+def format_ts(moment: datetime) -> str:
+    """Fixed-width UTC text, ``2026-11-08T12:00:00.000000Z``; a naive ``datetime`` and a year before 1000 (which
+    would not be fixed-width) are refused (review Info 2 of #16)."""
+    if not isinstance(moment, datetime) or moment.tzinfo is None or moment.utcoffset() is None:
+        raise ValueError("ts_utc must be timezone-aware")
+    utc = moment.astimezone(UTC)
+    if utc.year < 1000:
+        raise ValueError("ts_utc must be in the years 1000 to 9999")
+    return utc.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def parse_ts(text: str) -> datetime:
+    return datetime.strptime(text, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
+
+
+def _name(value: object, field: str, longest: int) -> str:
+    if not isinstance(value, str) or not 1 <= len(value) <= longest:
+        raise ValueError(f"{field} must be a str of 1 to {longest} characters")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class Measurement:
+    device_id: str
+    channel: str
+    ts_utc: datetime
+    value: float
+    unit: str
+    quality: int = 0
+
+    def row(self) -> Row:
+        """The validated row; the messages name the field, never the value (metric MW-4)."""
+        value = self.value
+        if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+            raise ValueError("value must be a finite number")
+        quality = self.quality
+        if isinstance(quality, bool) or not isinstance(quality, int) or not 0 <= quality <= 255:
+            raise ValueError("quality must be an int from 0 to 255")
+        return (
+            _name(self.device_id, "device_id", 64),
+            _name(self.channel, "channel", 64),
+            format_ts(self.ts_utc),
+            float(value),
+            _name(self.unit, "unit", 16),
+            quality,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Stored:
+    seq: int
+    measurement: Measurement
+
+
+class Store:
+    """The capture API over an open, migrated engine (``measurements_baseline.db.open_database``)."""
+
+    def __init__(self, engine: sa.Engine) -> None:
+        self.engine = engine
+
+    def capture(self, batch: Iterable[Measurement]) -> int:
+        """Store ``batch`` in one ``BEGIN IMMEDIATE`` transaction: all of it or nothing.
+
+        Every measurement is validated before the transaction starts (``ValueError`` names the position of the first
+        invalid one, never its value). A reading whose natural key is already stored is skipped, also when its value
+        differs (``ON CONFLICT DO NOTHING``); the result counts the new rows. The batch is held in memory, so split
+        very large inputs into several batches.
+        """
+        rows: list[Row] = []
+        invalid: str | None = None
+        for position, measurement in enumerate(batch):
+            try:
+                rows.append(measurement.row())
+            except ValueError as exc:
+                invalid = f"measurement {position}: {exc}"
+            if invalid is not None:
+                raise ValueError(invalid)  # outside the except block: no context
+        if not rows:
+            return 0
+        stored = 0
+        violated = False
+        try:
+            with write_transaction(self.engine) as connection:
+                stored = connection.execute(_INSERT, [dict(zip(_FIELDS, row, strict=True)) for row in rows]).rowcount
+        except sa.exc.IntegrityError:
+            violated = True  # rolled back by write_transaction: nothing of the batch is stored
+        if violated:
+            # Only a writer that bypasses Measurement.row gets here; the driver's message may quote a value.
+            raise ValueError("the batch violates a constraint of the measurement table; nothing was stored")
+        return stored
+
+    def count(self) -> int:
+        with self.engine.connect() as connection:
+            return int(connection.execute(sa.text("SELECT count(*) FROM measurement")).scalar_one())
+
+    def mark(self, target: str = DEFAULT_TARGET) -> int:
+        """The transfer's high-water mark for ``target``: every row with ``seq`` up to it is committed upstream."""
+        with self.engine.connect() as connection:
+            seq = connection.execute(
+                sa.text("SELECT seq FROM transfer_mark WHERE target = :target"), {"target": target}
+            ).scalar()
+            return 0 if seq is None else int(seq)
+
+    def advance(self, target: str, seq: int) -> None:
+        """Move the mark of ``target`` up to ``seq``; call it only after the upstream ``COMMIT`` (RA-B-2).
+
+        The mark never moves back: a smaller ``seq`` leaves it where it is.
+        """
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+            raise ValueError("seq must be an int of at least 0")
+        _name(target, "target", 64)
+        with write_transaction(self.engine) as connection:
+            connection.execute(
+                sa.text(
+                    "INSERT INTO transfer_mark (target, seq) VALUES (:target, :seq) "
+                    "ON CONFLICT (target) DO UPDATE SET seq = max(seq, excluded.seq)"
+                ),
+                {"target": target, "seq": seq},
+            )
+
+    def after(self, seq: int = 0, *, limit: int = 1000) -> list[Stored]:
+        """Rows with ``seq`` above ``seq``, in capture order: the batches of the transfer (RA-B-2)."""
+        with self.engine.connect() as connection:
+            cursor = connection.execute(
+                sa.text(
+                    "SELECT seq, device_id, channel, ts_utc, value, unit, quality FROM measurement "
+                    "WHERE seq > :seq ORDER BY seq LIMIT :limit"
+                ),
+                {"seq": seq, "limit": limit},
+            )
+            return [
+                Stored(row[0], Measurement(row[1], row[2], parse_ts(row[3]), row[4], row[5], row[6]))
+                for row in cursor.fetchall()
+            ]
+
+
+def synthetic(
+    count: int, *, device_id: str = "dev-1", channel: str = "temp", start: datetime | None = None
+) -> Iterator[Measurement]:
+    """``count`` readings one second apart, for the demo, the tests and timing runs."""
+    first = (start or datetime(2026, 1, 1, tzinfo=UTC)).timestamp()
+    for index in range(count):
+        moment = datetime.fromtimestamp(first + index, tz=UTC)
+        yield Measurement(device_id, channel, moment, 20.0 + (index % 100) / 10, "degC", 0)

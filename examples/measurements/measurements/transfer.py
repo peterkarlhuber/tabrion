@@ -22,6 +22,10 @@ from typing import Any
 from measurements.store import DEFAULT_TARGET, Store, Stored
 from measurements.upstream import MAX_BATCH, insert_new
 from tabrion import Database
+from tabrion.errors import TabrionError
+
+UpstreamError = TabrionError
+"""What ``transfer`` raises when the upstream fails: Tabrion's value-free error with its classification."""
 
 
 @dataclass(frozen=True, slots=True)

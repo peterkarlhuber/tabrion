@@ -79,11 +79,12 @@ can afford that.
 
 ## Tests
 
-`tests/examples/test_measurements.py` and `tests/examples/test_measurements_transfer.py` run inside the normal suite
-(`pytest`). The transfer tests run against an upstream SQLite file and, with `TABRION_TEST_POSTGRES` set, against a
-PostgreSQL schema of their own (marker `postgres`, fixture `tabrion_postgres_schema`). They cover the RA-B-2
-acceptance criteria: every row once in batches; a repeated transfer (lost mark, a second device file with the same
-readings) changes nothing; at the moment the mark moves, another connection already sees the batch upstream; a
+`tests/examples/test_measurements.py`, `test_measurements_transfer.py` and `test_measurements_faults.py` run inside
+the normal suite (`pytest`), each test against this application and against the plain SQLAlchemy baseline of
+RA-B-4 ([`examples/measurements-baseline`](../measurements-baseline/README.md), fixture `app`). The transfer tests
+run against an upstream SQLite file and, with `TABRION_TEST_POSTGRES` set, against a PostgreSQL schema of their own
+(marker `postgres`, fixture `tabrion_postgres_schema`). They cover the RA-B-2 acceptance criteria: every row once in
+batches; a repeated transfer (lost mark, a second device file with the same readings) changes nothing; at the moment the mark moves, another connection already sees the batch upstream; a
 failed batch keeps the mark and is sent again; a crash between the commit and the mark sends the batch again
 without duplicates.
 
@@ -125,5 +126,5 @@ The file-mode and kill tests are POSIX only.
   Compare it with the baseline of RA-B-4 on the same machine.
 - **MW-8** (engine switch): the transfer tests run the same code against SQLite and PostgreSQL; only the URL differs.
 - **MW-6** (fault injection, losses/duplicates): `tests/examples/test_measurements_faults.py`, see the table above;
-  every case asserts `tally(...) == (0, 0)`. Run the same tests against the baseline of RA-B-4.
+  every case asserts `tally(...) == (0, 0)`; the baseline of RA-B-4 runs the same tests.
 - **MW-2** comes with RA-EVAL. MW-3 belongs to the parts application. MW-5 is measured from this README.

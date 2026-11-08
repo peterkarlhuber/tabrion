@@ -160,7 +160,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 done in #16; RA-B-2 and RA-B-3 in review) · **Refs:** TABRION
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 done in #16; RA-B-2..RA-B-4 in review) · **Refs:** TABRION
   RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
@@ -173,10 +173,16 @@ required (owner decision of 2026-11-08 11:26Z).
   transfer tests run against an upstream SQLite file in the core jobs and against PostgreSQL (marker `postgres`) in
   the `pg (...)` jobs. RA-B-3 adds `tests/examples/test_measurements_faults.py`: network faults through the internal
   fault proxy (TB-033), `SIGKILL` of the CLI placed by the proxy and at drawn moments, and 24 hours offline
-  simulated; each counts losses and duplicates (metric MW-6: 0/0).
+  simulated; each counts losses and duplicates (metric MW-6: 0/0). RA-B-4 adds `examples/measurements-baseline`
+  (package `measurements_baseline`, plain SQLAlchemy, same layout and features); the fixture `app` of
+  `tests/examples/measurements_variants.py` runs the whole measurements suite against both variants, and the
+  baseline's probe hits (`DEVIATIONS`: file modes, values in errors, error classification, capture without
+  SQLAlchemy) are strict `xfail`, the input of RA-EVAL.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-B-4 (plain SQLAlchemy baseline) after RA-B-2; RA-A-1 after TAB-019.
+- **Next step:** RA-EVAL after RA-A-3 (the measurement report from both baselines); RA-A-1 after TAB-019. The
+  dedicated `examples` job should also run the measurements suite against PostgreSQL 16, 17 and 18 for both
+  variants (today the `pg (...)` jobs do).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 

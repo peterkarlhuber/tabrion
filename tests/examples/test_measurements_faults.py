@@ -20,7 +20,6 @@ committed upstream, the mark not moved), and right after the server ran its ``IN
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import os
 from pathlib import Path
@@ -29,23 +28,21 @@ import signal
 import subprocess
 import sys
 import time
+from typing import Any
 
-from measurements import Measurement, Store, open_database
-from measurements.store import synthetic
-from measurements.transfer import transfer
-from measurements.upstream import PROFILE, UPSTREAM, create_upstream, open_upstream
 import pytest
 import sqlalchemy as sa
 
-from tabrion import Database
-from tabrion.errors import Kind, TabrionError
 from tabrion.testing import PostgresSchema
 from tabrion.testing._faults import FaultProxy, wait_backend_gone
 
 from . import measurements_upstream as support
+from . import measurements_variants as variants
 from .conftest import EXAMPLES
-from .measurements_upstream import postgres_url
+from .measurements_upstream import count, keys, postgres_url
+from .measurements_variants import Upstream, Variant
 
+app = variants.app
 upstream_url = support.upstream_url
 upstream = support.upstream
 store = support.store
@@ -55,26 +52,18 @@ INSERT = b"INSERT INTO measurement"
 TOTAL = 2500
 
 
-def tally(store: Store, observer: Database) -> tuple[int, int]:
+def tally(store: Any, observer: Upstream) -> tuple[int, int]:
     """``(losses, duplicates)``: local readings missing upstream, upstream rows beyond one per natural key."""
     local = {
         (s.measurement.device_id, s.measurement.channel, s.measurement.ts_utc) for s in store.after(0, limit=100_000)
     }
-    rows = observer.fetch_all(sa.select(UPSTREAM.c.device_id, UPSTREAM.c.channel, UPSTREAM.c.ts_utc))
-    keys = [
-        (r.device_id, r.channel, r.ts_utc if r.ts_utc.tzinfo is not None else r.ts_utc.replace(tzinfo=UTC))
-        for r in rows
-    ]
-    return len(local - set(keys)), len(keys) - len(set(keys))
+    upstream_keys = keys(observer)
+    return len(local - set(upstream_keys)), len(upstream_keys) - len(set(upstream_keys))
 
 
-def count(observer: Database) -> int:
-    return int(observer.fetch_scalar(sa.select(sa.func.count()).select_from(UPSTREAM)))
-
-
-def capture(store: Store) -> list[int]:
-    store.capture(synthetic(1500, device_id="dev-1"))
-    store.capture(synthetic(1000, device_id="dev-2", channel="rh"))
+def capture(app: Variant, store: Any) -> list[int]:
+    store.capture(app.synthetic(1500, device_id="dev-1"))
+    store.capture(app.synthetic(1000, device_id="dev-2", channel="rh"))
     return [stored.seq for stored in store.after(0, limit=100_000)]
 
 
@@ -84,14 +73,14 @@ def capture(store: Store) -> list[int]:
 
 
 @pytest.fixture
-def schema(tabrion_postgres_schema: PostgresSchema) -> PostgresSchema:
+def schema(app: Variant, tabrion_postgres_schema: PostgresSchema) -> PostgresSchema:
     from psycopg.conninfo import conninfo_to_dict
 
     params = conninfo_to_dict(tabrion_postgres_schema.owner_url)
     if str(params.get("host") or "").startswith("/"):
         pytest.skip("the fault proxy needs a TCP server address")
-    with open_upstream(postgres_url(tabrion_postgres_schema.owner_url)) as database:
-        create_upstream(database)
+    with app.upstream(postgres_url(tabrion_postgres_schema.owner_url)) as opened:
+        app.create_upstream(opened.handle)
     return tabrion_postgres_schema
 
 
@@ -109,10 +98,10 @@ def through(proxy: FaultProxy, schema: PostgresSchema) -> sa.URL:
 
 
 @pytest.fixture
-def observer(schema: PostgresSchema) -> Iterator[Database]:
+def observer(app: Variant, schema: PostgresSchema) -> Iterator[Upstream]:
     """A direct connection to the upstream, past the proxy: what the server really holds."""
-    with open_upstream(postgres_url(schema.owner_url)) as database:
-        yield database
+    with app.upstream(postgres_url(schema.owner_url)) as opened:
+        yield opened
 
 
 def after_the_insert(proxy: FaultProxy, fault: str, then: Callable[[], None] | None = None) -> None:
@@ -140,48 +129,70 @@ NETWORK_FAULTS = [
 @pytest.mark.parametrize("run", range(3))
 @pytest.mark.parametrize(("fault", "statement", "committed"), NETWORK_FAULTS)
 def test_a_network_fault_loses_and_duplicates_nothing(
-    store: Store,
+    app: Variant,
+    store: Any,
     proxy: FaultProxy,
     through: sa.URL,
-    observer: Database,
+    observer: Upstream,
     schema: PostgresSchema,
     fault: str,
     statement: bytes,
     committed: int,
     run: int,
 ) -> None:
-    seqs = capture(store)
-    with open_upstream(through) as upstream_db:
-        assert transfer(store, upstream_db, batch_size=1000, max_batches=1).inserted == 1000
+    seqs = capture(app, store)
+    with app.upstream(through) as opened:
+        upstream_db = opened.handle
+        assert app.transfer(store, upstream_db, batch_size=1000, max_batches=1).inserted == 1000
         if statement == b"COMMIT":
             after_the_insert(proxy, fault)
         else:
             proxy.arm(statement, fault=fault)
-        with pytest.raises(TabrionError) as info:
-            transfer(store, upstream_db, batch_size=1000)
-        assert info.value.classification is not None and info.value.classification.kind is Kind.CONNECTION
-        if fault == "reply" and statement == b"COMMIT":
-            assert info.value.classification.outcome_unknown  # the client cannot know that it committed
+        with pytest.raises(app.UpstreamError):
+            app.transfer(store, upstream_db, batch_size=1000)
         assert store.mark() == seqs[999]  # the failed batch did not move the mark
         backend = proxy.fired_backend
         assert backend is not None and wait_backend_gone(schema.owner_url, backend)
         assert count(observer) == 1000 + committed  # the truth on the server
 
-        report = transfer(store, upstream_db, batch_size=1000)  # the same Database: the pool replaced the connection
+        report = app.transfer(store, upstream_db, batch_size=1000)  # the same handle: the pool replaces the connection
     assert (report.sent, report.inserted, report.mark) == (1500, 1500 - committed, seqs[-1])
     assert tally(store, observer) == (0, 0)  # MW-6
     assert count(observer) == TOTAL
 
 
-CHILD = [sys.executable, "-m", "measurements"]
+@pytest.mark.postgres
+@pytest.mark.slow
+def test_a_lost_commit_reply_is_reported_as_outcome_unknown(
+    app: Variant, store: Any, proxy: FaultProxy, through: sa.URL, observer: Upstream
+) -> None:
+    """MW-2 (error model): the error of a lost ``COMMIT`` answer says that the outcome is unknown (here: committed),
+    so a caller knows that only an idempotent retry is safe (the lesson of F-02)."""
+    capture(app, store)
+    with app.upstream(through) as opened:
+        app.transfer(store, opened.handle, batch_size=1000, max_batches=1)
+        after_the_insert(proxy, "reply")
+        with pytest.raises(app.UpstreamError) as info:
+            app.transfer(store, opened.handle, batch_size=1000)
+    assert app.classified_as_connection(info.value) and app.outcome_unknown(info.value)
 
 
-def run_cli(local: Path, url: sa.URL, *args: str) -> subprocess.Popen[str]:
+def run_cli(app: Variant, local: Path, url: sa.URL, *args: str) -> subprocess.Popen[str]:
     env = {**os.environ, "MEASUREMENTS_UPSTREAM_URL": url.render_as_string(hide_password=False)}
     env.pop("MEASUREMENTS_UPSTREAM_URL_FILE", None)
     return subprocess.Popen(
-        [*CHILD, "--db", str(local), "--backup-dir", str(local.parent / "backups"), "transfer", *args],
-        cwd=EXAMPLES / "measurements",
+        [
+            sys.executable,
+            "-m",
+            app.package,
+            "--db",
+            str(local),
+            "--backup-dir",
+            str(local.parent / "backups"),
+            "transfer",
+            *args,
+        ],
+        cwd=EXAMPLES / app.directory,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -199,15 +210,21 @@ def finish(child: subprocess.Popen[str]) -> tuple[int, str, str]:
 @pytest.mark.slow
 @pytest.mark.parametrize("where", ["after-commit", "after-insert"])
 def test_a_killed_transfer_loses_and_duplicates_nothing(
-    tmp_path: Path, proxy: FaultProxy, through: sa.URL, observer: Database, schema: PostgresSchema, where: str
+    app: Variant,
+    tmp_path: Path,
+    proxy: FaultProxy,
+    through: sa.URL,
+    observer: Upstream,
+    schema: PostgresSchema,
+    where: str,
 ) -> None:
     local = tmp_path / "local.db"
-    connection = open_database(local, backup_dir=tmp_path / "backups")
-    store = Store(connection)
+    opened = app.open(local)
+    store = opened.store
     try:
-        seqs = capture(store)
-        with open_upstream(through) as upstream_db:
-            transfer(store, upstream_db, batch_size=500, max_batches=1)
+        seqs = capture(app, store)
+        with app.upstream(through) as upstream_db:
+            app.transfer(store, upstream_db.handle, batch_size=500, max_batches=1)
         children: list[subprocess.Popen[str]] = []
 
         def kill() -> None:
@@ -217,7 +234,7 @@ def test_a_killed_transfer_loses_and_duplicates_nothing(
             after_the_insert(proxy, "delay", then=kill)  # the server ran the COMMIT; the child never sees it
         else:
             proxy.arm(INSERT, fault="delay", then=kill)
-        children.append(run_cli(local, through, "--batch-size", "500"))
+        children.append(run_cli(app, local, through, "--batch-size", "500"))
         code, _out, _err = finish(children[0])
         assert code == -signal.SIGKILL
         backend = proxy.fired_backend
@@ -226,34 +243,34 @@ def test_a_killed_transfer_loses_and_duplicates_nothing(
         assert store.mark() == seqs[499]  # killed before the mark moved
         assert count(observer) == 500 + committed
 
-        code, out, err = finish(run_cli(local, through, "--batch-size", "500"))
+        code, out, err = finish(run_cli(app, local, through, "--batch-size", "500"))
         assert (code, err) == (0, "")
         assert out == f"2000 sent in 4 batches, {2000 - committed} new upstream, mark {seqs[-1]}\n"
         assert tally(store, observer) == (0, 0)  # MW-6
         assert count(observer) == TOTAL
     finally:
-        connection.close()
+        opened.close()
 
 
 @POSIX
 @pytest.mark.postgres
 @pytest.mark.slow
 def test_kills_at_arbitrary_moments_lose_and_duplicate_nothing(
-    tmp_path: Path, schema: PostgresSchema, observer: Database
+    app: Variant, tmp_path: Path, schema: PostgresSchema, observer: Upstream
 ) -> None:
     """Five ``SIGKILL`` of a running transfer at moments drawn with a fixed seed (anywhere: reading, sending,
     committing, moving the mark), then one run to the end."""
     local = tmp_path / "local.db"
-    connection = open_database(local, backup_dir=tmp_path / "backups")
-    store = Store(connection)
+    opened = app.open(local)
+    store = opened.store
     url = postgres_url(schema.owner_url)
     draw = random.Random(4711)  # noqa: S311  # reproducible kill moments, not cryptography
     try:
-        seqs = capture(store)
+        seqs = capture(app, store)
         kills: list[int] = []
         for _ in range(5):
             before = store.mark()
-            child = run_cli(local, url, "--batch-size", "20")
+            child = run_cli(app, local, url, "--batch-size", "20")
             deadline = time.monotonic() + 60
             while store.mark() == before and child.poll() is None and time.monotonic() < deadline:
                 time.sleep(0.005)  # the child is under way once its first batch moved the mark
@@ -263,12 +280,12 @@ def test_kills_at_arbitrary_moments_lose_and_duplicate_nothing(
                 kills.append(store.mark())
             child.communicate(timeout=120)
         assert len(kills) == 5 and all(0 < mark < seqs[-1] for mark in kills)  # every kill hit a running transfer
-        code, out, err = finish(run_cli(local, url, "--batch-size", "20"))
+        code, out, err = finish(run_cli(app, local, url, "--batch-size", "20"))
         assert (code, err) == (0, "") and out.endswith(f" mark {seqs[-1]}\n")
         assert tally(store, observer) == (0, 0)  # MW-6
         assert count(observer) == TOTAL and store.mark() == seqs[-1]
     finally:
-        connection.close()
+        opened.close()
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -277,17 +294,16 @@ def test_kills_at_arbitrary_moments_lose_and_duplicate_nothing(
 
 
 @pytest.fixture
-def unreachable() -> Iterator[Database]:
+def unreachable(app: Variant) -> Iterator[Upstream]:
     """An upstream that refuses every connection (nothing listens on port 1): the device is offline."""
     pytest.importorskip("psycopg")
-    profile = replace(PROFILE, connect_timeout=2.0)
-    with open_upstream("postgresql://measurements@127.0.0.1:1/measurements", profile=profile) as database:
-        yield database
+    with app.upstream("postgresql://measurements@127.0.0.1:1/measurements") as opened:
+        yield opened
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows takes about 2 s to refuse each loopback connection")
 def test_24_hours_offline_capture_goes_on_and_the_transfer_catches_up(
-    store: Store, upstream: Database, unreachable: Database
+    app: Variant, store: Any, upstream: Upstream, unreachable: Upstream
 ) -> None:
     """A simulated day: two readings a minute, a transfer attempt every 15 minutes, the upstream unreachable from
     02:00 to 22:00 and again for a short flap at 23:00. Capture never waits; nothing is lost or duplicated."""
@@ -297,7 +313,7 @@ def test_24_hours_offline_capture_goes_on_and_the_transfer_catches_up(
     for minute in range(0, 24 * 60, 5):  # one capture batch every 5 minutes: 5 readings per device
         now = start + timedelta(minutes=minute)
         batch = [
-            Measurement(device, channel, now + timedelta(minutes=step), 20.0 + step, unit)
+            app.Measurement(device, channel, now + timedelta(minutes=step), 20.0 + step, unit)
             for device, channel, unit in (("dev-1", "temp", "degC"), ("dev-2", "rh", "%"))
             for step in range(5)
         ]
@@ -307,15 +323,14 @@ def test_24_hours_offline_capture_goes_on_and_the_transfer_catches_up(
         offline = 120 <= minute < 1320 or 1380 <= minute < 1395
         mark = store.mark()
         if offline:
-            with pytest.raises(TabrionError) as info:
-                transfer(store, unreachable, batch_size=500)
-            assert info.value.classification is not None and info.value.classification.kind is Kind.CONNECTION
+            with pytest.raises(app.UpstreamError):
+                app.transfer(store, unreachable.handle, batch_size=500)
             assert store.mark() == mark
             failures += 1
         else:
-            transfer(store, upstream, batch_size=500)
+            app.transfer(store, upstream.handle, batch_size=500)
         lags.append(len(store.after(store.mark(), limit=100_000)))
-    transfer(store, upstream, batch_size=500)  # the last attempt of the day
+    app.transfer(store, upstream.handle, batch_size=500)  # the last attempt of the day
     assert failures == 81 and max(lags) == 20 * 60 * 2  # 20 hours of readings waited locally
     assert store.count() == 24 * 60 * 2 and not store.after(store.mark())
     assert tally(store, upstream) == (0, 0)  # MW-6
