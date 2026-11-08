@@ -65,12 +65,15 @@ Accepted residual risks (documented, not vulnerabilities):
 - Using `Database.engine` directly bypasses Tabrion's transaction modes (SQLite writes then begin `DEFERRED`). The
   connection profile and `Profile.read_only` apply there as the connection was set up, but SQL can change them:
   `Database.engine` is not read-only once a session default was switched off (contract I-56).
-- `read()` and `Profile.read_only` are a guard against accidents, not a security boundary (contract I-56). The
-  caller's SQL can end read-only: `SET TRANSACTION READ WRITE`, `SET transaction_read_only`,
-  `SET default_transaction_read_only` and SQLite's `PRAGMA query_only = OFF` are caught before the `COMMIT` of a
-  `read()` (rolled back, `UsageError("database.read_only")`), but SQL that ends the transaction and commits its own
-  (`ROLLBACK; BEGIN READ WRITE; ...; COMMIT`) writes. The only hard boundary is a role without write rights (or a
-  SQLite file opened `mode=ro`, as `Profile.readonly()` does): give untrusted SQL such a role (SR-03).
+- `read()` and `Profile.read_only` are a best-effort guard against accidents, not a security boundary (contract
+  I-56). The caller's SQL can end read-only. Tabrion reads the state once more before the `COMMIT` of a `read()`
+  and rolls back when `SET TRANSACTION READ WRITE`, `SET transaction_read_only`, `SET
+  default_transaction_read_only` or SQLite's `PRAGMA query_only = OFF` is still in force at the end, but SQL that
+  lifts read-only, writes and restores it before the end, or that ends the transaction and commits its own
+  (`ROLLBACK; BEGIN READ WRITE; ...; COMMIT`), writes (TODO TB-061). SQLite's `mode=ro` covers the main file
+  only; `Profile.read_only` therefore forbids `ATTACH`, which would open the same file read-write. The only hard
+  boundary is a PostgreSQL role without write rights, or on SQLite file permissions that do not let the process
+  write the file: give untrusted SQL such a role or file (SR-03).
 - A `SET` without `LOCAL` inside a Tabrion transaction stays on the pooled connection for every later checkout
   (TM-08); Tabrion runs no `RESET` or `DISCARD`. Use `SET LOCAL` or `set_config(..., true)` (contract I-56).
 - `Database.from_engine` with listeners changes the session settings of every connection of the foreign engine,

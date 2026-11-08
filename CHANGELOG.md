@@ -13,7 +13,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`
   creation before the first connect, `StaticPool` for memory databases, `safe_url`, `close` and a `ResourceWarning`
   for a forgotten `close`; `transaction()` (SQLite `BEGIN IMMEDIATE`, PostgreSQL isolation levels) and `read()`
-  (`query_only` or `BEGIN READ ONLY` in the database; a guard against accidents, not a security boundary: SQL that
+  (`query_only` or `BEGIN READ ONLY` in the database; a best-effort guard against accidents, not a security boundary: SQL that
   lifts it inside `read()` is rolled back before the `COMMIT`, and the hard boundary is a role without write rights,
   contract I-56), nesting refused per thread, per-statement and
   per-transaction timeouts, `execute` (with `executemany`), `fetch_one`, `fetch_all`, `fetch_scalar` and the
@@ -22,6 +22,11 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   calls `tabrion.check.check`. The layer-A profile runs on the same DBAPI connection through `tabrion.sqlite.connect`
   and SQLAlchemy events (no second connection). Tested on SQLAlchemy 2.0.30 and 2.1, with mutation probes.
 
+- `tabrion.check.check` (TAB-017) for `sqlite3` and psycopg connections, read only and without changing the
+  connection's transaction or row factory: the finding codes TAB-SQ-001..009 and TAB-PG-001..011, 020, 021 and 030
+  of specification section 9. `expect="owner"` suppresses TAB-PG-003 and TAB-PG-009, `expect="any"` reports them
+  as `info`; a missing privilege or an unreadable file gives an `info` finding "Not checked"; no detail names a
+  path. A `Database` target, TAB-PG-012 and TAB-B-001/002 follow with layer B (TODO TB-060).
 - `tabrion.migrations.status` and `require_current` (TAB-019): the Alembic schema state (current revisions,
   heads, pending revisions in order, unknown newer revisions) read in one `Database.read()` without running
   `env.py` and without migrating; `require_current` raises `SchemaNotCurrent`.

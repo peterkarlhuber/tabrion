@@ -1128,3 +1128,68 @@ def test_b09_failed_rollback_invalidates_the_connection(db: Database, monkeypatc
     assert len(invalidated) == 1
     assert checked_out(db) == 0
     assert db.fetch_scalar("SELECT 1") == 1  # the pool opens a new connection
+
+
+# Re-review of #12 (second fix round): ATTACH under a read-only profile (N-2), lift-write-restore (N-1, TB-061),
+# the read-back's own row factory and its fail-closed branch (N-4).
+
+
+def read_only_db(path: Path) -> Database:
+    with Database.from_url(f"sqlite:///{path}") as writable:
+        writable.execute("CREATE TABLE t (n INTEGER)")
+    return Database.from_url(f"sqlite:///{path}", profile=Profile.readonly())
+
+
+@pytest.mark.security
+def test_b11_attach_of_the_own_file_is_refused_under_read_only(tmp_path: Path) -> None:
+    """Re-review N-2: mode=ro covers the main file only; ATTACH would open the same file read-write."""
+    path = tmp_path / "ro.db"
+    with read_only_db(path) as database:
+        with pytest.raises(TabrionError), database.read() as tx:
+            tx.execute("PRAGMA query_only = OFF")
+            tx.execute("ATTACH DATABASE :p AS w", {"p": str(path)})
+            tx.execute("INSERT INTO w.t VALUES (1)")  # pragma: no cover - the ATTACH fails
+        assert database.fetch_scalar("SELECT count(*) FROM t") == 0
+    with Database.from_url(f"sqlite:///{path}") as writable:
+        assert writable.fetch_scalar("SELECT count(*) FROM t") == 0
+
+
+@pytest.mark.security
+def test_b11_query_only_lifted_under_read_only_is_refused(tmp_path: Path) -> None:
+    with read_only_db(tmp_path / "ro.db") as database:
+        with pytest.raises(UsageError, match=r"database\.read_only"), database.read() as tx:
+            tx.execute("PRAGMA query_only = OFF")
+        with database.read() as tx:
+            assert tx.fetch_scalar("PRAGMA query_only") == 1
+
+
+@pytest.mark.security
+def test_b11_documents_the_gap_lift_write_restore(db: Database) -> None:
+    """Documents the gap of contract I-56 and TB-061: the read-back sees the state at the end only."""
+    with db.read() as tx:
+        tx.execute("PRAGMA query_only = OFF")
+        tx.execute("INSERT INTO items (n) VALUES (1)")
+        tx.execute("PRAGMA query_only = ON")
+    assert db.fetch_scalar("SELECT count(*) FROM items") == 1
+
+
+@pytest.mark.security
+def test_b11_read_back_ignores_the_callers_row_factory(db: Database, path: Path) -> None:
+    with pytest.raises(UsageError, match=r"database\.read_only"), db.read() as tx:
+        dbapi = tx.connection.connection.dbapi_connection
+        assert isinstance(dbapi, sqlite3.Connection)
+        dbapi.row_factory = lambda cursor, row: (1,)  # would fake query_only = 1
+        tx.execute("PRAGMA query_only = OFF")
+        tx.execute("INSERT INTO items (n) VALUES (1)")
+    raw = sqlite3.connect(path)  # the caller's row factory stays on the pooled connection
+    try:
+        assert raw.execute("SELECT count(*) FROM items").fetchone() == (0,)
+    finally:
+        raw.close()
+
+
+def test_b11_a_failing_read_back_does_not_commit(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tabrion._sa.database, "_QUERY_ONLY_SQL", "SELECT * FROM no_such_table")
+    with pytest.raises(UsageError, match=r"database\.read_only"), db.read() as tx:
+        assert tx.fetch_scalar("SELECT count(*) FROM items") == 0
+    assert checked_out(db) == 0
