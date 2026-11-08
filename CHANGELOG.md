@@ -51,6 +51,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- CI (workflow change, QA-11, K1, K7/K8): `release.yml` takes an annotated tag or a full commit SHA on master,
+  requires a final `__version__` and a dated CHANGELOG section (`.github/scripts/release_check.py`), and runs the
+  attestation only with the opt-in input `attest`. `ci.yml` has the jobs `coverage` (branch coverage with the whole
+  suite and PostgreSQL; floors: total 94 %, `errors` 95 %, `sql` 95 %, `sqlite` 94.9 %) and `mutation probes` (split
+  out of `test`). `tests/ci/flaky.txt` (empty) with its format test; ruff `S` documented as the Bandit substitute and
+  run over `examples/` too. The TB-017 guards of `api surface` and `conformance` decide from the base branch.
 - CI (workflow change, TODO TB-017): `ci.yml` has the jobs `conformance` (TAB-050), `golden files` (TAB-022) and
   `examples` (RA-A, RA-B), each listed in `.github/ci-manifest.json`; on a pull request the job `api surface` also
   runs `scripts/api_surface.py --base <merge base>` (S-6, TAB-051). `nightly.yml` has the non-blocking job

@@ -41,7 +41,8 @@ jobs:
       - run: lint-imports
       # CI-FAST: the manifest, the workflow files and ci-ok.yml agree.
       - run: python3 -I .github/scripts/ci_ok.py --self-check --root .
-      - run: python3 -m unittest discover -s .github/scripts -p "test_ci_ok*.py"
+      # The tests of every .github/scripts helper (ci-ok, release_check, coverage_floors).
+      - run: python3 -I -m unittest discover -s .github/scripts -p "test_*.py"
 
   test:
     name: test (Python ${{ matrix.python-version }}${{ matrix.sqlalchemy && format(', SQLAlchemy {0}', matrix.sqlalchemy) || '' }})
@@ -68,8 +69,11 @@ jobs:
       - if: matrix.sqlalchemy
         run: pip install "sqlalchemy~=${{ matrix.sqlalchemy }}.0"
       - run: pip list
-      # The PostgreSQL tests run in the pg jobs, the packaging tests in "build and install" and "extras matrix".
-      - run: pytest -m "not postgres and not packaging" --cov=tabrion --cov-report=term-missing
+      # The PostgreSQL tests run in the pg jobs, the packaging tests in "build and install" and "extras matrix", the
+      # slow mutation probes in "mutation probes" (K1: unit suite under 60 s), the coverage floors in "coverage".
+      - run: >-
+          pytest -m "not postgres and not packaging" --ignore-glob="tests/*/test_*mutation_probes*.py"
+          --durations=10
 
   lowest-versions:
     name: test (lowest supported dependency versions)
@@ -199,8 +203,9 @@ jobs:
       - run: pip install -e ".[dev]"
       # K8: TAB-T-181 (actions by SHA, images by digest) now; leak, permission and symlink tests join with M2.
       - run: pytest -m security -v -p no:cacheprovider
-      # ruff's flake8-bandit rules (S) over the package.
-      - run: ruff check --select S src
+      # K8: ruff's flake8-bandit rules (S) are the Bandit substitute (CONTRIBUTING.md, "Security lint"), over the
+      # package and the reference applications (TM-01, TAB-T-101: S608 in src/ and examples/).
+      - run: ruff check --select S src examples
 
   architecture:
     name: architecture
@@ -284,11 +289,18 @@ jobs:
           set -euo pipefail
           base=$(git merge-base "$BASE_SHA" HEAD)
           echo "merge base with the base branch: $base"
-          # Transitional until TAB-051 (#21) is on master: an api_surface.py without --base runs the plain check.
-          if python scripts/api_surface.py --help | grep -q -- '--base'; then
+          # Transitional until TAB-051 (#21) is on master (TODO TB-017, workflow review C-2). The decision comes from
+          # the BASE branch: once its api_surface.py has --base, the check is required, so a pull request that drops
+          # the option fails (argparse refuses --base). Only while the base lacks it may the PR's own script decide.
+          # Captured first: with pipefail, `grep -q` closing a pipe early would make the test fail open.
+          base_script=$(git show "$base:scripts/api_surface.py" 2>/dev/null || true)
+          head_help=$(python scripts/api_surface.py --help)
+          if grep -q -- '"--base"' <<<"$base_script"; then
+            python scripts/api_surface.py --base "$base"
+          elif grep -q -- '--base' <<<"$head_help"; then
             python scripts/api_surface.py --base "$base"
           else
-            echo "::notice::scripts/api_surface.py has no --base option yet (TAB-051); running the plain check"
+            echo "::notice::scripts/api_surface.py has no --base option yet, on the base nor here (TAB-051); plain check"
             python scripts/api_surface.py
           fi
 
@@ -333,19 +345,34 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The whole history, so that the guard below can read the base branch's tree.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
           cache: pip
-      - name: The vectors exist on this commit
+      - name: The vectors exist on this commit (required once they exist on the base)
         id: vectors
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: |
-          # Transitional until TAB-050 (#27) is on master: without conformance/ the job has nothing to run.
+          set -euo pipefail
+          # Transitional until TAB-050 (#27) is on master (TODO TB-017, workflow review C-2). The decision comes from
+          # the base: when the base has conformance/MANIFEST.json, this commit must have it too, so a pull request
+          # that deletes it fails instead of skipping. Without a base (dispatch, nightly) only this commit counts.
+          on_base=false
+          if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null \
+              && git cat-file -e "$BASE_SHA:conformance/MANIFEST.json" 2>/dev/null; then
+            on_base=true
+          fi
           if [ -f conformance/MANIFEST.json ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
+          elif [ "$on_base" = true ]; then
+            echo "::error::conformance/MANIFEST.json exists on the base $BASE_SHA but not on this commit"
+            exit 1
           else
-            echo "::notice::conformance/MANIFEST.json does not exist on this commit yet (TAB-050); nothing to run"
+            echo "::notice::conformance/MANIFEST.json does not exist on the base nor here yet (TAB-050); nothing to run"
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.vectors.outputs.present == 'true'
@@ -418,3 +445,76 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: pytest tests/examples -v -p no:cacheprovider
+
+  mutation-probes:
+    # The mutation probes (a mutated copy of a module must turn its test red) of layer A, layer B and SQLite, split out
+    # of "test" so that the unit suite stays near the 60 s of K1 (planning document 07). The PostgreSQL probes also
+    # run in every "pg" job.
+    name: mutation probes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 # postgres:17
+        env:
+          POSTGRES_PASSWORD: tabrion-ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TABRION_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=tabrion-ci dbname=postgres
+      TABRION_REQUIRE_POSTGRES: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/unit/test_mutation_probes.py tests/unit/test_mutation_probes_layer_b.py tests/sqlite/test_mutation_probes_sqlite.py tests/postgres/test_postgres_mutation_probes.py -p no:cacheprovider
+
+  coverage:
+    # K1 (planning document 07): branch coverage of the whole suite with PostgreSQL, the total and per-module floors.
+    # The floors are the measured values of 2026-11-08 (total 94.05 %, errors 95.00 %, sql 100 %, sqlite 94.94 %),
+    # rounded down; K1 asks for errors, sql and sqlite >= 95 % (sqlite is 0.06 points short, TODO TB-017). Lowering a
+    # floor changes this file, so it needs the workflow-change review. Mutation probes add no coverage and run apart.
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 # postgres:17
+        env:
+          POSTGRES_PASSWORD: tabrion-ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TABRION_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=tabrion-ci dbname=postgres
+      TABRION_REQUIRE_POSTGRES: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: >-
+          pytest -m "not packaging" --ignore-glob="tests/*/test_*mutation_probes*.py" -p no:cacheprovider
+          --cov=tabrion --cov-branch --cov-report=term-missing:skip-covered --cov-report=json:coverage.json
+      - name: Coverage floors (total and per module)
+        run: >-
+          python3 -I .github/scripts/coverage_floors.py --report coverage.json --total 94
+          --floor src/tabrion/errors.py=95 --floor src/tabrion/sql.py=95 --floor src/tabrion/sqlite.py=94.9

@@ -54,6 +54,13 @@ digest.
 - **Tests first for fixes:** a bug fix comes with a test that fails without it. No new skips or xfails without a
   reason; no automatic re-runs.
 - **CI:** actions are pinned by full commit SHA and container images by digest (`tests/security`).
+- **Security lint (K8):** ruff's `S` rules (the flake8-bandit port) replace Bandit: they run in `ruff check .`
+  and, restricted to `S`, over `src/` and `examples/` in the CI job `security tests`. A finding blocks the merge; a
+  `# noqa: S...` needs a reason on the same line. Bandit itself is not a dependency (no second tool with the same
+  rules).
+- **Flaky tests (K7/K8):** no automatic re-runs. A test that flips without a code change is fixed within one working
+  day, or marked `xfail(strict=False)` with an issue link and listed in `tests/ci/flaky.txt`; more than two entries
+  block the next release.
 
 ## Pull requests and merging
 
