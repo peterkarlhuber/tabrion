@@ -330,7 +330,8 @@ required (owner decision of 2026-11-08 11:26Z).
   `api_surface.py --base <merge base>` on pull requests; `release.yml` job `downstream-notice` prints the consumer
   issues as a dry run and opens none) and TB-092 (TAB-050, #27: the `conformance` job runs
   `python -m tests.support.conformance` and `pytest -m conformance` with a PostgreSQL 17 service), and rewords the
-  stale O-1/O-2 comments of TB-003, and widens the `platforms.yml` path filter (TB-021, TAB-050 review H-1). Until #21 and #27 are on `master`, two transitional guards keep the jobs green:
+  stale O-1/O-2 comments of TB-003, and widens the `platforms.yml` path filter (TB-021, TAB-050 review H-1, and the
+  workflow file itself). Workflow review conditions: every PostgreSQL service port is bound to `127.0.0.1` (C-3). Until #21 and #27 are on `master`, two transitional guards keep the jobs green:
   `api surface` falls back to the plain check when the script has no `--base`, and `conformance` runs nothing when
   `conformance/MANIFEST.json` is missing. Finding: at a tag, `--base <previous tag>` reads `[Unreleased]`, which a
   release has already renamed to its version section, so in `release.yml` the check is informational (a warning);

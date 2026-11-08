@@ -60,7 +60,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: tabrion-ci
         ports:
-          - 5432:5432
+          - 127.0.0.1:5432:5432
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 2s
@@ -75,7 +75,6 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
-          cache: pip
       - run: pip install -e ".[dev]"
       - run: python scripts/downstream.py --summary "$GITHUB_STEP_SUMMARY"
 
