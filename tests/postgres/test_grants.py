@@ -691,6 +691,24 @@ def test_r14_schema_name_over_63_bytes(
     assert grant_runtime_role(conn, fixture.runtime.name, schema=name).schema == name  # 63 bytes are fine
 
 
+def test_dl1_multibyte_names_are_measured_in_bytes(
+    admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture]
+) -> None:
+    """Delta re-review DL-1 of #8: the limit counts UTF-8 bytes, not characters (a chars mutant accepts these)."""
+    name = "t_" + uuid.uuid4().hex[:8] + "\u00e9" * 26 + "x"  # 37 characters, 63 bytes: accepted
+    assert (len(name), len(name.encode())) == (37, 63)
+    fixture = make_fixture(schema=name)
+    conn = owner_connection(connect, fixture)
+    too_long = "\u00e9" * 32  # 32 characters, 64 bytes
+    for kwargs in ({"schema": too_long}, {"protected_tables": (too_long,)}):
+        with pytest.raises(ValueError, match="63 bytes"):
+            grant_runtime_role(conn, fixture.runtime.name, **kwargs)
+    with pytest.raises(ValueError, match="63 bytes"):
+        grant_runtime_role(conn, too_long)
+    _nothing_granted(admin, fixture, fixture.runtime.name)
+    assert grant_runtime_role(conn, fixture.runtime.name, schema=name).schema == name
+
+
 def test_r14_schema_missing(admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture]) -> None:
     """Review L-4: a schema that does not exist is refused before any grant, without its name."""
     fixture = make_fixture()

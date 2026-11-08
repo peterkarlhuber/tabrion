@@ -432,6 +432,13 @@ PROBES = [
         "        except psycopg.Error:\n",
         "tests/postgres/test_grants.py::test_r16_a_failing_connect_step_propagates",
     ),
+    # Delta re-review DL-1 of #8: the 63-byte limit counts bytes, not characters.
+    (
+        "postgres/roles.py",
+        '        if any(len(name.encode("utf-8")) > _NAME_BYTES for name in names):\n',
+        "        if any(len(name) > _NAME_BYTES for name in names):\n",
+        "tests/postgres/test_grants.py::test_dl1_multibyte_names_are_measured_in_bytes",
+    ),
     # Review H-1 (#11): an extension elsewhere is made visible through search_path (a skip would hide this).
     (
         "testing/postgres.py",

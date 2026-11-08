@@ -133,7 +133,7 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 65 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  transaction state, and carry 66 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`

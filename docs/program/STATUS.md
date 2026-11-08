@@ -486,7 +486,7 @@ PostgreSQL 16, 17, 18 and pgvector 17. Inner pytest runs use `pytester` in a sub
 ### Review of #11 (TAB-020)
 
 The independent review (planning folder `reviews/tab-020-review.md`, head `6e74a73`) did not accept #11: one High,
-two Low, Info. Each finding, its fix and the evidence; each fix has a mutation probe in
+two Low, Info; the delta re-review of #8 left DL-1, also fixed here. Each finding, its fix and the evidence; each fix has a mutation probe in
 `tests/postgres/test_postgres_mutation_probes.py` that the named test kills.
 
 | Finding | Fix | Evidence |
@@ -494,6 +494,7 @@ two Low, Info. Each finding, its fix and the evidence; each fix has a mutation p
 | H-1 `require_extension` moved a shared extension into the test schema; the teardown's `DROP SCHEMA ... CASCADE` then dropped it and dependent columns elsewhere | `require_extension` never moves an extension: `other_schema` appends the extension's schema to the connection's `search_path`; `installable` runs `CREATE EXTENSION IF NOT EXISTS ... SCHEMA public` (never a schema a fixture drops; two racing runs both end up active). The teardown refuses a schema that holds an extension (schema left in place, teardown fails with the name) (contract I-36) | `test_h1_teardown_never_reaches_a_shared_extension` (citext in `public` with `public.users(email citext)`, and the installable case: after `require_extension` on a test schema's URL and the teardown, extension, column and row intact), `test_h1_teardown_refuses_a_schema_holding_an_extension`, `test_x07_other_schema_is_made_visible_not_moved` (replaces the test that asserted the move), `test_x07_empty_search_path`, `test_x07_two_runs_racing_for_an_installable_extension`; the X07 tests turn a skip into a failure; 3 probes (no `search_path` step, `CREATE` into the current schema, no extension guard) |
 | L-1 the teardown ended other roles' sessions (a backup) | Only sessions of the URL's role are ended; another role's lock is waited for with `lock_timeout` 30 s | `test_l1_another_roles_session_is_waited_for_not_ended` (a REPEATABLE READ session of another role, `application_name=pg_dump`: alive, the `DROP` waits and completes after its rollback); probe |
 | L-2 the termination scope was untested (mutants 2, 3 survived) | Tests for both filters | `test_l2_a_lock_in_another_database_is_left_alone` (two databases cloned from one template share the object ids; the twin's session survives, the session in the dropped schema's database is ended), `test_l2_a_lock_in_another_schema_is_left_alone`; 2 probes. Mutant 1 (own pid) is equivalent: the teardown connection holds no lock in the schema |
+| DL-1 of #8 (delta re-review) the 63-byte limit had no multibyte case | Test | `test_dl1_multibyte_names_are_measured_in_bytes` (a 32-character, 64-byte name refused as `schema`, protected table and role; a 37-character, 63-byte schema accepted); probe (characters instead of bytes) |
 | Info require variable `true` skipped silently | Any value but empty or `0` requires | `test_x01_variables_first_flag_and_extension_list` (`0` and empty off; `1`, `true`, `yes` on); probe |
 
 ## G-T1 conditions
