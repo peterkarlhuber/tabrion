@@ -4,6 +4,12 @@
     python -m measurements --db data.db --backup-dir backups capture < readings.csv
     python -m measurements --db data.db --backup-dir backups demo 10000
     python -m measurements --db data.db --backup-dir backups count
+    python -m measurements --db data.db --backup-dir backups init-upstream
+    python -m measurements --db data.db --backup-dir backups transfer
+
+``init-upstream`` and ``transfer`` read the upstream URL from ``MEASUREMENTS_UPSTREAM_URL`` (or a file named by
+``MEASUREMENTS_UPSTREAM_URL_FILE``), never from the command line, and need the extras ``sqlalchemy`` and
+``postgres``.
 
 ``capture`` reads CSV rows ``device_id,channel,ts_utc,value,unit[,quality]`` (``ts_utc`` in ISO 8601 with an offset
 or ``Z``) and stores them as one batch.
@@ -60,6 +66,28 @@ def _read_csv(stream: TextIO) -> Iterator[Measurement]:
         yield measurement
 
 
+def _upstream(store: Store, command: str, batch_size: int) -> int:
+    from measurements.transfer import transfer
+    from measurements.upstream import create_upstream, open_upstream
+    from tabrion.errors import TabrionError
+
+    try:
+        with open_upstream() as upstream:
+            if command == "init-upstream":
+                create_upstream(upstream)
+                print("upstream ready")
+                return 0
+            report = transfer(store, upstream, batch_size=batch_size)
+    except TabrionError as exc:
+        # Tabrion's texts name a code and a classification, never a value or the URL (metric MW-4).
+        failure = str(exc)
+    else:
+        print(f"{report.sent} sent in {report.batches} batches, {report.inserted} new upstream, mark {report.mark}")
+        return 0
+    print(f"measurements: {command} stopped: {failure}; the mark stays at {store.mark()}", file=sys.stderr)
+    return 2
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="measurements", description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--db", required=True, help="database file (created 0600)")
@@ -70,6 +98,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     demo = commands.add_parser("demo", help="store COUNT synthetic readings as one batch and time it")
     demo.add_argument("count", type=int)
     commands.add_parser("count", help="print the number of stored readings")
+    commands.add_parser("init-upstream", help="create the upstream table if it is missing")
+    send = commands.add_parser("transfer", help="send the readings above the high-water mark upstream")
+    send.add_argument("--batch-size", type=int, default=1000)
     args = parser.parse_args(argv)
 
     connection = open_database(args.db, backup_dir=args.backup_dir)
@@ -89,6 +120,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"{stored} stored in {time.perf_counter() - started:.3f} s")
         elif args.command == "count":
             print(store.count())
+        elif args.command in ("init-upstream", "transfer"):
+            return _upstream(store, args.command, args.batch_size if args.command == "transfer" else 0)
     finally:
         connection.close()
     return 0
