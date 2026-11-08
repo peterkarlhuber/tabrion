@@ -251,8 +251,11 @@ required (owner decision of 2026-11-08 11:26Z).
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-16, QA-17, QA-18, QA-19, QA-21, QA-23, QA-24
 - **What:** the Tabrion part of QA-16 is in the M1 pull request; the orkexa, axentra and tabrion-studio parts are
-  open there. Tabrion's copy of its outgoing edges (empty) for the dependency policy (QA-17); blocked-module tests per
-  optional edge beyond the core (QA-18); the Tabrion rows of the clean-install matrix with pip 25.0 and the current
+  open there. Tabrion's copy of its outgoing edges (empty) for the dependency policy (QA-17); QA-18 is done here
+  (2026-11-08): one blocked-module test per extra (`tests/packaging/edges.py`, `tests/unit/test_optional_edges.py`,
+  a meta test keeps the list equal to the extras, a mutation probe per edge) and the forbidden-edge test
+  `tests/packaging/test_independent.py` (every module imports with orkexa, axentra, nodestro_*, tabrion_studio
+  blocked), both in the default test job; the Tabrion rows of the clean-install matrix with pip 25.0 and the current
   pip (QA-19); `docs/api-consumers.md` as the export target of the consumers' API check (QA-21); the ecosystem
   migration documentation under `docs/ecosystem/` (QA-23) and the closing record (QA-24).
 - **Next step:** QA-17 after QA-16 is done in every repository.
