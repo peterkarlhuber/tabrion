@@ -6,6 +6,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Changed
+
+- Master builds as `0.1.0a2.dev0` after the `0.1.0a1` commit (TB-053), so later commits never build as the
+  internal pre-release. The installation guide pins the a1 commit SHA instead of the tag name and says not to run
+  `release.yml` for it (TAB-038 review Info notes).
+
 ## [0.1.0a1] - internal pre-release, not published
 
 TABRION TAB-038: the tag `v0.1.0a1` on the merge commit of this version is an internal pre-release for **unmerged**
