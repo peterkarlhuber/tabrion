@@ -25,6 +25,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - `tabrion.testing.profiles` (TAB-021): `sqlite_profile_cases()` (TAB-T-F01..F06: foreign keys, WAL, busy
   timeout, `0600` files, symlink refusal, no DEFERRED writes) for any SQLite connect function, and
   `portability_cases()` (TAB-T-D01..D09, the data type rules of specification section 6) for SQLite and PostgreSQL.
+  F05 refuses symlinks to missing and to existing files, for the main path and the `-wal`, `-shm` and `-journal`
+  files, checks that the plain file reopens, and counts only `UnsafePath("sqlite.symlink")` as a refusal. The
+  portability cases create fresh table names (`tabrion_d0N_<random>`) without `IF NOT EXISTS`, fail on an existing
+  name without touching it and drop only their own tables; run them in an empty or dedicated schema. D03 uses
+  `GENERATED ALWAYS AS IDENTITY` and checks `bigint` on PostgreSQL; D04 and D07 check the stored or server type
+  (deviations D-62 and D-63, contract I-58).
 
 ### Changed
 

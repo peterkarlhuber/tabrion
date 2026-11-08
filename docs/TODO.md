@@ -19,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 12 |
 | P2 Medium | 10 |
-| P3 Low | 23 |
+| P3 Low | 24 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -124,8 +124,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
 - **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
-  TAB-021 (`tabrion.testing.profiles`, contract I-58) is in review on branch
-  `claude/project-thread-rdo6g3-profiles`, stacked on the layer-B branch; TAB-019 builds on TAB-018 too; TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture
+  TAB-021 (`tabrion.testing.profiles`, contract I-58, deviations D-62 and D-63) is in review on branch
+  `claude/project-thread-rdo6g3-profiles`, stacked on the layer-B branch, after its review fix round (M-1..M-3,
+  L-1..L-3; follow-up TB-064); TAB-019 builds on TAB-018 too; TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture
   `tabrion_role_setup` (G-10). TAB-017 (`tabrion.check`, which `Database.check()` calls) is a pull request of its own.
 
 ### TB-008 · Consumer protection, conformance, stability policy (TABRION TAB-022, TAB-050, TAB-051)
@@ -530,6 +531,18 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   by `timeout`; `Database.health(timeout=...)` waits for a pool connection up to `pool_timeout`, not `timeout`.
 - **Next step:** document both in the layer-B guide (TAB-041); decide for 0.2 whether `health` checks out with
   `min(timeout, pool_timeout)` (needs no API change).
+
+### TB-064 · Portable UUID and timestamp columns in the guides (TABRION TAB-021, TAB-041)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-021, TAB-041, contract I-58, deviations D-62 and
+  D-63, planning folder `reviews/tab-021-review.md` (L-1, L-2)
+- **What:** the SQLite mappings of TAB-T-D01 and D04 follow the stored formats of specification section 6 (UTC text
+  with `Z`, 36-character UUID text), so an application gets a `str` on SQLite and a `datetime` or `uuid.UUID` on
+  PostgreSQL. On SQLite, the cases D01, D02, D04, D07 and D09 document the mapping and cannot fail for an engine
+  setting; the SQLite pitfalls behind D01 and D02 are pinned by repository tests only.
+- **Next step:** the layer-B guide (TAB-041) shows a `TypeDecorator` for each of the two columns (UTC text, UUID
+  text) and says which portability cases check the engine; Tabrion ships no type library (specification section 6),
+  so the decorators stay examples unless a reference application needs them in the package.
 
 ### TB-052 · MIG-NOD note: one `lock_lost` in the scheduler pattern after a loss (delta re-review of #6)
 
