@@ -30,8 +30,9 @@ from tabrion.errors import ConfigurationError, SchemaNotCurrent
 
 __all__ = ["SchemaStatus", "require_current", "status"]
 
-_BROKEN_SCRIPTS = (RevisionError, CommandError, KeyError, ImportError, SyntaxError)
-"""What Alembic raises for a script directory or version table it cannot resolve (review L-1 of #14)."""
+_BROKEN_SCRIPTS = (RevisionError, CommandError, KeyError, TypeError, ImportError, SyntaxError)
+"""What Alembic raises for a script directory or version table it cannot resolve (review L-1 of #14); ``TypeError``
+for a ``revision`` or ``down_revision`` of the wrong type (re-review DL-1)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,7 +93,7 @@ def status(
         ordered = list(dict.fromkeys(revision.revision for revision in script.walk_revisions("base", "heads")))
         graph = heads, ordered
     except _BROKEN_SCRIPTS:
-        graph = None  # a cycle, a missing down_revision or depends_on, a branch label as parent, a broken file
+        graph = None  # a cycle, a missing or mistyped parent, a branch label as parent, a broken file
     if graph is None:
         raise ConfigurationError("migrations.revisions")
     heads, ordered = graph

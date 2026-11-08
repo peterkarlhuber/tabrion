@@ -19,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 10 |
-| P3 Low | 27 |
+| P3 Low | 28 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -213,14 +213,19 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
-- **Priority:** P1 High · **Status:** Open (after the layer-B core merges) · **Refs:** TABRION TAB-017, TAB-018,
-  TAB-019, contract section 7, I-55, deviation D-60, TAB-T-K21, K25, K26
+- **Priority:** P1 High · **Status:** In review (layer-B follow-up pull request) · **Refs:** TABRION TAB-017,
+  TAB-018, TAB-019, contract section 7, I-44, I-55, deviations D-60, D-66, TAB-T-K21, K25, K26
 - **What:** `tabrion._sa._check.collect` is still a stub, so `check(database)` raises `NotImplementedError`. It must
   run the SQLite or PostgreSQL checks on a raw driver connection of the `Database` (read only, T-NOTX) and add
   TAB-B-001 (pool without `pre_ping`), TAB-B-002 (Alembic schema not current, through `tabrion.migrations`) and
   TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` must call it.
-- **Next step:** after the layer-B core (TAB-018) merges, on a new branch: the collector, K21/K25/K26 and the
-  layer-B part of K27..K30; TAB-B-002 needs TAB-019 (`status`/`require_current`), until then an `info` "not checked".
+- **Done in the follow-up:** `collect` runs the dialect's checks on the pooled driver connection inside one
+  `read()` and adds TAB-PG-012, TAB-B-001 and TAB-B-002 (`tests/unit/test_check_database.py`,
+  `tests/postgres/test_check_layer_b.py`). TAB-B-002 stays an `info` "Not checked" when an `alembic_version` table
+  exists: `check()` has no script directory and layer B never imports Alembic (D-66); `require_current` is the gate.
+- **Next step:** review and merge. D-66 is accepted by the coordinator as the 0.1 design (subject to review).
+- **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
+  options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
 ## M3, M5 and M8: work in this repository
 
