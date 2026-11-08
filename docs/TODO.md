@@ -236,7 +236,8 @@ required (owner decision of 2026-11-08 11:26Z).
   (SQLSTATE 23001) is classified correctly. `examples/parts` therefore declares its foreign keys with the default
   `NO ACTION`, which behaves the same for a plain delete and is classified as `FOREIGN_KEY` on both engines.
 - **Next step:** lane C to classify `SQLITE_CONSTRAINT_TRIGGER` with that message as `FOREIGN_KEY` (with a test on
-  both engines); then `examples/parts` may go back to `RESTRICT`.
+  both engines); then `examples/parts` may go back to `RESTRICT`, which needs a migration `0002` once #22 (with
+  `0001`) is merged (review I-2 of #29).
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
