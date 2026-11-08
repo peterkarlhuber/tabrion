@@ -24,7 +24,7 @@ review of #19).
 | P0 Critical | 0 |
 | P1 High | 11 |
 | P2 Medium | 11 |
-| P3 Low | 30 |
+| P3 Low | 31 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -739,6 +739,16 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
   Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
+
+### TB-076 · K11 consumer coverage list `docs/api-consumers.md` (TABRION TAB-040 readiness gap 6)
+
+- **Priority:** P3 Low · **Status:** Open (kept current) · **Refs:** TABRION TAB-040, plan 07 K11, contract 8, I-61
+- **What:** `docs/api-consumers.md` lists every public function a consumer uses with its golden record and replay
+  test; `tests/unit/test_api_consumers.py` requires every category A/B row of contract section 8 and every named test
+  to exist. Two uses have no consumer record yet (Orkexa's error texts, Orkexa's `check_database_path` outside
+  `connect`).
+- **Next step:** each MIG-AXE, MIG-NOD and MIG-ORK step adds the consumer's own test of the adopted function to the
+  page; MIG-ORK-2 closes the Orkexa error-text row.
 ## Cross-repository dependencies
 
 | This repo item | Other repo | Other item | Relation |
