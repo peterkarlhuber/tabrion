@@ -19,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 10 |
-| P3 Low | 26 |
+| P3 Low | 27 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -127,9 +127,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
 - **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
-  TAB-021 (`tabrion.testing.profiles`, contract I-58, deviations D-62 and D-63) is in review on branch
-  `claude/project-thread-rdo6g3-profiles` (pull request #15, on master since #12 merged), after its review fix round (M-1..M-3,
-  L-1..L-3; follow-up TB-064); TAB-019 builds on TAB-018 too; TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture
+  TAB-019 (`tabrion.migrations`, contract I-57) is done (#14). TAB-021 (`tabrion.testing.profiles`, contract I-58,
+  deviations D-62 and D-63) is done (#15) after its review fix round (M-1..M-3, L-1..L-3; follow-up TB-064).
+  TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture
   `tabrion_role_setup` (G-10). TAB-017 (`tabrion.check`, which `Database.check()` calls) is a pull request of its own.
 
 ### TB-008 · Consumer protection, conformance, stability policy (TABRION TAB-022, TAB-050, TAB-051)
@@ -197,6 +197,16 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   at `info.host` only; `tabrion.check` uses `info.hostaddr` itself.
 - **Next step:** an owner rule for TAB-SQ-003 (or a new code, by addendum); `diagnose` to prefer `info.hostaddr`
   when set (lane C, a note in I-17).
+
+### TB-066 · `tabrion.migrations`: `version_locations` and recursive version directories (TAB-019 review L-3 of #14)
+
+- **Priority:** P3 Low · **Status:** Open (0.2) · **Refs:** TABRION TAB-019, contract I-57
+- **What:** `status` builds `ScriptDirectory(script_location)` itself and never reads `alembic.ini`, so it sees
+  only `<script_location>/versions`. A project that keeps revisions elsewhere (`version_locations`, also per
+  branch) or in subdirectories (`recursive_version_locations`) gets an incomplete graph: missing parents raise
+  `migrations.revisions`, missing heads make the database look current or newer (`unknown`).
+- **Next step:** in 0.2, keyword arguments `version_locations` and `recursive_version_locations` passed through to
+  `ScriptDirectory` (a contract addendum, as `surface.json` is frozen for 0.1); until then I-57 documents the rule.
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
@@ -579,6 +589,16 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   by `timeout`; `Database.health(timeout=...)` waits for a pool connection up to `pool_timeout`, not `timeout`.
 - **Next step:** document both in the layer-B guide (TAB-041); decide for 0.2 whether `health` checks out with
   `min(timeout, pool_timeout)` (needs no API change).
+
+### TB-065 · F05 refusal for connection factories other than Tabrion's (TABRION TAB-021)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-021, contract I-58, contract 04 section 6, planning
+  folder `reviews/tab-021-rereview.md` (R-1)
+- **What:** TAB-T-F05 counts only `UnsafePath("sqlite.symlink")` as a refusal, so an independent connect function
+  (for example the Orkexa core) that refuses every link with its own exception fails F05, although the contract says
+  the cases work for any connection factory. The strictness keeps sqlite3's own `OperationalError` from passing.
+- **Next step:** let the caller name the refusal exception (`sqlite_profile_cases(refusal=...)`, a 0.2 addendum
+  candidate), or record a deviation before MIG-ORK uses the cases.
 
 ### TB-064 · Portable UUID and timestamp columns in the guides (TABRION TAB-021, TAB-041)
 
