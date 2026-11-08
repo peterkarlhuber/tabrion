@@ -26,7 +26,8 @@ LOGIN role without privileges and its URL.
 - **Tabrion sets only session settings from a fixed list** (`statement_timeout`, `lock_timeout`,
   `idle_in_transaction_session_timeout`, `transaction_timeout`, `application_name`, `search_path`, `TimeZone`). It
   never sets `role`, `row_security` or `app.*` settings and never runs `RESET ALL` or `DISCARD`, so row-level security
-  contexts of your application stay yours.
+  contexts of your application stay yours. Inside its own transactions, layer B (`tabrion.Database`) also sends
+  `SET LOCAL statement_timeout` for a `timeout=` and the isolation level you ask for; both end with the transaction.
 
 ## Session settings
 
@@ -57,7 +58,8 @@ one round trip:
 transaction that **you** commit, or a later rollback discards the settings.
 
 For a pool, `session_configurator(settings)` returns the `configure` callback of `psycopg_pool.ConnectionPool`. It
-validates the settings once, when it is created, and commits when it opened the transaction itself:
+validates the settings once, when it is created, and commits when it opened the transaction itself. `psycopg_pool` is
+not part of `tabrion[postgres]`; install it as `psycopg[pool]` (or `psycopg-pool`) next to Tabrion:
 
 ```pycon
 >>> from psycopg_pool import ConnectionPool
@@ -151,7 +153,7 @@ so it refuses to run inside yours.
 >>> report = postgres.grant_runtime_role(conn, os.environ["APP_ROLE"], protected_tables=["app_schema_migrations"])
 >>> report.restricted, report.tables, report.owned_tables
 (True, 2, ())
->>> _ = app.execute("INSERT INTO parts VALUES (1, 'aluminium')")
+>>> _ = app.execute("INSERT INTO parts VALUES (1, 'aluminum')")
 >>> app.execute("INSERT INTO app_schema_migrations VALUES (1)")
 Traceback (most recent call last):
   ...

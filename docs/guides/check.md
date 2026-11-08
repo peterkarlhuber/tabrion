@@ -54,7 +54,7 @@ A plain `sqlite3.connect` leaves foreign keys off and `trusted_schema` on; the T
 |---|---|---|---|
 | TAB-SQ-001 | SQLite | `foreign_keys` off | warning |
 | TAB-SQ-002 | SQLite | `journal_mode` is not WAL (file) | info |
-| TAB-SQ-003 | SQLite | file readable by group or others | error |
+| TAB-SQ-003 | SQLite | file readable or writable by group or others | error |
 | TAB-SQ-004 | SQLite | path or side file is a symlink | error |
 | TAB-SQ-005 | SQLite | `busy_timeout` below 1000 ms | warning |
 | TAB-SQ-006 | SQLite | `quick_check` is not ok | error |

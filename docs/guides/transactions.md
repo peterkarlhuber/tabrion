@@ -25,7 +25,7 @@ an error whose outcome is unknown. Contract: [section 3.4](../api/contract.md#34
 Layer-A functions that take a connection follow one more rule (T-NOTX, [ADR 0011](../adr/0011-ldp-internal-and-t-notx.md)):
 **Tabrion never ends a transaction it did not open.** Called inside your transaction, its statements run in it;
 called on an idle connection, it opens and ends a short transaction of its own. Functions that need a transaction of
-their own (`write_transaction`, `migrate`, `grant_runtime_role`) refuse with `UsageError` instead of committing yours.
+their own (`write_transaction`, `read_transaction`, `migrate`, `grant_runtime_role`) refuse with `UsageError` instead of committing yours.
 
 ## Why `BEGIN IMMEDIATE`
 
@@ -125,7 +125,8 @@ The pattern: give every logical operation an **idempotency key** that is unique 
 ```
 
 With the key in place, a retry after an unknown outcome is safe: the second run finds the row and changes nothing.
-There is no upsert helper in Tabrion; SQLAlchemy Core has `insert(...).on_conflict_do_nothing()` for both dialects.
+There is no upsert helper in Tabrion; the dialect `insert` of SQLAlchemy has `on_conflict_do_nothing()` on both engines (`sqlalchemy.dialects.sqlite.insert` and
+`sqlalchemy.dialects.postgresql.insert`, not `sqlalchemy.insert`).
 
 ```pycon
 >>> db.close()

@@ -17,23 +17,48 @@ and implementation note I-57.
 ## An Alembic project on `tabrion.Database`
 
 Alembic keeps its usual layout: `alembic.ini`, `migrations/env.py`, `migrations/versions/`. In `env.py`, open the
-engine through `tabrion.Database`, so migrations run under the same profile (pragmas, timeouts, TLS rules) as the
-application. On SQLite, use `render_as_batch=True`: SQLite's `ALTER TABLE` is limited, and batch mode rebuilds the
-table instead.
+engine through `tabrion.Database`, so migrations run under Tabrion's TLS rules and pragmas, but with a **profile of
+their own**, derived from the application's:
+
+- **SQLite: foreign keys off.** SQLite's `ALTER TABLE` is limited, so Alembic's batch mode (`render_as_batch=True`)
+  rebuilds a table for `alter_column`, `drop_column` and `recreate="always"`: it copies the rows to a new table and
+  runs `DROP TABLE` on the old one. With `foreign_keys=ON` (the default profile), that `DROP TABLE` deletes the rows
+  first, which fires `ON DELETE CASCADE` in child tables and silently deletes their rows (or fails on an immediate
+  foreign key). `PRAGMA foreign_keys` has no effect inside a transaction, so it must be off **before** the migration
+  transaction begins: `SQLiteProfile(foreign_keys=False)` sets it when the connection opens. Run
+  `PRAGMA foreign_key_check` after the migrations, before the commit, so a migration that broke a reference fails
+  instead of committing ([`tabrion.sqlite.foreign_key_check`](sqlite.md) does the same on a `sqlite3` connection).
+- **PostgreSQL: longer timeouts.** The default profile sets `statement_timeout` to 30 s and `lock_timeout` to 10 s
+  for every session. A long index build or a table rewrite would then fail with the error code `timeout`. Give
+  migrations `statement_timeout_ms=0` (no limit) and a lock wait that fits your deployment window.
 
 <!-- docs-test: file=migrations/env.py -->
 ```python
+import dataclasses
+
 from alembic import context
 
-from tabrion import Database
+from tabrion import Database, Profile
 
-with Database.from_env("DATABASE_URL") as db, db.engine.begin() as connection:
+base = Profile()  # or the application's profile
+migration_profile = dataclasses.replace(
+    base,
+    sqlite=dataclasses.replace(base.sqlite, foreign_keys=False),  # set at connect, outside any transaction
+    postgres=dataclasses.replace(base.postgres, statement_timeout_ms=0, lock_timeout_ms=60_000),
+    pool_size=1,
+)
+
+with Database.from_env("DATABASE_URL", profile=migration_profile) as db, db.engine.begin() as connection:
     context.configure(connection=connection, render_as_batch=db.dialect == "sqlite")
     with context.begin_transaction():
         context.run_migrations()
+    if db.dialect == "sqlite":
+        violations = connection.exec_driver_sql("PRAGMA foreign_key_check").all()
+        if violations:
+            raise RuntimeError(f"foreign key violations after migrating: {violations[:5]}")
 ```
 
-Two revisions:
+Three revisions: a parent table, a child table with `ON DELETE CASCADE`, and a batch change that rebuilds the parent:
 
 <!-- docs-test: file=migrations/versions/0001_parts.py -->
 ```python
@@ -58,9 +83,9 @@ def downgrade() -> None:
     op.drop_table("parts")
 ```
 
-<!-- docs-test: file=migrations/versions/0002_stock.py -->
+<!-- docs-test: file=migrations/versions/0002_moves.py -->
 ```python
-"""Add the stock column."""
+"""Create the stock_moves table."""
 
 import sqlalchemy as sa
 from alembic import op
@@ -70,13 +95,37 @@ down_revision = "0001"
 
 
 def upgrade() -> None:
+    op.create_table(
+        "stock_moves",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("part_id", sa.Integer, sa.ForeignKey("parts.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("quantity", sa.Integer, nullable=False),
+    )
+
+
+def downgrade() -> None:
+    op.drop_table("stock_moves")
+```
+
+<!-- docs-test: file=migrations/versions/0003_material.py -->
+```python
+"""Widen parts.material (SQLite rebuilds the table)."""
+
+import sqlalchemy as sa
+from alembic import op
+
+revision = "0003"
+down_revision = "0002"
+
+
+def upgrade() -> None:
     with op.batch_alter_table("parts") as batch:
-        batch.add_column(sa.Column("stock", sa.Integer, nullable=False, server_default="0"))
+        batch.alter_column("material", type_=sa.String(80), existing_nullable=False)
 
 
 def downgrade() -> None:
     with op.batch_alter_table("parts") as batch:
-        batch.drop_column("stock")
+        batch.alter_column("material", type_=sa.String(40), existing_nullable=False)
 ```
 
 You migrate with Alembic, as always (`alembic upgrade head`; here through its Python API):
@@ -92,23 +141,55 @@ alembic_config = Config()
 alembic_config.set_main_option("script_location", "migrations")
 ```
 
+### Why the foreign keys are off: the cascade
+
+Here is the same rebuild under the **default** profile (`foreign_keys=ON`), on a database of its own. The parent is
+rebuilt, and the child row is gone without an error:
+
+```pycon
+>>> from alembic.migration import MigrationContext
+>>> from alembic.operations import Operations
+>>> from tabrion import Database
+>>> with Database.from_url("sqlite:///cascade.db") as risky:
+...     with risky.engine.begin() as connection:
+...         _ = connection.exec_driver_sql("CREATE TABLE parts (id INTEGER PRIMARY KEY, material TEXT)")
+...         _ = connection.exec_driver_sql(
+...             "CREATE TABLE stock_moves (id INTEGER PRIMARY KEY,"
+...             " part_id INTEGER NOT NULL REFERENCES parts (id) ON DELETE CASCADE)"
+...         )
+...         _ = connection.exec_driver_sql("INSERT INTO parts VALUES (1, 'steel')")
+...         _ = connection.exec_driver_sql("INSERT INTO stock_moves VALUES (1, 1)")
+...     with risky.engine.begin() as connection:
+...         with Operations(MigrationContext.configure(connection)).batch_alter_table("parts", recreate="always"):
+...             pass
+...     risky.fetch_scalar("SELECT count(*) FROM parts"), risky.fetch_scalar("SELECT count(*) FROM stock_moves")
+(1, 0)
+```
+
+With the migration profile of `env.py`, the same kind of rebuild (revision `0003`) keeps the child rows; see the next
+section.
+
 ## Checking the state: `status`
 
 `tabrion.migrations.status(database, script_location=...)` compares the database's version table with the script
 directory. It only reads: it never runs `env.py`, never migrates, and creates nothing in a fresh database.
 
 ```pycon
->>> from tabrion import Database
 >>> from tabrion.migrations import require_current, status
 >>> db = Database.from_url("sqlite:///parts.db")
 >>> status(db, script_location="migrations")
-SchemaStatus(current=(), heads=('0002',), pending=('0001', '0002'), is_current=False, unknown=())
->>> command.upgrade(alembic_config, "0001")
+SchemaStatus(current=(), heads=('0003',), pending=('0001', '0002', '0003'), is_current=False, unknown=())
+>>> command.upgrade(alembic_config, "0002")
 >>> status(db, script_location="migrations").pending
-('0002',)
+('0003',)
+>>> with db.transaction() as tx:
+...     _ = tx.execute("INSERT INTO parts (id, material) VALUES (1, 'steel')")
+...     _ = tx.execute("INSERT INTO stock_moves (part_id, quantity) VALUES (1, 5)")
 >>> command.upgrade(alembic_config, "head")
 >>> status(db, script_location="migrations")
-SchemaStatus(current=('0002',), heads=('0002',), pending=(), is_current=True, unknown=())
+SchemaStatus(current=('0003',), heads=('0003',), pending=(), is_current=True, unknown=())
+>>> db.fetch_scalar("SELECT count(*) FROM stock_moves")  # revision 0003 rebuilt parts; the move survived
+1
 ```
 
 | Field | Meaning |
@@ -130,11 +211,11 @@ the application starts, before it serves anything:
 ```pycon
 >>> require_current(db, script_location="migrations").is_current
 True
->>> command.downgrade(alembic_config, "0001")
+>>> command.downgrade(alembic_config, "0002")
 >>> require_current(db, script_location="migrations")
 Traceback (most recent call last):
   ...
-tabrion.errors.SchemaNotCurrent: migrations.not_current (current=0001, head=0002)
+tabrion.errors.SchemaNotCurrent: migrations.not_current (current=0002, head=0003)
 >>> db.close()
 ```
 
@@ -151,3 +232,5 @@ It works under `Profile.readonly()` too, so a read-only tool can refuse a databa
   `ConfigurationError("migrations.script_location")`. Neither names the path.
 - Alembic itself writes through `db.engine`, outside Tabrion's transaction modes; on SQLite its transactions begin
   deferred. Run migrations from one process at a time.
+- Keep the migration profile for migrations only. The application keeps `foreign_keys=ON` and its timeouts; a
+  migration `Database` is opened, used and closed by `env.py`.

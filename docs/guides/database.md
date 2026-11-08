@@ -192,8 +192,10 @@ tabrion.errors.UsageError: database.read_only
 ```
 
 `read()` and `Profile.readonly()` guard against accidents, not against hostile SQL: SQL you run can switch read-only
-off. The hard boundary is a PostgreSQL role without write rights, or file permissions on SQLite
-([Security](security.md)).
+off. Tabrion reads the state back before the `COMMIT` and raises `UsageError("database.read_only")` (invalidating the
+connection) when it was lifted, but SQL that lifts it, writes and restores it before the end is committed, and
+`from_engine` gets no `mode=ro` and no `ATTACH` limit on SQLite ([Security](security.md#read-only-is-a-guard-not-a-boundary),
+contract [I-56](../api/contract.md#57-implementation-notes-tab-018)). The hard boundary is a PostgreSQL role without write rights, or file permissions on SQLite.
 
 ## TLS for PostgreSQL
 

@@ -68,7 +68,7 @@ connection it opens and ends a short transaction of its own (T-NOTX,
 >>> conn.close()
 ```
 
-Functions that need a transaction of their own (`write_transaction`, `migrate`, `grant_runtime_role`) raise
+Functions that need a transaction of their own (`sqlite.write_transaction`, `sqlite.read_transaction`, `sqlite.migrate`, `grant_runtime_role`) raise
 `UsageError` instead of committing yours.
 
 ## Mapping Tabrion errors to yours

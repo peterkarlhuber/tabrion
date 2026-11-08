@@ -59,7 +59,7 @@ FileNotFoundError: ...
 | `secure_delete` | `True` | deleted content is overwritten |
 | `trusted_schema` | `False` | views and triggers cannot call unsafe functions |
 | `file_mode` | `0o600` | for new files |
-| `allow_shared_file` | `False` | `True` permits a group- or world-writable `file_mode` and foreign owners (not recommended) |
+| `allow_shared_file` | `False` | `True` permits a `file_mode` with any group or other bit (even `0o644`, which is only readable) and foreign owners (not recommended) |
 
 Profiles are frozen dataclasses; derive your own with `dataclasses.replace`. Invalid values raise
 `ConfigurationError` when the profile is built, not when it is used:
@@ -152,6 +152,12 @@ The rules:
   `MigrationMissing`. A failing step raises `MigrationFailed` with `details["step"]`, and the database is unchanged.
 - Steps use `conn.execute`, one statement each. Never `commit`, `rollback` or `executescript` in a step:
   `executescript` commits first and breaks the all-or-nothing rule. `PRAGMA foreign_keys` has no effect inside a step.
+- A step that **rebuilds a table** (create a new table, copy the rows, `DROP TABLE` the old one, rename) deletes the
+  rows of child tables through `ON DELETE CASCADE` while foreign keys are on, because SQLite deletes the rows of a
+  dropped table first ([Migrations](migrations.md#an-alembic-project-on-tabriondatabase) shows it). Since
+  `PRAGMA foreign_keys` has no effect inside the migration transaction, migrate on a connection opened with
+  `SQLiteProfile(foreign_keys=False)` (or run `PRAGMA foreign_keys = OFF` before `migrate`), and call
+  `sqlite.foreign_key_check(conn)` afterwards: it must return `[]`.
 - Two processes that migrate at the same time apply each step once; the second sees the new version.
 
 ```pycon
@@ -196,6 +202,17 @@ def backup_before_migration(found: int, target: int) -> None:
     sqlite.backup(conn, Path(f"shop-v{found}.db"), overwrite=True)
 ```
 
+```pycon
+>>> def add_note(conn):
+...     conn.execute("ALTER TABLE parts ADD COLUMN note TEXT")
+>>> sqlite.migrate(conn, {**steps, 3: add_note}, target=3, backup=backup_before_migration)
+MigrationResult(previous=2, current=3, backed_up=True)
+>>> backup_conn = sqlite.connect("shop-v2.db", read_only=True)
+>>> backup_conn.execute("PRAGMA user_version").fetchone()
+(2,)
+>>> backup_conn.close()
+```
+
 There is no `restore()`: replacing an open database is product specific. Close every connection, move the backup
 file into place, and open again.
 
@@ -210,7 +227,7 @@ True
 []
 >>> diagnosis = sqlite.diagnose(conn)
 >>> diagnosis.user_version, diagnosis.busy_timeout_ms, diagnosis.trusted_schema
-(2, 30000, False)
+(3, 30000, False)
 ```
 
 The checks only read. A damaged file gives `ok=False` with SQLite's messages (page and table names, never row data)

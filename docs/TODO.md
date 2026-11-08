@@ -20,8 +20,8 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 12 |
-| P2 Medium | 12 |
-| P3 Low | 32 |
+| P2 Medium | 11 |
+| P3 Low | 34 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -242,15 +242,24 @@ required (owner decision of 2026-11-08 11:26Z).
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
-### TB-080 · `Transaction.execute` returns 0 for a Core insert on PostgreSQL (TABRION TAB-041, contract I-70)
+### TB-080 · `Transaction.execute` returns 0 for every Core insert on PostgreSQL (TABRION TAB-041, contract I-70)
 
-- **Priority:** P3 Low · **Status:** Open (0.2 decision) · **Refs:** TABRION TAB-018, TAB-041, contract 5.3, I-70
-- **What:** found while testing the guides: `execute(table.insert(), params)` on a table with a generated key returns
-  `0` on PostgreSQL and `1` on SQLite. SQLAlchemy sends the insert with `RETURNING` on PostgreSQL, psycopg reports
-  `rowcount = -1`, and Tabrion maps -1 to 0 (contract 5.3: "-1 becomes 0 for DDL"). SQL text inserts report the true
-  count on both engines. The behavior is documented (I-70, `docs/guides/portability.md`).
-- **Next step:** for 0.2, decide whether `execute` counts the rows of a `RETURNING` result (a semantic change of a
-  stable method: contract addendum and CHANGELOG `Changed`) or keeps the documented rule.
+- **Priority:** P3 Low · **Status:** Open (0.2 decision, lane B/C) · **Refs:** TABRION TAB-018, TAB-041, contract 5.3,
+  I-70, review of PR #24 (M-1)
+- **What:** found while testing the guides and corrected in the review: `execute(table.insert(), params)` returns `0`
+  on PostgreSQL and `1` on SQLite. The cause is SQLAlchemy's rowcount rule, not `RETURNING`: since SQLAlchemy 2.0.28
+  a result keeps the driver's `rowcount` only for `UPDATE`/`DELETE` unless the statement carries the
+  `preserve_rowcount=True` execution option. SQLAlchemy then reports `-1` for every Core `insert()` on PostgreSQL
+  (also without a generated key, without a primary key, and for executemany; raw psycopg reports `1`), and Tabrion
+  maps -1 to 0 (contract 5.3). Core `update()`/`delete()` and SQL text inserts report the true count. Measured with
+  SQLAlchemy 2.1.8 and psycopg 3.3.8 on PostgreSQL 16; `insert().execution_options(preserve_rowcount=True)` makes
+  `execute` return `1`. The rule and the workaround are documented (I-70, `docs/guides/portability.md`, tested on
+  both engines).
+- **Fix option:** `execute` sets `preserve_rowcount=True` on the statements it runs (no signature change). That
+  changes the value a stable method returns on PostgreSQL, so it needs a contract addendum to 5.3 and a CHANGELOG
+  `Changed` entry; not done in the docs PR.
+- **Next step:** lane B/C decides for 0.2 between setting `preserve_rowcount` in `execute` and keeping the documented
+  rule.
 
 ### TB-081 · Align the infrastructure baseline with the kit text (TABRION TAB-041, ADR 0001)
 
@@ -281,21 +290,26 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** for 0.2, decide on a documented helper or fixtures that also give a `postgresql://` URL (a new
   public name: contract addendum).
 
-### TB-084 · Confirm the 0.1 document set of TAB-041 (TABRION TAB-041, D-80)
+### TB-131 · Write the planned operations pages `backup-restore.md` and `roles.md` (TABRION TAB-041, D-83)
 
-- **Priority:** P2 Medium · **Status:** Needs decision · **Refs:** TABRION TAB-041, TAB-040, planning document 05
-  section 2.1, deviation D-80
-- **What:** the acceptance criterion names "all Tabrion documents of the assignment, chapter 10", which is not in the
-  planning folder. TAB-041 took the guide tree of planning document 05 section 2.1 (`getting-started/quickstart.md`,
-  `guides/{sqlite,postgresql,transactions,errors,security,migrations,testing,portability,
-  integration-existing-platforms,troubleshooting}.md`) plus pages for `tabrion.sql`, `tabrion.config`, layer B,
-  `tabrion.check` and the infrastructure baseline of ADR 0001. Not written: `docs/operations/` (kit content,
-  overlapping the baseline page), `docs/architecture/{overview,layers}.md` (covered by the specification and the
-  ADRs) and `docs/changelog.md` as an include of `CHANGELOG.md`.
-- **Next step:** the reviewer or the owner confirms the set against chapter 10 before TAB-040, or names the missing
-  documents.
+- **Priority:** P3 Low · **Status:** Planned · **Refs:** TABRION TAB-041, TAB-040, planning document 05 section 2.1,
+  ADR 0001, deviation D-83
+- **What:** planning document 05 section 2.1 lists `docs/operations/backup-restore.md` and `docs/operations/roles.md`.
+  TAB-041 decided the 0.1 document set itself (D-83, no owner question): it follows ADR 0001 and keeps the
+  infrastructure baseline at `docs/guides/infrastructure-baseline.md`, whose sections cover backup and restore and the
+  roles for 0.1. The two operations pages are planned, not written.
+- **Next step:** write them when the kit content (TB-081) is aligned, moving the long sections out of the baseline
+  page and linking back; until then the baseline page is the reference.
 
-## M3, M5 and M8: work in this repository
+### TB-132 · The `ImportError` install hint names the PyPI form (TABRION TAB-041 review L-6)
+
+- **Priority:** P3 Low · **Status:** Open (lane B/C) · **Refs:** TABRION TAB-041, ADR 0009 amendment, D-67,
+  `docs/getting-started/installation.md`
+- **What:** the `ImportError` of a missing extra suggests `pip install "tabrion[sqlalchemy]"`, which resolves from
+  PyPI, where Tabrion is not published (dependency-confusion risk). The troubleshooting guide now says to use the
+  Git-pin form instead.
+- **Next step:** change the hint text in `src` to point to the installation page (message text only, no API change;
+  a bug fix for lane B/C, not part of the docs PR).
 
 ### TB-012 · Architecture checks and ecosystem documentation (TABRION QA-16, QA-17, QA-18, QA-19, QA-21, QA-23, QA-24)
 

@@ -58,7 +58,9 @@ False
 
 Layer B refuses a remote PostgreSQL host without TLS unless you say `tls="insecure"`
 ([Database and Profile](database.md#tls-for-postgresql)). Use `TLSMode.VERIFY_FULL` in production: `require`
-encrypts but does not check the server's certificate. `tabrion.check` reports TAB-PG-010 (no `verify-full`) and
+encrypts but does not check the server's certificate. `verify-full` also needs the root certificate the server's
+certificate chains to: `sslrootcert` in the URL, or `~/.postgresql/root.crt`
+([Infrastructure baseline](infrastructure-baseline.md)). `tabrion.check` reports TAB-PG-010 (no `verify-full`) and
 TAB-PG-011 (no TLS). Layer A enforces nothing on connections you open yourself.
 
 ## Roles and least privilege
@@ -82,3 +84,15 @@ TAB-PG-011 (no TLS). Layer A enforces nothing on connections you open yourself.
 `read()`, `Profile.readonly()` and `connect(read_only=True)` stop accidental writes; the database refuses them. SQL
 that the caller controls can switch read-only off again. Where untrusted SQL runs (a SQL editor), the boundary is a
 role without write rights, or file permissions that do not let the process write the SQLite file.
+
+What the guard does and where it ends (contract implementation note [I-56](../api/contract.md#57-implementation-notes-tab-018)):
+
+- Right before the `COMMIT` of a `read()`, Tabrion reads the read-only state back. When the SQL lifted it, Tabrion
+  rolls back, raises `UsageError("database.read_only")` and invalidates the connection, so nothing of it stays in the
+  pool.
+- The read-back sees the end state only. SQL that lifts read-only, writes and restores it before the end, or that
+  ends the transaction itself and commits another one (`ROLLBACK; BEGIN READ WRITE; ...; COMMIT`), is committed
+  (TODO TB-061).
+- On SQLite, `mode=ro` covers the main file only, and only `Database.from_url` adds it and the `ATTACH` limit:
+  `Database.from_engine` gets neither, and layer A's `connect(read_only=True)` sets no `SQLITE_LIMIT_ATTACHED`, so an
+  `ATTACH` of the same file can open it read-write.

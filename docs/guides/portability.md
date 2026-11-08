@@ -131,9 +131,23 @@ orders = sa.Table(
 True
 ```
 
-The row count of a SQLAlchemy Core `insert()` is not portable: on PostgreSQL SQLAlchemy adds `RETURNING` for the
-generated key, the driver reports no count, and `execute` returns `0` there (TODO TB-080). Count with SQL text, or
-read the rows back.
+The row count of a SQLAlchemy Core `insert()` is not portable. Since SQLAlchemy 2.0.28 a result keeps the driver's
+`rowcount` only for `UPDATE` and `DELETE`, unless the statement carries the `preserve_rowcount=True` execution option.
+On PostgreSQL SQLAlchemy then reports `-1` for every Core insert (with or without a generated key, and for a list of
+parameter sets), and `execute` turns that into `0`; SQLite still reports the true count. SQL text inserts and Core
+`update()`/`delete()` report the true count on both engines. Set the option when you need the count (TODO TB-080):
+
+```pycon
+>>> row = {"created_at": dt.datetime.now(dt.UTC), "total_cents": 5, "paid": False, "note": None, "payload": {}}
+>>> counting_insert = orders.insert().execution_options(preserve_rowcount=True)
+>>> with db.transaction() as tx:
+...     plain = tx.execute(orders.insert(), {**row, "public_id": uuid.uuid4()})
+...     counted = tx.execute(counting_insert, {**row, "public_id": uuid.uuid4()})
+>>> plain == (1 if db.dialect == "sqlite" else 0), counted
+(True, 1)
+>>> db.execute(orders.delete().where(orders.c.total_cents == 5))
+2
+```
 
 The `CHECK` holds on both engines; without it, SQLite would store any length:
 

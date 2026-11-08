@@ -5,6 +5,11 @@ roles, and two sets of reusable test cases: the SQLite profile rules and the dat
 the extra `testing` (`tabrion[testing]`, pytest 8 or later); the PostgreSQL fixtures also need `tabrion[postgres]`.
 Contract: [section 6](../api/contract.md#6-tabriontesting-extra-testing). Tabrion's own suite runs on these fixtures.
 
+The examples on this page run in Tabrion's unit job (without a server: the PostgreSQL example is skipped there) and
+again in the PostgreSQL jobs, where `TABRION_REQUIRE_POSTGRES=1` is set and the page's `pytest` run must skip nothing.
+
+<!-- docs-test: sqlite-and-postgres -->
+
 ## Activating the plugin
 
 The plugin is never loaded on its own (there is no `pytest11` entry point). Activate it in your `conftest.py`:

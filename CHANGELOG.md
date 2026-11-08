@@ -12,7 +12,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   transactions, errors, `tabrion.sql`, `tabrion.config`, migrations, `tabrion.check`, `tabrion.testing`,
   portability, security, the PostgreSQL infrastructure baseline, existing platforms and troubleshooting. Every code
   example runs in the test suite (`tests/docs/`, PostgreSQL pages in the pg jobs). Installation stays Git-SHA pins,
-  no PyPI.
+  no PyPI. The migrations guide gives Alembic a profile of its own (SQLite foreign keys off before a batch rebuild,
+  `PRAGMA foreign_key_check` afterwards, longer PostgreSQL timeouts), because a batch rebuild with foreign keys on
+  deletes child rows through `ON DELETE CASCADE`.
 
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
