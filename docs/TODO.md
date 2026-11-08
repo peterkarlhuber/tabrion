@@ -157,7 +157,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Priority:** P1 High · **Status:** Blocked · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
 - **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); the tag `v0.1.0` and gate G-T2 (TAB-040).
-  A tag needs TB-001 done first; no GitHub release and no PyPI upload without G-R.
+  The tag `v0.1.0` needs TB-001 done first; no GitHub release and no PyPI upload without G-R.
 - **Next step:** TAB-038 is merged (#9, `a463422`, accepted after independent review); the annotated tag `v0.1.0a1`
   on that commit is an owner action (the agent's Git proxy only pushes branches). Consumers pin the commit SHA. The
   internal a1 tag does not need TB-001; the tag `v0.1.0` does. Then TAB-041 and TAB-040.
