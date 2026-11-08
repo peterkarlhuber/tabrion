@@ -19,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 12 |
 | P2 Medium | 10 |
-| P3 Low | 20 |
+| P3 Low | 21 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -447,7 +447,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **What:** `ATTACH 'other.db'` on a `connect(read_only=True)` connection creates an empty file at the attached
   path. `query_only` blocks writes into it, and the main file stays byte-identical, but the file appears.
 - **Next step:** set `SQLITE_LIMIT_ATTACHED` to 0 for read-only connections (`Connection.setlimit`, Python 3.11+), or
-  document it in I-22; decide with TAB-017.
+  document it in I-22; decide with TAB-017. Layer B has the same gap inside `read()` (contract I-56, TAB-018 review
+  L-1: the file gets the process umask, not `0600`); the same limit would close both.
 
 ### TB-047 · Windows: file modes are cosmetic, the `CREATE_NEW` race remains (review I-2)
 
@@ -504,6 +505,18 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   TAB-033 lets `Database` and `Transaction` inherit from the `_v02` mixins, the two modules import each other.
 - **Next step:** before TAB-033, move the type aliases to `tabrion._sa._types`, type `run_transaction`'s `fn` against
   a forward reference, and keep `surface.json` unchanged.
+
+### TB-061 · Read-only is a guard, not a boundary: optional hardening (TABRION TAB-018 review H-1)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, contract I-56, SECURITY.md, plan 03:245-247,
+  07 SQ-05, SR-03
+- **What:** SQL inside `read()` that ends the transaction and commits its own (`ROLLBACK; BEGIN READ WRITE; ...;
+  COMMIT`) writes, on both profiles, and can leave `default_transaction_read_only = off` on a pooled connection. The
+  check before `COMMIT` (I-56) catches the in-transaction lifts only. A server cannot refuse transaction control;
+  the hard boundary is a role without write rights.
+- **Next step:** Studio and TAB-032 (runtime-role mode) run untrusted SQL only under such a role. Optional: a
+  `checkin` check of `default_transaction_read_only` under `Profile.read_only` that invalidates the connection, and
+  a snapshot-taking statement after `BEGIN READ ONLY` (review H-1); decide with TAB-041.
 
 ### TB-056 · Layer-B waits outside `timeout` (TABRION TAB-018, TAB-041)
 

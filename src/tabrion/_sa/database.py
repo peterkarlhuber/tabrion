@@ -1,8 +1,8 @@
 """``Database`` and ``Transaction``: layer B over a SQLAlchemy engine. Private: use ``tabrion.Database``.
 
-Contract: ``docs/api/contract.md`` sections 5.2, 5.3 and 5.5, implementation notes I-37..I-44 (TAB-018). The 0.2
-methods (TAB-033) are staged in ``tabrion._sa._v02`` and are not part of these classes before 0.2 (G-T1 condition
-C-6, ``docs/api/surface.json``).
+Contract: ``docs/api/contract.md`` sections 5.2, 5.3 and 5.5, implementation notes I-37..I-44 and I-56 (TAB-018).
+The 0.2 methods (TAB-033) are staged in ``tabrion._sa._v02`` and are not part of these classes before 0.2 (G-T1
+condition C-6, ``docs/api/surface.json``).
 
 ``Statement``, ``Params`` and ``Isolation`` are documentation-only aliases: they name the types in the signatures and
 are not exported from ``tabrion`` (G-T1 F-11, TODO TB-020).
@@ -443,12 +443,15 @@ def _host_part(entry: str) -> str:
 
 
 def _hosts_are_local(url: sqlalchemy.URL, params: Mapping[str, Any]) -> bool:
+    if _query_values(params.get("service")) or os.environ.get("PGSERVICE"):
+        return False  # pg_service.conf decides the host, which Tabrion does not read (I-41, review M-3)
     hosts = [url.host] if url.host else []
     hosts += [_host_part(entry) for entry in _query_values(params.get("host"))]
     addresses = _query_values(params.get("hostaddr"))
-    if not hosts and not addresses:
-        # libpq falls back to PGHOST/PGHOSTADDR, then to the Unix socket (I-41).
+    # libpq falls back to PGHOST and PGHOSTADDR for what the URL leaves out, then to the Unix socket (I-41).
+    if not hosts:
         hosts = [_host_part(entry) for entry in _query_values(os.environ.get("PGHOST"))]
+    if not addresses:
         addresses = _query_values(os.environ.get("PGHOSTADDR"))
     return all(_host_is_local(host) for host in hosts + addresses)
 
@@ -681,6 +684,10 @@ class Database:
         expected = {"sqlite": "pysqlite", "postgresql": "psycopg"}.get(engine.dialect.name)
         if expected is None or engine.dialect.driver != expected:
             raise ConfigurationError("config.driver")
+        if profile.read_only and install_listeners:
+            # The listener would make every connection of the host's pool read-only, also after close() (I-37,
+            # T-NOTX rule 2, review M-2): a read-only profile needs an engine of its own.
+            raise ConfigurationError("config.invalid_profile", details={"field": "read_only"})
         return cls._create(engine, profile, owned=False, install_listeners=install_listeners, serial=False)
 
     def __repr__(self) -> str:
@@ -806,6 +813,11 @@ class Database:
                     failure = None
                     raise error from None
                 raise failure
+            if read and not self._read_only_held(connection):
+                # The caller's SQL lifted read-only (SET TRANSACTION READ WRITE, PRAGMA query_only = OFF, ...):
+                # nothing of it is committed (I-56). A guard against accidents, not a security boundary.
+                _rollback(connection)
+                raise UsageError("database.read_only") from None
             error = None
             try:
                 connection.commit()
@@ -819,6 +831,33 @@ class Database:
         finally:
             if read and not postgres and not self._profile.read_only:
                 _query_only_off(connection)
+
+    def _read_only_held(self, connection: sqlalchemy.Connection) -> bool:
+        """Whether a ``read()`` transaction is still read only right before its ``COMMIT`` (I-56)."""
+        if connection.closed or connection.invalidated:
+            return True  # nothing left to commit; the commit below reports the state
+        dbapi: Any = connection.connection.dbapi_connection
+        if dbapi is None:  # pragma: no cover - a checked-out connection has its DBAPI connection
+            return True
+        try:
+            if self._dialect == "postgresql":
+                from psycopg import pq
+
+                if dbapi.info.transaction_status != pq.TransactionStatus.INTRANS:
+                    return True  # an aborted transaction commits nothing; an idle one has nothing to commit
+                cursor = dbapi.cursor()
+                try:
+                    cursor.execute(_READ_ONLY_STATE_SQL)
+                    row = cursor.fetchone()
+                finally:
+                    cursor.close()
+                session_ok = not self._profile.read_only or row[1] == "on"
+                return bool(row[0] == "on" and session_ok)
+            if self._profile.read_only:
+                return True  # mode=ro holds whatever query_only says
+            return bool(dbapi.execute("PRAGMA query_only").fetchone()[0] == 1)
+        except Exception:
+            return False  # cannot tell: roll back rather than commit
 
     @contextmanager
     def transaction(self, *, timeout: float | None = None, isolation: Isolation | None = None) -> Iterator[Transaction]:
@@ -952,6 +991,12 @@ def _profile(profile: object) -> Profile:
     if not isinstance(profile, Profile):
         raise TypeError(f"profile must be a tabrion.Profile, not {type(profile).__name__}")
     return profile
+
+
+_READ_ONLY_STATE_SQL = (
+    "SELECT pg_catalog.current_setting('transaction_read_only'),"
+    " pg_catalog.current_setting('default_transaction_read_only')"
+)
 
 
 def _rollback(connection: sqlalchemy.Connection) -> None:

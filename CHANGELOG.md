@@ -9,11 +9,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 ### Added
 
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
-  `testing()`; `Database.from_url`, `from_env` and `from_engine` for SQLite (`pysqlite`) and PostgreSQL
-  (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode`, the SQLite path checks and `0600`
+  `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
+  (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`
   creation before the first connect, `StaticPool` for memory databases, `safe_url`, `close` and a `ResourceWarning`
   for a forgotten `close`; `transaction()` (SQLite `BEGIN IMMEDIATE`, PostgreSQL isolation levels) and `read()`
-  (`query_only` or `BEGIN READ ONLY`, enforced by the database), nesting refused per thread, per-statement and
+  (`query_only` or `BEGIN READ ONLY` in the database; a guard against accidents, not a security boundary: SQL that
+  lifts it inside `read()` is rolled back before the `COMMIT`, and the hard boundary is a role without write rights,
+  contract I-56), nesting refused per thread, per-statement and
   per-transaction timeouts, `execute` (with `executemany`), `fetch_one`, `fetch_all`, `fetch_scalar` and the
   short forms on `Database`; driver errors become the `DatabaseError` subclass of their kind without a cause chain,
   and a lost `COMMIT` is outcome unknown; `health(timeout=..., deep=...)` never raises for database errors; `check()`

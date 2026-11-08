@@ -1051,3 +1051,80 @@ def test_tb040_during_commit_overrides_a_stored_classification() -> None:
     assert classify(IntegrityViolation("database.unique", classification=unique), during_commit=True) is unique
     unknown = dataclasses.replace(checkout, outcome_unknown=True, retryable=False)
     assert classify(ConnectionFailed("database.connection", classification=unknown), during_commit=True) is unknown
+
+
+# Review of #12 (fix round): TLS with a libpq service or PGHOSTADDR (M-3), from_engine and read-only (M-2),
+# read-only lifted by the caller's SQL (H-1, I-56), a failed rollback (L-3, M22).
+
+
+@pytest.mark.security
+@pytest.mark.parametrize("url", ["postgresql:///app?service=prod", "postgresql://app@localhost/app?service=prod"])
+def test_b03_tls_a_service_is_not_local(url: str) -> None:
+    with Database.from_url(url) as database:
+        assert sslmode(database) == "require"
+    with Database.from_url("postgresql:///app", engine_options={"connect_args": {"service": "prod"}}) as database:
+        assert sslmode(database) == "require"
+
+
+@pytest.mark.security
+def test_b03_tls_pgservice_and_pghostaddr_are_not_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("PGHOST", "PGHOSTADDR", "PGSERVICE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PGSERVICE", "prod")
+    with Database.from_url("postgresql:///app") as database:
+        assert sslmode(database) == "require"
+    monkeypatch.delenv("PGSERVICE")
+    monkeypatch.setenv("PGHOSTADDR", "10.1.2.3")
+    with Database.from_url("postgresql://app@localhost/app") as database:
+        assert sslmode(database) == "require"
+    with Database.from_url("postgresql://app@localhost/app?hostaddr=127.0.0.1") as database:
+        assert sslmode(database) is None  # the URL's hostaddr takes precedence over PGHOSTADDR
+    monkeypatch.setenv("PGHOSTADDR", "127.0.0.1")
+    with Database.from_url("postgresql://app@localhost/app") as database:
+        assert sslmode(database) is None
+
+
+@pytest.mark.security
+def test_b06_from_engine_refuses_a_read_only_profile_with_listeners(path: Path) -> None:
+    engine = sqlalchemy.create_engine(f"sqlite:///{path}")
+    try:
+        with pytest.raises(ConfigurationError) as info:
+            Database.from_engine(engine, profile=Profile.readonly())
+        assert info.value.code == "config.invalid_profile" and info.value.details == {"field": "read_only"}
+        assert sqlalchemy.event.contains(engine, "begin", tabrion._sa.events.on_begin) is False
+        database = Database.from_engine(engine, profile=Profile.readonly(), install_listeners=False)
+        with pytest.raises(UsageError, match=r"database\.read_only"), database.transaction():
+            pass  # pragma: no cover
+        database.close()
+        with engine.begin() as plain:  # the host's own connections stay writable
+            plain.exec_driver_sql("CREATE TABLE host (n INTEGER)")
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.security
+def test_b11_query_only_lifted_in_read_is_not_committed(db: Database) -> None:
+    with pytest.raises(UsageError) as info, db.read() as tx:
+        tx.execute("PRAGMA query_only = OFF")
+        tx.execute("INSERT INTO items (n) VALUES (1)")
+    assert info.value.code == "database.read_only"
+    assert db.fetch_scalar("SELECT count(*) FROM items") == 0
+    assert checked_out(db) == 0
+    with db.read() as tx:  # the next read() is read-only again
+        assert tx.fetch_scalar("PRAGMA query_only") == 1
+
+
+def test_b09_failed_rollback_invalidates_the_connection(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
+    invalidated: list[object] = []
+    sqlalchemy.event.listen(db.engine, "invalidate", lambda *args: invalidated.append(args))
+
+    def broken(self: object) -> None:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(sqlalchemy.Connection, "rollback", broken)
+    with pytest.raises(RuntimeError), db.transaction():
+        raise RuntimeError("caller")
+    monkeypatch.undo()
+    assert len(invalidated) == 1
+    assert checked_out(db) == 0
+    assert db.fetch_scalar("SELECT 1") == 1  # the pool opens a new connection

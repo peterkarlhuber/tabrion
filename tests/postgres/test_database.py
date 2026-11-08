@@ -314,3 +314,80 @@ def test_b24_health_never_raises_when_unreachable(url: Any) -> None:
     assert not health.classification.outcome_unknown
     password = url.password
     assert password is None or password not in repr(health)
+
+
+# Review of #12 (fix round): read-only lifted by the caller's SQL (H-1, contract I-56), session settings in the
+# pool (M-1), a failed checkout (L-3, M28).
+
+LIFTS = ["SET TRANSACTION READ WRITE", "SET transaction_read_only = off"]
+
+
+@pytest.mark.security
+@pytest.mark.parametrize("read_only_profile", [False, True], ids=["default", "readonly"])
+@pytest.mark.parametrize("lift", LIFTS)
+def test_b12_read_only_lifted_in_read_is_not_committed(
+    open_db: Callable[..., Database], db: Database, schema: str, lift: str, read_only_profile: bool
+) -> None:
+    database = open_db(Profile(read_only=read_only_profile, pool_size=1))
+    with pytest.raises(UsageError) as info, database.read() as tx:
+        tx.execute(lift)
+        tx.execute(f"INSERT INTO {schema}.items (id, n) VALUES (1, 1)")
+    assert info.value.code == "database.read_only"
+    assert db.fetch_scalar(f"SELECT count(*) FROM {schema}.items") == 0
+    with database.read() as tx:
+        assert tx.fetch_scalar("SHOW transaction_read_only") == "on"
+
+
+@pytest.mark.security
+def test_b12_session_default_lifted_in_read_is_rolled_back(
+    open_db: Callable[..., Database], db: Database, schema: str
+) -> None:
+    """Review H-1 (``dtro.py``): the session default would stay off on the pooled connection; it is rolled back."""
+    database = open_db(Profile(read_only=True, pool_size=1))
+    with pytest.raises(UsageError, match=r"database\.read_only"), database.read() as tx:
+        tx.execute("SET default_transaction_read_only = off")
+    assert database.fetch_scalar("SHOW default_transaction_read_only") == "on"
+    with database.engine.connect() as plain, pytest.raises(sqlalchemy.exc.InternalError):
+        plain.exec_driver_sql(f"INSERT INTO {schema}.items (id, n) VALUES (1, 1)")
+
+
+@pytest.mark.security
+@pytest.mark.parametrize("read_only_profile", [False, True], ids=["default", "readonly"])
+def test_b12_documents_the_gap_transaction_control_in_read(
+    open_db: Callable[..., Database], db: Database, schema: str, read_only_profile: bool
+) -> None:
+    """Documents the gap of contract I-56 (plan 03:245-247): SQL that ends the transaction itself and commits a
+    READ WRITE one writes. Only a role without write rights stops it (SR-03)."""
+    database = open_db(Profile(read_only=read_only_profile, pool_size=1))
+    with database.read() as tx:
+        tx.execute("ROLLBACK")
+        tx.execute("BEGIN READ WRITE")
+        tx.execute(f"INSERT INTO {schema}.items (id, n) VALUES (1, 1)")
+        tx.execute("COMMIT")
+    assert db.fetch_scalar(f"SELECT count(*) FROM {schema}.items") == 1
+
+
+def test_b12_documents_session_settings_stay_on_the_pooled_connection(open_db: Callable[..., Database]) -> None:
+    """Documents contract I-56 and TM-08: a SET without LOCAL in a Tabrion transaction stays on the connection;
+    SET LOCAL (or set_config(..., true)) ends with the transaction. Tabrion runs no RESET or DISCARD."""
+    database = open_db(Profile(pool_size=1))
+    with database.read() as tx:
+        tx.execute("SET work_mem = '7MB'")
+        tx.execute("SET LOCAL maintenance_work_mem = '9MB'")
+    with database.transaction() as tx:
+        assert tx.fetch_scalar("SHOW work_mem") == "7MB"
+        assert tx.fetch_scalar("SHOW maintenance_work_mem") != "9MB"
+
+
+def test_b09_failed_checkout_is_retryable_with_outcome_known(url: Any) -> None:
+    unreachable = url.set(host="127.0.0.1", port=1)
+    database = Database.from_url(unreachable, profile=Profile(connect_timeout=2))
+    try:
+        with pytest.raises(ConnectionFailed) as info:
+            database.fetch_scalar("SELECT 1")
+    finally:
+        database.close()
+    classification = info.value.classification
+    assert classification is not None and classification.kind is Kind.CONNECTION
+    assert classification.retryable and not classification.outcome_unknown
+    assert info.value.__cause__ is None and info.value.__context__ is None

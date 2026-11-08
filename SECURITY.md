@@ -63,7 +63,18 @@ Accepted residual risks (documented, not vulnerabilities):
   encrypts but does not verify the server: use `TLSMode.VERIFY_FULL` where a man in the middle is a concern
   (contract I-41).
 - Using `Database.engine` directly bypasses Tabrion's transaction modes (SQLite writes then begin `DEFERRED`). The
-  connection profile and `Profile.read_only` still hold there, because the database enforces them.
+  connection profile and `Profile.read_only` apply there as the connection was set up, but SQL can change them:
+  `Database.engine` is not read-only once a session default was switched off (contract I-56).
+- `read()` and `Profile.read_only` are a guard against accidents, not a security boundary (contract I-56). The
+  caller's SQL can end read-only: `SET TRANSACTION READ WRITE`, `SET transaction_read_only`,
+  `SET default_transaction_read_only` and SQLite's `PRAGMA query_only = OFF` are caught before the `COMMIT` of a
+  `read()` (rolled back, `UsageError("database.read_only")`), but SQL that ends the transaction and commits its own
+  (`ROLLBACK; BEGIN READ WRITE; ...; COMMIT`) writes. The only hard boundary is a role without write rights (or a
+  SQLite file opened `mode=ro`, as `Profile.readonly()` does): give untrusted SQL such a role (SR-03).
+- A `SET` without `LOCAL` inside a Tabrion transaction stays on the pooled connection for every later checkout
+  (TM-08); Tabrion runs no `RESET` or `DISCARD`. Use `SET LOCAL` or `set_config(..., true)` (contract I-56).
+- `Database.from_engine` with listeners changes the session settings of every connection of the foreign engine,
+  the host's own included, and `close()` does not undo them; a read-only profile is refused there (contract I-37).
 - Layer-B timeouts bound the database's work, not every wait: a SQLite lock wait is bounded by the busy timeout, a
   wait for a pool connection by `pool_timeout`, a network that stops answering by the connection's TCP settings
   (contract I-40, I-44; TODO TB-056).
