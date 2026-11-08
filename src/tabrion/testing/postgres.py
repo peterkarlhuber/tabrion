@@ -590,8 +590,15 @@ def _truncate(conn: psycopg.Connection[Any], schema: str | None, like: str | Non
         ).fetchall()
         if not found:
             return 0
-        _refuse_cascade_out_of(conn, namespace, name, [int(oid) for oid, _ in found])
         tables = sorted(str(table) for _, table in found)
+        # The selected tables first (ONLY: their children elsewhere are not locked before the refusal), so no
+        # foreign key, partition or child can be added to them between the check and the TRUNCATE (re-review Info).
+        conn.execute(
+            sql.SQL("LOCK TABLE ONLY {} IN ACCESS EXCLUSIVE MODE").format(
+                sql.SQL(", ").join(sql.Identifier(name, table) for table in tables)
+            )
+        )
+        _refuse_cascade_out_of(conn, namespace, name, [int(oid) for oid, _ in found])
         conn.execute(
             sql.SQL("TRUNCATE TABLE {} RESTART IDENTITY CASCADE").format(
                 sql.SQL(", ").join(sql.Identifier(name, table) for table in tables)
@@ -603,15 +610,18 @@ def _truncate(conn: psycopg.Connection[Any], schema: str | None, like: str | Non
 # Every table the TRUNCATE ... CASCADE reaches: the tables, their partitions, and (repeatedly) every table with a
 # foreign key to one reached; those outside the schema. One recursive reference (a LATERAL union of both steps).
 _CASCADE_OUTSIDE_SQL = (
-    "WITH RECURSIVE reached (oid) AS ("
-    " SELECT pg_catalog.unnest(%(tables)s::pg_catalog.oid[])"
+    "WITH RECURSIVE reached (oid, how) AS ("
+    " SELECT t.oid, 'selected'::pg_catalog.text FROM pg_catalog.unnest(%(tables)s::pg_catalog.oid[]) AS t (oid)"
     " UNION"
-    " SELECT next.oid FROM reached r, LATERAL ("
-    "   SELECT i.inhrelid AS oid FROM pg_catalog.pg_inherits i WHERE i.inhparent OPERATOR(pg_catalog.=) r.oid"
+    " SELECT next.oid, next.how FROM reached r, LATERAL ("
+    "   SELECT i.inhrelid AS oid, CASE WHEN p.relispartition THEN 'partition'::pg_catalog.text"
+    "     ELSE 'inheritance child'::pg_catalog.text END AS how"
+    "   FROM pg_catalog.pg_inherits i, pg_catalog.pg_class p"
+    "   WHERE i.inhparent OPERATOR(pg_catalog.=) r.oid AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"
     "   UNION ALL"
-    "   SELECT k.conrelid FROM pg_catalog.pg_constraint k"
+    "   SELECT k.conrelid, 'foreign key'::pg_catalog.text FROM pg_catalog.pg_constraint k"
     "   WHERE k.confrelid OPERATOR(pg_catalog.=) r.oid AND k.contype OPERATOR(pg_catalog.=) 'f') next)"
-    " SELECT n.nspname::pg_catalog.text, c.relname::pg_catalog.text"
+    " SELECT n.nspname::pg_catalog.text, c.relname::pg_catalog.text, r.how"
     " FROM reached r, pg_catalog.pg_class c, pg_catalog.pg_namespace n"
     " WHERE c.oid OPERATOR(pg_catalog.=) r.oid AND n.oid OPERATOR(pg_catalog.=) c.relnamespace"
     " AND c.relnamespace OPERATOR(pg_catalog.<>) %(namespace)s::pg_catalog.oid"
@@ -619,15 +629,18 @@ _CASCADE_OUTSIDE_SQL = (
 
 
 def _refuse_cascade_out_of(conn: psycopg.Connection[Any], namespace: int, name: str, tables: list[int]) -> None:
-    """``ValueError`` if the ``CASCADE`` would empty a table in another schema (through a foreign key)."""
+    """``ValueError`` if the ``TRUNCATE`` would empty a table in another schema: a table with a foreign key to one
+    it empties, a partition or an inheritance child (each reason is named)."""
     from psycopg import sql
 
-    outside = conn.execute(_CASCADE_OUTSIDE_SQL, {"tables": tables, "namespace": namespace}).fetchall()
-    if outside:
-        names = ", ".join(sorted(sql.Identifier(str(n), str(t)).as_string(conn) for n, t in outside))
+    reasons: dict[str, set[str]] = {}
+    for schema, table, how in conn.execute(_CASCADE_OUTSIDE_SQL, {"tables": tables, "namespace": namespace}):
+        reasons.setdefault(sql.Identifier(str(schema), str(table)).as_string(conn), set()).add(str(how))
+    if reasons:
+        names = ", ".join(f"{qualified} ({', '.join(sorted(how))})" for qualified, how in sorted(reasons.items()))
         raise ValueError(
             f"truncate_tables: TRUNCATE ... CASCADE of the schema {name!r} would also empty {names} in another"
-            " schema (a foreign key); empty those tables yourself or remove the foreign key"
+            " schema; empty those tables yourself, or remove the foreign key or detach the table"
         )
 
 

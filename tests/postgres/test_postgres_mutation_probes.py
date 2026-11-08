@@ -690,6 +690,34 @@ PROBES = [
         "            self._held[key] = 0\n",
         "tests/postgres/test_golden_consumers.py::test_nodestro_session_locks",
     ),
+    # Re-review 2 Info (#11): the selected tables are locked before the catalog check.
+    (
+        "testing/postgres.py",
+        '            sql.SQL("LOCK TABLE ONLY {} IN ACCESS EXCLUSIVE MODE").format(',
+        '            sql.SQL("SELECT 1 WHERE false AND {} IS NULL").format(',
+        f"{DB}::test_m1_selected_tables_are_locked_before_the_check",
+    ),
+    # Re-review 2 RR2-L1 (#11): partitions and inheritance children are part of the cascade check.
+    (
+        "testing/postgres.py",
+        '   WHERE i.inhparent OPERATOR(pg_catalog.=) r.oid AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"\n',
+        '   WHERE false AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"\n',
+        f"{DB}::test_m1_cascade_into_another_schema_is_refused[inheritance_child_in_another_schema]",
+    ),
+    (
+        "testing/postgres.py",
+        '   WHERE i.inhparent OPERATOR(pg_catalog.=) r.oid AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"\n',
+        '   WHERE false AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"\n',
+        f"{DB}::test_m1_cascade_into_another_schema_is_refused[foreign_key_to_a_partition]",
+    ),
+    # Re-review 2 RR2-L1 (#11): the database fixture drops what its roles hold in the admin's database.
+    (
+        "testing/postgres.py",
+        "                roles.drop_owned(tabrion_postgres_url)\n"
+        "            finally:\n                roles.drop_all()\n\n\ndef _role_names",
+        "                pass\n            finally:\n                roles.drop_all()\n\n\ndef _role_names",
+        f"{DB}::test_rr2_database_fixture_drops_the_roles_grants_in_the_admin_database",
+    ),
 ]
 
 

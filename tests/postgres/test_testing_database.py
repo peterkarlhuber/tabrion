@@ -662,32 +662,89 @@ def test_m1_default_schema_must_be_a_test_schema(scratch_database: str) -> None:
         assert conn.execute("SELECT count(*) FROM public.prod").fetchone() == (0,)
 
 
-@pytest.mark.parametrize("via_excluded", [False, True], ids=["direct", "through_an_excluded_table"])
-def test_m1_cascade_into_another_schema_is_refused(scratch_database: str, via_excluded: bool) -> None:
-    """A foreign key from another schema (directly, or through a table of the schema that the CASCADE reaches):
-    a ``ValueError`` naming it, before anything is emptied."""
+# Each case: the statements (``{s}`` is the test schema, the search_path), the tables to exclude, the table in
+# ``public`` the TRUNCATE would reach with its reason, and how to remove it again.
+_CASCADE_CASES = {
+    "direct": (
+        "CREATE TABLE parent (id int PRIMARY KEY); INSERT INTO parent VALUES (1);"
+        " CREATE TABLE public.audit (ref int REFERENCES {s}.parent); INSERT INTO public.audit VALUES (1)",
+        [],
+        '"public"."audit" (foreign key)',
+        "DROP TABLE public.audit",
+    ),
+    "through_an_excluded_table": (
+        "CREATE TABLE parent (id int PRIMARY KEY); INSERT INTO parent VALUES (1);"
+        " CREATE TABLE middle (id int PRIMARY KEY REFERENCES parent); INSERT INTO middle VALUES (1);"
+        " CREATE TABLE public.audit (ref int REFERENCES {s}.middle); INSERT INTO public.audit VALUES (1)",
+        ["middle"],
+        '"public"."audit" (foreign key)',
+        "DROP TABLE public.audit",
+    ),
+    "partition_in_another_schema": (
+        "CREATE TABLE parent (id int) PARTITION BY RANGE (id);"
+        " CREATE TABLE public.part PARTITION OF {s}.parent FOR VALUES FROM (0) TO (10); INSERT INTO parent VALUES (1)",
+        [],
+        '"public"."part" (partition)',
+        "DROP TABLE public.part; INSERT INTO parent SELECT 1 WHERE false",
+    ),
+    "inheritance_child_in_another_schema": (
+        "CREATE TABLE parent (id int); INSERT INTO parent VALUES (1);"
+        " CREATE TABLE public.child () INHERITS ({s}.parent); INSERT INTO public.child VALUES (2)",
+        [],
+        '"public"."child" (inheritance child)',
+        "DROP TABLE public.child",
+    ),
+    "foreign_key_to_a_partition": (
+        "CREATE TABLE parent (id int PRIMARY KEY) PARTITION BY RANGE (id);"
+        " CREATE TABLE parent_1 PARTITION OF parent FOR VALUES FROM (0) TO (10); INSERT INTO parent VALUES (1);"
+        " CREATE TABLE public.audit (ref int REFERENCES {s}.parent_1); INSERT INTO public.audit VALUES (1)",
+        [],
+        '"public"."audit" (foreign key)',
+        "DROP TABLE public.audit",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(_CASCADE_CASES))
+def test_m1_cascade_into_another_schema_is_refused(scratch_database: str, case: str) -> None:
+    """A table in another schema that the TRUNCATE would empty (a foreign key, directly or through a table of the
+    schema; a partition; an inheritance child; a foreign key to a partition): a ``ValueError`` naming it and the
+    reason, before anything is emptied; once it is gone the call works."""
+    setup, exclude, reached, remove = _CASCADE_CASES[case]
     test_schema = new_name()
     with psycopg.connect(scratch_database, autocommit=True) as conn:
         conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(test_schema)))
         conn.execute(sql.SQL("SET search_path = {}").format(sql.Identifier(test_schema)))
-        conn.execute("CREATE TABLE parent (id int PRIMARY KEY); INSERT INTO parent VALUES (1)")
-        referenced = "parent"
-        if via_excluded:
-            conn.execute("CREATE TABLE middle (id int PRIMARY KEY REFERENCES parent); INSERT INTO middle VALUES (1)")
-            referenced = "middle"
-        conn.execute(
-            sql.SQL("CREATE TABLE public.audit (ref int REFERENCES {}); INSERT INTO public.audit VALUES (1)").format(
-                sql.Identifier(test_schema, referenced)
-            )
-        )
-        exclude = ["middle"] if via_excluded else []
-        with pytest.raises(ValueError, match=r'would also empty "public"\."audit" in another schema'):
+        conn.execute(setup.replace("{s}", sql.Identifier(test_schema).as_string(conn)))
+        rows = conn.execute("SELECT count(*) FROM ONLY parent").fetchone()
+        outside = reached.split(" (")[0]
+        before = conn.execute(f"SELECT count(*) FROM {outside}").fetchone()  # noqa: S608 - a fixed name
+        with pytest.raises(ValueError, match=re.escape(f"would also empty {reached} in another schema")):
             truncate_tables(conn, exclude=exclude)
-        assert conn.execute("SELECT count(*) FROM parent").fetchone() == (1,)
-        assert conn.execute("SELECT count(*) FROM public.audit").fetchone() == (1,)
-        conn.execute("DROP TABLE public.audit")
+        assert conn.info.transaction_status == pq.TransactionStatus.IDLE
+        assert conn.execute("SELECT count(*) FROM ONLY parent").fetchone() == rows
+        assert conn.execute(f"SELECT count(*) FROM {outside}").fetchone() == before  # noqa: S608
+        conn.execute(remove)
         assert truncate_tables(conn, exclude=exclude) == 1
         assert conn.execute("SELECT count(*) FROM parent").fetchone() == (0,)
+
+
+def test_m1_selected_tables_are_locked_before_the_check(scratch_database: str) -> None:
+    """The selected tables are locked before the catalog check, so nothing can be attached to them in between:
+    with another session reading ``parent``, a call that would be refused waits for that lock first (here: until
+    the caller's ``lock_timeout``) instead of answering from a catalog that may still change."""
+    test_schema = new_name()
+    with psycopg.connect(scratch_database, autocommit=True) as conn, psycopg.connect(scratch_database) as reader:
+        conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(test_schema)))
+        conn.execute(sql.SQL("SET search_path = {}").format(sql.Identifier(test_schema)))
+        conn.execute("CREATE TABLE parent (id int PRIMARY KEY); CREATE TABLE public.audit (ref int REFERENCES parent)")
+        reader.execute(sql.SQL("SELECT count(*) FROM {}.parent").format(sql.Identifier(test_schema)))  # ACCESS SHARE
+        conn.execute("SET lock_timeout = '300ms'")
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            truncate_tables(conn)
+        reader.rollback()
+        with pytest.raises(ValueError, match="foreign key"):
+            truncate_tables(conn)
 
 
 # --- Re-review L-2: the teardown steps of the roles ------------------------------------------------------------------
@@ -780,3 +837,39 @@ def test_l2_drop_owned_fails_within_its_lock_timeout(
     finally:
         holder.close()
         roles.drop_all()
+
+
+# --- Re-review 2 (#11): RR2-L1 and Info ------------------------------------------------------------------------------
+
+GRANT_IN_THE_ADMIN_DATABASE = """
+import psycopg
+from psycopg import sql
+
+from helpers import user
+
+
+def test_grant(tabrion_postgres_database, tabrion_postgres_url):
+    owner = user(tabrion_postgres_database.owner_url)
+    with psycopg.connect(tabrion_postgres_url, autocommit=True) as conn:
+        database = sql.Identifier(conn.info.dbname)
+        conn.execute(sql.SQL("GRANT CREATE ON DATABASE {} TO {}").format(database, sql.Identifier(owner)))
+"""
+
+
+def test_rr2_database_fixture_drops_the_roles_grants_in_the_admin_database(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, admin: Any, scratch_database: str
+) -> None:
+    """A grant to a fixture role in the admin's database (here a scratch database) would block its ``DROP ROLE``;
+    the teardown's ``DROP OWNED`` there removes it, and nothing is left."""
+    monkeypatch.setenv("TABRION_TEST_POSTGRES", scratch_database)
+    result = _run(pytester, "", GRANT_IN_THE_ADMIN_DATABASE)
+    result.assert_outcomes(passed=1)
+    assert not leaked(admin, INNER_PREFIX)
+
+
+def test_rr2_role_repr_hides_the_password() -> None:
+    from tabrion.testing.postgres import _Role
+
+    role = _Role("t_role", "SECRET-4711")
+    assert "SECRET-4711" not in repr(role) and "t_role" in repr(role)
+    assert "SECRET-4711" in role.url("host=localhost dbname=x")

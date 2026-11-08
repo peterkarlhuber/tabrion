@@ -168,7 +168,8 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
 - `tabrion.testing` re-review fixes (#11): `truncate_tables` without `schema=` empties only a schema the plugin created
   and refuses a `CASCADE` into another schema; a schema teardown that would drop an extension is rolled back; the
   fixtures work under a `NOINHERIT` admin on PostgreSQL 16+, try every role at the end and drop the roles' grants in
-  the admin's database.
+  the admin's database. `truncate_tables` locks the selected tables before its check and names why a table in
+  another schema would be emptied (foreign key, partition, inheritance child).
 - `tabrion.testing` database per session and roles without superuser (TAB-032): `tabrion_postgres_database` creates a
   throwaway database with an owner and an app role as `tabrion_role_setup` describes (`RoleSetup()`, `split=False`,
   named roles, or none) and drops database and roles at the end; `tabrion_postgres_roles` gives the same two roles in
@@ -190,7 +191,7 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 96 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  transaction state, and carry 100 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`
