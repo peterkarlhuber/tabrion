@@ -1,9 +1,11 @@
 """Database infrastructure of the parts application: the ``Database``, Alembic upgrades and the start-up gate.
 
 All database plumbing lives here (metric MW-1 of planning document 09 section 7); the schema is ``schema.py``.
-Migrations run through Alembic's ``command.upgrade`` on a connection of the application's own ``Database`` (one
-pool, the profile's session settings, the ``search_path`` on PostgreSQL); ``env.py`` takes that connection from
-``config.attributes``. ``require_current`` reads the version table without running ``env.py``.
+Migrations run through Alembic's ``command.upgrade`` inside ``Database.transaction()`` of the application's own
+``Database`` (one pool, the profile's session settings, the ``search_path`` on PostgreSQL, ``BEGIN IMMEDIATE`` on
+SQLite, so a concurrent writer is waited for instead of failing on a stale snapshot, and Tabrion's errors);
+``env.py`` takes that connection from ``config.attributes`` and never commits it. ``require_current`` reads the
+version table without running ``env.py``.
 """
 
 from __future__ import annotations
@@ -32,18 +34,18 @@ def _config() -> Config:
 
 
 def upgrade(database: Database, revision: str = "head") -> None:
-    """``alembic upgrade`` in one transaction on a connection of ``database``."""
+    """``alembic upgrade`` in one ``database.transaction()``: all of it or nothing."""
     config = _config()
-    with database.engine.begin() as connection:
-        config.attributes["connection"] = connection
+    with database.transaction() as transaction:
+        config.attributes["connection"] = transaction.connection
         command.upgrade(config, revision)
 
 
 def downgrade(database: Database, revision: str) -> None:
-    """``alembic downgrade`` in one transaction on a connection of ``database``."""
+    """``alembic downgrade`` in one ``database.transaction()``: all of it or nothing."""
     config = _config()
-    with database.engine.begin() as connection:
-        config.attributes["connection"] = connection
+    with database.transaction() as transaction:
+        config.attributes["connection"] = transaction.connection
         command.downgrade(config, revision)
 
 

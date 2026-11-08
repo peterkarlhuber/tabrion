@@ -1,7 +1,9 @@
 """Alembic environment of the parts application.
 
 ``parts.db.upgrade`` passes a connection of the application's ``tabrion.Database`` in ``config.attributes``. The
-``alembic`` command line (``alembic.ini`` next to the package) opens a ``Database`` from ``sqlalchemy.url`` instead.
+``alembic`` command line (``alembic.ini`` next to the package) opens a ``Database`` from ``sqlalchemy.url`` instead,
+with the same ``database.transaction()``. Alembic sees a transaction already begun and neither commits nor rolls it
+back; the ``with`` block does.
 ``tabrion.migrations.status`` never loads this file.
 """
 
@@ -26,5 +28,5 @@ else:
     url = context.config.get_main_option("sqlalchemy.url")
     if not url:
         raise RuntimeError("set sqlalchemy.url in alembic.ini or run parts.db.upgrade")
-    with Database.from_url(url) as database, database.engine.begin() as connection:
-        run(connection)
+    with Database.from_url(url) as database, database.transaction() as transaction:
+        run(transaction.connection)

@@ -18,7 +18,7 @@ depends_on = None
 
 
 def _id() -> sa.Column[int]:
-    return sa.Column("id", ID, sa.Identity(always=True), primary_key=True)
+    return sa.Column("id", ID, sa.Identity(always=True), nullable=False)
 
 
 def upgrade() -> None:
@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column("code", sa.String(32), nullable=False),
         sa.Column("name", sa.String(200), nullable=False),
         sa.Column("created_at", UtcDateTime(), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_material"),
         sa.UniqueConstraint("code", name="uq_material_code"),
         sa.CheckConstraint("length(code) BETWEEN 1 AND 32", name="ck_material_code"),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 200", name="ck_material_name"),
@@ -47,6 +48,7 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer, nullable=False, server_default=sa.text("1")),
         sa.Column("created_at", UtcDateTime(), nullable=False),
         sa.Column("updated_at", UtcDateTime(), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_part"),
         sa.UniqueConstraint("part_number", name="uq_part_part_number"),
         sa.CheckConstraint("length(part_number) BETWEEN 1 AND 40", name="ck_part_part_number"),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 200", name="ck_part_name"),
@@ -61,6 +63,7 @@ def upgrade() -> None:
         sa.Column("key", sa.String(64), nullable=False),
         sa.Column("value", ExactDecimal(18, 6), nullable=False),
         sa.Column("unit", sa.String(16), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_property"),
         sa.UniqueConstraint("part_id", "key", name="uq_property_part_id_key"),
         sa.CheckConstraint("length(key) BETWEEN 1 AND 64", name="ck_property_key"),
         sa.CheckConstraint("length(unit) BETWEEN 1 AND 16", name="ck_property_unit"),
@@ -81,7 +84,7 @@ def upgrade() -> None:
         ),
         sa.Column("quantity", ExactDecimal(12, 3), nullable=False),
         sa.PrimaryKeyConstraint("assembly_id", "component_id", name="pk_part_relation"),
-        sa.CheckConstraint("CAST(quantity AS NUMERIC) > 0", name="ck_part_relation_quantity"),
+        sa.CheckConstraint("quantity > 0", name="ck_part_relation_quantity"),
         sa.CheckConstraint("assembly_id <> component_id", name="ck_part_relation_not_self"),
     )
     op.create_index("ix_part_relation_component_id", "part_relation", ["component_id"])
