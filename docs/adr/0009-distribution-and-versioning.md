@@ -116,6 +116,25 @@ pre-releases (`0.1.0rc1`) are allowed. GitHub releases, PyPI and announcements c
 - QA-11: the release workflow without publishing. In M1 the workflow `.github/workflows/release.yml` builds and
   attests only; its publish job is gated by the protected environment `pypi` and uploads nothing.
 
+### Release environment (G-T1 condition C-8)
+
+The YAML alone proves no approval: GitHub creates a missing environment unprotected on its first use, and a user
+with write access can dispatch `release.yml` from a branch with an edited copy. The protection therefore lives in
+repository settings that the owner sets before TAB-043 (owner action O-2 in `docs/program/STATUS.md`):
+
+| Setting | Value | Why |
+|---|---|---|
+| Environment | `pypi` exists before the first dispatch | otherwise it is created without rules |
+| Required reviewers | the owner (Peter) | G-R per version |
+| Prevent self-review | on | the person who dispatches cannot approve the deployment |
+| Deployment branches and tags | "Selected branches and tags", one tag rule `v*`, no branch rule | a run from a branch (an edited copy of the workflow) cannot deploy to `pypi` |
+| Environment secrets | none | publishing uses OIDC (trusted publishing), not a token |
+| PyPI trusted publisher (TAB-043) | owner `peterkarlhuber`, repository `tabrion`, workflow `release.yml`, environment `pypi` | PyPI accepts an OIDC token only from an approved job of that environment |
+
+In the workflow, only the small job `attest` holds `id-token: write`; it neither checks out code nor installs
+packages. The job `build`, which runs pip and the packaging tests, has `contents: read` only, so third-party code in
+it can never mint an OIDC token, whatever the trusted publisher is bound to.
+
 ## Revision triggers
 
 - G-R for the first PyPI version (transition from V-B0 to V-B).
