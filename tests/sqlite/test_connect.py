@@ -302,13 +302,14 @@ def test_missing_file_is_not_created(tmp_path: Path, kwargs: dict[str, Any]) -> 
 
 
 def test_read_only_path_with_uri_characters(tmp_path: Path, opened: Opened) -> None:
-    directory = tmp_path / "x?mode=rwc#y %20"
+    # Windows allows no "?" in file names; "#", "%" and spaces must be quoted in the URI there too.
+    directory = tmp_path / ("x#y %20" if WINDOWS else "x?mode=rwc#y %20")
     directory.mkdir()
-    path = directory / "a b?.db"
+    path = directory / ("a b#.db" if WINDOWS else "a b?.db")
     make_database(path)
     connection = opened(ts.connect(path, read_only=True))
     assert connection.execute("SELECT count(*) FROM parent").fetchone()[0] == 3
-    assert files(directory)[0] == "a b?.db"
+    assert path.name in files(directory)
 
 
 def test_s11_broken_file_is_corrupt(tmp_path: Path) -> None:
@@ -482,10 +483,13 @@ def test_s07_link_followed_while_opening_and_swapped_back(
         return connection
 
     monkeypatch.setattr(ts, "_open", open_through_link)
-    if os.path.realpath(resolved) != os.path.realpath(victim):
-        pytest.skip("this SQLite build does not resolve links in the name it opens (inode check only)")
+    link_name = os.path.normcase(os.path.abspath(tmp_path / "link.db"))
+    if os.path.normcase(resolved) == link_name or os.path.realpath(resolved) != os.path.realpath(victim):
+        # Windows (and old SQLite builds): the opened name is the link's own; the inode check remains (I-15).
+        pytest.skip("this SQLite build does not resolve links in the name it opens")
     with pytest.raises(UnsafePath) as info:
-        ts.connect(path)
+        leaked = ts.connect(path)
+        leaked.close()
     assert info.value.code == "sqlite.unsafe_path"
     assert digest(victim) == before
     with pytest.raises(sqlite3.ProgrammingError):
@@ -535,3 +539,14 @@ def test_s12_windows_reparse_points_count_as_links(tmp_path: Path, monkeypatch: 
     with pytest.raises(UnsafePath):
         ts.check_path(path)
     assert stat.S_ISREG(real(path).st_mode)
+
+
+def test_s12_without_o_nofollow_a_dangling_link_is_not_followed(
+    tmp_path: Path, symlinks: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows' ``CREATE_NEW`` follows a dangling link; without ``O_NOFOLLOW`` the ``lstat`` check comes first."""
+    monkeypatch.setattr(ts, "_O_NOFOLLOW", 0)
+    link = tmp_path / "a.db"
+    link.symlink_to(tmp_path / "nowhere")
+    assert ts._create(str(link), 0o600) is None
+    assert not (tmp_path / "nowhere").exists()

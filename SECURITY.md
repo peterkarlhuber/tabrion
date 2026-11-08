@@ -43,8 +43,9 @@ Accepted residual risks (documented, not vulnerabilities):
 - Tabrion does not enforce TLS on connections it did not open itself (layer A only diagnoses them).
 - SQLite files (`tabrion.sqlite`, TAB-013, TAB-014):
   - on Windows `O_NOFOLLOW` does not exist and SQLite does not resolve links in the name it opens; there the
-    `lstat` check (reparse points included) and the inode comparison after opening protect the file, not the
-    resolved-name comparison of POSIX (contract I-15);
+    `lstat` check (reparse points included, also right before a new file is created, because `CREATE_NEW` follows a
+    dangling link) and the inode comparison after opening protect the file, not the resolved-name comparison of
+    POSIX (contract I-15);
   - SQLite opens `-wal`, `-shm` and `-journal` by name when it first needs them, after `connect` has checked them;
     a link planted later in the database's directory is followed. Keep databases in a directory that only the
     owner can write (a world-writable directory without the sticky bit is a TM-03 finding, TODO TB-037);

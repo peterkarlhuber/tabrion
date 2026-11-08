@@ -222,9 +222,13 @@ def _create(path: str, mode: int) -> tuple[int, int] | None:
     """Create ``path`` exclusively with exactly ``mode``; ``None`` when it exists already, else its ``(dev, ino)``.
 
     ``O_EXCL`` fails on any existing name, a dangling symbolic link included, so a link planted after a check is
-    never followed. ``fchmod`` on the new descriptor makes the mode independent of the umask (POSIX).
+    never followed (POSIX; on Windows a dangling link is checked with ``lstat`` first, TAB-T-S12). ``fchmod`` on
+    the new descriptor makes the mode independent of the umask (POSIX).
     """
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY
+    if not _O_NOFOLLOW and _is_link(path):
+        # Windows: CREATE_NEW follows a dangling link and creates its target; only this check guards it (S12).
+        return None
     try:
         descriptor = os.open(path, flags, mode)
     except FileExistsError:
