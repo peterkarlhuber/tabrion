@@ -28,7 +28,9 @@ security guarantees, verification, revision triggers.
 - **Proposed**: written, not yet accepted.
 - **Accepted**: in force. All records here were accepted with the overall plan approval G-A (2026-11-07) and the
   owner decisions of 2026-11-07 23:26Z (E-VER, E-PyPI, E-Vis, E-ORK-CORE, E-NOD-PERM, E-06-2/G-EM, E-S1). Where a
-  record depended on a decision (E-T01, E-T02), the recommended option was taken.
+  record depended on a decision (E-T01, E-T02), the recommended option was taken. ADR 0001 and ADR 0009 carry
+  dated amendments for the owner decision of 2026-11-08 11:26Z (distribution by Git SHA pins without PyPI for now,
+  optional repository hardening, G-T2 without a trademark check).
 - **Superseded**: replaced by a later record, which it names.
 
 ## Adding a record
