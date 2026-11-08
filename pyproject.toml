@@ -187,7 +187,9 @@ layers = [
     "tabrion._sa",
     "tabrion.postgres",
     "tabrion.sqlite | tabrion.check",
-    "tabrion.errors | tabrion.sql | tabrion.config",
+    "tabrion.sql | tabrion.config",
+    # The foundation: every layer-A module raises or classifies with it (config raises ConfigurationError, TAB-012).
+    "tabrion.errors",
 ]
 
 [[tool.importlinter.contracts]]
