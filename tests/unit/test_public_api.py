@@ -237,46 +237,6 @@ def test_every_public_function_is_fully_annotated(module_name: str) -> None:
             assert param.annotation is not inspect.Parameter.empty, f"{module_name}.{name}({param.name}) untyped"
 
 
-def _dummy_args(fn: Callable[..., Any]) -> tuple[list[Any], dict[str, Any]]:
-    args: list[Any] = []
-    kwargs: dict[str, Any] = {}
-    for param in inspect.signature(fn).parameters.values():
-        if param.default is not inspect.Parameter.empty or param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
-            continue
-        if param.kind is param.KEYWORD_ONLY:
-            kwargs[param.name] = None
-        else:
-            args.append(None)
-    return args, kwargs
-
-
-# Implemented modules leave this list (TAB-010 errors, TAB-011 sql, TAB-012 config, TAB-013/TAB-014 sqlite, TAB-015,
-# TAB-016, TAB-030 and TAB-031 postgres, TAB-017 check); the rest are M1 stubs.
-STUB_MODULES: list[str] = []
-
-
-# Functions of a partly implemented module that left the stub check; the module's other functions must still raise
-# NotImplementedError. Empty since TAB-031 completed tabrion.postgres.
-IMPLEMENTED: set[str] = set()
-
-
-@pytest.mark.parametrize("module_name", [*STUB_MODULES, "tabrion.migrations", "tabrion.testing.profiles"])
-def test_stubs_raise_not_implemented(module_name: str) -> None:
-    """M1 delivers signatures only: every function raises NotImplementedError (implementation in M2)."""
-    module = importlib.import_module(module_name)
-    functions = _public_callables(module)
-    assert functions
-    for _name, fn in functions:
-        if f"{module_name}.{_name}" in IMPLEMENTED:
-            continue
-        args, kwargs = _dummy_args(fn)
-        with pytest.raises(NotImplementedError):
-            result = fn(*args, **kwargs)
-            # Context managers raise on entry.
-            if hasattr(result, "__enter__"):
-                result.__enter__()
-
-
 def test_return_dataclasses_are_frozen_and_slotted() -> None:
     """Contract convention: every result dataclass is ``@dataclass(frozen=True, slots=True)``."""
     import tabrion

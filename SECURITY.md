@@ -78,6 +78,8 @@ Accepted residual risks (documented, not vulnerabilities):
   (TM-08); Tabrion runs no `RESET` or `DISCARD`. Use `SET LOCAL` or `set_config(..., true)` (contract I-56).
 - `Database.from_engine` with listeners changes the session settings of every connection of the foreign engine,
   the host's own included, and `close()` does not undo them; a read-only profile is refused there (contract I-37).
+- `tabrion.migrations.status` never runs `env.py`, but Alembic imports every revision file of the script directory,
+  so module-level code in a revision file runs: point it only at a trusted script directory (contract I-57).
 - Layer-B timeouts bound the database's work, not every wait: a SQLite lock wait is bounded by the busy timeout, a
   wait for a pool connection by `pool_timeout`, a network that stops answering by the connection's TCP settings
   (contract I-40, I-44; TODO TB-056).
