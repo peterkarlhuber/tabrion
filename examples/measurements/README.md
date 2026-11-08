@@ -28,6 +28,11 @@ $ python -m measurements --db data.db --backup-dir backups transfer
 0 sent in 0 batches, 0 new upstream, mark 10001
 ```
 
+The mark records what was sent, not where: after switching the upstream to another server or database, or
+restoring it from an older backup, run `transfer --from-start` once (`Store.reset_mark`). It sends everything
+again, and the rows already upstream are skipped. One transfer process per device file is the intended
+deployment; a second one is safe but wasteful.
+
 The upstream URL comes from `MEASUREMENTS_UPSTREAM_URL` or, better, from a file named by
 `MEASUREMENTS_UPSTREAM_URL_FILE` (`tabrion.config.url_from_env`), never from the command line. A `sqlite:///` URL
 works too, with the same code.

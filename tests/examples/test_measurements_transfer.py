@@ -21,7 +21,7 @@ from measurements import Measurement, Store, open_database
 from measurements.cli import _read_csv, main
 from measurements.store import synthetic
 from measurements.transfer import Report, transfer
-from measurements.upstream import UPSTREAM, URL_ENV, insert_new, open_upstream
+from measurements.upstream import UPSTREAM, URL_ENV, create_upstream, insert_new, open_upstream
 import pytest
 import sqlalchemy as sa
 
@@ -218,6 +218,29 @@ def test_cli_transfer(
     assert capsys.readouterr().out == "2500 sent in 3 batches, 2500 new upstream, mark 2500\n"
     assert main([*base, "transfer"]) == 0
     assert capsys.readouterr().out == "0 sent in 0 batches, 0 new upstream, mark 2500\n"
+
+
+def test_transfer_from_start_fills_a_switched_upstream(
+    tmp_path: Path, upstream_url: sa.URL, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review L-1 of #23: the mark says what was sent, not where. Pointed at a fresh upstream, a plain run sends
+    nothing; ``--from-start`` sends everything again, and a repeat against the old upstream adds nothing."""
+    base = ["--db", str(tmp_path / "cli.db"), "--backup-dir", str(tmp_path / "backups")]
+    monkeypatch.delenv(f"{URL_ENV}_FILE", raising=False)
+    fresh = sa.make_url(f"sqlite:///{tmp_path / 'fresh.db'}")
+    with open_upstream(fresh) as database:
+        create_upstream(database)
+    assert main([*base, "demo", "100"]) == 0
+    for url in (upstream_url, fresh):
+        monkeypatch.setenv(URL_ENV, url.render_as_string(hide_password=False))
+        capsys.readouterr()
+        assert main([*base, "transfer"]) == 0
+    assert capsys.readouterr().out == "0 sent in 0 batches, 0 new upstream, mark 100\n"  # the silent case
+    assert main([*base, "transfer", "--from-start"]) == 0
+    assert capsys.readouterr().out == "100 sent in 1 batches, 100 new upstream, mark 100\n"
+    monkeypatch.setenv(URL_ENV, upstream_url.render_as_string(hide_password=False))
+    assert main([*base, "transfer", "--from-start"]) == 0
+    assert capsys.readouterr().out == "100 sent in 1 batches, 0 new upstream, mark 100\n"
 
 
 def test_cli_transfer_errors_name_no_values(

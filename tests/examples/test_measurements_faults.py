@@ -160,8 +160,9 @@ def test_a_network_fault_loses_and_duplicates_nothing(
         with pytest.raises(TabrionError) as info:
             transfer(store, upstream_db, batch_size=1000)
         assert info.value.classification is not None and info.value.classification.kind is Kind.CONNECTION
-        if fault == "reply" and statement == b"COMMIT":
-            assert info.value.classification.outcome_unknown  # the client cannot know that it committed
+        if statement == b"COMMIT":
+            # Whether the COMMIT ran or not, the client cannot know (review L-3 of #26): never retried blindly.
+            assert info.value.classification.outcome_unknown
         assert store.mark() == seqs[999]  # the failed batch did not move the mark
         backend = proxy.fired_backend
         assert backend is not None and wait_backend_gone(schema.owner_url, backend)
