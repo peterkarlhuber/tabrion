@@ -14,11 +14,15 @@ integration branches that are **not merged** yet (rule RC-8,
 [ADR 0009](../adr/0009-distribution-and-versioning.md)). It is a Git tag only: nothing is on PyPI and there is no
 GitHub release.
 
-On such a branch, pin the tag directly:
+On such a branch, pin the commit of the tag. A tag name can be moved, so requirement files pin the commit SHA
+(`a463422206485c26ddafc8d0873698854fd1ebef`, the merge commit of the version `0.1.0a1`):
 
 ```bash
-pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@v0.1.0a1"
+pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@a463422206485c26ddafc8d0873698854fd1ebef"
 ```
+
+Master moved on to `0.1.0a2.dev0` right after that commit (TB-053), so a pin on a later master commit never looks
+like the tag. Do not run `release.yml` for `v0.1.0a1`: its attest job would write a public build-provenance entry.
 
 A library on such a branch declares a pre-release range, which pip needs to accept an alpha:
 
@@ -29,7 +33,7 @@ dependencies = ["tabrion>=0.1.0a1,<0.2"]
 The rules:
 
 - **Never on master.** A consumer's master carries only final ranges and pins (`tabrion>=0.1,<0.2`, a final tag).
-  The architecture check AC-6 refuses a pre-release specifier or pin there.
+  The architecture check AC-6 (planned, QA-15) will refuse a pre-release specifier or pin there.
 - A final range rejects the alpha: `tabrion>=0.1,<0.2` does not accept `0.1.0a1` (probe
   `proben/versionierung/`), so a library on master cannot be installed with the a1 pin by accident. A pre-release
   range `>=0.1.0a1,<0.2` accepts `0.1.0a1`, later pre-releases and `0.1.0`, but never `0.2.0a1`.
