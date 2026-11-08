@@ -24,6 +24,7 @@ import itertools
 import logging
 import re
 import sqlite3
+import sys
 import traceback
 from types import MappingProxyType, TracebackType
 from typing import Any, Literal
@@ -611,20 +612,32 @@ def safe_message(error: BaseException | Classification) -> str:
 
 #: Where psycopg's server text starts in a message: a ``DETAIL:``/``HINT:``/``CONTEXT:``/``QUERY:``/``LINE n:`` line,
 #: or the same label in the middle of a line (psycopg puts two spaces after the colon). From there the text is
-#: removed up to the next boundary line, because a value may span several lines (review M-2).
+#: removed to the end of the text, or inside a traceback up to the next line of its structure, because a value may
+#: span several lines (review M-2). The run of blanks before an inline label starts only after a non-blank
+#: character: without the look-behind every start position inside a long run of blanks rescans the run (quadratic
+#: time, a log-injection DoS; Axentra review F-3).
 _SERVER_TEXT_START = re.compile(
-    r"^[ \t]*(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):|[ \t]*\b(?:DETAIL|HINT|CONTEXT|QUERY): {2}"
+    r"^[ \t]*(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):|(?<![ \t])[ \t]*\b(?:DETAIL|HINT|CONTEXT|QUERY): {2}"
 )
-#: Lines that end a removed part: SQLAlchemy's own lines and the structure of a formatted traceback.
-_BOUNDARIES = (
-    "[SQL: ",
-    "(Background on this error at:",
-    "Traceback (most recent call last):",
-    "The above exception was the direct cause",
-    "During handling of the above exception",
-    'File "',
-    "+-",
+#: The header line of a formatted traceback. Only after one has been seen in a text does :data:`_BOUNDARY` end a
+#: removed part (Axentra review F-4): in free text the removal runs to the end.
+_TRACEBACK_HEADER = re.compile(r"[ \t|]*(?:Exception Group )?Traceback \(most recent call last\):[ \t]*(?:\r?\n)?")
+#: Lines that end a removed part inside a traceback. Each must be a whole line of the expected structure, so that a
+#: value line which merely starts like one (``+-SECRET``, ``File "SECRET``) does not end it (re-review N-1).
+_BOUNDARY = re.compile(
+    r"[ \t|]*(?:"
+    r"Traceback \(most recent call last\):"
+    r"|Exception Group Traceback \(most recent call last\):"
+    r"|The above exception was the direct cause of the following exception:"
+    r"|During handling of the above exception, another exception occurred:"
+    r'|File "[^"\r\n]*", line \d+(?:, in [^\r\n]*)?'
+    r"|\+[-+]*(?: (?:\d+|\.\.\.) -+)?"
+    r"|\(Background on this error at: https?://[^\s()]+\)"
+    r")[ \t]*(?:\r?\n)?"
 )
+#: What a removed server text part is replaced with, so that a truncated message shows that it was truncated
+#: (Axentra review F-7: a value with a label must not silently cut the rest of a message).
+_SERVER_TEXT_MARK = "[redacted: database server text]"
 _PARAMETERS_LINE = re.compile(r"^[ \t]*\[parameters: ")
 _PARAMETERS_INLINE = re.compile(r"\[parameters: .*")
 #: The same parts in escaped form, as ``repr()`` prints them (``'...\\nDETAIL:  Key (email)=(...)'``, review H-2):
@@ -639,23 +652,31 @@ _MAX_COLLECT_ITEMS = 1_000
 
 
 def _strip_server_text(text: str) -> str:
+    """``text`` without psycopg's server text parts and SQLAlchemy's ``[parameters: ...]``.
+
+    A part is replaced by :data:`_SERVER_TEXT_MARK` from its label to the end of the text; only inside a formatted
+    traceback (after a ``Traceback (most recent call last):`` header) does it end at the next whole line of the
+    traceback's structure (Axentra review F-4, re-review N-1)."""
     if not any(marker in text for marker in _SUSPICIOUS):
         return text
-    text = _ESCAPED_SERVER_TEXT.sub("", text)
+    text = _ESCAPED_SERVER_TEXT.sub(" " + _SERVER_TEXT_MARK, text)
     out: list[str] = []
     skipping = False
+    in_traceback = False
     for line in text.splitlines(keepends=True):
         if skipping:
-            if not line.lstrip(" \t").startswith(_BOUNDARIES):
+            if not in_traceback or _BOUNDARY.fullmatch(line) is None:
                 continue
             skipping = False
+        if not in_traceback and _TRACEBACK_HEADER.fullmatch(line) is not None:
+            in_traceback = True
         if _PARAMETERS_LINE.match(line):
             continue
         start = _SERVER_TEXT_START.search(line)
         if start is not None:
-            kept = line[: start.start()]
-            if kept.strip():
-                out.append(kept.rstrip(" \t") + ("\n" if line.endswith("\n") else ""))
+            kept = line[: start.start()].rstrip(" \t")
+            mark = f"{kept} {_SERVER_TEXT_MARK}" if kept.strip() else kept + _SERVER_TEXT_MARK
+            out.append(mark + ("\n" if line.endswith("\n") else ""))
             skipping = True
             continue
         out.append(_PARAMETERS_INLINE.sub("", line))
@@ -784,6 +805,91 @@ def _collect(value: object, found: list[BaseException]) -> None:
             stack.extend((child, depth + 1) for child in children[:_MAX_COLLECT_ITEMS])
 
 
+def _exception_may_hold_server_text(exc: BaseException) -> bool:
+    """True when an exception of ``exc``'s chain carries server text in its message, ``args`` or notes without
+    being a database error (``raise RuntimeError(f"gave up: {last}")`` after a retry loop, Axentra review F-1)."""
+    for e in _chain(exc):
+        if any(_may_hold_server_text(t) for t in _error_texts(e)):
+            return True
+        notes = _attr(e, "__notes__")
+        if isinstance(notes, list) and any(_may_hold_server_text(n) for n in notes):
+            return True
+    return False
+
+
+def _exc_of(exc_info: object) -> tuple[BaseException, TracebackType | None] | None:
+    """The exception an ``exc_info`` names: an ``exc_info`` tuple, an exception, or ``True`` for the exception being
+    handled (as structlog resolves an event dict's ``exc_info``)."""
+    if exc_info is True:
+        _, current, tb = sys.exc_info()
+        return (current, tb) if isinstance(current, BaseException) else None
+    if isinstance(exc_info, BaseException):
+        return exc_info, exc_info.__traceback__
+    if isinstance(exc_info, tuple) and len(exc_info) == 3 and isinstance(exc_info[1], BaseException):
+        tb = exc_info[2]
+        return exc_info[1], tb if isinstance(tb, TracebackType) else None
+    return None
+
+
+def _redact_event_dict(event: Mapping[Any, Any], found: list[BaseException]) -> dict[Any, Any] | None:
+    """A copy of a mapping message or structlog event dict without database values, or ``None`` when its text still
+    holds database text afterwards (Axentra review F-5).
+
+    An ``exc_info`` whose exception holds a database error or its text (chain, ``args``, notes) is replaced by the
+    redacted traceback under ``exception``, so that structlog's ``format_exc_info``, ``dict_tracebacks`` and
+    ``ConsoleRenderer`` have nothing raw to render (review D-2). Every other value is scrubbed: a database error
+    becomes its safe message, a string is scrubbed, any other object whose ``repr`` holds database text becomes its
+    scrubbed ``repr``."""
+    out: dict[Any, Any] = dict(event)
+    named = _exc_of(out.get("exc_info"))
+    if named is not None:
+        exc, tb = named
+        errors: list[BaseException] = []
+        _collect(exc, errors)
+        if errors or _exception_may_hold_server_text(exc):
+            del out["exc_info"]
+            out["exception"] = _redacted_traceback(exc, tb, errors)
+            found.extend(e for e in errors if all(e is not f for f in found))
+    _collect(list(out.values()), found)
+    for key, value in list(out.items()):
+        if _is_db_exc(value):
+            out[key] = safe_message(value)
+        elif isinstance(value, str):
+            out[key] = _scrub(value, found)
+        else:
+            text = _safe_text(repr, value)
+            if text is None:
+                continue
+            redacted = _scrub(text, found)
+            if redacted != text:
+                out[key] = redacted
+    text = str(out)
+    if _scrub(text, found) != text:
+        return None
+    return out
+
+
+def _redact_db_errors_processor(logger: object, method_name: str, event_dict: Any) -> Any:
+    """A structlog processor (duck-typed, structlog is not a dependency) that removes database values from an event
+    dict as :class:`DbErrorRedactionFilter` does for a mapping message (Axentra review D-2).
+
+    Internal: a public name would extend the frozen API surface (TODO TB-051). Placed before ``format_exc_info``,
+    ``dict_tracebacks`` or the renderer. It never raises: on an internal error, or when database text remains, it
+    returns only the scrubbed ``event`` text (Axentra re-review R2-1)."""
+    if not isinstance(event_dict, Mapping):
+        return event_dict
+    redacted: dict[Any, Any] | None = None
+    with contextlib.suppress(Exception):
+        redacted = _redact_event_dict(event_dict, [])
+    if redacted is not None:
+        return redacted
+    try:
+        event = event_dict.get("event")
+        return {"event": _strip_server_text(event) if isinstance(event, str) else "event redacted"}
+    except Exception:
+        return {"event": "event redacted"}
+
+
 def _redact_traceback(top: traceback.TracebackException, exc: BaseException, errors: list[BaseException]) -> None:
     """Replace the text of every exception in ``top``: a database error's by its safe message, any other one's by
     :func:`_scrub` (a wrapper that quotes the database error)."""
@@ -853,7 +959,9 @@ class DbErrorRedactionFilter(logging.Filter):
       ``CONTEXT:`` and ``[parameters:`` part, also when the message was formatted before it was logged.
 
     A record without a database error is left unchanged, except that ``DETAIL:``/``HINT:``/``CONTEXT:``/
-    ``[parameters:`` parts are removed from a message that carries them.
+    ``[parameters:`` parts are removed from a message or traceback that carries them, marked
+    ``[redacted: database server text]``. A mapping message (structlog's event dict) stays a mapping with scrubbed
+    values, and an ``exc_info`` in it becomes the redacted traceback under ``exception``.
     """
 
     def __init__(self, name: str = "") -> None:
@@ -887,7 +995,15 @@ class DbErrorRedactionFilter(logging.Filter):
     def _redact(self, record: logging.LogRecord) -> None:
         exc_info = record.exc_info
         exc = exc_info[1] if isinstance(exc_info, tuple) and len(exc_info) == 3 else None
-        found: list[BaseException] = _db_errors_in(exc) if isinstance(exc, BaseException) else []
+        found: list[BaseException] = []
+        if isinstance(exc, BaseException) and isinstance(exc_info, tuple):
+            # The chain, and database errors held in the exceptions' args (``RuntimeError(e)``, Axentra review F-1).
+            _collect(exc, found)
+            if not found and _exception_may_hold_server_text(exc):
+                # No database error object, but its text in a message, ``args`` or notes (Axentra review F-1).
+                record.exc_text = _redacted_traceback(exc, exc_info[2], [])
+                record.exc_info = None
+                exc = None
         _collect(record.args, found)
         _collect(record.msg, found)
 
@@ -907,12 +1023,28 @@ class DbErrorRedactionFilter(logging.Filter):
         elif isinstance(record.exc_text, str) and _may_hold_server_text(record.exc_text):
             record.exc_text = _strip_server_text(record.exc_text)
 
+        # After the traceback block, because this branch returns early (Axentra review D-1).
+        if isinstance(record.msg, Mapping) and not record.args:
+            # A mapping message stays a mapping (structlog's ProcessorFormatter copies it, Axentra review F-5), with
+            # its ``exc_info`` redacted (structlog renders that itself, review D-2).
+            scrubbed = _redact_event_dict(record.msg, found)
+            if scrubbed is not None:
+                if scrubbed != record.msg:
+                    record.msg = scrubbed
+                self._set_fields(record, found)
+                return
+
         # The check runs on the formatted message, so a value in any argument (a repr, a list, e.args) is seen.
         try:
             message = record.getMessage()
-        except Exception:
+        except Exception as failure:
             template = str(record.msg)
-            if not found and not _may_hold_server_text(template):
+            # ``logging`` reports a broken call with the whole chain of the formatting error, whose ``__context__``
+            # is the exception being handled: often the database error itself (Axentra review F-2).
+            _collect(failure, found)
+            handled = failure.__context__
+            leaky = isinstance(handled, BaseException) and _exception_may_hold_server_text(handled)
+            if not found and not leaky and not _may_hold_server_text(template):
                 return  # an ordinary broken call: logging reports it as usual
             # A broken call (for example too few arguments): keep the record and say what failed.
             summary = "; ".join(safe_message(e) for e in found)
@@ -925,6 +1057,10 @@ class DbErrorRedactionFilter(logging.Filter):
                 redacted = _scrub(message, found)
                 if redacted != message:
                     record.msg, record.args = redacted, None
+        self._set_fields(record, found)
+
+    @staticmethod
+    def _set_fields(record: logging.LogRecord, found: list[BaseException]) -> None:
         if found:
             first = classify(found[0])
             record.db_sqlstate = first.sqlstate

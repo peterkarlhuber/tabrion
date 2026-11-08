@@ -289,11 +289,22 @@ def test_l2_checks_on_a_legacy_connection(tmp_path: Path, level: Any) -> None:
 
 @pytest.mark.skipif(not POSIX, reason="POSIX directory modes")
 @pytest.mark.parametrize(
-    ("bits", "warned"), [(0o777, True), (0o1777, False), (0o775, False), (0o755, False), (0o700, False)]
+    ("bits", "warned"),
+    [
+        (0o777, "replace the database"),
+        (0o1777, "create files next to the database"),  # DL-1: sticky, but side files can be planted
+        (0o775, "create files next to the database"),
+        (0o1770, "create files next to the database"),
+        (0o757, "replace the database"),
+        (0o755, None),
+        (0o1755, None),
+        (0o700, None),
+    ],
 )
 def test_m2_world_writable_directory_without_sticky_bit(
-    tmp_path: Path, opened: Opened, caplog: pytest.LogCaptureFixture, bits: int, warned: bool
+    tmp_path: Path, opened: Opened, caplog: pytest.LogCaptureFixture, bits: int, warned: str | None
 ) -> None:
+    """Review M-2 and #4 re-review DL-1 (TM-03): one WARNING, without the path; the path only at DEBUG."""
     directory = tmp_path / "data"
     directory.mkdir()
     connection = opened(ts.connect(directory / "a.db"))
@@ -304,11 +315,14 @@ def test_m2_world_writable_directory_without_sticky_bit(
     finally:
         os.chmod(directory, 0o700)
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert bool(warnings) is warned
-    if warned:
-        assert "TM-03" in warnings[0].getMessage() and str(tmp_path) not in warnings[0].getMessage()
-        debug = [r for r in caplog.records if r.levelno == logging.DEBUG]
-        assert any(str(directory) in r.getMessage() for r in debug)  # the path only at DEBUG
+    if warned is None:
+        assert not warnings
+        return
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "TM-03" in message and warned in message and str(tmp_path) not in message
+    debug = [r for r in caplog.records if r.levelno == logging.DEBUG]
+    assert any(str(directory) in r.getMessage() for r in debug)
 
 
 @pytest.mark.skipif(not POSIX, reason="POSIX directory modes")

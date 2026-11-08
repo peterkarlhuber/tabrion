@@ -4,7 +4,8 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, M2 lane B pull request [#4](https://github.com/peterkarlhuber/tabrion/pull/4) (TAB-013, TAB-014; branch `claude/project-thread-rdo6g3`), after
+> **Last update:** 2026-11-08, TB-031 port to `tabrion.errors` (branch `claude/project-thread-rdo6g3-errfix`, after
+> #4 merged at `af0f3dc`). Before: M2 lane B pull request [#4](https://github.com/peterkarlhuber/tabrion/pull/4) (TAB-013, TAB-014; branch `claude/project-thread-rdo6g3`), after
 > the M2 lane A pull request [#3](https://github.com/peterkarlhuber/tabrion/pull/3) (TAB-010..TAB-012) merged (`6b99604`;
 > independent review accepted at `ece7572`).
 > Detailed open work for this repository: [docs/TODO.md](../TODO.md). Risks: [risks.md](risks.md).
@@ -493,6 +494,32 @@ the same pull request, after merging `master` with lane C (`b34abb2`):
 Lane C's IDs come first after the merge: lane B's contract notes I-14..I-24 are now I-21..I-31, its deviations
 D-28..D-33 are D-34..D-39 (new: D-40), and its TODO items TB-032..TB-039 are TB-038..TB-045 (new: TB-046..TB-049).
 
+#### Axentra TB-031 review fixes ported to `tabrion.errors` (after #4)
+
+Axentra's TB-031 pull request (#62, merged at `ea7aa9f`) fixed the findings of `reviews/axe-tb031-review.md` in its
+copy of the filter. Each one was first reproduced against Tabrion with a probe (real 23505/23514 from PostgreSQL 16,
+real structlog 25 in a scratch environment) and then ported, or marked as not applicable:
+
+| Finding | Before (probe against `af0f3dc`) | Now | Tests |
+|---|---|---|---|
+| F-1 traceback text without an error object | Leaks: retry loop, `RuntimeError(e)`, `RuntimeError("b", [e])`, a note, a holder with `__str__` | Clean; errors in `args` are found as objects (`db_sqlstate`) | `test_f1_*` (5 shapes); 2 probes |
+| F-2 `handleError` | Leaks: broken call inside `except`, failing formatter | Broken call clean (rewritten, names the handled error); formatter/`emit` failure is a residual (D-41, TB-050, SECURITY.md) | `test_f2_broken_call_while_a_database_error_is_handled`; 1 probe |
+| F-3 ReDoS | 20,000 blanks: 1.6 s | 1 ms (look-behind) | `test_f3_long_run_of_blanks_is_linear` (50,000 blanks); 1 probe |
+| F-4 boundaries only after a header | Leaks: `+------+`, `File "a", line 1` (a lone `+` and `\| +---` were already clean) | Clean; this also closes re-review N-1 (TODO TB-038 deleted) | `test_f4_*`; 1 probe |
+| F-5 mapping `msg` | Became a `str` (structlog's `ProcessorFormatter` breaks) | Stays a mapping with scrubbed values | `test_f5_mapping_message_stays_a_mapping`; 1 probe |
+| F-6 `extra={"db_sqlstate": ...}` | No `KeyError`: Tabrion sets the fields in the filter, not in a record factory | Not applicable | none |
+| F-7 silent truncation | `login failed user=mallory` | `... user=mallory [redacted: database server text]` | `test_f7_removed_text_is_marked`; 1 probe |
+| F-8 two unpinned branches | n/a | Pinned | `test_f8_*` |
+| D-1 mapping `msg` with `exc_info` | Clean (no mapping branch yet) | Clean; the mapping branch runs after the traceback block | `test_d1_*` |
+| D-2 structlog `exc_info` | stdlib `ProcessorFormatter` broke (F-5) | stdlib integration clean (`format_exc_info`, `dict_tracebacks`, `ConsoleRenderer`); native structlog clean with the internal processor, which stays internal (D-42, TB-051) | `test_d2_*`; 1 probe |
+| D-3 guarded attribute access | Clean (`_attr` was already guarded) | Clean with the new F-1 code | `test_d3_*` |
+| R2-1 processor fallback | n/a | Only `event` is returned | `test_r2_1_*`; 1 probe |
+
+`diagnose` also follows #4 re-review DL-1: a group- or other-writable database directory warns whatever the sticky
+bit ("other users can create files next to the database (side files)"); the non-sticky world-writable case keeps
+"can replace the database file"; no path in either message (`test_m2_world_writable_directory_without_sticky_bit`,
+8 modes; 1 more probe). TODO TB-031 (the cross-repository port) is done and deleted; new items TB-050, TB-051.
+
 ## Deviation log
 
 Deviations from the plan, with the reason. A deviation that changes a decision needs an ADR note under "Changes from
@@ -540,6 +567,8 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-38 | TAB-014 | Contract 3.6: `UsageError` for an open write transaction | For any open transaction; the copy in `journal_mode=DELETE` (contract I-27, I-28) | `sqlite3` cannot tell a read from a write transaction; a WAL-mode copy would leave `-wal`/`-shm` next to the target |
 | D-39 | TAB-013, TAB-014 | Test IDs: doc 02 gives S13..S35 to TAB-014; doc 07 a 1 000-repetition race test (TAB-T-123) | S13..S15 under TAB-013 (contract 3.3 names them for `apply_profile`, `check_path`, `loading_extensions`, which are TAB-013 functions); the race windows tested deterministically, the randomized test is TB-045 | The contract is the more specific source; a randomized race test is timing-dependent on pull requests |
 | D-40 | TAB-014 | 07 TM-03 / review M-2: a field for a world-writable database directory without the sticky bit | A WARNING on the logger `tabrion.sqlite` from `diagnose` (path only at DEBUG); `SQLiteDiagnosis` unchanged (contract I-30) | `SQLiteDiagnosis` is in the frozen API surface; the `tabrion.check` finding or a 0.2 field is TB-043 |
+| D-41 | TAB-010 | Axentra TB-031 F-2: `install_db_error_redaction` replaces `Handler.handleError` process-wide | The filter rewrites a broken call made while a database error is handled; formatter and `emit` failures are a documented residual (SECURITY.md) | Tabrion installs nothing and has no install function; a new public name is a surface change; TB-050 |
+| D-42 | TAB-010 | Axentra TB-031 D-2: a public `redact_db_errors_processor` for native structlog | The processor is internal (`tabrion.errors._redact_db_errors_processor`); the filter's mapping branch covers structlog's stdlib integration | A new public name extends the frozen surface (`surface.json` unchanged); TB-051 |
 
 ## Score review
 

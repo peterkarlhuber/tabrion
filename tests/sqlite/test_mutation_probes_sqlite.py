@@ -227,8 +227,16 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # Review M-2 (TM-03): a world-writable directory without the sticky bit is reported.
     (
-        "    return bool(mode & stat.S_IWOTH) and not mode & stat.S_ISVTX\n",
-        "    return False\n",
+        "    if mode & stat.S_IWOTH and not mode & stat.S_ISVTX:\n",
+        "    if False:\n",
+        _T + "test_checks.py::test_m2_world_writable_directory_without_sticky_bit",
+        True,
+        False,
+    ),
+    # #4 re-review DL-1: a group- or other-writable directory warns whatever the sticky bit.
+    (
+        "    if mode & (stat.S_IWOTH | stat.S_IWGRP):\n",
+        "    if False:\n",
         _T + "test_checks.py::test_m2_world_writable_directory_without_sticky_bit",
         True,
         False,
