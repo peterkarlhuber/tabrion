@@ -150,13 +150,17 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** Blocked (TAB-014, TAB-019) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 in review) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
   RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
-  tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. The CI job `examples` arrives
-  with them.
-- **Next step:** RA-B-1 after TAB-014; RA-A-1 after TAB-019.
+  tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. RA-B-1 is
+  `examples/measurements` (local capture, layer A). Its tests live in `tests/examples/` and run inside the normal
+  suite: `tests/examples/conftest.py` puts each application on `sys.path`, and `mypy_path` in `pyproject.toml` names
+  it for `mypy --strict src tests scripts`.
+- **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
+  a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
+- **Next step:** RA-B-2 (transfer through layer B) after RA-B-1; RA-A-1 after TAB-019.
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
