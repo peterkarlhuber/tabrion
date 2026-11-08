@@ -58,6 +58,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   materials is linear, exact and cycle-safe. Its foreign keys use `NO ACTION` (TODO TB-110).
 - `examples/parts-baseline` (RA-A-3): the parts application with plain SQLAlchemy and Alembic, run by the same
   shared suite (`tests/examples/parts_suite.py`); its deviations are strict `xfail`s, measurements for RA-EVAL.
+  The parts catalog also refuses values that do not fit a column and bill-of-materials totals that would round to
+  0 with `InvalidValue`.
 
 ### Changed
 

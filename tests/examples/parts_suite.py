@@ -20,7 +20,7 @@ from collections.abc import Callable, Iterator, Mapping
 import contextlib
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal, localcontext
 import itertools
 from pathlib import Path
@@ -59,6 +59,12 @@ class App:
     write: Callable[[Any], AbstractContextManager[sa.Connection]]
     read: Callable[[Any], AbstractContextManager[sa.Connection]]
     not_current: type[Exception]
+    integrity_error: type[Exception]
+    """What a violated constraint raises."""
+    usage_error: type[Exception]
+    """What a value the column type refuses raises."""
+    constraint_name: Callable[[BaseException], str | None]
+    """The name of the constraint an ``integrity_error`` names, if the variant tells it."""
     deviations: Mapping[str, str] = field(default_factory=dict)
     """Test name (``test_x`` or ``test_x[sqlite]``) to the reason it fails for this variant."""
 
@@ -188,6 +194,43 @@ def _chain(app: App, db: Any, numbers: list[str], quantity: Decimal) -> None:
             sa.insert(app.schema.part_relation),
             [{"assembly_id": a, "component_id": c, "quantity": quantity} for a, c in itertools.pairwise(ids)],
         )
+
+
+def _insert_part(app: App, database: Any, number: str = "P-1", status: str | None = "draft") -> tuple[int, int]:
+    """A material and a part; ``status=None`` leaves the status to the server default."""
+    extra = {} if status is None else {"status": status}
+    with app.write(database) as connection:
+        material_id = connection.execute(
+            sa.insert(app.schema.material)
+            .values(code=f"M-{number}", name="Steel", created_at=NOW)
+            .returning(app.schema.material.c.id)
+        ).scalar_one()
+        part_id = connection.execute(
+            sa.insert(app.schema.part)
+            .values(
+                part_number=number,
+                name="Bracket",
+                material_id=material_id,
+                **extra,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+            .returning(app.schema.part.c.id)
+        ).scalar_one()
+    return int(material_id), int(part_id)
+
+
+CHECKS: dict[str, tuple[str, dict[str, Any]]] = {
+    "ck_material_code": ("material", {"code": ""}),
+    "ck_material_name": ("material", {"name": ""}),
+    "ck_part_part_number": ("part", {"part_number": ""}),
+    "ck_part_name": ("part", {"name": ""}),
+    "ck_part_status": ("part", {"status": "archived"}),
+    "ck_part_version": ("part", {"version": 0}),
+    "ck_property_key": ("property", {"key": ""}),
+    "ck_property_unit": ("property", {"unit": ""}),
+}
+"""A violating update per ``CHECK`` on material, part and property; ``test_relation_rules`` covers part_relation."""
 
 
 class PartsSuite:
@@ -373,6 +416,116 @@ class PartsSuite:
             before = connection.execute(sa.select(material.c.code).where(created < NOW)).scalars().all()
         assert ordered == [earliest, early, NOW]
         assert sorted(before) == ["B", "C"]
+
+    # --- the shared domain code: schema and types (RA-A-1) ------------------------------------------------------
+
+    def test_values_round_trip_exactly(self, app: App, db: Any) -> None:
+        app.db.upgrade(db)
+        _, part_id = _insert_part(app, db, status=None)
+        vienna = datetime(2026, 11, 8, 13, 30, 0, 123456, tzinfo=timezone(timedelta(hours=1)))
+        with app.write(db) as connection:
+            connection.execute(
+                sa.insert(app.schema.property_).values(
+                    part_id=part_id, key="mass", value=Decimal("0.100001"), unit="kg"
+                )
+            )
+            connection.execute(sa.update(app.schema.part).values(updated_at=vienna))
+        with app.read(db) as connection:
+            value = connection.execute(sa.select(app.schema.property_.c.value)).scalar_one()
+            row = connection.execute(
+                sa.select(app.schema.part.c.status, app.schema.part.c.version, app.schema.part.c.updated_at)
+            ).one()
+        assert value == Decimal("0.100001") and isinstance(value, Decimal)
+        assert row.status == "draft" and row.version == 1  # the server defaults
+        assert (
+            row.updated_at == NOW and row.updated_at.tzinfo is not None and row.updated_at.utcoffset() == timedelta(0)
+        )
+
+    def test_every_check_has_a_case(self, app: App) -> None:
+        declared = {
+            c.name
+            for t in app.schema.metadata.tables.values()
+            for c in t.constraints
+            if isinstance(c, sa.CheckConstraint)
+        }
+        assert declared == set(CHECKS) | {"ck_part_relation_quantity", "ck_part_relation_not_self"}
+
+    @pytest.mark.parametrize("check", sorted(CHECKS))
+    def test_constraints_hold_on_both_engines(self, app: App, db: Any, check: str) -> None:
+        app.db.upgrade(db)
+        _, part_id = _insert_part(app, db)
+        with app.write(db) as connection:
+            connection.execute(
+                sa.insert(app.schema.property_).values(part_id=part_id, key="mass", value=Decimal(1), unit="kg")
+            )
+        table, values = CHECKS[check]
+        with pytest.raises(app.integrity_error), app.write(db) as connection:
+            connection.execute(sa.update(app.schema.metadata.tables[table]).values(**values))
+
+    @pytest.mark.parametrize("check", sorted(CHECKS))
+    def test_violations_name_their_constraint(self, app: App, db: Any, check: str) -> None:
+        app.db.upgrade(db)
+        _, part_id = _insert_part(app, db)
+        with app.write(db) as connection:
+            connection.execute(
+                sa.insert(app.schema.property_).values(part_id=part_id, key="mass", value=Decimal(1), unit="kg")
+            )
+        table, values = CHECKS[check]
+        with pytest.raises(app.integrity_error) as raised, app.write(db) as connection:
+            connection.execute(sa.update(app.schema.metadata.tables[table]).values(**values))
+        assert app.constraint_name(raised.value) == check
+
+    def test_decimals_are_stored_scaled_on_sqlite_and_numeric_on_postgresql(self, app: App, db: Any) -> None:
+        app.db.upgrade(db)
+        _, assembly = _insert_part(app, db, "A-1")
+        _, component = _insert_part(app, db, "C-1")
+        with app.write(db) as connection:
+            connection.execute(
+                sa.insert(app.schema.part_relation).values(
+                    assembly_id=assembly, component_id=component, quantity=Decimal("2.5")
+                )
+            )
+        with app.read(db) as connection:
+            if app.engine(db).dialect.name == "sqlite":
+                raw = connection.exec_driver_sql("SELECT typeof(quantity), quantity FROM part_relation").one()
+                assert tuple(raw) == ("integer", 2500)
+            else:
+                assert connection.exec_driver_sql("SELECT quantity FROM part_relation").scalar_one() == Decimal("2.500")
+
+    def test_relation_rules(self, app: App, db: Any) -> None:
+        app.db.upgrade(db)
+        _, assembly = _insert_part(app, db, "A-1")
+        _, component = _insert_part(app, db, "C-1")
+        relation = app.schema.part_relation
+        with app.write(db) as connection:
+            connection.execute(
+                sa.insert(relation).values(assembly_id=assembly, component_id=component, quantity=Decimal("2.5"))
+            )
+        for bad in (
+            {"assembly_id": assembly, "component_id": assembly, "quantity": Decimal(1)},  # a part in itself
+            {"assembly_id": component, "component_id": assembly, "quantity": Decimal(0)},  # no quantity
+            {"assembly_id": assembly, "component_id": 999_999, "quantity": Decimal(1)},  # no such part
+        ):
+            with pytest.raises(app.integrity_error), app.write(db) as connection:
+                connection.execute(sa.insert(relation).values(**bad))
+        with app.read(db) as connection:
+            assert connection.execute(sa.select(relation.c.quantity)).scalar_one() == Decimal("2.500")
+
+    def test_types_refuse_floats_and_naive_timestamps(self, app: App, db: Any) -> None:
+        app.db.upgrade(db)
+        _, part_id = _insert_part(app, db)
+        for column, value in (
+            ("value", 0.5),  # exact in binary, refused for being a float
+            ("value", 2.0),
+            ("value", Decimal("0.0000001")),  # more digits after the point than the scale
+            ("value", Decimal("1" * 13)),  # more digits before the point than numeric(18, 6) holds
+        ):
+            with pytest.raises(app.usage_error), app.write(db) as connection:
+                connection.execute(
+                    sa.insert(app.schema.property_).values(part_id=part_id, key="k", unit="u", **{column: value})
+                )
+        with pytest.raises(app.usage_error), app.write(db) as connection:
+            connection.execute(sa.update(app.schema.part).values(updated_at=datetime(2026, 1, 1)))
 
     # --- the catalog functions (RA-A-2) ---------------------------------------------------------------------------
 
@@ -709,3 +862,27 @@ class PartsSuite:
             thread.join(timeout=30)
         assert errors == []
         assert app.catalog.properties(db, "P-1")["mass"][0] in (Decimal(1), Decimal(2))
+
+    # --- the delta review of #29 (RA-A-2) -------------------------------------------------------------------------
+
+    def test_values_that_do_not_fit_are_invalid_values(self, app: App, catalog_db: Any) -> None:
+        """Review L-6 of #29: a quantity or property value the column cannot hold (too large, too many decimals,
+        ``NaN``, a float) is ``InvalidValue`` before any SQL, not the database layer's usage error."""
+        db, catalog = catalog_db, app.catalog
+        catalog.create_part(db, "A", "A", "STEEL")
+        catalog.create_part(db, "B", "B", "STEEL")
+        for bad in (Decimal("1e12"), Decimal("0.0001"), Decimal("NaN"), 0.5):
+            with pytest.raises(app.errors.InvalidValue):
+                catalog.add_component(db, "A", "B", bad)
+            with pytest.raises(app.errors.InvalidValue):
+                catalog.set_property(db, "A", "mass", bad if bad != Decimal("0.0001") else Decimal("1e-7"), "kg")
+        assert catalog.components(db, "A") == [] and catalog.properties(db, "A") == {}
+
+    def test_a_positive_total_never_rounds_to_zero(self, app: App, catalog_db: Any) -> None:
+        """Review L-7 of #29: three levels of ``0.001`` give an exact total of ``1e-9``, below ``BOM_SCALE``; the
+        bill of materials refuses rather than listing the part as needed 0 times."""
+        db = catalog_db
+        _chain(app, db, ["Z0", "Z1", "Z2", "Z3"], Decimal("0.001"))
+        assert app.catalog.bill_of_materials(db, "Z1")[-1] == app.catalog.Component("Z3", Decimal("0.000001"), 2)
+        with pytest.raises(app.errors.InvalidValue):
+            app.catalog.bill_of_materials(db, "Z0")

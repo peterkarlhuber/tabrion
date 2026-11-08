@@ -51,7 +51,9 @@ retry. Nothing is held between the read and the write, so there is no lost updat
 inserts. Two such additions with disjoint rows (`A → B` and `C → D` while `B → C` and `D → A` exist) could each pass
 the check and together close a cycle. SQLite runs one writer at a time (`BEGIN IMMEDIATE`); on PostgreSQL each
 `add_component` first takes the transaction-level advisory lock `catalog.RELATIONS_LOCK`
-(`pg_advisory_xact_lock(tabrion.postgres.lock_key("parts.part_relation"))`), released by the commit or rollback.
+(`pg_catalog.pg_advisory_xact_lock(tabrion.postgres.lock_key("parts.part_relation"))`), released by the commit or
+rollback. Advisory locks belong to the database, not the schema, so several catalogs (schemas) in one database share
+the lock: that costs throughput, not correctness.
 That serializes exactly the relation additions, with no retry loop; `SERIALIZABLE` would be correct as well, but
 the caller would have to retry serialization failures, also ones from unrelated reads. Relations written past
 `add_component` with a cycle make `bill_of_materials` raise `CycleFound`.
@@ -59,14 +61,16 @@ the caller would have to retry serialization failures, also ones from unrelated 
 **Errors** are the application's own (`parts.errors`), with fixed texts. A Tabrion `IntegrityViolation` becomes one
 of them by its `Kind` (`UNIQUE` → `AlreadyExists`, `FOREIGN_KEY` → `InUse`, and always `CHECK` and `DATA`, such as an
 empty name, a text longer than its column or a quantity that is not positive, → `InvalidValue`), raised outside the
-`except` block, so no driver message (which may quote a value) is chained.
+`except` block, so no driver message (which may quote a value) is chained. A quantity or property value that does not
+fit its column (too large, too many decimals, `NaN`, a `float`) is `InvalidValue` too, checked before any SQL.
 
 **Bill of materials.** One recursive query (`WITH RECURSIVE`, the same SQL on both engines, one statement and so one
 snapshot) returns the relations below the assembly with the part numbers. Python then visits the parts in
 topological order (Kahn's algorithm): linear in the relations, with no recursion depth limit, and a cycle found on
 the way raises `CycleFound`. Quantities are multiplied along each path and summed over the paths exactly (a
 `decimal` context that never rounds); each total is then rounded once, half even, to `catalog.BOM_SCALE` (6)
-decimal places. The depth is the shortest path.
+decimal places. A positive total that would round to 0 there (three levels of `0.001`, for example) raises
+`InvalidValue` instead of listing the part as needed 0 times. The depth is the shortest path.
 
 ## The schema
 

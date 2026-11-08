@@ -1,9 +1,9 @@
 """The parts catalog of the plain SQLAlchemy baseline (RA-A-3): the functions of ``examples/parts/parts/catalog.py``
 on a SQLAlchemy ``Engine``.
 
-Every function takes the application's engine and runs in one connection (``engine.connect()`` for queries,
-``engine.begin()`` for changes). A database error arrives as SQLAlchemy's ``DBAPIError``; ``db.classify`` tells the
-constraints apart and the error becomes this application's own error.
+Every function takes the application's engine and runs in one transaction (``engine.connect()`` for queries,
+``db.write_transaction`` for changes, ``BEGIN IMMEDIATE`` on SQLite). A database error arrives as SQLAlchemy's
+``DBAPIError``; ``db.classify`` tells the constraints apart and the error becomes this application's own error.
 
 The optimistic lock (``version``): every change of a part names the version the caller read and runs
 ``UPDATE ... WHERE part_number = ? AND version = ?`` with ``version = version + 1``. No row changed means another
@@ -11,10 +11,9 @@ writer was first: ``StaleVersion``, and the caller reads again. Nothing is held 
 no lost update is possible on either engine.
 
 The cycle check of ``add_component`` reads the relations and then inserts one; two such transactions with
-disjoint rows could each pass the check and together close a cycle. On PostgreSQL ``add_component`` takes the
-transaction-level advisory lock ``RELATIONS_LOCK`` first, as ``examples/parts`` does. On SQLite the baseline adds
-nothing: pysqlite runs the check outside a transaction and takes the write lock only with the ``INSERT``, so the
-race stays (a measured deviation, see the README); ``examples/parts`` gets ``BEGIN IMMEDIATE`` from Tabrion.
+disjoint rows could each pass the check and together close a cycle. On SQLite ``write_transaction``
+(``BEGIN IMMEDIATE``) runs one writer at a time; on PostgreSQL ``add_component`` takes the transaction-level
+advisory lock ``RELATIONS_LOCK`` first, as ``examples/parts`` does.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from typing import Any, TypeVar
 
 import sqlalchemy as sa
 
-from parts_baseline.db import Violation, classify, relations_lock
+from parts_baseline.db import Violation, classify, relations_lock, write_transaction
 from parts_baseline.errors import (
     AlreadyExists,
     CycleFound,
@@ -60,6 +59,16 @@ _EXACT = Context(prec=MAX_PREC, Emax=MAX_EMAX, Emin=MIN_EMIN)
 """A context in which ``+`` and ``*`` of finite decimals never round."""
 
 T = TypeVar("T")
+
+
+def _fits(column: sa.Column[Decimal], value: object) -> Decimal:
+    """``value`` as the column's ``ExactDecimal`` stores it; ``InvalidValue`` for a float, ``NaN`` or a value that
+    does not fit ``numeric(p, s)`` (raised outside the ``except`` block)."""
+    try:
+        return column.type.exact(value)  # type: ignore[attr-defined, no-any-return]
+    except ValueError:
+        pass
+    raise InvalidValue("a value is out of range")
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,12 +105,12 @@ _INVALID: Mapping = {
 
 
 def _write(engine: sa.Engine, work: Callable[[sa.Connection], T], mapping: Mapping) -> T:
-    """``work`` in one ``engine.begin()``; a ``DBAPIError`` whose ``Violation`` is mapped (``CHECK`` and ``DATA``
+    """``work`` in one ``write_transaction``; a ``DBAPIError`` whose ``Violation`` is mapped (``CHECK`` and ``DATA``
     always, to ``InvalidValue``) becomes the application's error, raised outside the ``except`` block (the driver's
     message may quote a value)."""
     mapped: tuple[type[PartsError], str] | None = None
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             return work(connection)
     except sa.exc.DBAPIError as error:
         mapped = {**_INVALID, **mapping}.get(classify(error))
@@ -263,6 +272,8 @@ def set_property(engine: sa.Engine, part_number: str, key: str, value: Decimal, 
     """Insert or replace one property (exact ``Decimal``, with its unit). Two concurrent first inserts of one key:
     the second gets the ``UNIQUE`` violation and runs again, now as an update."""
 
+    value = _fits(property_.c.value, value)
+
     def work(connection: sa.Connection) -> None:
         part_id = _part_id(connection, part_number)
         changed = connection.execute(
@@ -306,10 +317,11 @@ def _descendants(connection: sa.Connection, part_id: int) -> set[int]:
 
 def add_component(engine: sa.Engine, assembly: str, component: str, quantity: Decimal) -> None:
     """``component`` becomes part of ``assembly`` ``quantity`` times; a cycle is refused (``CycleRefused``)."""
+    quantity = _fits(part_relation.c.quantity, quantity)
 
     def work(connection: sa.Connection) -> None:
         if connection.dialect.name == "postgresql":
-            connection.execute(sa.select(sa.func.pg_advisory_xact_lock(RELATIONS_LOCK)))
+            connection.execute(sa.select(sa.func.pg_catalog.pg_advisory_xact_lock(RELATIONS_LOCK)))
         assembly_id = _part_id(connection, assembly)
         component_id = _part_id(connection, component)
         if component_id == assembly_id or assembly_id in _descendants(connection, component_id):
@@ -354,7 +366,9 @@ def bill_of_materials(engine: sa.Engine, assembly: str) -> list[Component]:
 
     The parts are visited in topological order (Kahn's algorithm), so the time is linear in the relations and no
     depth is too deep. The arithmetic is exact (a ``decimal`` context that never rounds); each total is rounded
-    once, half even, to ``BOM_SCALE`` decimal places. Stored relations with a cycle raise ``CycleFound``."""
+    once, half even, to ``BOM_SCALE`` decimal places. A positive total that would round to 0 (three levels of
+    ``0.001``, for example) raises ``InvalidValue`` rather than listing a part as needed 0 times. Stored relations
+    with a cycle raise ``CycleFound``."""
     with engine.connect() as connection:
         root = _part_id(connection, assembly)
         edges = _reachable_edges(connection, root)
@@ -388,6 +402,8 @@ def bill_of_materials(engine: sa.Engine, assembly: str) -> list[Component]:
             Component(numbers[node], totals[node].quantize(step, rounding=ROUND_HALF_EVEN), depths[node])
             for node in waiting
         ]
+    if any(not component.quantity for component in result):
+        raise InvalidValue("a total is below the bill of materials scale")
     return sorted(result, key=lambda component: component.part_number)
 
 

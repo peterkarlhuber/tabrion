@@ -2,14 +2,22 @@
 error classification that ``examples/parts`` gets from Tabrion.
 
 All database plumbing lives here (metric MW-1 of planning document 09 section 7). It is what a careful application
-writes with SQLAlchemy and Alembic alone, following their documentation: ``PRAGMA foreign_keys=ON`` on every SQLite
-connection, ``pool_pre_ping``, the PostgreSQL ``search_path`` and time zone through ``options``, and the driver
-errors told apart by SQLSTATE or by the SQLite message. It does not set WAL, ``BEGIN IMMEDIATE`` or read-only
-transactions; RA-EVAL measures what that changes.
+writes with SQLAlchemy and Alembic alone, following their documentation, and it defines "plain SQLAlchemy" the same
+way as the RA-B-4 baseline (``examples/measurements-baseline``):
+
+- on SQLite, a ``connect`` event for ``PRAGMA foreign_keys=ON`` and the documented pysqlite recipe that takes
+  ``BEGIN`` over from the driver (``isolation_level = None``, then a ``begin`` event), so DDL and reads are inside
+  the transaction and a write transaction (``write_transaction``) starts with ``BEGIN IMMEDIATE``;
+- on PostgreSQL, ``pool_pre_ping`` and the ``search_path`` and time zone through ``options``;
+- the driver errors told apart by SQLSTATE or by ``sqlite3.Error.sqlite_errorname``.
+
+It does not add read-only transactions or value-free error messages.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
@@ -30,12 +38,14 @@ class SchemaNotCurrent(Exception):
     """The database is not at the head revision of ``parts_baseline/migrations``."""
 
 
-def _sqlite_on_connect(dbapi_connection: Any, _record: Any) -> None:
-    cursor = dbapi_connection.cursor()
-    try:
-        cursor.execute("PRAGMA foreign_keys=ON")
-    finally:
-        cursor.close()
+def _sqlite_on_connect(dbapi_connection: sqlite3.Connection, _record: Any) -> None:
+    dbapi_connection.isolation_level = None  # pysqlite's own BEGIN off: SQLAlchemy's "begin" event below
+    dbapi_connection.execute("PRAGMA foreign_keys = ON")
+
+
+def _sqlite_on_begin(connection: sa.Connection) -> None:
+    immediate = connection.get_execution_options().get("immediate", False)
+    connection.exec_driver_sql("BEGIN IMMEDIATE" if immediate else "BEGIN")
 
 
 def create_engine(url: str | sa.URL, *, search_path: str | None = None) -> sa.Engine:
@@ -45,11 +55,21 @@ def create_engine(url: str | sa.URL, *, search_path: str | None = None) -> sa.En
     if url.drivername == "postgresql":
         url = url.set(drivername="postgresql+psycopg")
     if url.get_backend_name() == "sqlite":
-        engine = sa.create_engine(url, pool_pre_ping=True)
+        engine = sa.create_engine(url)
         sa.event.listen(engine, "connect", _sqlite_on_connect)
+        sa.event.listen(engine, "begin", _sqlite_on_begin)
         return engine
     options = "-c timezone=UTC" + (f" -c search_path={search_path}" if search_path else "")
     return sa.create_engine(url, pool_pre_ping=True, connect_args={"options": options})
+
+
+@contextmanager
+def write_transaction(engine: sa.Engine) -> Iterator[sa.Connection]:
+    """A write transaction (``BEGIN IMMEDIATE`` on SQLite): committed at the end, rolled back on an error."""
+    with engine.connect() as connection:
+        connection = connection.execution_options(immediate=True)
+        with connection.begin():
+            yield connection
 
 
 def _config() -> Config:
@@ -59,16 +79,16 @@ def _config() -> Config:
 
 
 def upgrade(engine: sa.Engine, revision: str = "head") -> None:
-    """``alembic upgrade`` in one transaction on a connection of ``engine``."""
+    """``alembic upgrade`` in one ``write_transaction``: all of it or nothing."""
     config = _config()
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         config.attributes["connection"] = connection
         command.upgrade(config, revision)
 
 
 def downgrade(engine: sa.Engine, revision: str) -> None:
     config = _config()
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         config.attributes["connection"] = connection
         command.downgrade(config, revision)
 
@@ -129,18 +149,20 @@ _SQLSTATES = {
 }
 
 
+_SQLITE_NAMES = {
+    "SQLITE_CONSTRAINT_UNIQUE": Violation.UNIQUE,
+    "SQLITE_CONSTRAINT_PRIMARYKEY": Violation.UNIQUE,
+    "SQLITE_CONSTRAINT_FOREIGNKEY": Violation.FOREIGN_KEY,
+    "SQLITE_CONSTRAINT_CHECK": Violation.CHECK,
+}
+
+
 def classify(error: sa.exc.DBAPIError) -> Violation:
-    """What a ``DBAPIError`` broke: the SQLSTATE on PostgreSQL, the message on SQLite."""
+    """What a ``DBAPIError`` broke: the SQLSTATE on PostgreSQL, ``sqlite_errorname`` on SQLite."""
     original = error.orig
     sqlstate = getattr(original, "sqlstate", None)
     if sqlstate is not None:
         return _SQLSTATES.get(sqlstate, Violation.OTHER)
-    if isinstance(original, sqlite3.IntegrityError):
-        message = str(original)
-        if message.startswith(("UNIQUE constraint failed", "PRIMARY KEY")):
-            return Violation.UNIQUE
-        if message.startswith("FOREIGN KEY constraint failed"):
-            return Violation.FOREIGN_KEY
-        if message.startswith("CHECK constraint failed"):
-            return Violation.CHECK
+    if isinstance(original, sqlite3.Error):
+        return _SQLITE_NAMES.get(original.sqlite_errorname, Violation.OTHER)
     return Violation.OTHER

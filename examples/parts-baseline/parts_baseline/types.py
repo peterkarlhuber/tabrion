@@ -84,7 +84,8 @@ class ExactDecimal(TypeDecorator[Decimal]):
             return dialect.type_descriptor(BigInteger())
         return dialect.type_descriptor(Numeric(self.precision, self.scale, asdecimal=True))
 
-    def _exact(self, value: object) -> Decimal:
+    def exact(self, value: object) -> Decimal:
+        """``value`` quantized to the scale; ``ValueError`` unless it is a ``Decimal`` or ``int`` that fits."""
         if not isinstance(value, Decimal | int) or isinstance(value, bool):
             raise ValueError("a decimal value must be a Decimal or an int, never a float")
         try:
@@ -100,12 +101,12 @@ class ExactDecimal(TypeDecorator[Decimal]):
     def process_bind_param(self, value: Decimal | None, dialect: Dialect) -> Any:
         if value is None:
             return None
-        exact = self._exact(value)
+        exact = self.exact(value)
         return int(exact.scaleb(self.scale)) if dialect.name == "sqlite" else exact
 
     def process_result_value(self, value: Any, dialect: Dialect) -> Decimal | None:
         if value is None:
             return None
         if dialect.name == "sqlite":
-            return self._exact(Decimal(int(value)).scaleb(-self.scale))
-        return self._exact(Decimal(value))
+            return self.exact(Decimal(int(value)).scaleb(-self.scale))
+        return self.exact(Decimal(value))

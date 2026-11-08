@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 import os
+from pathlib import Path
 import subprocess
 import sys
 from typing import Any
@@ -53,17 +54,16 @@ BASELINE = App(
     open=_open,
     close=sa.Engine.dispose,
     engine=lambda engine: engine,
-    write=sa.Engine.begin,
+    write=parts_baseline.db.write_transaction,
     read=_read,
     not_current=parts_baseline.db.SchemaNotCurrent,
+    integrity_error=sa.exc.IntegrityError,
+    usage_error=sa.exc.StatementError,
+    constraint_name=lambda error: None,
     deviations={
-        "test_a_failing_upgrade_leaves_nothing_behind[sqlite]": (
-            "pysqlite opens a transaction only before INSERT, UPDATE and DELETE, so engine.begin() does not cover"
-            " Alembic's DDL: the tables of 0001 stay behind with an empty version table"
-        ),
-        "test_concurrent_additions_cannot_close_a_cycle[sqlite]": (
-            "pysqlite runs the cycle check outside a transaction and takes the write lock only with the INSERT, so"
-            " two disjoint additions both pass their check and close a cycle"
+        "test_violations_name_their_constraint": (
+            "db.classify tells the kind of violation apart but not the constraint's name (Tabrion reads it from"
+            " the PostgreSQL diagnostics and the SQLite message)"
         ),
     },
 )
@@ -75,16 +75,31 @@ class TestPartsBaseline(PartsSuite):
         return BASELINE
 
 
-def test_the_baseline_imports_no_tabrion() -> None:
-    """The baseline is SQLAlchemy and Alembic alone: importing all of it loads no ``tabrion`` module."""
-    code = (
-        "import sys; import parts_baseline, parts_baseline.catalog, parts_baseline.db; "
-        "loaded = sorted(m for m in sys.modules if m.split('.')[0] == 'tabrion'); "
-        "print(loaded); raise SystemExit(1 if loaded else 0)"
-    )
+_RUN_WITHOUT_TABRION = """
+import sys
+from parts_baseline import create_engine, downgrade, require_current, upgrade
+from parts_baseline.catalog import create_material, create_part, get_part
+
+engine = create_engine("sqlite:///" + sys.argv[1])
+upgrade(engine)  # loads env.py and every revision
+require_current(engine)
+create_material(engine, "STEEL", "Steel")
+create_part(engine, "P-1", "Bolt", "STEEL")
+get_part(engine, "P-1")
+downgrade(engine, "base")
+engine.dispose()
+loaded = sorted(m for m in sys.modules if m.split(".")[0] == "tabrion")
+print(loaded)
+raise SystemExit(1 if loaded else 0)
+"""
+
+
+def test_the_baseline_imports_no_tabrion(tmp_path: Path) -> None:
+    """Review L-1 of #35: the baseline is SQLAlchemy and Alembic alone. A subprocess that migrates up (loading
+    ``env.py`` and the revisions), writes, reads and migrates down has loaded no ``tabrion`` module."""
     path = os.pathsep.join([str(EXAMPLES / "parts-baseline"), *sys.path])
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [sys.executable, "-c", _RUN_WITHOUT_TABRION, str(tmp_path / "isolated.db")],
         env={**os.environ, "PYTHONPATH": path},
         capture_output=True,
         text=True,

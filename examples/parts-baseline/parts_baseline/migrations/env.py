@@ -1,13 +1,14 @@
 """Alembic environment of the plain SQLAlchemy baseline.
 
 ``parts_baseline.db.upgrade`` passes a connection of the application's engine in ``config.attributes``. The
-``alembic`` command line (``alembic.ini`` next to the package) creates an engine from ``sqlalchemy.url`` instead.
+``alembic`` command line (``alembic.ini`` next to the package) creates an engine from ``sqlalchemy.url`` instead,
+with the same ``write_transaction``.
 """
 
 from __future__ import annotations
 
 from alembic import context
-from parts_baseline.db import create_engine
+from parts_baseline.db import create_engine, write_transaction
 from parts_baseline.schema import metadata
 import sqlalchemy as sa
 
@@ -27,7 +28,7 @@ else:
         raise RuntimeError("set sqlalchemy.url in alembic.ini or run parts_baseline.db.upgrade")
     engine = create_engine(url)
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             run(connection)
     finally:
         engine.dispose()
