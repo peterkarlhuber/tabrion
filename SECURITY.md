@@ -41,7 +41,17 @@ In scope are vulnerabilities in the code of this repository, for example:
 Accepted residual risks (documented, not vulnerabilities):
 
 - Tabrion does not enforce TLS on connections it did not open itself (layer A only diagnoses them).
-- On Windows `O_NOFOLLOW` does not exist; only the symlink check protects new files there.
+- SQLite files (`tabrion.sqlite`, TAB-013, TAB-014):
+  - on Windows `O_NOFOLLOW` does not exist and SQLite does not resolve links in the name it opens; there the
+    `lstat` check (reparse points included) and the inode comparison after opening protect the file, not the
+    resolved-name comparison of POSIX (contract I-15);
+  - SQLite opens `-wal`, `-shm` and `-journal` by name when it first needs them, after `connect` has checked them;
+    a link planted later in the database's directory is followed. Keep databases in a directory that only the
+    owner can write (a world-writable directory without the sticky bit is a TM-03 finding, TODO TB-037);
+  - a `read_only` connection to a WAL database may create `-wal` and `-shm` with the main file's mode, which an
+    existing world-readable file passes on; `connect` never changes the mode of an existing file (MIG-NOD-9 does
+    that for Nodestro);
+  - the files are not protected against the owning user or root, and they are not encrypted at rest.
 - `TLSMode.INSECURE` is an explicit opt-in for local development.
 - Using `Database.engine` directly bypasses Tabrion's transaction modes.
 - `DbErrorRedactionFilter` protects only the records it sees: the application installs it (on its handlers, its

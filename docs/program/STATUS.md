@@ -4,8 +4,9 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, fix round of the M2 lane A pull request [#3](https://github.com/peterkarlhuber/tabrion/pull/3) (TAB-010, TAB-011, TAB-012; branch `claude/project-thread-rdo6g3`) after the independent review (not accepted at `9fe568f`),
-> after the G-T1 follow-up pull request [#2](https://github.com/peterkarlhuber/tabrion/pull/2) merged (`c31529d`).
+> **Last update:** 2026-11-08, M2 lane B pull request (TAB-013, TAB-014; branch `claude/project-thread-rdo6g3`), after
+> the M2 lane A pull request [#3](https://github.com/peterkarlhuber/tabrion/pull/3) (TAB-010..TAB-012) merged (`6b99604`;
+> independent review accepted at `ece7572`).
 > Detailed open work for this repository: [docs/TODO.md](../TODO.md). Risks: [risks.md](risks.md).
 
 ## Status values
@@ -27,7 +28,7 @@ the owning thread reports it.
 | Milestone | Content | Entry | Exit gate | Status |
 |---|---|---|---|---|
 | M1 | Foundation: repositories, skeleton, API freeze | G-A | G-T1 (TAB-002) | Done: conditional (#1 merged; G-T1 conditions below; GOV-2 and GOV-3 wait for owner actions) |
-| M2 | Tabrion 0.1, internal alpha, reference applications; lane JQ in parallel | G-T1 | G-T2 (TAB-040) | In progress (TAB-010..TAB-012 in review, [M2 evidence](#m2-evidence)) |
+| M2 | Tabrion 0.1, internal alpha, reference applications; lane JQ in parallel | G-T1 | G-T2 (TAB-040) | In progress (TAB-010..TAB-012 done, [M2 evidence](#m2-evidence); TAB-013, TAB-014 in review, [lane B evidence](#m2-lane-b-evidence-tab-013-tab-014)) |
 | M3 | Versioning, Axentra security evidence, waves W1 and W2, architecture checks | TAB-040 `v0.1.0` final (RC-8) | G-M per step | Not started |
 | M4 | Tabrion 0.2 (Studio APIs); TAB-CR-1/2 from CR-DB | G-T2 | G-T2 for 0.2 (TAB-042); PyPI only after G-R | Not started |
 | M5 | Waves W3-W6 | M3 | G-M per step | Not started |
@@ -84,21 +85,21 @@ Planned effort: 60.75 + 21.25 agent days.
 | JQ-2 | Impact analysis including the export | nodestro-runtime, nodestro-api | JQ-1 | G-M | 1 + 0.5 | JQ | Not started |  |
 | JQ-3 | Fix option A and allowlist guard | nodestro-runtime | JQ-2 | G-M | 1.5 + 1 | JQ | Not started |  |
 | MIG-AXE-0 | Local B-06-1 fix in Axentra right after G-A, independent of Tabrion (replaced later by MIG-AXE-3) | axentra | G-A | G-M | 1 + 0.5 | JQ | Not started |  |
-| TAB-010 | tabrion.errors | tabrion | TAB-002 | - | 2 + 1 | Core | In review | `src/tabrion/errors.py`; `tests/unit/test_errors.py` (E01..E13, E15..E24), `tests/postgres/test_errors_postgres.py` (server errors, E12, E14 fault proxy, E15, E21, E23), H-1/H-2/M-2/M-3 regression tests (`test_h1_*`, `test_h2_*`, `test_m2_*`, `test_m3_*`, unit and PostgreSQL), mutation probes in `tests/unit/test_mutation_probes.py`; [M2 evidence](#m2-evidence). Independent review: not accepted at `9fe568f` (H-1, H-2), fixed in this pull request, delta re-review pending (TB-026) |
-| TAB-011 | tabrion.sql split_statements | tabrion | TAB-002 | - | 1 + 0.25 | Core | In review | `src/tabrion/sql.py`; `tests/unit/test_sql.py` (Q01..Q10), golden file `tests/golden/axentra_splitter.json` (all 17 SQL files of Axentra 9c4666f byte-identical); [M2 evidence](#m2-evidence) |
-| TAB-012 | tabrion.config safe_url/url_from_env | tabrion | TAB-002 | - | 0.5 + 0 | Core | In review | `src/tabrion/config.py`; `tests/unit/test_config.py` (C01..C08, review M-1, L-1, L-3, L-6); [M2 evidence](#m2-evidence) |
+| TAB-010 | tabrion.errors | tabrion | TAB-002 | - | 2 + 1 | Core | Done | `src/tabrion/errors.py`; `tests/unit/test_errors.py` (E01..E13, E15..E24), `tests/postgres/test_errors_postgres.py` (server errors, E12, E14 fault proxy, E15, E21, E23), H-1/H-2/M-2/M-3 regression tests (`test_h1_*`, `test_h2_*`, `test_m2_*`, `test_m3_*`, unit and PostgreSQL), mutation probes in `tests/unit/test_mutation_probes.py`; [M2 evidence](#m2-evidence). Independent review: not accepted at `9fe568f` (H-1, H-2), fixed in the same pull request, **accepted at `ece7572`** (delta re-review; TB-026 done); merged in #3 (`6b99604`). Re-review N-2 and N-5 fixed in the M2 lane B pull request, N-1, N-3, N-4, N-6, N-7 are TODO TB-032..TB-036 |
+| TAB-011 | tabrion.sql split_statements | tabrion | TAB-002 | - | 1 + 0.25 | Core | Done | `src/tabrion/sql.py`; `tests/unit/test_sql.py` (Q01..Q10), golden file `tests/golden/axentra_splitter.json` (all 17 SQL files of Axentra 9c4666f byte-identical); [M2 evidence](#m2-evidence) |
+| TAB-012 | tabrion.config safe_url/url_from_env | tabrion | TAB-002 | - | 0.5 + 0 | Core | Done | `src/tabrion/config.py`; `tests/unit/test_config.py` (C01..C08, review M-1, L-1, L-3, L-6); [M2 evidence](#m2-evidence) |
 | QA-8 | Supply chain (pip-audit, npm audit, SBOM) | tabrion, tabrion-studio | TAB-004 | - | 1 + 0.25 | QA | Not started |  |
 | TAB-051 | API stability policy and deprecation helper | tabrion | TAB-023 | - | 1 + 0.25 | Core | Not started |  |
 | JQ-4 | Docs, CHANGELOG, export adjustment, pin wave W7 (JQ) | runtime, api, studio | JQ-3 | G-M | 1 + 0.5 | JQ | Not started |  |
 | QA-11 | Release workflow without publishing | tabrion | TAB-005 | - | 1 + 0.25 | QA | Not started |  |
-| TAB-013 | tabrion.sqlite connection and profile | tabrion | TAB-010 | - | 2 + 1 | Core | Not started |  |
+| TAB-013 | tabrion.sqlite connection and profile | tabrion | TAB-010 | - | 2 + 1 | Core | In review | `src/tabrion/sqlite.py` (`SQLiteProfile`, `create_private_file`, `connect`, `apply_profile`, `check_path`, `loading_extensions`); `tests/sqlite/test_connect.py` (S01..S12), `tests/sqlite/test_profile.py` (S13..S15), mutation probes in `tests/sqlite/test_mutation_probes_sqlite.py`; contract I-14..I-16; [lane B evidence](#m2-lane-b-evidence-tab-013-tab-014). Independent review pending (TB-038) |
 | TAB-015 | tabrion.postgres configure, ping, diagnose, extension_status | tabrion | TAB-010, TAB-012 | - | 2 + 0.5 | Core | Not started |  |
 | TAB-038 | Internal pre-release v0.1.0a1 (errors, sql, config) for unmerged integration branches (RC-8) | tabrion | TAB-010, TAB-011, TAB-012, TAB-005 | - | 0.25 + 0.25 | Core | Not started |  |
 | QA-22 | Conventions audit of the new repositories | tabrion, tabrion-studio | TAB-004, STU-018 | - | 0.5 + 0 | QA | Not started |  |
 | TAB-016 | tabrion.postgres reading roles | tabrion | TAB-015 | - | 1.5 + 0.75 | Core | Not started |  |
 | TAB-030 | SessionLock and advisory lock helpers (0.1) | tabrion | TAB-015 | - | 2 + 1 | Core | Not started |  |
 | TAB-034 | Fault-injection proxy tabrion.testing.faults (includes QA-3) | tabrion | TAB-015 | - | 1.5 + 0.5 | Core | Not started |  |
-| TAB-014 | tabrion.sqlite transactions, migrate, backup, checks | tabrion | TAB-013 | - | 3 + 1.5 | Core | Not started |  |
+| TAB-014 | tabrion.sqlite transactions, migrate, backup, checks | tabrion | TAB-013 | - | 3 + 1.5 | Core | In review | `src/tabrion/sqlite.py` (transactions, `migrate`, `backup`, checks, `diagnose`); `tests/sqlite/test_transactions.py` (S16..S21), `test_migrate.py` (S22..S30), `test_backup.py` (S31..S34), `test_checks.py` (S35..S41), `test_notx.py` (T-NOTX); contract I-17..I-24; [lane B evidence](#m2-lane-b-evidence-tab-013-tab-014). Independent review pending (TB-038) |
 | TAB-020 | tabrion.testing 0.1 | tabrion | TAB-015, TAB-013 | - | 2 + 0.5 | Core | Not started |  |
 | TAB-031 | grant_runtime_role unifying Nodestro and Axentra (0.1) | tabrion | TAB-016 | - | 2 + 1 | Core | Not started |  |
 | TAB-032 | testing: database per session, roles without superuser, truncate, runtime-role mode (0.1) | tabrion | TAB-020 | - | 2 + 0.5 | Core | Not started |  |
@@ -313,7 +314,7 @@ of Done (planning document 07 section 6). Local run on 2026-11-08: Python 3.13, 
 | 4. No parameter value or secret in new log or error paths | E10, E12, E17, E21..E24 | No error path | C06..C08 |
 | 5. Rollback path | Revert of this pull request (no consumer uses it yet; TAB-038 not tagged) | Same | Same |
 | 6. STATUS.md and TODO.md updated | Yes | Yes | Yes |
-| Review model | **Independent review agent required** (TAB package in `errors`); not accepted at `9fe568f`, fix round below, delta re-review pending (TODO TB-026) | Self-review | Self-review |
+| Review model | **Independent review agent required** (TAB package in `errors`); not accepted at `9fe568f`, fix round below, **accepted at `ece7572`** (delta re-review, TB-026 done) | Self-review | Self-review |
 
 Fix round after the independent review (`reviews/tab-010-012-review.md`, not accepted at `9fe568f`):
 
@@ -398,6 +399,43 @@ Actions only the owner can take. The agent cannot do them (missing rights) or mu
 | O-8 | Record the planning errata of F-17 (doc 05 section 2.3 lazy-import comment, doc 02 section 9 `tabrion.check(target)`) in the planning documents | G-T1 | Open |
 | O-9 | Upload `assets/branding/social-preview.png` as the social preview in the repository settings (no API for it) | TAB-006 | Open |
 
+### M2 lane B evidence (TAB-013, TAB-014)
+
+What the M2 lane B pull request delivers against the acceptance criteria of planning document 09 and the Definition of
+Done (planning document 07 section 6). Local run on 2026-11-08: Python 3.13 (SQLite 3.53.1), Python 3.11 and 3.12
+(SQLite 3.45.1) on Linux; CI runs Python 3.11-3.14 on Linux and the platforms workflow (macOS, Windows), which the
+change of `src/tabrion/sqlite.py` and `tests/sqlite/**` triggers. 225 tests in `tests/sqlite/`, 76 of them marked
+`security`; branch coverage of `tabrion/sqlite.py` 95 % on Linux (the uncovered lines are the Windows branches and
+defensive error paths).
+
+| WP | Acceptance criterion (plan document 09, 07) | Evidence |
+|---|---|---|
+| TAB-013 | TAB-T-S01..S12; a new file 0600; symlinks refused for the main and side files; FK on; `read_only=True` enforces `query_only` | S01 `test_s01_*`: file, `-wal`, `-shm` and `-journal` 0600 under umask 022, 000 (TAB-T-120) and 277 (the mode never depends on the umask, `fchmod`), also for `create_private_file`; an exact `file_mode` with `allow_shared_file`; S02 an existing 0644 file stays 0644; S03..S06 a link for the file and for each side file, normal and `read_only`, plus a dangling link (TAB-T-121: `UnsafePath("sqlite.symlink")`, the target byte-identical, no path in `str`/`repr`, the path only at DEBUG); S07 every race window through seams: a link planted just before `open` (O_EXCL/O_NOFOLLOW), after the check, only while SQLite opens the file and swapped back (caught by the resolved-name check), and a different inode (TM-04; the randomized 1 000-repetition variant is TB-039); S08 `mode=ro` plus `query_only`, INSERT is READ_ONLY, the file byte-identical, the journal mode kept, `FileNotFoundError` without a path and no file for `read_only`/`create=False`; S09 `:memory:` and `""`; S10 the pragmas of the default, `nodestro()` and a custom profile, and TAB-T-001 (an unknown parent is FOREIGN_KEY); S11 a broken file is CORRUPT and the connection is closed; S12 `O_NOFOLLOW` by platform and reparse points. Directories and FIFOs are `sqlite.unsafe_path`; profile validation (I-14). S13..S15 `apply_profile` (foreign connection, idempotent without a journal-mode write, file detection, refused in a transaction), `check_path`, `loading_extensions` (only inside the block, off after an exception, `extensions_unavailable`) |
+| TAB-014 | TAB-T-S13..S41 (doc 02: S13..S35, contract: S16..S41); lost update gives 5 without lock errors (q.py/q2.py); backup target 0600 and atomic | S16 five threads with their own connections read, wait 50 ms and write in `write_transaction`: 5, no error (TAB-T-002/003); S17 rollback on an exception, commit, `BEGIN IMMEDIATE` holds the write lock; S18 every nesting combination and a caller's transaction untouched; S19 `read_transaction` blocks writes (READ_ONLY) and is a snapshot; S20 `query_only` restored after the end and an exception (I-18); S21 `KeyboardInterrupt`; a failing deferred-FK `COMMIT` is rolled back (I-17). S22..S30 `migrate`: each error path compares the SHA-256 of the closed file before and after (TAB-T-010/011); backup order; `BackupFailed`/`MigrationFailed` without `__cause__`/`__context__` and without the exception text; a concurrent migration seen inside the write transaction, and two processes migrating at once (the second waits, sees version 2, runs nothing; the step ran once). S31..S34 `backup`: 0600 under umask 022 and 000 and while copying (TAB-T-122, B-06-3), an interrupt in the middle leaves no file (TAB-T-201), a failed check removes the copy, the check runs on a separate read-only connection, a target that appears during the copy is never replaced, link targets refused, concurrent writers (TAB-T-200, `integrity_check` ok). S35..S38 checks: a damaged file gives `ok=False` without row data (canary), truncation by `max_errors`, a quoted hostile table name, `WITHOUT ROWID`; S39..S41 `diagnose`: every field for a file, `:memory:`, a linked side file, no side effects. T-NOTX (`test_notx.py`): every function that takes a connection, idle and in the caller's transaction, with tuple, `Row` and dict row factories and `text_factory=bytes` |
+
+| DoD point (07 section 6) | TAB-013 | TAB-014 |
+|---|---|---|
+| 1. English; acceptance criteria checked one by one with test IDs | Yes (table above) | Yes |
+| 2. Required CI jobs green; no new skip without a reason | CI of this pull request, including the platforms workflow; skips only where a platform lacks the feature (POSIX modes, FIFOs, symbolic links without the privilege, Python 3.11 without `autocommit`), each with its reason | Same |
+| 3. Public API documented, CHANGELOG; security notes | Contract 3.1..3.3, I-14..I-16, CHANGELOG, SECURITY.md (SQLite residual risks) | Contract 3.4..3.8, I-17..I-24, CHANGELOG |
+| 4. No parameter value or secret in new log or error paths | No path in any error (`UnsafePath`, `FileNotFoundError`, `FileExistsError`); paths only at DEBUG | `BackupFailed`/`MigrationFailed` carry no text and no chain; check messages without row data (canary); `backup_corrupt` with the page count only |
+| 5. Rollback path | Revert of this pull request (no consumer uses `tabrion.sqlite` yet; MIG-NOD-6 and MIG-ORK-3 come later) | Same |
+| 6. STATUS.md and TODO.md updated | Yes | Yes |
+| Review model | **Independent review agent required** (TAB package in `sqlite`: file permissions); self-review with the DoD and TM-03, TM-04, TM-12, DI-01, DI-02, DI-06, DI-11, SR-08, SR-09; pending (TODO TB-038) | **Independent review agent required** (transactions); pending (TB-038) |
+
+Mutation probes (`tests/sqlite/test_mutation_probes_sqlite.py`): 17 probes, each a SQLite safety rule broken in a copy
+of the package that turns its test red: `fchmod` (umask independence), `O_EXCL`/`O_NOFOLLOW`, the side-file check,
+the resolved-name and inode checks after opening, `foreign_keys`, the `file_mode` rule, `BEGIN IMMEDIATE` (lost
+update), rollback on `BaseException`, the `query_only` reset, the version re-read in `migrate`, the 0600 temporary
+backup file, the cleanup after an aborted backup, no overwrite of a target that appeared, `max_errors + 1`, quoting of
+the table name, and the plain-tuple reads (T-NOTX). Probes that need POSIX modes or symbolic links skip where the
+platform lacks them; a positive control passes on the unchanged copy.
+
+Delta re-review of TAB-010..TAB-012 (`reviews/tab-010-012-review.md`, accepted at `ece7572`): N-2 fixed (the
+container walk is guarded and lazy: `test_n2_container_whose_iteration_raises_keeps_the_record`,
+`test_n3_containers_are_not_copied_in_full`), N-5 fixed (docstring placement); N-1, N-3, N-4, N-6 and N-7 are TODO
+TB-032..TB-036, N-4 as a prerequisite of TAB-018.
+
 ## Deviation log
 
 Deviations from the plan, with the reason. A deviation that changes a decision needs an ADR note under "Changes from
@@ -432,6 +470,12 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-25 | TAB-010 | `outcome_unknown` whenever `kind == CONNECTION` and (`sent` or `during_commit`) | Not for SQLSTATE 53300 | The mapping table makes 53300 retryable without condition; it occurs only while connecting (contract I-2) |
 | D-26 | TAB-010 | Contract 1.3 "Chains": the first error with a SQLSTATE along `.orig`, `__cause__` and `__context__` | `.orig` and `__cause__` first; `__context__` only as a fallback and not under `__suppress_context__`; an outer connection loss wins (contract I-13) | Review H-1: `__context__` is the error being handled, so a COMMIT lost inside an `except` block for 40001 was classified as retryable, which breaks R-NORETRY |
 | D-27 | TAB-012 | Codes of `url_from_env` (D-22) | Also `config.too_large` for a file over 64 KiB (contract I-11) | Review L-6: a huge file or a procfs file was read completely and returned as the URL |
+| D-28 | TAB-013 | Contract 3.2: `check_path`, create, connect, `apply_profile` | Also: an existing file must be a regular file, and after opening the path must still be the checked inode and the name SQLite opened its real path (contract I-15) | TM-04: a link swapped in only while SQLite opens the file, or another file put in place, would otherwise go unnoticed |
+| D-29 | TAB-013 | Contract 3.2: `read_only` as `mode=ro` | Also `PRAGMA query_only=ON` (contract I-15) | Plan documents 02 section 4.1 and 09 (TAB-013 acceptance) require it |
+| D-30 | TAB-014 | Contract 3.4: `query_only` `OFF` after a read transaction | The previous value is restored (contract I-18) | Otherwise a `read_only` connection would lose `query_only` after its first read transaction |
+| D-31 | TAB-014 | Contract 3.5: Nodestro semantics (the version read once) | The version is read again after `BEGIN IMMEDIATE` (contract I-19) | The contract's test for two processes ("the second sees the new version and does nothing") fails with a single read: the second process would run the steps again |
+| D-32 | TAB-014 | Contract 3.6: `UsageError` for an open write transaction | For any open transaction; the copy in `journal_mode=DELETE` (contract I-20, I-21) | `sqlite3` cannot tell a read from a write transaction; a WAL-mode copy would leave `-wal`/`-shm` next to the target |
+| D-33 | TAB-013, TAB-014 | Test IDs: doc 02 gives S13..S35 to TAB-014; doc 07 a 1 000-repetition race test (TAB-T-123) | S13..S15 under TAB-013 (contract 3.3 names them for `apply_profile`, `check_path`, `loading_extensions`, which are TAB-013 functions); the race windows tested deterministically, the randomized test is TB-039 | The contract is the more specific source; a randomized race test is timing-dependent on pull requests |
 
 ## Score review
 
