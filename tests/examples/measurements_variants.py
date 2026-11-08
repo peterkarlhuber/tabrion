@@ -44,10 +44,6 @@ DEVIATIONS: dict[str, str] = {
     "test_capture_runs_without_the_transfer_modules": (
         "edge suitability: the baseline's capture needs SQLAlchemy; Tabrion's capture is standard library only"
     ),
-    "test_cli_transfer_errors_name_no_values": (
-        "MW-4 (values in errors): the baseline prints SQLAlchemy's message, which quotes the statement's parameters "
-        "(the readings); Tabrion prints a code and a value-free classification"
-    ),
     "test_a_lost_commit_reply_is_reported_as_outcome_unknown": (
         "MW-2 (P: error model): SQLAlchemy cannot say that a lost COMMIT answer leaves the outcome unknown"
     ),
@@ -56,7 +52,12 @@ DEVIATIONS: dict[str, str] = {
         "COMMIT (outcome unknown) from a refused connection"
     ),
 }
-"""Test name -> why the baseline fails it (a strict ``xfail`` for the baseline only)."""
+"""Test name -> why the baseline fails it (a strict ``xfail`` for the baseline only).
+
+The rule (review M-1 of #28): a documented one-line option of SQLAlchemy is not extra code, so the baseline uses
+it (``hide_parameters=True``, ``pool_pre_ping``), and a probe it would pass is no deviation. The two error-model
+entries follow from ``Baseline.outcome_unknown`` and ``Baseline.classified_as_connection``: SQLAlchemy has no API
+for either, so the adapter can only report what ``DBAPIError`` says."""
 
 
 @dataclass

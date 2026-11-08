@@ -139,6 +139,16 @@ class Store:
                 (target, seq),
             )
 
+    def reset_mark(self, target: str = DEFAULT_TARGET) -> None:
+        """Forget the mark of ``target``: the next transfer sends everything again (review L-1 of #23).
+
+        For a switched or restored upstream, which may lack rows the mark counts as sent. Safe because the transfer
+        is idempotent: rows that are already upstream are skipped.
+        """
+        _name(target, "target", 64)
+        with tsqlite.write_transaction(self.connection) as connection:
+            connection.execute("DELETE FROM transfer_mark WHERE target = ?", (target,))
+
     def after(self, seq: int = 0, *, limit: int = 1000) -> list[Stored]:
         """Rows with ``seq`` above ``seq``, in capture order: the batches of the transfer (RA-B-2)."""
         with tsqlite.read_transaction(self.connection) as connection:

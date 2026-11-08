@@ -65,7 +65,7 @@ def _read_csv(stream: TextIO) -> Iterator[Measurement]:
         yield measurement
 
 
-def _upstream(store: Store, command: str, batch_size: int) -> int:
+def _upstream(store: Store, command: str, batch_size: int, *, from_start: bool = False) -> int:
     from measurements_baseline.transfer import UpstreamError, transfer
     from measurements_baseline.upstream import create_upstream, open_upstream
 
@@ -76,6 +76,8 @@ def _upstream(store: Store, command: str, batch_size: int) -> int:
                 create_upstream(upstream)
                 print("upstream ready")
                 return 0
+            if from_start:
+                store.reset_mark()  # a switched or restored upstream: send everything again (idempotent)
             report = transfer(store, upstream, batch_size=batch_size)
         finally:
             upstream.dispose()
@@ -103,6 +105,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     commands.add_parser("init-upstream", help="create the upstream table if it is missing")
     send = commands.add_parser("transfer", help="send the readings above the high-water mark upstream")
     send.add_argument("--batch-size", type=int, default=1000)
+    send.add_argument(
+        "--from-start", action="store_true", help="forget the mark first: after switching or restoring the upstream"
+    )
     args = parser.parse_args(argv)
 
     engine = open_database(args.db, backup_dir=args.backup_dir)
@@ -123,7 +128,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "count":
             print(store.count())
         elif args.command in ("init-upstream", "transfer"):
-            return _upstream(store, args.command, args.batch_size if args.command == "transfer" else 0)
+            if args.command == "transfer":
+                return _upstream(store, args.command, args.batch_size, from_start=args.from_start)
+            return _upstream(store, args.command, 0)
     finally:
         engine.dispose()
     return 0

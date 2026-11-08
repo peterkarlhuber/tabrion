@@ -211,6 +211,33 @@ def test_cli_transfer(
     assert capsys.readouterr().out == "0 sent in 0 batches, 0 new upstream, mark 2500\n"
 
 
+def test_transfer_from_start_fills_a_switched_upstream(
+    app: Variant,
+    tmp_path: Path,
+    upstream_url: sa.URL,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review L-1 of #23: the mark says what was sent, not where. Pointed at a fresh upstream, a plain run sends
+    nothing; ``--from-start`` sends everything again, and a repeat against the old upstream adds nothing."""
+    base = ["--db", str(tmp_path / "cli.db"), "--backup-dir", str(tmp_path / "backups")]
+    monkeypatch.delenv(f"{URL_ENV}_FILE", raising=False)
+    fresh = sa.make_url(f"sqlite:///{tmp_path / 'fresh.db'}")
+    with app.upstream(fresh) as opened:
+        app.create_upstream(opened.handle)
+    assert app.main([*base, "demo", "100"]) == 0
+    for url in (upstream_url, fresh):
+        monkeypatch.setenv(URL_ENV, url.render_as_string(hide_password=False))
+        capsys.readouterr()
+        assert app.main([*base, "transfer"]) == 0
+    assert capsys.readouterr().out == "0 sent in 0 batches, 0 new upstream, mark 100\n"  # the silent case
+    assert app.main([*base, "transfer", "--from-start"]) == 0
+    assert capsys.readouterr().out == "100 sent in 1 batches, 100 new upstream, mark 100\n"
+    monkeypatch.setenv(URL_ENV, upstream_url.render_as_string(hide_password=False))
+    assert app.main([*base, "transfer", "--from-start"]) == 0
+    assert capsys.readouterr().out == "100 sent in 1 batches, 0 new upstream, mark 100\n"
+
+
 def test_cli_transfer_errors_name_no_values(
     app: Variant, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -230,6 +257,8 @@ def test_cli_transfer_errors_name_no_values(
         assert app.main([*base, "transfer"]) == 2
         captured = capsys.readouterr()
         assert captured.err.startswith("measurements: transfer stopped: ")
+        if app.name == "tabrion":  # Tabrion's stable code (review L-6 of #28)
+            assert captured.err.startswith("measurements: transfer stopped: database.")
         assert captured.err.endswith("; the mark stays at 0\n")
         assert "CANARY" not in captured.err + captured.out
 

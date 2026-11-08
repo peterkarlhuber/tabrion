@@ -20,8 +20,8 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 12 |
-| P2 Medium | 11 |
-| P3 Low | 29 |
+| P2 Medium | 12 |
+| P3 Low | 31 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -134,7 +134,8 @@ required (owner decision of 2026-11-08 11:26Z).
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
 - **Status note:** TAB-020 and TAB-032 are in the fourth lane C pull request (#11; contract I-36, I-60), after #8
   (TAB-031) merged. Re-review at `5110c8f`: TAB-020 accepted, TAB-032 accepted with conditions; M-1 (the condition),
-  DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73).
+  DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73); both accepted after the second re-review and merged
+  in #11 (`e9da2a3`). Its non-blocking follow-ups (RR2-L1, Info) are in the TAB-022 pull request.
 - **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
   TAB-019 (`tabrion.migrations`, contract I-57) is done (#14). TAB-021 (`tabrion.testing.profiles`, contract I-58,
   deviations D-62 and D-63) is done (#15) after its review fix round (M-1..M-3, L-1..L-3; follow-up TB-064).
@@ -148,7 +149,10 @@ required (owner decision of 2026-11-08 11:26Z).
   and the nightly `downstream` job (TAB-022); the internal "Levuvo Database Profile" with `conformance/SPEC.md`,
   vectors, manifest and the job `conformance` (TAB-050); the API stability policy and a deprecation helper
   (TAB-051).
-- **Next step:** TAB-022 after TAB-014, TAB-016 and TAB-030; TAB-050 after TAB-016; TAB-051 after TAB-023.
+- **Status note:** TAB-022 is in the fifth lane C pull request (on master after #11; contract I-61, D-74, D-75): the
+  consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
+  The CI jobs are TB-070.
+- **Next step:** TAB-050 after TAB-016; TAB-051 after TAB-023.
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
@@ -168,16 +172,23 @@ required (owner decision of 2026-11-08 11:26Z).
   `examples/measurements` (local capture, layer A). RA-B-2 adds the idempotent transfer through layer B
   (`measurements/transfer.py`, `measurements/upstream.py`: batches by the high-water mark `seq`, `ON CONFLICT DO
   NOTHING` on the natural key, the mark moved only after the upstream commit; local migration 3 `transfer_mark`).
+  The mark is not tied to an upstream identity (review L-1 of #23): `transfer --from-start` (`Store.reset_mark`) is
+  the documented reset after switching or restoring the upstream; storing an upstream fingerprint with the mark
+  (for example a UUID row that `init-upstream` creates) is open for RA-EVAL.
   The tests live in `tests/examples/` and run inside the normal suite: `tests/examples/conftest.py` puts each
   application on `sys.path`, and `mypy_path` in `pyproject.toml` names it for `mypy --strict src tests scripts`. The
   transfer tests run against an upstream SQLite file in the core jobs and against PostgreSQL (marker `postgres`) in
   the `pg (...)` jobs. RA-B-3 adds `tests/examples/test_measurements_faults.py`: network faults through the internal
   fault proxy (TB-033), `SIGKILL` of the CLI placed by the proxy and at drawn moments, and 24 hours offline
-  simulated; each counts losses and duplicates (metric MW-6: 0/0). RA-B-4 adds `examples/measurements-baseline`
-  (package `measurements_baseline`, plain SQLAlchemy, same layout and features); the fixture `app` of
-  `tests/examples/measurements_variants.py` runs the whole measurements suite against both variants, and the
-  baseline's probe hits (`DEVIATIONS`: file modes, values in errors, error classification, capture without
-  SQLAlchemy) are strict `xfail`, the input of RA-EVAL.
+  simulated; each counts losses and duplicates (metric MW-6: 0/0). Open before RA-EVAL relies on them (review of
+  #26): L-4, the offline day swaps in an unreachable handle instead of taking the real upstream away; drive it
+  through the fault proxy against one `Database` and add a server restart (`pg_terminate_backend`) between two
+  batches. L-5, no server-side fault yet: a lock wait past `lock_timeout` (a second connection holding `SELECT ...
+  FOR UPDATE`) and a serialization failure or deadlock, each with an unchanged mark, a classified error and 0/0.
+  RA-B-4 adds `examples/measurements-baseline` (package `measurements_baseline`, plain SQLAlchemy, same layout and
+  features); the fixture `app` of `tests/examples/measurements_variants.py` runs the whole measurements suite
+  against both variants, and the baseline's probe hits (`DEVIATIONS`: file modes, error classification, capture
+  without SQLAlchemy) are strict `xfail`, the input of RA-EVAL.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
 - **Next step:** RA-EVAL after RA-A-3 (the measurement report from both baselines); RA-A-1 after TAB-019. The
@@ -702,6 +713,47 @@ required (owner decision of 2026-11-08 11:26Z).
   `tabrion_postgres_roles` and `tabrion_postgres_database` where the cases allow it (most role cases need several
   roles per test with chosen attributes, which the session fixtures do not give); the SQLite suites follow when
   lane B next touches them.
+
+### TB-070 · CI jobs `golden files` and nightly `downstream` (TABRION TAB-022)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-022, TB-017, specification S-7, contract I-61
+- **What:** the golden tests run today in the existing unit and `pg` jobs. The plan wants a job `golden files` in
+  `ci.yml` (blocking) and a job `downstream` in `nightly.yml` that runs `python scripts/downstream.py --summary
+  "$GITHUB_STEP_SUMMARY"` against a PostgreSQL service (not blocking; its result is a release-gate criterion of
+  TAB-040). Lane C does not change `.github/`. The script installs each consumer with `uv pip install --override`,
+  so HEAD replaces the consumer's Tabrion requirement (a Git commit pin; Tabrion is not published to an index),
+  and checks that it did (review M-1 of #19, fixed). The job needs network access for the clones and installs.
+- **Next step:** whoever may change `.github/` adds both jobs (with the label `workflow-change-reviewed`) and lists
+  them in `.github/ci-manifest.json`; the release gate reads the last nightly result.
+
+### TB-071 · Record `pgvector_status` on a server with pgvector (TABRION TAB-022)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-022, contract 8.2, I-61
+- **What:** `tests/golden/nodestro.json` was recorded on a server without pgvector, so only the `unavailable` case of
+  Nodestro's `pgvector_status` is recorded; on a server with pgvector the replay test checks the states the contract
+  lists instead (`other_schema`, `active`).
+- **Next step:** run `scripts/record_golden.py --consumer nodestro` against the pgvector server of CI (the `pg`
+  job with pgvector 17) and commit the file.
+
+### TB-072 · The pgvector switch of the consumers' test suites (TABRION TAB-022)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-022, TAB-020, contract 8.2, 8.3, I-36
+- **What:** Nodestro and Orkexa have `<PREFIX>_REQUIRE_PGVECTOR=1` as a flag; `tabrion.testing` reads a list,
+  `<PREFIX>_REQUIRE_EXTENSIONS=vector` (golden test `test_testing_environment_names`). With `configure(env_prefix=...)`
+  alone, the consumers' CI switch would be ignored and a missing pgvector would skip instead of fail.
+- **Next step:** at adoption (MIG-NOD, MIG-ORK) the consumers' CI jobs set `<PREFIX>_REQUIRE_EXTENSIONS=vector`
+  instead of `<PREFIX>_REQUIRE_PGVECTOR=1` (pointing `require_extensions_env` at the old name would read its `1` as
+  an extension name).
+
+### TB-073 · `url_from_env` keeps white space that Nodestro strips (TABRION TAB-022, TAB-012)
+
+- **Priority:** P3 Low · **Status:** Done (decided: deviation D-76) · **Refs:** TABRION TAB-012, TAB-022, contract 2.3, 8.2
+- **What:** the golden test `test_nodestro_url_from_env` shows that Nodestro's `server_settings.py` strips white
+  space around `NODESTRO_DATABASE_URL` and around the content of `_FILE`; `url_from_env` removes only the file's
+  trailing newline. The contract row said "identical rule". A value such as `" postgresql://..."` from a
+  hand-edited secret file therefore reaches libpq with its spaces (libpq accepts them in a URL only at the end).
+- **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
+  Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
 ## Cross-repository dependencies
 

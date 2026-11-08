@@ -10,7 +10,8 @@ the features the application specifies, the way the SQLAlchemy documentation sho
 - a mandatory backup before migrating a database that holds data (``sqlite3``'s online backup API).
 
 It does not add what Tabrion does on top (RA-EVAL counts those as MW-2 probe hits): owner-only file modes, the
-refusal of symbolic links, a verified and atomic backup, value-free error messages.
+refusal of symbolic links, a verified and atomic backup. ``hide_parameters`` keeps the parameters out of
+SQLAlchemy's messages, as SQLAlchemy documents it.
 """
 
 from __future__ import annotations
@@ -74,7 +75,8 @@ SCHEMA_VERSION = max(MIGRATIONS)
 
 def create_engine(path: str | os.PathLike[str], *, synchronous: str = "FULL") -> sa.Engine:
     """An ``Engine`` on the SQLite file with the application's pragmas and ``BEGIN IMMEDIATE`` transactions."""
-    engine = sa.create_engine(f"sqlite:///{os.fspath(path)}")
+    # hide_parameters: SQLAlchemy's documented flag that keeps the statement's parameters out of its messages.
+    engine = sa.create_engine(f"sqlite:///{os.fspath(path)}", hide_parameters=True)
 
     @sa.event.listens_for(engine, "connect")
     def _connect(dbapi_connection: sqlite3.Connection, _record: Any) -> None:

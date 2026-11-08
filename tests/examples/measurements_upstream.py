@@ -31,11 +31,15 @@ def postgres_url(conninfo: str) -> sa.URL:
     params = {key: str(value) for key, value in conninfo_to_dict(conninfo).items() if value is not None}
     port = params.get("port")
     query = {key: params[key] for key in ("options", "sslmode", "gssencmode") if params.get(key)}
+    host = params.get("host") or params.get("hostaddr")
+    if host is not None and host.startswith("/"):
+        # A Unix-socket directory is no URL host; libpq takes it as the ``host`` query parameter (review L-2 of #23).
+        query["host"], host = host, None
     return sa.URL.create(
         "postgresql",
         username=params.get("user"),
         password=params.get("password"),
-        host=params.get("host") or params.get("hostaddr"),
+        host=host,
         port=int(port) if port else None,
         database=params.get("dbname"),
         query=query,

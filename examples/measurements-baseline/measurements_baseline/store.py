@@ -144,6 +144,12 @@ class Store:
                 {"target": target, "seq": seq},
             )
 
+    def reset_mark(self, target: str = DEFAULT_TARGET) -> None:
+        """Forget the mark of ``target``: the next transfer sends everything again (after switching the upstream)."""
+        _name(target, "target", 64)
+        with write_transaction(self.engine) as connection:
+            connection.execute(sa.text("DELETE FROM transfer_mark WHERE target = :target"), {"target": target})
+
     def after(self, seq: int = 0, *, limit: int = 1000) -> list[Stored]:
         """Rows with ``seq`` above ``seq``, in capture order: the batches of the transfer (RA-B-2)."""
         with self.engine.connect() as connection:

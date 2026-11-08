@@ -148,8 +148,13 @@ def test_a_network_fault_loses_and_duplicates_nothing(
             after_the_insert(proxy, fault)
         else:
             proxy.arm(statement, fault=fault)
-        with pytest.raises(app.UpstreamError):
+        with pytest.raises(app.UpstreamError) as info:
             app.transfer(store, upstream_db, batch_size=1000)
+        if app.name == "tabrion":  # Tabrion's error model (review L-6 of #28; the baseline has none)
+            assert app.classified_as_connection(info.value)
+            if statement == b"COMMIT":
+                # Whether the COMMIT ran or not, the client cannot know (review L-3 of #26): never retried blindly.
+                assert app.outcome_unknown(info.value)
         assert store.mark() == seqs[999]  # the failed batch did not move the mark
         backend = proxy.fired_backend
         assert backend is not None and wait_backend_gone(schema.owner_url, backend)
@@ -323,8 +328,10 @@ def test_24_hours_offline_capture_goes_on_and_the_transfer_catches_up(
         offline = 120 <= minute < 1320 or 1380 <= minute < 1395
         mark = store.mark()
         if offline:
-            with pytest.raises(app.UpstreamError):
+            with pytest.raises(app.UpstreamError) as info:
                 app.transfer(store, unreachable.handle, batch_size=500)
+            if app.name == "tabrion":  # review L-6 of #28
+                assert app.classified_as_connection(info.value)
             assert store.mark() == mark
             failures += 1
         else:

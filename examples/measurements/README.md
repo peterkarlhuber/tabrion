@@ -14,7 +14,7 @@ From a checkout with Tabrion installed (`pip install -e .`):
 $ cd examples/measurements
 $ python -m measurements --db data.db --backup-dir backups init
 $ python -m measurements --db data.db --backup-dir backups demo 10000
-10000 stored in 0.041 s
+10000 stored in 0.041 s       # example output of one run, not a measurement
 $ printf 'd2,rh,2026-01-01T00:00:00Z,41.5,%%\n' | python -m measurements --db data.db --backup-dir backups capture
 1
 $ python -m measurements --db data.db --backup-dir backups count
@@ -27,6 +27,11 @@ $ python -m measurements --db data.db --backup-dir backups transfer
 $ python -m measurements --db data.db --backup-dir backups transfer
 0 sent in 0 batches, 0 new upstream, mark 10001
 ```
+
+The mark records what was sent, not where: after switching the upstream to another server or database, or
+restoring it from an older backup, run `transfer --from-start` once (`Store.reset_mark`). It sends everything
+again, and the rows already upstream are skipped. One transfer process per device file is the intended
+deployment; a second one is safe but wasteful.
 
 The upstream URL comes from `MEASUREMENTS_UPSTREAM_URL` or, better, from a file named by
 `MEASUREMENTS_UPSTREAM_URL_FILE` (`tabrion.config.url_from_env`), never from the command line. A `sqlite:///` URL
@@ -122,8 +127,8 @@ The file-mode and kill tests are POSIX only.
   tests (the fixtures `store`, `upstream_url` and `upstream`).
 - **MW-4** (values in errors): `test_invalid_measurement_writes_nothing` checks that a canary value does not
   appear in the message and that the error has no `__context__`.
-- **MW-7** (runtime overhead): `python -m measurements ... demo N` prints the time of one batch of `N` rows.
-  Compare it with the baseline of RA-B-4 on the same machine.
+- **MW-7** (runtime overhead): not measured by a single `demo N` run, whose time includes setup and varies a lot
+  from run to run; RA-EVAL needs the interleaved harness described in the baseline's README.
 - **MW-8** (engine switch): the transfer tests run the same code against SQLite and PostgreSQL; only the URL differs.
 - **MW-6** (fault injection, losses/duplicates): `tests/examples/test_measurements_faults.py`, see the table above;
   every case asserts `tally(...) == (0, 0)`; the baseline of RA-B-4 runs the same tests.

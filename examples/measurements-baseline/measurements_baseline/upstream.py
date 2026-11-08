@@ -2,12 +2,12 @@
 
 The counterpart of ``examples/measurements/measurements/upstream.py`` for metric MW-1. Same table, same insert;
 the engine is SQLAlchemy's own, configured by hand: the ``psycopg`` driver (SQLAlchemy's default for
-``postgresql://`` is psycopg2), one pooled connection with ``pool_pre_ping``, a connect timeout and an
-``application_name``. The URL comes from ``MEASUREMENTS_UPSTREAM_URL`` or a file named by
+``postgresql://`` is psycopg2), one pooled connection with ``pool_pre_ping``, a connect timeout, an
+``application_name`` and ``hide_parameters``. The URL comes from ``MEASUREMENTS_UPSTREAM_URL`` or a file named by
 ``MEASUREMENTS_UPSTREAM_URL_FILE``.
 
 Not added (Tabrion's part, counted by RA-EVAL): the TLS rule for remote hosts, server-side statement, lock and idle
-timeouts, value-free errors with a classification (``retryable``, ``outcome_unknown``).
+timeouts, errors with a classification (``retryable``, ``outcome_unknown``) and a stable code.
 """
 
 from __future__ import annotations
@@ -59,11 +59,12 @@ def open_upstream(url: str | sa.URL | None = None, *, env: str = URL_ENV) -> sa.
     """An ``Engine`` for ``url``, or for the URL in ``env``."""
     parsed = sa.make_url(url if url is not None else url_from_env(env))
     if parsed.get_backend_name() != "postgresql":
-        return sa.create_engine(parsed)
+        return sa.create_engine(parsed, hide_parameters=True)
     if parsed.drivername == "postgresql":
         parsed = parsed.set(drivername="postgresql+psycopg")
     return sa.create_engine(
         parsed,
+        hide_parameters=True,  # no parameters (the readings) in SQLAlchemy's messages
         pool_size=1,
         max_overflow=0,
         pool_pre_ping=True,
