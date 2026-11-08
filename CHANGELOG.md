@@ -16,3 +16,15 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `release.yml` that builds and verifies but never publishes.
 - Import isolation and the extras matrix: the core imports without psycopg, SQLAlchemy and Alembic.
 - Documentation: specification, ADRs 0001 to 0013, risk register, program status, MkDocs site.
+- G-T1 follow-up: the API surface check `scripts/api_surface.py` with `docs/api/surface.json` (`since` and
+  `stability` per name; CI job `api surface`); `Database.health(deep=...)`; the fixture `tabrion_role_setup`;
+  `tabrion.testing.profiles.SQLiteConnect` and `PortabilityCase`; import contracts for layer B and
+  `tabrion.migrations`; `ci-ok` posts its verdict as a commit status on the pull request head; the release
+  attestation runs in its own job.
+- Brand assets derived from the logo master (`assets/branding/`): lockups for light and dark surfaces, favicons and
+  the social preview; used in the README and the documentation site.
+
+### Changed
+
+- G-T1 follow-up: the 0.2 names (`Result`, `Column` and the 0.2 methods of `Database` and `Transaction`) are no
+  longer exported before 0.2; `tabrion.testing.profiles.ConnectionFactory` is replaced by `SQLiteConnect`.

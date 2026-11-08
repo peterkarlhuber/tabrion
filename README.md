@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/tabrion-logo-on-dark.png">
+    <img src="assets/branding/tabrion-logo.png" alt="Tabrion" width="400">
+  </picture>
+</p>
+
 # Tabrion
 
 Small, secure database foundations for SQLite and PostgreSQL in Python.

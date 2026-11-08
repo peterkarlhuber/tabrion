@@ -70,7 +70,7 @@ Planned effort: 12.5 + 3 agent days.
 | TAB-007 | ADRs TAB-ADR-0001..0010 in English | tabrion | GOV-2 | - | 0.5 + 0 | Core | Done | [docs/adr/](../adr/README.md) 0001-0013 |
 | TAB-002 | API contract and stubs, G-T1 | tabrion | TAB-003, TAB-001 | G-T1 | 1.5 + 1 | Core | Done: conditional | G-T1 passed with conditions; [contract.md](../api/contract.md) records the decisions G-1..G-10; `tests/unit/test_public_api.py`, `docs/api/surface.json`. Conditions C-1..C-4 in review (follow-up pull request) |
 | TAB-004 | CI ci/ci-ok/nightly/release (includes QA-1) | tabrion | TAB-003 | - | 2.5 + 0.5 | Core | Done: conditional | `.github/workflows/`, `.github/ci-manifest.json`, `tests/security/test_workflow_pins.py` |
-| TAB-006 | Docs skeleton (MkDocs), README, CONTRIBUTING, SECURITY | tabrion | TAB-003 | - | 1 + 0.25 | Core | Done | `mkdocs.yml`, CI job `docs`; README, CONTRIBUTING, SECURITY, SUPPORT, CODE_OF_CONDUCT |
+| TAB-006 | Docs skeleton (MkDocs), README, CONTRIBUTING, SECURITY | tabrion | TAB-003 | - | 1 + 0.25 | Core | Done (logo in review) | `mkdocs.yml`, CI job `docs`; README, CONTRIBUTING, SECURITY, SUPPORT, CODE_OF_CONDUCT. Logo (follow-up pull request): `assets/branding/` derived from the master of 2026-11-08 with the shared brand kit; lockups in the README (`<picture>`) and on the docs site, docs header logo and favicon; social preview (upload: O-9) |
 | TAB-023 | API surface check | tabrion | TAB-002 | - | 0.5 + 0 | Core | In review | `scripts/api_surface.py`, [surface.json](../api/surface.json) (`since` and `stability` per name), CI job `api surface`, `tests/unit/test_api_surface.py` (G-T1 condition C-6) |
 | TAB-005 | Import isolation and extras matrix (includes QA-5) | tabrion | TAB-004 | - | 1.5 + 0.5 | Core | Done | `tests/packaging/`, `tests/unit/test_import_isolation.py`; CI jobs `extras matrix` and `core without extras` |
 
@@ -339,6 +339,7 @@ Actions only the owner can take. The agent cannot do them (missing rights) or mu
 | O-6 | Confirm the CR-DB decisions E-CR-1..E-CR-7 (planning document 14 section 9.1) | G-CR, ARC-CR-1, STU-CR-1 | Open |
 | O-7 | The same branch protection as O-1 for `peterkarlhuber/tabrion-studio` | GOV-3 | Open |
 | O-8 | Record the planning errata of F-17 (doc 05 section 2.3 lazy-import comment, doc 02 section 9 `tabrion.check(target)`) in the planning documents | G-T1 | Open |
+| O-9 | Upload `assets/branding/social-preview.png` as the social preview in the repository settings (no API for it) | TAB-006 | Open |
 
 ## Deviation log
 

@@ -58,13 +58,14 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 ### TB-003 · Repository settings: branch protection, environment `pypi`, private vulnerability reporting
 
 - **Priority:** P1 High · **Status:** Open · **Refs:** TABRION GOV-2, TABRION GOV-3, TABRION TAB-043, G-R, G-T1 C-7,
-  C-8; owner actions O-1, O-2, O-5, O-7
+  C-8; owner actions O-1, O-2, O-5, O-7, O-9
 - **What:** branch protection on `master`: the required status check `ci-ok` is the commit status that `ci-ok.yml`
   posts on the PR head SHA (C-7; it exists only after the follow-up pull request is merged), plus no force pushes and
   no deletion (the agent proxy gets HTTP 403); recommended `CODEOWNERS` for `/.github/**` with code-owner review. The
   same for tabrion-studio. The environment `pypi` (C-8): the owner as required reviewer, "prevent self-review",
   deployment refs restricted to tags `v*`, no secrets, and later the trusted publisher bound to `release.yml` and
-  `pypi` (ADR 0009, "Release environment"). Private vulnerability reporting switched on (SECURITY.md points to it).
+  `pypi` (ADR 0009, "Release environment"). Private vulnerability reporting switched on (SECURITY.md points to it). Upload
+  `assets/branding/social-preview.png` as the repository's social preview (O-9).
 - **Next step:** set them in the repository settings; then mark GOV-2 done in STATUS.md.
 
 ### TB-004 · Confirm the CR-DB decisions E-CR-1..E-CR-7

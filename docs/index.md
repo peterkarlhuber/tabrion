@@ -1,3 +1,8 @@
+<div class="tabrion-hero" markdown>
+![Tabrion](assets/branding/tabrion-logo.png#only-light)
+![Tabrion](assets/branding/tabrion-logo-on-dark.png#only-dark)
+</div>
+
 # Tabrion
 
 Tabrion is a Python library with safe defaults for applications that talk to SQLite or PostgreSQL directly. It runs
