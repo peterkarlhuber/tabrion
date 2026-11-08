@@ -1,8 +1,9 @@
 """Axentra's statement splitter, verbatim, as the test oracle of TAB-011 (TAB-T-Q01, Q02).
 
 Copied from peterkarlhuber/axentra ``src/axentra/data/migrations.py`` (``split_statements``, ``_has_code`` and
-``_DOLLAR_TAG``) at commit 9c4666f (MIT, Copyright (c) 2026 Peter Karlhuber). Only the names changed; the logic must
-stay byte for byte as it is, because ``tabrion.sql.split_statements`` is checked against it.
+``_DOLLAR_TAG``) at commit 9c4666fe5a44b158ffa9f0149b7bcd6008b1cd7e (MIT, Copyright (c) 2026 Peter Karlhuber). Only
+the names changed; the logic must stay byte for byte as it is, because ``tabrion.sql.split_statements`` is checked
+against it.
 ``axentra_splitter.json`` holds its output for every SQL file Axentra ships at that commit;
 ``tests/unit/test_sql.py`` checks that this copy still reproduces it, so an edit here cannot go unnoticed.
 """

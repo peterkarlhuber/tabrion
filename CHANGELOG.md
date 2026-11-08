@@ -189,7 +189,8 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `scripts/record_golden.py` from the consumers' own code in throwaway environments and replayed against Tabrion in
   every test run, each naming the consumer's full 40-character commit; `scripts/downstream.py` runs the consumers'
   database tests against Tabrion HEAD, which `uv pip install --override` puts in place of any Tabrion requirement
-  the consumer has (a Git commit pin), with a timeout on every step.
+  the consumer has (a Git commit pin), with all extras, with a timeout on every step; a database that cannot be
+  dropped is a note beside the consumer's result.
 - `tabrion.testing` re-review fixes (#11): `truncate_tables` without `schema=` empties only a schema the plugin created
   and refuses a `CASCADE` into another schema; a schema teardown that would drop an extension is rolled back; the
   fixtures work under a `NOINHERIT` admin on PostgreSQL 16+, try every role at the end and drop the roles' grants in
