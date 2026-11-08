@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import functools
+import inspect
 import re
 from typing import Any, ParamSpec, TypeVar
 import warnings
@@ -78,7 +79,11 @@ def earliest_removal(since: str) -> tuple[int, int]:
 
 
 def register(path: str, *, replacement: str, since: str, remove_in: str) -> Deprecation:
-    """Record a deprecation; raises ``ValueError`` for a window shorter than S-3 or a path registered twice."""
+    """Record a deprecation; raises ``ValueError`` for a window shorter than S-3.
+
+    Registering the same deprecation again (``importlib.reload``, a module executed twice) returns the recorded one;
+    a different deprecation of a registered path raises ``ValueError`` (review L-4).
+    """
     if not path.startswith("tabrion.") or not replacement:
         raise ValueError(f"deprecation of {path!r}: needs a public tabrion path and a replacement")
     if parse_version(remove_in) < earliest_removal(since):
@@ -86,9 +91,11 @@ def register(path: str, *, replacement: str, since: str, remove_in: str) -> Depr
             f"deprecation of {path}: removal in {remove_in} is too early; S-3 allows "
             f"{'.'.join(map(str, earliest_removal(since)))} at the earliest"
         )
-    if path in REGISTRY:
-        raise ValueError(f"deprecation of {path}: registered twice")
     entry = Deprecation(path, replacement, since, remove_in)
+    if path in REGISTRY:
+        if REGISTRY[path] == entry:
+            return REGISTRY[path]
+        raise ValueError(f"deprecation of {path}: registered twice, differently")
     REGISTRY[path] = entry
     return entry
 
@@ -104,16 +111,29 @@ def deprecated_callable(
     """Decorator: the function warns on every call, pointing at the caller's line.
 
     ``functools.wraps`` keeps the name, the docstring and ``__wrapped__``, so ``inspect.signature`` (and with it the
-    signature in ``surface.json``) stays the same.
+    signature in ``surface.json``) stays the same. A class is refused with ``TypeError``: wrapping it would turn it
+    into a function (``isinstance``, subclassing and ``dataclasses.fields`` would break); deprecate a moved class
+    with :func:`module_getattr`, or warn in its ``__init__`` (review L-3). For an ``async def`` function the warning
+    comes at the call; from Python 3.12 on the wrapper is marked as a coroutine function
+    (``inspect.markcoroutinefunction``), on 3.11 ``inspect.iscoroutinefunction`` reports ``False`` for it.
     """
     entry = register(path, replacement=replacement, since=since, remove_in=remove_in)
 
     def decorate(fn: Callable[P, R]) -> Callable[P, R]:
+        if inspect.isclass(fn):
+            raise TypeError(
+                f"deprecation of {path}: deprecated_callable wraps functions only; "
+                "use module_getattr for a moved class, or warn in its __init__"
+            )
+
         @functools.wraps(fn)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             warn(entry)
             return fn(*args, **kwargs)
 
+        mark = getattr(inspect, "markcoroutinefunction", None)  # Python 3.12 and later
+        if mark is not None and inspect.iscoroutinefunction(fn):
+            mark(wrapper)
         return wrapper
 
     return decorate

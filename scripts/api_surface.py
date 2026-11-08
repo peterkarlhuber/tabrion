@@ -19,7 +19,9 @@ fails when:
 its state at the git revision ``REF``: a removed name must be named under ``### Removed``, a changed signature under
 ``### Changed`` (or ``### Removed``/``### Security``), and a new deprecation under ``### Deprecated`` in the
 ``[Unreleased]`` section of ``CHANGELOG.md``. A name counts as named when its full path (``tabrion.sqlite.connect``) or
-the path without ``tabrion.`` (``sqlite.connect``) appears there in backticks.
+the path without ``tabrion.`` (``sqlite.connect``; not for root names such as ``tabrion.Database``) appears there in
+backticks. Only the surface body is compared, not ``since``, ``stability`` or ``staged``; a name staged at the base
+was not public there, so its promotion is an addition and needs no section.
 
 ``--write`` regenerates the file from the code and keeps ``since``, ``stability`` and ``staged`` of every existing
 entry; a new name gets the current minor version and ``S``. Review the diff: a changed signature after the API freeze
@@ -37,6 +39,7 @@ import enum
 import importlib
 import inspect
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -373,9 +376,16 @@ def changelog_sections(text: str, *, unreleased_only: bool) -> dict[str, str]:
 
 
 def named(path: str, text: str) -> bool:
-    """``path`` or ``path`` without ``tabrion.`` in backticks, as a whole name (not only its last part)."""
+    """``path`` in backticks, as a whole name; the form without ``tabrion.`` only when a dot remains.
+
+    ``sqlite.connect`` names ``tabrion.sqlite.connect``, but a root name needs its full path (``tabrion.Database``):
+    a bare `` `Database` `` could be about any ``Database`` (review L-5).
+    """
+    names = {path}
     short = path.removeprefix("tabrion.")
-    return any(re.search(rf"`{re.escape(name)}(?:\(|`)", text) for name in {path, short})
+    if "." in short:
+        names.add(short)
+    return any(re.search(rf"`{re.escape(name)}(?:\(|`)", text) for name in names)
 
 
 def check_deprecations(
@@ -409,13 +419,18 @@ def check_changelog(base: dict[str, Entry], recorded: dict[str, Entry], changelo
     def text(*names: str) -> str:
         return "".join(sections.get(name, "") for name in names)
 
+    def body(entry: Entry) -> Entry:
+        return {k: v for k, v in entry.items() if k not in META}
+
+    # A name staged at the base was not public there: its promotion (the minor release drops ``staged``) is an
+    # addition, and a change of its stub or its removal is no API change (review M-1). Additions need no section.
+    public = {path: entry for path, entry in base.items() if "staged" not in entry}
     problems: list[str] = []
-    for path in sorted(set(base) - set(recorded)):
+    for path in sorted(set(public) - set(recorded)):
         if not named(path, text("Removed")):
             problems.append(f"{path}: removed since the base, but not named under '### Removed' in [Unreleased]")
-    for path in sorted(set(base) & set(recorded)):
-        old = {k: v for k, v in base[path].items() if k != "deprecated"}
-        new = {k: v for k, v in recorded[path].items() if k != "deprecated"}
+    for path in sorted(set(public) & set(recorded)):
+        old, new = body(public[path]), body(recorded[path])
         if old != new and not named(path, text("Changed", "Removed", "Security")):
             problems.append(f"{path}: changed since the base, but not named under '### Changed' in [Unreleased]")
         new_deprecation = "deprecated" in recorded[path] and "deprecated" not in base[path]
@@ -424,20 +439,40 @@ def check_changelog(base: dict[str, Entry], recorded: dict[str, Entry], changelo
     return problems
 
 
-def load_base(ref: str, surface: Path) -> dict[str, Entry]:
-    """``surface`` at the git revision ``ref``; an empty surface when the file did not exist there."""
-    relative = surface.resolve().relative_to(ROOT).as_posix()
-    result = subprocess.run(  # noqa: S603 - fixed argument list, no shell
-        ["git", "-C", str(ROOT), "show", f"{ref}:{relative}"],  # noqa: S607 - git from PATH, as in CI
+def _git(*args: str) -> subprocess.CompletedProcess[str]:
+    """``git -C ROOT <args>`` with the C locale (messages are never parsed, but stay readable in the error)."""
+    env = {**os.environ, "LC_ALL": "C"}
+    return subprocess.run(  # noqa: S603 - fixed argument list, no shell
+        ["git", "-C", str(ROOT), *args],  # noqa: S607 - git from PATH, as in CI
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
-    if result.returncode != 0:
-        if "does not exist" in result.stderr or "exists on disk, but not in" in result.stderr:
-            return {}
-        raise SystemExit(f"api surface: git show {ref}:{relative} failed: {result.stderr.strip()}")
-    names: dict[str, Entry] = json.loads(result.stdout)["names"]
+
+
+def load_base(ref: str, surface: Path) -> dict[str, Entry]:
+    """``surface`` at the git revision ``ref``; an empty surface when the file did not exist there.
+
+    An unknown revision, a revision that starts with ``-`` (it would reach git as an option) and a surface file
+    outside the repository are errors (``SystemExit``), never an empty base (review L-2).
+    """
+    if not ref or ref.startswith("-"):
+        raise SystemExit(f"api surface: --base {ref!r} is not a revision")
+    try:
+        relative = surface.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        raise SystemExit(f"api surface: --base needs the surface file inside the repository ({ROOT})") from None
+    commit = _git("rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{commit}}")
+    if commit.returncode != 0:
+        raise SystemExit(f"api surface: --base {ref!r} is not a commit of this repository")
+    sha = commit.stdout.strip()
+    if _git("cat-file", "-e", f"{sha}:{relative}").returncode != 0:
+        return {}
+    shown = _git("show", f"{sha}:{relative}")
+    if shown.returncode != 0:
+        raise SystemExit(f"api surface: git show {sha}:{relative} failed: {shown.stderr.strip()}")
+    names: dict[str, Entry] = json.loads(shown.stdout)["names"]
     return names
 
 

@@ -6,6 +6,7 @@ version of removal. Tabrion 0.1 deprecates nothing, so the tests deprecate throw
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 import importlib.util
 import inspect
@@ -96,6 +97,21 @@ def test_moved_module_name_warns_and_returns_the_replacement() -> None:
         _ = module.Missing
 
 
+def test_moved_module_name_warns_at_the_callers_line() -> None:
+    """Review L-1: both ``module.OldName`` and ``from module import OldName`` point at the consumer's line."""
+    module = _module_with_moved_name()
+    with pytest.warns(DeprecationWarning) as caught:
+        _ = module.OldName
+    assert caught[0].filename == __file__
+    sys.modules["tabrion.probe"] = module
+    try:
+        with pytest.warns(DeprecationWarning) as caught:
+            from tabrion.probe import OldName  # type: ignore[import-not-found]  # noqa: F401
+        assert caught[0].filename == __file__
+    finally:
+        del sys.modules["tabrion.probe"]
+
+
 def test_moved_module_name_keeps_an_existing_getattr() -> None:
     module = _module_with_moved_name(fallback=lambda name: f"lazy {name}")
     assert module.Other == "lazy Other"
@@ -143,10 +159,37 @@ def test_register_rejects_bad_input(kwargs: dict[str, str], match: str) -> None:
         register(**arguments)
 
 
-def test_register_rejects_a_second_registration() -> None:
+def test_register_rejects_a_different_second_registration() -> None:
     register("tabrion.x", replacement="tabrion.y", since="0.2", remove_in="0.4")
-    with pytest.raises(ValueError, match="twice"):
-        register("tabrion.x", replacement="tabrion.y", since="0.2", remove_in="0.4")
+    with pytest.raises(ValueError, match="registered twice, differently"):
+        register("tabrion.x", replacement="tabrion.z", since="0.2", remove_in="0.4")
+
+
+def test_register_the_same_deprecation_again_is_idempotent() -> None:
+    """Review L-4: a reloaded module registers its deprecation again; that must not make it unimportable."""
+    first = register("tabrion.x", replacement="tabrion.y", since="0.2", remove_in="0.4")
+    assert register("tabrion.x", replacement="tabrion.y", since="0.2", remove_in="0.4") is first
+    assert list(_deprecated.REGISTRY) == ["tabrion.x"]
+
+
+def test_deprecated_callable_refuses_a_class() -> None:
+    """Review L-3: wrapping a class would turn it into a function."""
+    decorate = deprecated_callable("tabrion.x.Old", replacement="tabrion.x.New", since="0.2", remove_in="0.4")
+    with pytest.raises(TypeError, match="functions only"):
+        decorate(type("Old", (), {}))
+
+
+def test_deprecated_coroutine_function_warns_at_the_call() -> None:
+    async def fetch(n: int) -> int:
+        return n
+
+    wrapped = deprecated_callable("tabrion.x.fetch", replacement="tabrion.x.get", since="0.2", remove_in="0.4")(fetch)
+    with pytest.warns(DeprecationWarning, match="tabrion.x.fetch") as caught:
+        coroutine = wrapped(3)
+    assert caught[0].filename == __file__
+    assert asyncio.run(coroutine) == 3
+    if sys.version_info >= (3, 12):
+        assert inspect.iscoroutinefunction(wrapped)
 
 
 def test_the_helper_adds_no_public_name() -> None:
@@ -283,3 +326,64 @@ def test_base_mode_without_the_file_at_the_base(surface_script: Any) -> None:
     if subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, check=False).returncode:
         pytest.skip("not a git checkout")
     assert surface_script.load_base("HEAD", ROOT / "docs" / "api" / "no-such-surface.json") == {}
+
+
+def _real_surface(surface_script: Any) -> dict[str, Any]:
+    names: dict[str, Any] = surface_script.load(ROOT / "docs" / "api" / "surface.json")
+    return names
+
+
+def test_promoting_the_staged_names_is_an_addition(surface_script: Any) -> None:
+    """Review M-1: the 0.2 release drops ``staged`` from every staged entry; ``--base <0.1>`` must stay consistent."""
+    base = _real_surface(surface_script)
+    staged = [path for path, entry in base.items() if "staged" in entry]
+    assert staged, "surface.json has no staged name to promote"
+    promoted = {path: {k: v for k, v in entry.items() if k != "staged"} for path, entry in base.items()}
+    assert surface_script.check_changelog(base, promoted, "## [Unreleased]\n") == []
+    # A stub that changed before its promotion and a staged name dropped again were never public either.
+    changed = {**promoted, staged[0]: {**promoted[staged[0]], "signature": "() -> None"}}
+    del changed[staged[1]]
+    assert surface_script.check_changelog(base, changed, "## [Unreleased]\n") == []
+
+
+def test_meta_changes_are_no_surface_change(surface_script: Any) -> None:
+    base = {"tabrion.sql.split_statements": ENTRY}
+    recorded = {"tabrion.sql.split_statements": {**ENTRY, "since": "0.2", "stability": "X"}}
+    assert surface_script.check_changelog(base, recorded, "## [Unreleased]\n") == []
+
+
+def test_added_does_not_cover_a_change(surface_script: Any) -> None:
+    base = {"tabrion.sql.split_statements": ENTRY}
+    recorded = {"tabrion.sql.split_statements": {**ENTRY, "signature": "()"}}
+    changelog = "## [Unreleased]\n\n### Added\n\n- `tabrion.sql.split_statements`\n"
+    (problem,) = surface_script.check_changelog(base, recorded, changelog)
+    assert "changed since the base" in problem
+
+
+def test_root_names_need_the_full_path(surface_script: Any) -> None:
+    """Review L-5: `` `Database` `` does not name ``tabrion.Database``; `` `sqlite.connect` `` names its path."""
+    assert not surface_script.named("tabrion.Database", "- `Database`: new default")
+    assert surface_script.named("tabrion.Database", "- `tabrion.Database`: new default")
+    assert surface_script.named("tabrion.sqlite.connect", "- `sqlite.connect()`: new default")
+    assert surface_script.named("tabrion.Database.health", "- `Database.health`: new default")
+
+
+@pytest.mark.parametrize("ref", ["nosuchref-ldp", "-x", "--output=/tmp/x", ""])
+def test_base_mode_refuses_a_bad_revision(surface_script: Any, ref: str) -> None:
+    """Review L-2: a bad or option-like revision is an error, never an empty (consistent) base."""
+    with pytest.raises(SystemExit, match="is not a"):
+        surface_script.load_base(ref, ROOT / "docs" / "api" / "surface.json")
+
+
+def test_base_mode_refuses_a_surface_outside_the_repository(surface_script: Any, tmp_path: Any) -> None:
+    with pytest.raises(SystemExit, match="inside the repository"):
+        surface_script.load_base("HEAD", tmp_path / "surface.json")
+
+
+def test_main_honors_base(surface_script: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--base`` is not ignored: a base with a name the code no longer has fails the run (rc 1)."""
+    base = {**_real_surface(surface_script), "tabrion.sql.ldp_removed": ENTRY}
+    monkeypatch.setattr(surface_script, "load_base", lambda ref, surface: base)
+    assert surface_script.main(["--base", "HEAD"]) == 1
+    monkeypatch.setattr(surface_script, "load_base", lambda ref, surface: _real_surface(surface_script))
+    assert surface_script.main(["--base", "HEAD"]) == 0

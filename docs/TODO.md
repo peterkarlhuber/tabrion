@@ -331,8 +331,9 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-051, S-6, S-8, contract I-81
 - **What:** the job `api surface` in `ci.yml` runs `scripts/api_surface.py` without `--base`, so a surface change
   without a CHANGELOG entry fails only when a reviewer runs `--base origin/master` (the job needs
-  `fetch-depth: 0` and `--base ${{ github.event.pull_request.base.sha }}`). `release.yml` has no step that runs
-  `--base <previous tag>` and opens the downstream issues of the release flow (`docs/development/api-stability.md`).
+  `fetch-depth: 0` and `--base ${{ github.event.pull_request.base.sha }}`). `release.yml` has no gate that runs
+  `--base <previous release SHA>` and checks the `downstream` result (S-7). The downstream issues of the release
+  flow stay manual: the owner, or the coordinator on the owner's go, opens them (`docs/development/api-stability.md`).
 - **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml` and `release.yml`; until then the
   release checklist runs both steps by hand.
 

@@ -5,8 +5,10 @@ several libraries and starts a cascade of changes up to Nodestro (K-34). This pa
 change of the public API (TAB-051; planning document 02 chapter 14, [specification section 12](../specification.md),
 [ADR 0009](../adr/0009-distribution-and-versioning.md)). It applies from 0.1 on.
 
-Tabrion is consumed through Git SHA pins; nothing is published to PyPI. "Release" below means a tag of this
-repository that consumers can pin.
+Tabrion is consumed through Git SHA pins; nothing is published to PyPI ([ADR 0009](../adr/0009-distribution-and-versioning.md),
+D-67). "Release" below means the final SHA of a release: the `master` merge commit with the final package version,
+which consumers pin by its full SHA. A tag on it is an optional label. Neither a release SHA nor a tag is a public
+publication; a public publication (PyPI, a GitHub release, an announcement) needs its own owner approval (G-R).
 
 ## What is stable
 
@@ -27,7 +29,7 @@ repository that consumers can pin.
 | S-5 Behavior changes | Security fixes may tighten behavior in a PATCH version, for example a stricter redaction. They are listed under `### Security` in the CHANGELOG, with a notice to every consumer. |
 | S-6 Check | `scripts/api_surface.py` (TAB-023) compares `__all__`, signatures and dataclass fields with `docs/api/surface.json`, and every deprecation with the CHANGELOG. With `--base <ref>` it also requires that every surface change since `<ref>` is named in the matching `[Unreleased]` section (`Deprecated`, `Removed`, `Changed`). The golden files (TAB-022a) secure the behavior of the existing functions. |
 | S-7 Downstream early warning | The nightly job `downstream` (TAB-022b) runs the database tests of Axentra, Orkexa[postgres] and Nodestro against Tabrion HEAD. A red run blocks the next Tabrion release. |
-| S-8 Cascade on a break | (1) A Tabrion minor version with the deprecation and the replacement. (2) The consumers switch **before** the removal appears, in the order of the edge list: orkexa and axentra, then nodestro-runtime, api, sdk, studio. (3) The removal follows at the earliest after S-3, and only when every consumer's `master` has switched (the `downstream` job is green without deprecation warnings). The version ranges or pins of the libraries move in one coordinated set of pull requests. |
+| S-8 Cascade on a break | (1) A Tabrion minor version with the deprecation and the replacement. (2) The consumers switch **before** the removal appears, in the order of the edge list: orkexa and axentra, then nodestro-runtime, api, sdk, studio. (3) The removal follows at the earliest after S-3, and only when every consumer's `master` has switched (the `downstream` job is green without deprecation warnings). The version ranges or pins of the libraries move in one coordinated set of pull requests. The thread coordination rule applies (ADR 0009 RC-5): one thread leads the wave, and the other threads are told before every pull request and after every merge. |
 
 ## Deprecating a stable name
 
@@ -70,7 +72,8 @@ All steps happen in one pull request.
    code and the file differ, when `surface.json` marks a name the code does not warn for, and once the package
    version reaches `remove_in`.
 3. **Name it under `### Deprecated`** in the `[Unreleased]` section of `CHANGELOG.md`, with its full path in
-   backticks (`` `tabrion.sql.split` `` or `` `sql.split` ``), the replacement and the removal version. The check
+   backticks (`` `tabrion.sql.split` `` or `` `sql.split` ``; a root name only with its full path, such as
+   `` `tabrion.Database` ``), the replacement and the removal version. The check
    fails without that entry.
 4. **Update the contract** (`docs/api/contract.md`): the name's section gets a "Deprecated since" note.
 
@@ -84,16 +87,25 @@ Only after S-3 (the removal version is reached, 8 weeks have passed) and S-8 (ev
 
 ## Release flow: notifying downstream
 
-Every release that deprecates, removes or tightens something (S-3, S-5, S-8) notifies the consumers before the tag:
+Every release that deprecates, removes or tightens something (S-3, S-5, S-8) notifies the consumers before its
+final SHA is recorded:
 
-1. Run `python scripts/api_surface.py --base <previous release tag>`: every surface change since the previous release
-   is in the CHANGELOG.
-2. Check the `downstream` nightly (S-7) on the release commit: green, and without deprecation warnings when the
-   release removes a name.
-3. Open one issue in each consumer repository (axentra, orkexa, nodestro-runtime; then nodestro-api, nodestro-sdk,
-   tabrion-studio where they use the name) titled `Tabrion <version>: deprecations and removals`, listing each
-   `Deprecated`, `Removed` and `Security` entry with its replacement and removal version, and linking the CHANGELOG.
-4. Tag only after steps 1 to 3. No release is public without its own owner approval (G-R).
+1. Run `python scripts/api_surface.py --base <SHA of the previous release>`: every surface change since the previous
+   release is in the CHANGELOG.
+2. Check the `downstream` nightly (S-7) on the release commit, or, while that job is not in the workflows (TB-070),
+   a local `python scripts/downstream.py --strict` run: green, and without deprecation warnings when the release
+   removes a name.
+3. Notify each consumer repository that uses an affected name (axentra, orkexa, nodestro-runtime; then nodestro-api,
+   nodestro-sdk, tabrion-studio) with one issue titled `Tabrion <version>: deprecations and removals`. It lists each
+   `Deprecated`, `Removed` and `Security` entry with its replacement and removal version, and links the CHANGELOG.
+   **Who opens the issues:** the owner, or the coordinator on the owner's go for that release. Never an
+   implementation agent on its own. The issues are internal notices in the owner's private repositories, not an
+   announcement in the sense of G-R. The changes in the consumers that follow from them run under the thread
+   coordination rule of S-8 (one thread leads a Tabrion wave, the other threads are told before every pull request
+   and after every merge; ADR 0009 RC-5).
+4. Record the release SHA (and set the optional tag) only after steps 1 to 3. This needs no G-R (D-67). A public
+   publication (PyPI, a GitHub release, an announcement) additionally needs G-R.
 
-The automation of steps 1 and 3 in the workflows (`ci.yml` job `api surface` with `--base`, a step in `release.yml`)
-is recorded in [TODO.md](../TODO.md) (TB-090); until then the release checklist runs them by hand.
+The automation of steps 1 and 2 in the workflows (`ci.yml` job `api surface` with `--base`, a release gate in
+`release.yml`) is recorded in [TODO.md](../TODO.md) (TB-090). The issues of step 3 stay a manual step of the owner or
+the coordinator. Until then the release checklist runs steps 1 and 2 by hand.
