@@ -213,7 +213,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
-- **Priority:** P1 High · **Status:** In review (layer-B follow-up pull request) · **Refs:** TABRION TAB-017,
+- **Priority:** P1 High · **Status:** Done (merged in #17, `a9ec3b8`; review L-1 with RA-A-1) · **Refs:** TABRION TAB-017,
   TAB-018, TAB-019, contract section 7, I-44, I-55, deviations D-60, D-66, TAB-T-K21, K25, K26
 - **What:** `tabrion._sa._check.collect` is still a stub, so `check(database)` raises `NotImplementedError`. It must
   run the SQLite or PostgreSQL checks on a raw driver connection of the `Database` (read only, T-NOTX) and add
@@ -224,6 +224,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tests/postgres/test_check_layer_b.py`). TAB-B-002 stays an `info` "Not checked" when an `alembic_version` table
   exists: `check()` has no script directory and layer B never imports Alembic (D-66); `require_current` is the gate.
 - **Next step:** review and merge. D-66 is accepted by the coordinator as the 0.1 design (subject to review).
+- **Review of #17 (L-1), done with RA-A-1:** a unit test pins the TAB-PG-012 version gate with a stubbed
+  `server_version` (CI runs PostgreSQL 16 only), a PostgreSQL test pins that `expect` reaches the layer-A check, and
+  I-55 says that a never-migrated database (no version table) gives no TAB-B-002.
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
