@@ -229,6 +229,20 @@ PROBES = [
         "",
         "tests/unit/test_errors.py::test_f2_broken_call_while_a_database_error_is_handled",
     ),
+    # Review T-2: server text in the exception being handled.
+    (
+        "errors.py",
+        "            leaky = isinstance(handled, BaseException) and _exception_may_hold_server_text(handled)\n",
+        "            leaky = False\n",
+        "tests/unit/test_errors.py::test_t2_broken_call_while_database_text_is_handled",
+    ),
+    # Review T-1: server text in an argument of a broken call.
+    (
+        "errors.py",
+        '            leaky = leaky or _may_hold_server_text(_safe_text(repr, record.args) or "")\n',
+        "",
+        "tests/unit/test_errors.py::test_t1_broken_call_with_database_text_in_an_argument",
+    ),
     # Axentra review F-5: a mapping message stays a mapping.
     (
         "errors.py",

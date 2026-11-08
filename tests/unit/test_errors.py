@@ -1121,6 +1121,39 @@ def test_f2_broken_call_while_a_database_error_is_handled(capture: Any, capsys: 
     assert "SQLSTATE 23505" in capture.text.getvalue()  # the handled error is named by its safe message
 
 
+@pytest.mark.parametrize(
+    ("template", "args"),
+    [
+        ("user %s failed with %s", "text"),
+        ("user %(a)s %(b)s", "mapping"),
+        ("rows: %d", "text"),
+    ],
+    ids=["too-few-arguments", "missing-key", "wrong-type"],
+)
+def test_t1_broken_call_with_database_text_in_an_argument(
+    capture: Any, capsys: pytest.CaptureFixture[str], template: str, args: str
+) -> None:
+    """Review T-1: ``logging``'s error report prints ``Arguments: %r``; server text in an argument is rewritten too,
+    also outside an ``except`` block."""
+    text = str(_unique_violation())
+    if args == "mapping":
+        capture.logger.error(template, {"a": text})
+    else:
+        capture.logger.error(template, text)
+    assert CANARY not in _out(capture) + capsys.readouterr().err
+    assert "log message could not be formatted" in capture.text.getvalue()
+
+
+def test_t2_broken_call_while_database_text_is_handled(capture: Any, capsys: pytest.CaptureFixture[str]) -> None:
+    """Review T-2: the handled exception carries only the database text (no error object): still rewritten."""
+    try:
+        raise RuntimeError(f"gave up: {_unique_violation()}")
+    except RuntimeError:
+        capture.logger.error("user %s failed with %s", "bob")
+    assert CANARY not in _out(capture) + capsys.readouterr().err
+    assert "log message could not be formatted" in capture.text.getvalue()
+
+
 def test_f3_long_run_of_blanks_is_linear() -> None:
     """Axentra F-3: a long run of blanks before an inline label is no longer scanned quadratically."""
     text = "a" + " " * 50_000 + " DETAIL:"  # one space after the label: no inline match, the worst case

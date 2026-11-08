@@ -1044,6 +1044,9 @@ class DbErrorRedactionFilter(logging.Filter):
             _collect(failure, found)
             handled = failure.__context__
             leaky = isinstance(handled, BaseException) and _exception_may_hold_server_text(handled)
+            # ``logging``'s report also prints ``Arguments: %r``, so server text in an argument counts too (review
+            # T-1: ``log.error("%s %s", str(e))``, a missing mapping key, ``%d`` with a ``str``).
+            leaky = leaky or _may_hold_server_text(_safe_text(repr, record.args) or "")
             if not found and not leaky and not _may_hold_server_text(template):
                 return  # an ordinary broken call: logging reports it as usual
             # A broken call (for example too few arguments): keep the record and say what failed.
