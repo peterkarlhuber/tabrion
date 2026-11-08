@@ -307,7 +307,7 @@ part of C-7 and C-8; the rest is owner action.
 | C-4 | How a consumer passes `RoleSetup` (F-04) | G-10: overridable session fixture `tabrion_role_setup() -> RoleSetup \| None`, requested by `tabrion_postgres_database`; `tests/unit/test_testing_fixtures.py` (pytester) | In review |
 | C-5 | Contracts for `_sa` and `migrations` (F-05) | Contracts "Layer B needs only SQLAlchemy" and "Migration helpers never import pytest", five new mutation probes | In review |
 | C-6 | TAB-023 before the first M2 implementation pull request (F-08) | `scripts/api_surface.py`, `docs/api/surface.json` with `since` and `stability`; 0.2 names (`Result`, `Column`, `query`, `stream`, `cancel`, `inspector`, `run_transaction`, `on_begin`, `savepoint`) are not exported in 0.1 and are staged in `tabrion._sa._v02`; CI job `api surface` | In review |
-| C-7 | `ci-ok` cannot be a required PR check; `master` unprotected (F-06) | `ci-ok.yml` posts the commit status `ci-ok` on the PR head SHA (`ci_ok_status.py`, `statuses: write`, `CI_OK_ENFORCE=1`); ADR 0012 "Merge gate". Takes effect once on `master`; then owner action O-1 | In review; O-1 open |
+| C-7 | `ci-ok` cannot be a required PR check; `master` unprotected (F-06) | `ci-ok.yml` posts the commit status `ci-ok` on the PR head SHA (`ci_ok_status.py`, `statuses: write`, `CI_OK_ENFORCE=1`); ADR 0012 "Merge gate". From the Studio CI review: a PR that changes `.github/workflows/**` or `.github/scripts/**` is NOT OK without the label `workflow-change-reviewed` (F-03), and the status post is retried and fails loudly (F-11). The condition check confirmed C-1..C-6 closed and C-7/C-8 down to owner settings. Takes effect once on `master`; then owner action O-1 | In review; O-1 open |
 | C-8 | Environment `pypi` and the OIDC token (F-07) | Job `attest` alone holds `id-token: write`; ADR 0009 "Release environment" lists the settings; owner action O-2 | In review; O-2 open |
 
 ### Notes from the G-T1 review (Low and Info findings)
@@ -325,13 +325,25 @@ Recorded here as the review asks; none blocks M2. Each is picked up by the work 
 | F-15 | macOS and Windows run on pull requests only when `sqlite.py` or `tests/sqlite/**` change; `config.py`, `errors.py`, `testing/sqlite.py` and `pyproject.toml` also matter there | TB-021: add them to `platforms.yml` and the manifest's `path_filters` together (`--self-check` keeps them equal) |
 | F-17 | Planning errata: doc 05 section 2.3 ("lazy import ... `allow_indirect_imports=false` + runtime test") is wrong, because import-linter records function-level imports (C-1 replaces it); doc 02 section 9 still writes `tabrion.check(target)` (G-6: the function is `tabrion.check.check`) | Planning errata, owner (O-8) |
 
+### Notes from the G-T1 condition check (PR #2)
+
+| Finding | Note | Status |
+|---|---|---|
+| CC-1 | `scripts/api_surface.py` counted only `__all__` as exported, so a 0.2 name reachable through `tabrion.__getattr__` passed | Fixed in #2: any successful attribute lookup counts (class members with inheritance); mutation tests "0.2 name importable through `__getattr__` only" and "0.2 mixin mixed in early" |
+| CC-2 | `tabrion._sa._v02` imports `Isolation`, `Statement` and `Transaction` from `tabrion._sa.database`; in 0.2 `Database`/`Transaction` inherit from the `_v02` mixins, a circular import | Open, before TAB-033: move the aliases to `tabrion._sa._types` and type `fn` against a forward reference (TODO TB-024) |
+| CC-3 | F-15 still open: macOS and Windows run on PRs only for SQLite paths, so they did not run on #2 | Open, TODO TB-021 |
+| BR-1 | Nothing excluded the logo from the MIT license | Fixed in #2: `TRADEMARKS.md`, linked from the README and `assets/branding/README.md` |
+| BR-2 | The committed master carried a C2PA manifest (`caBX`) and an `eXIf` chunk | Fixed in #2: the chunks are removed without touching the image data; `tests/unit/test_branding.py` pins the new sha256 and the sha256 of the supplied file's decompressed pixel data. The supplied file in the planning folder is unchanged. The designer's original and a vector master for the trademark filing stay with the owner (O-3) |
+| BR-3 | The regenerate command was unpinned | Fixed in #2: `pillow==12.3.0`, `numpy==2.5.3` (the versions that produced the committed files) |
+| BR-4 | Relative README image paths break on PyPI | Fixed in #2: absolute `raw.githubusercontent.com/.../master/...` URLs (they render once the logo is on `master`) |
+
 ## Owner actions
 
 Actions only the owner can take. The agent cannot do them (missing rights) or must not (approval limits).
 
 | # | Action | Needed for | Status |
 |---|---|---|---|
-| O-1 | **Corrected after G-T1 (C-7, F-06).** Protect `master` of `peterkarlhuber/tabrion` (the agent proxy gets HTTP 403 on the branch protection API): after the follow-up pull request is merged and `ci-ok` has posted its commit status on one pull request, require the status check `ci-ok` (source: GitHub Actions); "require branches to be up to date"; no force pushes, no deletion. Recommended: `CODEOWNERS` for `/.github/**` with code-owner review, and approval for outside collaborators' workflow runs (ADR 0012, "Merge gate") | GOV-2, C-7 | Open |
+| O-1 | **Corrected after G-T1 (C-7, F-06).** Protect `master` of `peterkarlhuber/tabrion` (the agent proxy gets HTTP 403 on the branch protection API): after the follow-up pull request is merged and `ci-ok` has posted its commit status on one pull request, require the status check `ci-ok` (source: GitHub Actions); "require branches to be up to date"; no force pushes, no deletion. Create the label `workflow-change-reviewed`; only the owner or an independent reviewer sets it, on pull requests that change `.github/workflows/**` or `.github/scripts/**` (ADR 0012, "Workflow-change gate"). Recommended, not required (solo owner): `CODEOWNERS` for `/.github/**`, and approval for outside collaborators' workflow runs | GOV-2, C-7 | Open |
 | O-2 | Before any use of `release.yml` with `publish: true` (C-8, F-07): create the environment `pypi` with the owner as required reviewer, "prevent self-review" on, deployment branches and tags restricted to the tag pattern `v*` (no branch rule), no secrets; with TAB-043 bind the PyPI trusted publisher to workflow `release.yml` and environment `pypi` (ADR 0009, "Release environment") | G-R, TAB-043, C-8 | Open |
 | O-3 | **Manual TM register check (TMview/EUIPO/DPMA/WIPO) before G-T2; rename if conflict.** Also assess the prior user of the name (R-36) | GOV-1, G-T2 | Open |
 | O-4 | G-T1 review of [contract.md](../api/contract.md), including its open points | TAB-002, G-T1 | Done 2026-11-08: passed with conditions (C-1..C-8) |

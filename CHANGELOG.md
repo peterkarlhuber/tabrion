@@ -23,6 +23,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   attestation runs in its own job.
 - Brand assets derived from the logo master (`assets/branding/`): lockups for light and dark surfaces, favicons and
   the social preview; used in the README and the documentation site.
+- `TRADEMARKS.md`: the name and the logos are not covered by the MIT license.
+- `ci-ok`: a pull request that changes `.github/workflows/**` or `.github/scripts/**` is NOT OK until the label
+  `workflow-change-reviewed` is set; the status post is retried and fails loudly.
 
 ### Changed
 

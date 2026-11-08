@@ -22,7 +22,7 @@ Preparing the transparent master (nothing is redrawn; every step is a pixel oper
 ``--studio`` also writes the "Tabrion STUDIO" lockup as an RGB master on clean white for the later Studio work.
 Run from the repository root with Pillow and NumPy::
 
-    uv run --with pillow --with numpy python assets/branding/build.py [--studio OUT.png]
+    uv run --with pillow==12.3.0 --with numpy==2.5.3 python assets/branding/build.py [--studio OUT.png]
 """
 
 from __future__ import annotations

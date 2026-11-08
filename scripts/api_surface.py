@@ -211,18 +211,20 @@ def collect() -> dict[str, Entry]:
 
 
 def resolve(path: str) -> Any:
-    """The object at a public dotted path, or raise ``LookupError``. Only ``__all__`` names count as exported."""
+    """The object at a public dotted path, or raise ``LookupError``.
+
+    Any successful attribute lookup counts, not only ``__all__``: ``from tabrion import Result`` works whenever
+    ``tabrion.__getattr__`` (PEP 562) can produce the name, whether or not ``__all__`` lists it (G-T1 CC-1).
+    Class members are looked up with inheritance, so a 0.2 mixin that is mixed in early counts as well.
+    """
     for module_name in sorted(PUBLIC_MODULES, key=len, reverse=True):
         if path.startswith(module_name + "."):
-            module = importlib.import_module(module_name)
-            first, *rest = path[len(module_name) + 1 :].split(".")
-            if first not in module.__all__:
-                raise LookupError(path)
-            obj = getattr(module, first)
-            for part in rest:
-                if part not in vars(obj):
-                    raise LookupError(path)
-                obj = vars(obj)[part]
+            obj: Any = importlib.import_module(module_name)
+            for part in path[len(module_name) + 1 :].split("."):
+                try:
+                    obj = getattr(obj, part)
+                except (AttributeError, ImportError):
+                    raise LookupError(path) from None
             return obj
     raise LookupError(path)
 

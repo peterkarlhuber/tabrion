@@ -83,6 +83,21 @@ MUTATIONS: dict[str, tuple[list[Edit], str]] = {
         ],
         "tabrion.Result: since 0.2",
     ),
+    "0.2 name importable through __getattr__ only": (
+        [("__init__.py", "_LAYER_B = {\n", '_LAYER_B = {\n    "Result": "tabrion._sa.result",\n')],
+        "tabrion.Result: since 0.2, but it is importable from its public path",
+    ),
+    "0.2 mixin mixed in early": (
+        [
+            ("_sa/database.py", "class Database:", "class Database(_DatabaseV02):"),
+            (
+                "_sa/database.py",
+                "\n\n\nclass Database(",
+                "\n\nfrom tabrion._sa._v02 import _DatabaseV02  # noqa: E402\n\n\nclass Database(",
+            ),
+        ],
+        "tabrion.Database.query: since 0.2",
+    ),
     "staged 0.2 signature changed": (
         [("_sa/_v02.py", "batch_size: int = 500", "batch_size: int = 100")],
         "tabrion.Transaction.stream: staged signature changed",

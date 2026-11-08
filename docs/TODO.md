@@ -15,7 +15,7 @@
 |---|---|
 | P0 Critical | 1 |
 | P1 High | 9 |
-| P2 Medium | 6 |
+| P2 Medium | 7 |
 | P3 Low | 5 |
 | P4 Optional | 0 |
 
@@ -64,7 +64,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   no deletion (the agent proxy gets HTTP 403); recommended `CODEOWNERS` for `/.github/**` with code-owner review. The
   same for tabrion-studio. The environment `pypi` (C-8): the owner as required reviewer, "prevent self-review",
   deployment refs restricted to tags `v*`, no secrets, and later the trusted publisher bound to `release.yml` and
-  `pypi` (ADR 0009, "Release environment"). Private vulnerability reporting switched on (SECURITY.md points to it). Upload
+  `pypi` (ADR 0009, "Release environment"). The label `workflow-change-reviewed` for the ci-ok workflow-change gate
+  (set only by the owner or an independent reviewer; ADR 0012). Private vulnerability reporting switched on (SECURITY.md points to it). Upload
   `assets/branding/social-preview.png` as the repository's social preview (O-9).
 - **Next step:** set them in the repository settings; then mark GOV-2 done in STATUS.md.
 
@@ -236,13 +237,21 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tabrion.__all__`, against the G-5 rule.
 - **Next step:** decide in TAB-018; update the contract and `surface.json` together.
 
-### TB-021 · Platform path filters too narrow (G-T1 F-15)
+### TB-021 · Platform path filters too narrow (G-T1 F-15, CC-3)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** G-T1 F-15, TABRION TAB-004
+- **Priority:** P3 Low · **Status:** Open · **Refs:** G-T1 F-15, CC-3, TABRION TAB-004
 - **What:** macOS and Windows run on pull requests only when `sqlite.py` or `tests/sqlite/**` change; `config.py`,
   `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms.
 - **Next step:** add the paths to `platforms.yml` and to the manifest's `path_filters` in one pull request merged
   before the change that needs them (ci-ok judges by the default branch's manifest).
+
+### TB-024 · Circular import of the staged 0.2 mixins (G-T1 condition check CC-2)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** CC-2, TABRION TAB-033, TB-013
+- **What:** `tabrion._sa._v02` imports `Isolation`, `Statement` and `Transaction` from `tabrion._sa.database`. When
+  TAB-033 lets `Database` and `Transaction` inherit from the `_v02` mixins, the two modules import each other.
+- **Next step:** before TAB-033, move the type aliases to `tabrion._sa._types`, type `run_transaction`'s `fn` against
+  a forward reference, and keep `surface.json` unchanged.
 
 ## Cross-repository dependencies
 

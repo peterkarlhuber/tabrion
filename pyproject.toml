@@ -63,7 +63,7 @@ path = "src/tabrion/_version.py"
 packages = ["src/tabrion"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/tabrion", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "mkdocs.yml", "pyproject.toml"]
+include = ["src/tabrion", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "TRADEMARKS.md", "mkdocs.yml", "pyproject.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

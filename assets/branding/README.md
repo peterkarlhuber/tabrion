@@ -5,6 +5,13 @@ px, RGB on white): the "Tabrion" lockup at the top, the "Tabrion STUDIO" lockup 
 byte (`tests/unit/test_branding.py` checks its sha256). Every other image here is derived from it by `build.py` and
 must not be edited by hand.
 
+**License:** the logos and every image in this folder and in `docs/assets/branding/` are © Peter Karlhuber and are
+**not** covered by the repository's MIT license; see [TRADEMARKS.md](../../TRADEMARKS.md). The scripts are MIT.
+
+The committed master is the supplied file with its metadata chunks removed (a C2PA content-credentials manifest,
+`caBX`, and an `eXIf` chunk with the dimensions). The image data is untouched: the test pins the sha256 of the
+decompressed pixel data of the supplied file. The supplied file itself stays unchanged in the planning folder.
+
 | File | Size | Use |
 |------|------|-----|
 | `tabrion-logo-master-2026-11-08.png` | 1254 × 1254 | master as supplied, do not modify |
@@ -17,6 +24,9 @@ must not be edited by hand.
 | `favicon-32.png` | 32 × 32 | PNG favicon (docs site) |
 | `apple-touch-icon.png` | 180 × 180 | home-screen icon (opaque white tile) |
 | `social-preview.png` | 1280 × 640 | GitHub social preview: the on-dark lockup on the shared dark brand template (uploaded manually in the repository settings) |
+
+The README shows the lockups through absolute `raw.githubusercontent.com` URLs on `master`, because it is also the
+PyPI description, where relative image paths break. The URLs work once this folder is on `master`.
 
 The "Tabrion STUDIO" lockup is cropped from the same master by `build.py --studio <file>` and kept in the planning
 folder as `tabrion-studio-logo-master-2026-11-08.png` for the tabrion-studio repository.
@@ -43,11 +53,11 @@ folder as `tabrion-studio-logo-master-2026-11-08.png` for the tabrion-studio rep
 ## Regenerating
 
 ```bash
-uv run --with pillow --with numpy python assets/branding/build.py
+uv run --with pillow==12.3.0 --with numpy==2.5.3 python assets/branding/build.py
 ```
 
 `build.py` prepares the two brand kit masters, checks them with `derive_branding.py --check`, derives the web and
 favicon sets, keeps the files listed above, renders `social-preview.png` with `social_preview.py` and copies the web
 assets into `docs/assets/branding/`, because MkDocs only serves files below `docs/`. `tests/unit/test_branding.py`
-checks that the copies match. Output bytes depend on the Pillow and NumPy versions, so a run on other versions may
-rewrite the files byte for byte differently; commit only the files you meant to change.
+checks that the copies match. The committed files were produced with Pillow 12.3.0 and NumPy 2.5.3 (the pinned versions above); other versions
+may write different bytes, so commit only the files you meant to change.
