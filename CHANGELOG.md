@@ -22,6 +22,16 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   calls `tabrion.check.check`. The layer-A profile runs on the same DBAPI connection through `tabrion.sqlite.connect`
   and SQLAlchemy events (no second connection). Tested on SQLAlchemy 2.0.30 and 2.1, with mutation probes.
 
+- `tabrion.testing.profiles` (TAB-021): `sqlite_profile_cases()` (TAB-T-F01..F06: foreign keys, WAL, busy
+  timeout, `0600` files, symlink refusal, no DEFERRED writes) for any SQLite connect function, and
+  `portability_cases()` (TAB-T-D01..D09, the data type rules of specification section 6) for SQLite and PostgreSQL.
+  F05 refuses symlinks to missing and to existing files, for the main path and the `-wal`, `-shm` and `-journal`
+  files, checks that the plain file reopens, and counts only `UnsafePath("sqlite.symlink")` as a refusal. The
+  portability cases create fresh table names (`tabrion_d0N_<random>`) without `IF NOT EXISTS`, fail on an existing
+  name without touching it and drop only their own tables; run them in an empty or dedicated schema. D03 uses
+  `GENERATED ALWAYS AS IDENTITY` and checks `bigint` on PostgreSQL; D04 and D07 check the stored or server type
+  (deviations D-62 and D-63, contract I-58).
+
 - `tabrion.check.check` (TAB-017) for `sqlite3` and psycopg connections, read only and without changing the
   connection's transaction or row factory: the finding codes TAB-SQ-001..009 and TAB-PG-001..011, 020, 021 and 030
   of specification section 9. `expect="owner"` suppresses TAB-PG-003 and TAB-PG-009, `expect="any"` reports them
