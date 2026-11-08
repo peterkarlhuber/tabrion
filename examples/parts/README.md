@@ -7,13 +7,14 @@ optimistic lock, relation queries).
 
 ## Run it
 
-From a checkout with `pip install -e ".[migrations,postgres]"`:
+From a checkout with `pip install -e ".[migrations,postgres]"`, in `examples/parts` (the package `parts` is not
+installed; from the repository root, set `PYTHONPATH=examples/parts` instead):
 
 ```python
 from parts import open_database, require_current, upgrade
 
 database = open_database("sqlite:///parts.db")  # or "postgresql://user@host/db"
-upgrade(database)  # alembic upgrade head, on the application's own pool
+upgrade(database)  # alembic upgrade head, in one database.transaction()
 require_current(database)  # raises SchemaNotCurrent unless every migration is applied
 database.close()
 ```
@@ -38,13 +39,21 @@ The portable mappings follow specification section 6 and the cases TAB-T-D01..D0
 | Kind | Python | SQLite | PostgreSQL | Where |
 |---|---|---|---|---|
 | IDs | `int` | `INTEGER PRIMARY KEY` (the `rowid` alias) | `bigint GENERATED ALWAYS AS IDENTITY` | `schema.ID` |
-| Timestamps | aware `datetime` in UTC (a naive one is refused) | ISO 8601 text `YYYY-MM-DDTHH:MM:SS.ffffffZ` | `timestamptz` | `types.UtcDateTime` |
-| Decimals | `Decimal` (a `float` is refused, and so is a value with more digits than the scale) | decimal text | `numeric(p, s)` | `types.ExactDecimal` |
+| Timestamps | aware `datetime` in UTC (a naive one is refused) | fixed-width ISO 8601 text `YYYY-MM-DDTHH:MM:SS.ffffffZ` | `timestamptz` | `types.UtcDateTime` |
+| Decimals | `Decimal` (a `float` is refused, and so is a value with more digits than `numeric(p, s)` holds) | the scaled integer `value * 10**s` ("cents", `p` at most 18) | `numeric(p, s)` | `types.ExactDecimal` |
 | Text | `str` | `VARCHAR` plus a `CHECK` on `length()` | `varchar(n)` plus the same `CHECK` | `schema.py` |
 | References | | foreign keys, enforced (`foreign_keys=ON` in the profile) | foreign keys | `schema.py` |
 
-Every constraint and index has a name of its own, so both engines carry the same names. Do arithmetic on decimals
-in Python, not in SQL: SQLite would compute with text, and its result type differs.
+Every constraint (the primary keys `pk_<table>` included) and index has a name of its own, so both engines carry the
+same names. Decimals and timestamps order and compare alike on both engines: `ORDER BY`, `<` against a bound
+parameter, `min`, `max`, uniqueness, and `sum` of one decimal column. Do other arithmetic on decimals in Python, not
+in SQL (on SQLite a product of two scaled integers carries both scales), compare with bound parameters, not SQL
+literals (`value > :limit`, never `value > 5`), and do not compare timestamps with SQLite's `CURRENT_TIMESTAMP`
+(`YYYY-MM-DD HH:MM:SS`).
+
+`upgrade` and `downgrade` run Alembic inside `database.transaction()`, as does the command line through `env.py`:
+one transaction for all revisions, `BEGIN IMMEDIATE` on SQLite (two instances starting at once, or a running writer,
+are waited for, not a `database is locked` failure) and Tabrion's errors.
 
 ## Tests
 
@@ -57,9 +66,11 @@ cover:
 - **identical on both engines:** the reflected tables, columns, nullability, keys, foreign keys, unique and check
   constraints and indexes equal what `parts.schema` declares, and Alembic's own `compare_metadata`, with types
   compared, finds no difference;
-- `downgrade base` and a second `upgrade`;
-- exact round trips (`Decimal`, UTC timestamps, the server defaults) and the constraints (status, length, version,
-  relation rules, foreign key) on both engines;
+- `downgrade base` (then `require_current` raises again) and a second `upgrade`; a failing second revision leaves
+  no table, no version row and an idle connection; `upgrade` waits for a concurrent SQLite writer;
+- exact round trips (`Decimal`, UTC timestamps also before the year 1000 and under another PostgreSQL session time
+  zone, the server defaults) and every `CHECK` constraint, the relation rules and the foreign key on both engines;
+- decimals order, compare and aggregate the same way on both engines, stored as scaled integers on SQLite;
 - the `alembic.ini` command line path through `env.py`.
 
 ## Measurement notes for RA-EVAL (planning document 09 section 7)

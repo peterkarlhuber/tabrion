@@ -49,7 +49,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   cannot resolve raises `ConfigurationError("migrations.revisions")` without path or cause chain. Only
   `<script_location>/versions` is read (TODO TB-066).
 - Reference application `examples/parts` (RA-A-1): a portable schema (material, part, property, part_relation)
-  with Alembic on SQLite and PostgreSQL and `require_current` as the gate; not part of the wheel or the sdist.
+  with Alembic on SQLite and PostgreSQL and `require_current` as the gate; decimals are scaled integers on SQLite,
+  so they order and compare as on PostgreSQL, and migrations run in `Database.transaction()`; not part of the wheel
+  or the sdist.
 
 ### Changed
 

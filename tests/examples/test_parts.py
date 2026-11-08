@@ -14,6 +14,9 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+import shutil
+import threading
+import time
 from typing import Any
 
 import pytest
@@ -26,8 +29,10 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from parts import downgrade, metadata, open_database, require_current, status, upgrade
+import parts.db
 from parts.db import SCRIPT_LOCATION
 import parts.schema as schema
+from parts.types import ExactDecimal
 import sqlalchemy as sa
 
 from tabrion import Database, Profile
@@ -75,7 +80,7 @@ def describe_metadata() -> dict[str, Any]:
     for table in metadata.sorted_tables:
         tables[table.name] = {
             "columns": [(column.name, column.nullable) for column in table.columns],
-            "primary_key": sorted(column.name for column in table.primary_key.columns),
+            "primary_key": (table.primary_key.name, sorted(column.name for column in table.primary_key.columns)),
             "foreign_keys": sorted(
                 (fk.name, tuple(fk.column_keys), fk.referred_table.name, tuple(e.column.name for e in fk.elements))
                 for fk in table.foreign_key_constraints
@@ -96,7 +101,10 @@ def describe_database(database: Database) -> dict[str, Any]:
         columns = inspector.get_columns(name)
         tables[name] = {
             "columns": [(column["name"], column["nullable"]) for column in columns],
-            "primary_key": sorted(inspector.get_pk_constraint(name)["constrained_columns"]),
+            "primary_key": (
+                inspector.get_pk_constraint(name)["name"],
+                sorted(inspector.get_pk_constraint(name)["constrained_columns"]),
+            ),
             "foreign_keys": sorted(
                 (fk["name"], tuple(fk["constrained_columns"]), fk["referred_table"], tuple(fk["referred_columns"]))
                 for fk in inspector.get_foreign_keys(name)
@@ -146,6 +154,8 @@ def test_downgrade_and_upgrade_again(db: Database) -> None:
     downgrade(db, "base")
     assert describe_database(db) == {}
     assert status(db).current == ()
+    with pytest.raises(SchemaNotCurrent):
+        require_current(db)
     upgrade(db)
     assert require_current(db).is_current
 
@@ -159,7 +169,9 @@ def test_require_current_under_a_read_only_profile(url_and_profile: tuple[Any, P
         assert require_current(database).is_current
 
 
-def _insert_part(database: Database, number: str = "P-1", status: str = "draft") -> tuple[int, int]:
+def _insert_part(database: Database, number: str = "P-1", status: str | None = "draft") -> tuple[int, int]:
+    """A material and a part; ``status=None`` leaves the status to the server default."""
+    extra = {} if status is None else {"status": status}
     with database.transaction() as tx:
         material_id = tx.connection.execute(
             sa.insert(schema.material)
@@ -172,7 +184,7 @@ def _insert_part(database: Database, number: str = "P-1", status: str = "draft")
                 part_number=number,
                 name="Bracket",
                 material_id=material_id,
-                status=status,
+                **extra,
                 created_at=NOW,
                 updated_at=NOW,
             )
@@ -183,7 +195,7 @@ def _insert_part(database: Database, number: str = "P-1", status: str = "draft")
 
 def test_values_round_trip_exactly(db: Database) -> None:
     upgrade(db)
-    _, part_id = _insert_part(db)
+    _, part_id = _insert_part(db, status=None)
     vienna = datetime(2026, 11, 8, 13, 30, 0, 123456, tzinfo=timezone(timedelta(hours=1)))
     with db.transaction() as tx:
         tx.connection.execute(
@@ -200,19 +212,82 @@ def test_values_round_trip_exactly(db: Database) -> None:
     assert row.updated_at == NOW and row.updated_at.tzinfo is not None and row.updated_at.utcoffset() == timedelta(0)
 
 
-@pytest.mark.parametrize(
-    ("table", "values"),
-    [
-        ("part", {"status": "archived"}),
-        ("part", {"part_number": ""}),
-        ("part", {"version": 0}),
-    ],
-)
-def test_constraints_hold_on_both_engines(db: Database, table: str, values: dict[str, Any]) -> None:
+CHECKS: dict[str, tuple[str, dict[str, Any]]] = {
+    "ck_material_code": ("material", {"code": ""}),
+    "ck_material_name": ("material", {"name": ""}),
+    "ck_part_part_number": ("part", {"part_number": ""}),
+    "ck_part_name": ("part", {"name": ""}),
+    "ck_part_status": ("part", {"status": "archived"}),
+    "ck_part_version": ("part", {"version": 0}),
+    "ck_property_key": ("property", {"key": ""}),
+    "ck_property_unit": ("property", {"unit": ""}),
+}
+"""A violating update per ``CHECK`` on material, part and property; ``test_relation_rules`` covers part_relation."""
+
+
+def test_every_check_has_a_case() -> None:
+    declared = {c.name for t in metadata.tables.values() for c in t.constraints if isinstance(c, sa.CheckConstraint)}
+    assert declared == set(CHECKS) | {"ck_part_relation_quantity", "ck_part_relation_not_self"}
+
+
+@pytest.mark.parametrize("check", sorted(CHECKS))
+def test_constraints_hold_on_both_engines(db: Database, check: str) -> None:
     upgrade(db)
-    _insert_part(db)
-    with pytest.raises(IntegrityViolation), db.transaction() as tx:
-        tx.connection.execute(sa.update(schema.part).values(**values))
+    _, part_id = _insert_part(db)
+    with db.transaction() as tx:
+        tx.connection.execute(
+            sa.insert(schema.property_).values(part_id=part_id, key="mass", value=Decimal(1), unit="kg")
+        )
+    table, values = CHECKS[check]
+    with pytest.raises(IntegrityViolation) as raised, db.transaction() as tx:
+        tx.connection.execute(sa.update(metadata.tables[table]).values(**values))
+    classification = raised.value.classification
+    assert classification is not None and classification.constraint == check
+
+
+def test_decimals_order_and_compare_alike_on_both_engines(db: Database) -> None:
+    """Review M-1 of #22: ``ORDER BY``, a comparison with a bound ``Decimal``, ``min``, ``max`` and ``sum`` give the
+    PostgreSQL answer on SQLite too (a scaled integer there, not text)."""
+    upgrade(db)
+    numbers = [Decimal(9), Decimal(10), Decimal(-1), Decimal("100.5"), Decimal("0.25")]
+    ids = [_insert_part(db, f"P-{index}")[1] for index in range(len(numbers))]
+    value = schema.property_.c.value
+    with db.transaction() as tx:
+        for part_id, number in zip(ids, numbers, strict=True):
+            tx.connection.execute(sa.insert(schema.property_).values(part_id=part_id, key="k", value=number, unit="u"))
+    with db.read() as tx:
+        ordered = tx.connection.execute(sa.select(value).order_by(value)).scalars().all()
+        above = tx.connection.execute(sa.select(value).where(value > Decimal(5)).order_by(value)).scalars().all()
+        low, high, total = tx.connection.execute(
+            sa.select(sa.func.min(value), sa.func.max(value), sa.func.sum(value))
+        ).one()
+    assert ordered == sorted(numbers)
+    assert above == [Decimal(9), Decimal(10), Decimal("100.5")]
+    assert (low, high, total) == (Decimal(-1), Decimal("100.5"), sum(numbers))
+    assert all(isinstance(number, Decimal) for number in (*ordered, low, high, total))
+
+
+def test_decimals_are_stored_scaled_on_sqlite_and_numeric_on_postgresql(db: Database) -> None:
+    upgrade(db)
+    _, assembly = _insert_part(db, "A-1")
+    _, component = _insert_part(db, "C-1")
+    with db.transaction() as tx:
+        tx.connection.execute(
+            sa.insert(schema.part_relation).values(
+                assembly_id=assembly, component_id=component, quantity=Decimal("2.5")
+            )
+        )
+    with db.read() as tx:
+        if db.dialect == "sqlite":
+            raw = tx.connection.exec_driver_sql("SELECT typeof(quantity), quantity FROM part_relation").one()
+            assert tuple(raw) == ("integer", 2500)
+        else:
+            assert tx.connection.exec_driver_sql("SELECT quantity FROM part_relation").scalar_one() == Decimal("2.500")
+
+
+def test_exact_decimal_precision_limit() -> None:
+    with pytest.raises(ValueError, match="precision <= 18"):
+        ExactDecimal(19, 2)
 
 
 def test_relation_rules(db: Database) -> None:
@@ -238,7 +313,12 @@ def test_relation_rules(db: Database) -> None:
 def test_types_refuse_floats_and_naive_timestamps(db: Database) -> None:
     upgrade(db)
     _, part_id = _insert_part(db)
-    for column, value in (("value", 0.1), ("value", Decimal("0.0000001"))):
+    for column, value in (
+        ("value", 0.5),  # exact in binary, refused for being a float
+        ("value", 2.0),
+        ("value", Decimal("0.0000001")),  # more digits after the point than the scale
+        ("value", Decimal("1" * 13)),  # more digits before the point than numeric(18, 6) holds
+    ):
         with pytest.raises(UsageError, match=r"database\.invalid_statement"), db.transaction() as tx:
             tx.connection.execute(
                 sa.insert(schema.property_).values(part_id=part_id, key="k", unit="u", **{column: value})
@@ -255,4 +335,106 @@ def test_alembic_command_line_configuration(tmp_path: Path) -> None:
     assert Path(config.get_main_option("script_location") or "").resolve() == SCRIPT_LOCATION
     command.upgrade(config, "head")
     with open_database(url) as database:
+        assert require_current(database).is_current
+
+
+def test_timestamps_order_and_round_trip_before_year_1000(db: Database) -> None:
+    """Review L-4 of #22: the year has four digits on SQLite (``0999``), so the value reads back and orders."""
+    upgrade(db)
+    early = datetime(999, 1, 2, 3, 4, 5, 6, tzinfo=UTC)
+    earliest = datetime(1, 1, 1, tzinfo=UTC)
+    with db.transaction() as tx:
+        for code, moment in (("A", NOW), ("B", early), ("C", earliest)):
+            tx.connection.execute(sa.insert(schema.material).values(code=code, name="x", created_at=moment))
+    created = schema.material.c.created_at
+    with db.read() as tx:
+        ordered = tx.connection.execute(sa.select(created).order_by(created)).scalars().all()
+        before = tx.connection.execute(sa.select(schema.material.c.code).where(created < NOW)).scalars().all()
+    assert ordered == [earliest, early, NOW]
+    assert sorted(before) == ["B", "C"]
+
+
+@pytest.mark.postgres
+def test_postgresql_results_are_utc_under_another_session_timezone(request: pytest.FixtureRequest) -> None:
+    """Review L-1 (T10) of #22: a session in Europe/Vienna still reads ``tzinfo=UTC`` values."""
+    pytest.importorskip("psycopg")
+    from tests.postgres.test_database import sa_url
+
+    postgres_schema = request.getfixturevalue("tabrion_postgres_schema")
+    url = sa_url(request.getfixturevalue("tabrion_postgres_url"))
+    vienna = Profile(postgres=SessionSettings(search_path=postgres_schema.name, timezone="Europe/Vienna"))
+    with open_database(url, profile=vienna) as database:
+        upgrade(database)
+        _insert_part(database)
+        with database.read() as tx:
+            moment = tx.connection.execute(sa.select(schema.part.c.created_at)).scalar_one()
+    assert moment == NOW and moment.tzinfo is UTC
+
+
+_FAILING_REVISION = """
+from alembic import op
+import sqlalchemy as sa
+
+revision = "0002"
+down_revision = "0001"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.create_table("t_partial", sa.Column("x", sa.Integer))
+    raise RuntimeError("revision 0002 fails")
+
+
+def downgrade() -> None:
+    op.drop_table("t_partial")
+"""
+
+
+def test_a_failing_upgrade_leaves_nothing_behind(db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review L-1 of #22: ``upgrade`` from base with a failing second revision is one transaction: no table, no
+    version row, and the pool's connection is idle afterwards (T-NOTX)."""
+    scripts = tmp_path / "migrations"
+    shutil.copytree(SCRIPT_LOCATION, scripts, ignore=shutil.ignore_patterns("__pycache__"))
+    (scripts / "versions" / "0002_fails.py").write_text(_FAILING_REVISION, encoding="utf-8")
+    monkeypatch.setattr(parts.db, "SCRIPT_LOCATION", scripts)
+    with pytest.raises(RuntimeError, match="0002 fails"):
+        upgrade(db)
+    assert describe_database(db) == {}
+    assert sa.inspect(db.engine).get_table_names() == []
+    raw = db.engine.raw_connection()
+    try:
+        driver = raw.driver_connection
+        if db.dialect == "sqlite":
+            assert driver.in_transaction is False  # type: ignore[union-attr]
+        else:
+            import psycopg
+
+            assert driver.info.transaction_status == psycopg.pq.TransactionStatus.IDLE  # type: ignore[union-attr]
+    finally:
+        raw.close()
+
+
+def test_upgrade_waits_for_a_concurrent_writer_on_sqlite(tmp_path: Path) -> None:
+    """Review M-2 of #22: ``upgrade`` runs in ``Database.transaction()`` (``BEGIN IMMEDIATE``), so it waits for a
+    writer that holds the database instead of failing on a stale read snapshot."""
+    url = f"sqlite:///{tmp_path / 'busy.db'}"
+    with open_database(url) as other, open_database(url) as database:
+        with other.transaction() as tx:
+            tx.connection.exec_driver_sql("CREATE TABLE t_other (x INTEGER)")
+        holding = threading.Event()
+
+        def hold() -> None:
+            with other.transaction() as tx:
+                tx.connection.exec_driver_sql("INSERT INTO t_other VALUES (1)")
+                holding.set()
+                time.sleep(0.5)
+
+        writer = threading.Thread(target=hold)
+        writer.start()
+        try:
+            assert holding.wait(5)
+            upgrade(database)
+        finally:
+            writer.join()
         assert require_current(database).is_current
