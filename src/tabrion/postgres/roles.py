@@ -1,12 +1,13 @@
 """Database role checks and grants (layer A, extra ``postgres``).
 
-Contract: ``docs/api/contract.md`` sections 4.5 and 4.6. ``role_info``, ``check_role`` and ``inspect_role`` are
-implemented (TAB-016); ``grant_runtime_role`` is still a stub (TAB-031). Database roles only (owner, runtime,
-backup); no application, tenant or user model (TAB-ADR-0010).
+Contract: ``docs/api/contract.md`` sections 4.5 and 4.6. ``role_info``, ``check_role`` and ``inspect_role``
+(TAB-016) and ``grant_runtime_role`` (TAB-031). Database roles only (owner, runtime, backup); no application, tenant
+or user model (TAB-ADR-0010).
 
-Every function here only reads. On a handed-in connection it follows rule T-NOTX: its own ``tuple_row`` cursor, no
-change of the row factory or of ``autocommit``, a rollback only of the implicit transaction it opened itself, and a
-savepoint in the caller's running transaction, so a failing statement does not abort it.
+Every function here except ``grant_runtime_role`` only reads. On a handed-in connection it follows rule T-NOTX:
+its own ``tuple_row`` cursor, no change of the row factory or of ``autocommit``, a rollback only of the implicit
+transaction it opened itself, and a savepoint in the caller's running transaction, so a failing statement does not
+abort it. ``grant_runtime_role`` needs a transaction of its own and refuses to run inside the caller's.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from tabrion.errors import RoleMissing, RoleUnsafe
-from tabrion.postgres._common import one_row, reading
+from tabrion.errors import RoleMissing, RoleUnsafe, UsageError
+from tabrion.postgres._common import one_row, reading, require_connection, settle
 
 if TYPE_CHECKING:
     import psycopg
@@ -236,6 +237,44 @@ def inspect_role(connection: psycopg.Connection[Any], role: str, *, schema: str 
     )
 
 
+_TABLE_PRIVILEGES = "SELECT, INSERT, UPDATE, DELETE"
+_SEQUENCE_PRIVILEGES = "USAGE, SELECT"
+# Axentra roles.py:31-32 and Nodestro storage_postgres.py:162 (the same privileges); the statements are those of
+# both references (Axentra roles.py:150-167, Nodestro storage_postgres.py:917-928), in their order.
+_GRANTS = (
+    "GRANT USAGE ON SCHEMA {schema} TO {role}",
+    "GRANT " + _TABLE_PRIVILEGES + " ON ALL TABLES IN SCHEMA {schema} TO {role}",
+    "GRANT " + _SEQUENCE_PRIVILEGES + " ON ALL SEQUENCES IN SCHEMA {schema} TO {role}",
+    "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO {role}",
+    "ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT " + _TABLE_PRIVILEGES + " ON TABLES TO {role}",
+    "ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT " + _SEQUENCE_PRIVILEGES + " ON SEQUENCES TO {role}",
+    "ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT EXECUTE ON FUNCTIONS TO {role}",
+)
+
+
+_NAME_BYTES = 63
+"""``NAMEDATALEN - 1``: PostgreSQL truncates a longer name, so the grants would name another object (review L-2)."""
+
+
+def _grant_arguments(role: object, schema: object, protected_tables: object, grant_connect: object) -> tuple[str, ...]:
+    if not isinstance(role, str) or not role:
+        raise TypeError("role must be a non-empty str")
+    if schema is not None and (not isinstance(schema, str) or not schema):
+        raise TypeError("schema must be a non-empty str or None")
+    if isinstance(protected_tables, str | bytes) or not isinstance(protected_tables, Sequence):
+        raise TypeError("protected_tables must be a sequence of table names (not a str)")
+    tables = tuple(protected_tables)
+    if not all(isinstance(table, str) and table for table in tables):
+        raise TypeError("protected_tables must hold non-empty str table names")
+    if not isinstance(grant_connect, bool):
+        raise TypeError("grant_connect must be a bool")
+    # The names stay out of the messages (the caller has them).
+    for argument, names in (("role", (role,)), ("schema", (schema,) if schema else ()), ("protected_tables", tables)):
+        if any(len(name.encode("utf-8")) > _NAME_BYTES for name in names):
+            raise ValueError(f"{argument}: a name longer than {_NAME_BYTES} bytes (PostgreSQL would truncate it)")
+    return tables
+
+
 def grant_runtime_role(
     connection: psycopg.Connection[Any],
     role: str,
@@ -246,6 +285,93 @@ def grant_runtime_role(
 ) -> RoleReport:
     """Grant DML-only runtime privileges in one transaction (idempotent); ``RoleMissing``, ``RoleUnsafe``.
 
-    Needs a transaction of its own: ``UsageError("...nested_transaction")`` inside a caller's transaction.
+    Run it as the owner role (the role that runs the migrations). Unites Axentra ``grant_runtime_role``
+    (``roles.py:107-190``) and Nodestro's (``storage_postgres.py:888-944``): ``USAGE`` on the schema, ``SELECT,
+    INSERT, UPDATE, DELETE`` on every table, ``USAGE, SELECT`` on every sequence and ``EXECUTE`` on every function of
+    the schema, the same as the connecting role's default privileges in the schema, and ``REVOKE INSERT, UPDATE,
+    DELETE, TRUNCATE`` on each of ``protected_tables`` that exists in the schema (the migration bookkeeping stays
+    read-only for the runtime role). Then ``GRANT CONNECT ON DATABASE`` in a transaction of its own when
+    ``grant_connect`` holds and the role may not connect yet; an owner without the right to grant it leaves
+    ``connect=False`` in the result. Returns a fresh :func:`inspect_role`.
+
+    Refused before anything is granted (``RoleUnsafe``, details ``reasons``): ``table_owner`` when ``role`` is the
+    connecting role or can become it (``SET ROLE``, contract I-20), owns the schema or can become its owner, or owns
+    tables of the schema; ``superuser`` and ``bypass_rls`` as :func:`inspect_role` reports them (also through
+    membership). ``RoleMissing`` for an unknown role, ``UsageError("postgres.schema_missing")`` for a schema that
+    does not exist. Needs a transaction of its own: ``UsageError("postgres.nested_transaction")`` while the caller's
+    transaction runs (contract T-NOTX, I-35). ``ValueError`` when neither ``schema`` nor a current schema names one,
+    and for a name longer than 63 bytes (PostgreSQL would truncate it to another object's name).
+
+    Check the result, not only for exceptions: ``connect`` is ``False`` when the owner may not grant ``CONNECT``
+    (PostgreSQL only warns), and ``can_create=True`` (``CREATE`` on the schema, granted by someone else) is not
+    restricted, although ``restricted`` does not include it: such a role can plant objects in the schema.
     """
-    raise NotImplementedError("tabrion.postgres.grant_runtime_role: implemented in TAB-031")
+    tables = _grant_arguments(role, schema, protected_tables, grant_connect)
+    require_connection(connection, "grant_runtime_role")
+    import psycopg
+    from psycopg import pq, sql
+    from psycopg.rows import tuple_row
+
+    settle(connection)  # pipeline mode: the status is known only after a sync (contract I-34)
+    if connection.info.transaction_status != pq.TransactionStatus.IDLE:
+        raise UsageError("postgres.nested_transaction")
+    before = inspect_role(connection, role, schema=schema)
+    if not before.schema:
+        raise ValueError("grant_runtime_role needs a schema: pass schema= or connect with a search_path")
+    with reading(connection, "grant_runtime_role") as cursor:
+        # Whether the role is, or can become (NOINHERIT members too), the connecting (owner) role, which owns or will
+        # own the tables (D-46), or the owner of the schema, which may drop or alter every object in it (review M-1,
+        # D-49); and whether the schema exists (review L-4).
+        cursor.execute(
+            "SELECT pg_catalog.pg_has_role(r.oid, CURRENT_USER, 'MEMBER'), n.oid IS NOT NULL,"
+            " COALESCE(pg_catalog.pg_has_role(r.oid, n.nspowner, 'MEMBER'), false)"
+            " FROM pg_catalog.pg_roles r LEFT JOIN pg_catalog.pg_namespace n"
+            "   ON n.nspname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
+            " WHERE r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text",
+            (before.schema, role),
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise RoleMissing("postgres.role_missing")  # dropped since inspect_role
+    if not row[1]:
+        raise UsageError("postgres.schema_missing")  # the name stays out of the error (D-50)
+    reasons = [
+        reason
+        for reason, flag in (
+            ("superuser", before.superuser),
+            ("bypass_rls", before.bypass_rls),
+            ("table_owner", role == before.owner or bool(row[0]) or bool(row[2]) or bool(before.owned_tables)),
+        )
+        if flag
+    ]
+    if reasons:
+        raise RoleUnsafe("postgres.role_unsafe", details={"reasons": ",".join(reasons)})
+    target = sql.Identifier(role)
+    namespace = sql.Identifier(before.schema)
+    with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:
+        for statement in _GRANTS:
+            cursor.execute(sql.SQL(statement).format(schema=namespace, role=target))
+        for table in tables:
+            # Looked up by exact name in the schema (no search_path, no identifier parsing).
+            cursor.execute(
+                "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n"
+                " ON n.oid OPERATOR(pg_catalog.=) c.relnamespace"
+                " WHERE n.nspname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
+                " AND c.relname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text",
+                (before.schema, table),
+            )
+            if cursor.fetchone() is not None:
+                cursor.execute(
+                    sql.SQL("REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON {}.{} FROM {}").format(
+                        namespace, sql.Identifier(table), target
+                    )
+                )
+    if grant_connect and not before.connect:
+        try:
+            with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:
+                cursor.execute(
+                    sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(before.database), target)
+                )
+        except psycopg.errors.InsufficientPrivilege:
+            pass  # reported as connect=False; the database's owner grants it
+    return inspect_role(connection, role, schema=before.schema)

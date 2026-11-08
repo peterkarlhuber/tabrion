@@ -250,32 +250,14 @@ def _dummy_args(fn: Callable[..., Any]) -> tuple[list[Any], dict[str, Any]]:
     return args, kwargs
 
 
-# Implemented modules leave this list (TAB-010 errors, TAB-011 sql, TAB-012 config, TAB-013/TAB-014 sqlite,
-# TAB-017 check); the rest are M1 stubs.
-STUB_MODULES = [
-    "tabrion.postgres",
-]
+# Implemented modules leave this list (TAB-010 errors, TAB-011 sql, TAB-012 config, TAB-013/TAB-014 sqlite, TAB-015,
+# TAB-016, TAB-030 and TAB-031 postgres, TAB-017 check); the rest are M1 stubs.
+STUB_MODULES: list[str] = []
 
 
-# Functions of a partly implemented module that left the stub check (TAB-015, TAB-016); the module's other functions
-# must still raise NotImplementedError.
-IMPLEMENTED = {
-    f"tabrion.postgres.{name}"
-    for name in (
-        "configure",
-        "session_configurator",
-        "ping",
-        "diagnose",
-        "extension_status",
-        "role_info",
-        "check_role",
-        "inspect_role",
-        "lock_key",
-        "try_advisory_lock",
-        "wait_advisory_lock",
-        "advisory_unlock",
-    )
-}
+# Functions of a partly implemented module that left the stub check; the module's other functions must still raise
+# NotImplementedError. Empty since TAB-031 completed tabrion.postgres.
+IMPLEMENTED: set[str] = set()
 
 
 @pytest.mark.parametrize("module_name", [*STUB_MODULES, "tabrion.migrations", "tabrion.testing.profiles"])
