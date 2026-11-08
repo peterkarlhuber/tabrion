@@ -127,6 +127,34 @@ def _extended_protocol(transaction: Transaction) -> Iterator[None]:
         dbapi.prepare_threshold = previous
 
 
+def _still_in_transaction(transaction: Transaction, close: Callable[[], None] | None = None) -> None:
+    """After a user statement: the caller's SQL must not have ended Tabrion's transaction (I-104, review L-1 of #32).
+
+    ``COMMIT`` or ``ROLLBACK`` as a statement of its own passes the one-command rule; what follows it would run outside
+    the transaction (on PostgreSQL in a new one the caller can open ``READ WRITE``). The transaction is marked
+    broken: this call raises ``UsageError("database.transaction_ended")``, every later statement too, and the end of
+    the block rolls back and keeps the connection out of the pool.
+    """
+    dbapi = transaction._dbapi
+    try:
+        if transaction._dialect == "postgresql":
+            from psycopg import pq
+
+            inside = dbapi.info.transaction_status in (pq.TransactionStatus.INTRANS, pq.TransactionStatus.INERROR)
+        else:
+            inside = bool(dbapi.in_transaction)
+    except Exception:
+        inside = False  # cannot tell: treat it as ended
+    if inside:
+        return
+    if close is not None:
+        with contextlib.suppress(Exception):
+            close()
+    with transaction._state:
+        transaction._broken = True
+    raise UsageError("database.transaction_ended")
+
+
 def _columns(transaction: Transaction, description: Sequence[Any] | None) -> tuple[Column, ...]:
     if not description:
         return ()
@@ -192,6 +220,7 @@ class _TransactionV02:
             return description, fetched[:limit], len(fetched) > limit, started
 
         description, rows, truncated, started = transaction._step(statement, timeout, run)
+        _still_in_transaction(transaction)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         columns = transaction._step(statement, timeout, lambda: _columns(transaction, description))
         return Result(
@@ -257,6 +286,7 @@ def _stream(
     result = transaction._step(
         statement, timeout, lambda: connection.execute(executable, values, execution_options=options)
     )
+    _still_in_transaction(transaction, result.close)
     closed = threading.Event()
 
     def close() -> None:
@@ -317,10 +347,12 @@ class _DatabaseV02:
             raise TypeError("callback must be callable")
         database._check_open()
         token = object()
-        database._begin_callbacks.append((token, callback))
+        with database._callbacks_lock:
+            database._begin_callbacks = [*database._begin_callbacks, (token, callback)]
 
         def unregister() -> None:
-            database._begin_callbacks[:] = [entry for entry in database._begin_callbacks if entry[0] is not token]
+            with database._callbacks_lock:
+                database._begin_callbacks = [entry for entry in database._begin_callbacks if entry[0] is not token]
 
         return unregister
 

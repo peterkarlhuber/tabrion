@@ -626,6 +626,10 @@ required (owner decision of 2026-11-08 11:26Z).
   `test_b12_documents_the_gap_session_default_restored_locally` and
   `test_b12_documents_the_gap_transaction_control_in_read`. A server cannot refuse transaction control; the hard
   boundary is a role without write rights (or SQLite file permissions).
+- **TAB-033:** `query` and `stream` close the multi-statement and the transaction-control variants for their own
+  calls: the server refuses several commands (I-104), and a `COMMIT` or `ROLLBACK` of the caller ends the call
+  with `UsageError("database.transaction_ended")` and keeps the connection out of the pool (review L-1 of #32).
+  The gap stays for the 0.1 methods (TB-121) and for lift-write-restore inside one statement's functions.
 - **Next step:** Studio and TAB-032 (runtime-role mode) run untrusted SQL only under such a role. Optional: a
   `checkin` check of `default_transaction_read_only` under `Profile.read_only` that invalidates the connection, and
   a snapshot-taking statement after `BEGIN READ ONLY` (review H-1); decide with TAB-041.
@@ -646,7 +650,8 @@ required (owner decision of 2026-11-08 11:26Z).
   several commands (I-104). `execute`, `fetch_one`, `fetch_all` and `fetch_scalar` keep psycopg's default: without
   parameters a text goes as a simple query, and `COMMIT; BEGIN READ WRITE; ...` inside `read()` writes (pinned by
   the `documents_the_gap` tests of TB-061). An engine whose `connect_args` set `prepare_threshold=0` (Studio) is
-  covered for every method.
+  covered for every method. The transaction-status check after each statement (I-104) runs for `query`
+  and `stream` only.
 - **Next step:** decide with TAB-042 whether `read()` statements always use the extended protocol (a behavior
   change of 0.1 methods, no signature change); until then tools that run user SQL use `query` or `stream`.
 

@@ -32,6 +32,7 @@ pytest.importorskip("psycopg")
 from tabrion import Database, Profile, Transaction  # noqa: E402
 from tabrion._sa._staged import _StagedDatabase, _StagedTransaction  # noqa: E402
 from tabrion._sa._v02 import statement_kind  # noqa: E402
+import tabrion._sa.database  # noqa: E402
 from tabrion._sa.result import Column, Result  # noqa: E402
 from tabrion.errors import (  # noqa: E402
     Canceled,
@@ -742,3 +743,44 @@ def test_b39_read_only_profile(path: Path, db: _StagedDatabase, open_db: Callabl
         readonly.run_transaction(lambda transaction: None)
     with readonly.inspector() as inspector:
         assert inspector.get_table_names() == ["items"]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Review fixes of #32 (L-1, L-3)
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def test_l1_the_callers_sql_cannot_end_the_transaction(db: _StagedDatabase) -> None:
+    """``COMMIT`` alone would end the ``read()``; a ``PRAGMA query_only = OFF`` and an autocommitted write could
+    follow. The call raises, every later statement is refused, and the block does not end quietly."""
+    with pytest.raises(UsageError) as at_end, db.read() as transaction:
+        with pytest.raises(UsageError) as info:
+            staged(transaction).query("COMMIT")
+        assert info.value.code == "database.transaction_ended"
+        for text in ("PRAGMA query_only = OFF", "DELETE FROM items"):
+            with pytest.raises(UsageError):
+                staged(transaction).query(text)
+        with pytest.raises(UsageError):
+            next(staged(transaction).stream("SELECT 1"))
+    assert at_end.value.code == "database.transaction_ended"
+    assert db.query("SELECT count(*) FROM items").rows == ((25,),)
+    with db.transaction() as transaction:  # the pool hands out a working connection again
+        transaction.execute("INSERT INTO items (n) VALUES (1)")
+
+
+def test_l3_cancel_sends_only_while_a_statement_runs(db: _StagedDatabase, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: list[str] = []
+    original = tabrion._sa.database._send_cancel
+
+    def counting(dialect: str, dbapi: Any) -> None:
+        sent.append(dialect)
+        original(dialect, dbapi)
+
+    monkeypatch.setattr(tabrion._sa.database, "_send_cancel", counting)
+    with pytest.raises(Canceled), db.read() as transaction:
+        staged(transaction).cancel()
+        assert sent == []
+    with pytest.raises(Canceled), db.read() as transaction:
+        threading.Timer(0.2, staged(transaction).cancel).start()
+        staged(transaction).query(COUNT_FOREVER)
+    assert 1 <= len(sent) <= 4

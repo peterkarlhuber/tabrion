@@ -12,6 +12,9 @@ As on SQLite (``tests/unit/test_v02_database.py``), the staged classes of ``tabr
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+import contextlib
+import socket
+import struct
 import threading
 import time
 import types
@@ -30,6 +33,7 @@ psycopg = pytest.importorskip("psycopg")
 
 from tabrion import Profile, Transaction  # noqa: E402
 from tabrion._sa._staged import _StagedDatabase, _StagedTransaction  # noqa: E402
+import tabrion._sa.database  # noqa: E402
 from tabrion._sa.result import Column  # noqa: E402
 from tabrion.errors import (  # noqa: E402
     Canceled,
@@ -530,3 +534,186 @@ def test_b39_transient_errors_are_typed(db: _StagedDatabase, schema: str, admin:
             transaction.execute("SET LOCAL lock_timeout = '100ms'")
             with pytest.raises(TransientError):
                 staged(transaction).query(f"SELECT * FROM {schema}.parts")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Review fixes of #32: a late cancel request (H-1), the caller's SQL ends the transaction (L-1), the running guard (L-3)
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+class SlowCancelProxy:
+    """A TCP proxy in front of the server that holds every CancelRequest back for ``delay`` seconds.
+
+    It plays a server that is slow to accept or fork for the cancel connection: psycopg's ``cancel_safe`` gives up
+    (``CancellationTimeout``) while the request is still on its way, and the server acts on it later.
+    """
+
+    CANCEL_REQUEST = 80877102
+
+    def __init__(self, host: str, port: int, delay: float) -> None:
+        self.upstream = (host, port)
+        self.delay = delay
+        self.delivered: list[float] = []
+        self.listener = socket.create_server(("127.0.0.1", 0))
+        self.port = self.listener.getsockname()[1]
+        self.closed = False
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    def _accept(self) -> None:
+        while not self.closed:
+            try:
+                client, _ = self.listener.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._serve, args=(client,), daemon=True).start()
+
+    def _serve(self, client: socket.socket) -> None:
+        with contextlib.suppress(OSError), client:
+            first = client.recv(8, socket.MSG_WAITALL)
+            if len(first) < 8:
+                return
+            length, code = struct.unpack("!ii", first)
+            if length == 16 and code == self.CANCEL_REQUEST:
+                first += client.recv(8, socket.MSG_WAITALL)
+                time.sleep(self.delay)
+                self.delivered.append(time.monotonic())
+            with socket.create_connection(self.upstream) as server:
+                server.sendall(first)
+                pump = threading.Thread(target=self._pump, args=(server, client), daemon=True)
+                pump.start()
+                self._pump(client, server)
+                pump.join(5)
+
+    @staticmethod
+    def _pump(source: socket.socket, target: socket.socket) -> None:
+        with contextlib.suppress(OSError):
+            while data := source.recv(65536):
+                target.sendall(data)
+            target.shutdown(socket.SHUT_WR)
+
+    def dsn(self, base: str) -> str:
+        params = psycopg.conninfo.conninfo_to_dict(base)
+        params.pop("hostaddr", None)
+        params.update(host="127.0.0.1", port=str(self.port), sslmode="disable", gssencmode="disable")
+        return str(psycopg.conninfo.make_conninfo("", **params))
+
+    def close(self) -> None:
+        self.closed = True
+        self.listener.close()
+
+
+@pytest.mark.slow
+def test_b40_a_late_cancel_request_never_reaches_the_next_user(
+    open_db: Callable[..., _StagedDatabase], admin_url: str
+) -> None:
+    """H-1 of the review of #32: ``cancel_safe`` gives up after 2 s, the server receives the request after 3 s. The
+    canceled transaction's connection must not go back to the pool, or the request cancels the next user's statement
+    on the same server session."""
+    params = psycopg.conninfo.conninfo_to_dict(admin_url)
+    host = str(params.get("host") or "")
+    if not host or host.startswith("/"):
+        pytest.skip("the proxy needs a TCP server address")
+    proxy = SlowCancelProxy(host, int(params.get("port") or 5432), delay=3.0)
+    try:
+        db = open_db(Profile(pool_size=1), url=proxy.dsn(admin_url))
+        started = time.monotonic()
+        with pytest.raises(Canceled), db.read() as first:
+            pid = first.fetch_scalar("SELECT pg_backend_pid()")
+            threading.Timer(0.15, staged(first).cancel).start()
+            assert staged(first).query("SELECT pg_sleep(0.5), 1").rows[0][1] == 1  # the request is held back
+            # L-2: the cancel connection did not hold the statement's end back.
+            assert time.monotonic() - started < 1.5
+        with db.read() as second:
+            assert second.fetch_scalar("SELECT pg_backend_pid()") != pid  # a fresh server session
+            result = staged(second).query("SELECT pg_sleep(4), 'ok'")
+            assert result.rows[0][1] == "ok"
+        assert proxy.delivered, "the held-back request reached the server meanwhile"
+    finally:
+        proxy.close()
+
+
+def test_b40_every_sent_cancel_keeps_the_connection_out_of_the_pool(open_db: Callable[..., _StagedDatabase]) -> None:
+    db = open_db(Profile(pool_size=1))
+    with pytest.raises(Canceled), db.read() as first:
+        pid = first.fetch_scalar("SELECT pg_backend_pid()")
+        threading.Timer(0.2, staged(first).cancel).start()
+        staged(first).query("SELECT pg_sleep(5)")
+    with db.read() as second:
+        assert second.fetch_scalar("SELECT pg_backend_pid()") != pid
+    # A cancel while nothing ran sent no request: that connection stays in the pool.
+    with pytest.raises(Canceled), db.read() as third:
+        pid = third.fetch_scalar("SELECT pg_backend_pid()")
+        staged(third).cancel()
+    with db.read() as fourth:
+        assert fourth.fetch_scalar("SELECT pg_backend_pid()") == pid
+
+
+def test_l3_cancel_sends_only_while_a_statement_runs(db: _StagedDatabase, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: list[str] = []
+    original = tabrion._sa.database._send_cancel
+
+    def counting(dialect: str, dbapi: Any) -> None:
+        sent.append(dialect)
+        original(dialect, dbapi)
+
+    monkeypatch.setattr(tabrion._sa.database, "_send_cancel", counting)
+    with pytest.raises(Canceled), db.read() as transaction:
+        staged(transaction).cancel()  # idle: marked, nothing sent
+        assert sent == []
+    with pytest.raises(Canceled), db.read() as transaction:
+        threading.Timer(0.2, staged(transaction).cancel).start()
+        staged(transaction).query("SELECT pg_sleep(5)")
+    assert 1 <= len(sent) <= 4
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        ["COMMIT", "BEGIN READ WRITE", "INSERT INTO {schema}.parts (id) VALUES (670)", "COMMIT"],
+        ["ROLLBACK", "BEGIN READ WRITE", "INSERT INTO {schema}.parts (id) VALUES (670)", "COMMIT", "BEGIN READ ONLY"],
+    ],
+)
+def test_l1_the_callers_sql_cannot_end_the_transaction(
+    open_db: Callable[..., _StagedDatabase], schema: str, admin: Any, steps: list[str]
+) -> None:
+    """L-1 of the review of #32: one command per call, but ``COMMIT`` alone ends Tabrion's ``read()``. The call
+    raises, every later statement is refused, the block does not end quietly, and the connection leaves the pool."""
+    db = open_db(Profile(pool_size=1))
+    with pytest.raises(UsageError) as at_end, db.read() as transaction:
+        pid = transaction.fetch_scalar("SELECT pg_backend_pid()")
+        with pytest.raises(UsageError) as info:
+            staged(transaction).query(steps[0])
+        assert info.value.code == "database.transaction_ended"
+        for step in steps[1:]:
+            with pytest.raises(UsageError):
+                staged(transaction).query(step.format(schema=schema))
+        with pytest.raises(UsageError):
+            transaction.fetch_scalar("SELECT 1")
+    assert at_end.value.code == "database.transaction_ended"
+    assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id = 670").fetchone() == (0,)
+    with db.read() as transaction:
+        assert transaction.fetch_scalar("SELECT pg_backend_pid()") != pid
+    # stream cannot end it on PostgreSQL: DECLARE takes a query only.
+    with pytest.raises(StatementError), db.read() as transaction:
+        next(staged(transaction).stream("COMMIT"))
+
+
+def test_info_on_begin_registration_from_many_threads(db: _StagedDatabase) -> None:
+    """Info I-1 of the review of #32: registrations and unregistrations from many threads lose none."""
+    seen: list[int] = []
+    keep = [db.on_begin(lambda connection, read_only: seen.append(1)) for _ in range(3)]
+
+    def churn() -> None:
+        for _ in range(200):
+            db.on_begin(lambda connection, read_only: None)()
+
+    threads = [threading.Thread(target=churn) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    db.query("SELECT 1")
+    assert len(seen) == 3
+    assert len(db._begin_callbacks) == 3
+    for unregister in keep:
+        unregister()

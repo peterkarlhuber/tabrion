@@ -200,6 +200,9 @@ class Transaction:
     _state: threading.Condition
     _running: bool
     _canceled: bool
+    _sending: bool
+    _cancel_sent: bool
+    _broken: bool
     _cleanups: list[Callable[[], None]]
 
     def __new__(cls, *args: object, **kwargs: object) -> Transaction:
@@ -230,6 +233,9 @@ class Transaction:
         self._state = threading.Condition(threading.Lock())
         self._running = False
         self._canceled = False
+        self._sending = False
+        self._cancel_sent = False
+        self._broken = False
         self._cleanups = []
         return self
 
@@ -319,15 +325,18 @@ class Transaction:
             connection.exec_driver_sql(f"SET LOCAL statement_timeout = {value}")
         self._pg_timeout = seconds
 
-    # Cancel bookkeeping (I-102). ``_state`` guards ``_running``, ``_canceled`` and ``_active``: a cancel request is
-    # sent only while a statement of this transaction runs, so it can never reach a statement of a later user of the
-    # same pooled connection.
+    # Cancel bookkeeping (I-102). ``_state`` guards ``_running``, ``_canceled``, ``_sending`` and ``_active``. A request
+    # is sent only while a statement of this transaction runs, never after the transaction's block ended; the block's
+    # end waits for a request still being sent, and on PostgreSQL a transaction that sent one never returns its
+    # connection to the pool (a request the server acts on late would hit the next user of that server session).
 
     def _cancel_requested(self) -> bool:
         return self._canceled
 
     def _statement_started(self) -> None:
         with self._state:
+            if self._broken:
+                raise UsageError("database.transaction_ended")
             if self._canceled:
                 raise _canceled_error()
             self._running = True
@@ -343,24 +352,41 @@ class Transaction:
             if not self._active:
                 return  # ended (or ending): the connection may already belong to someone else
             self._canceled = True
-            for _attempt in range(_CANCEL_ATTEMPTS):
-                if not (self._active and self._running):
+        for _attempt in range(_CANCEL_ATTEMPTS):
+            with self._state:
+                if not (self._active and self._running) or self._sending:
                     return
-                # Sent while holding the lock: the statement cannot be marked finished meanwhile, so the request
-                # cannot hit the next statement on this connection (_statement_started refuses after a cancel).
+                self._sending = True
+                if self._dialect == "postgresql":
+                    self._cancel_sent = True  # set before sending: the end of the block must see it
+            try:
+                # Sent without the lock, so the owner's statement can end meanwhile (I-102, review L-2 of #32);
+                # _finish waits for _sending, so the connection is not closed under the request.
                 _send_cancel(self._dialect, self._dbapi)
-                # A request that arrives before the server started the statement is ignored by the server; send it
-                # again while the statement still runs (wait releases the lock, so the statement can end).
-                self._state.wait(_CANCEL_RETRY_SECONDS)
+            finally:
+                with self._state:
+                    self._sending = False
+                    self._state.notify_all()
+                    # A request that arrives before the server started the statement is ignored by the server; send
+                    # it again while the statement still runs (wait releases the lock, so the statement can end).
+                    if self._active and self._running:
+                        self._state.wait(_CANCEL_RETRY_SECONDS)
 
     def _finish(self) -> None:
         """End of the transaction block: no cancel from now on; open streams are closed (I-103)."""
         with self._state:
+            while self._sending:
+                self._state.wait()
             self._active = False
             cleanups, self._cleanups = self._cleanups, []
         for cleanup in reversed(cleanups):
             with contextlib.suppress(Exception):  # the transaction ends either way; its rollback reports the state
                 cleanup()
+
+    def _must_not_return_to_pool(self) -> bool:
+        """A PostgreSQL cancel request was sent (it may still reach the server session), or the caller's SQL ended the
+        transaction (I-102, I-104; review H-1 and L-1 of #32)."""
+        return self._cancel_sent or self._broken
 
     def execute(self, statement: Statement, params: Params = None, *, timeout: float | None = None) -> int:
         """Row count (``-1`` becomes ``0`` for DDL)."""
@@ -718,6 +744,8 @@ class Database:
     _serial: threading.RLock | None
     _profile_applied: bool
     _begin_callbacks: list[tuple[object, Callable[[sqlalchemy.Connection, bool], None]]]
+    """Replaced, never changed in place, under ``_callbacks_lock`` (copy on write; review Info I-1 of #32)."""
+    _callbacks_lock: threading.Lock
 
     _transaction_class: ClassVar[type[Transaction]] = Transaction
     """What ``transaction()`` and ``read()`` yield (the staged 0.2 classes of ``tabrion._sa._staged`` set their own)."""
@@ -751,6 +779,7 @@ class Database:
         self._listeners = _events.install(engine, profile, owned=owned, apply=install_listeners)
         self._profile_applied = install_listeners
         self._begin_callbacks = []
+        self._callbacks_lock = threading.Lock()
         self._closed = False
         return self
 
@@ -925,7 +954,7 @@ class Database:
             )
             failure: BaseException | None = None
             try:
-                for _token, callback in list(self._begin_callbacks):
+                for _token, callback in self._begin_callbacks:
                     callback(connection, read)  # on_begin (I-105): inside the transaction, before the caller's block
                 yield transaction
             except BaseException as exc:
@@ -933,8 +962,13 @@ class Database:
             transaction._finish()
             if failure is None and transaction._canceled:
                 failure = _canceled_error()  # a canceled transaction is never committed (I-102)
+            if failure is None and transaction._broken:
+                failure = UsageError("database.transaction_ended")  # the caller's SQL ended it (I-104)
             if failure is not None:
                 _rollback(connection)
+                if transaction._must_not_return_to_pool() and (postgres or _sqlite_file_backed(connection)):
+                    with contextlib.suppress(Exception):  # the pool opens a fresh connection instead
+                        connection.invalidate()
                 if isinstance(failure, Exception) and _is_database_error(failure):
                     # The caller used transaction.connection directly: translated like Tabrion's own calls.
                     error = _translate(failure)
