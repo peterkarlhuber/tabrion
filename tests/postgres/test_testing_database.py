@@ -326,15 +326,18 @@ def test_x13_roles_in_the_existing_database(pytester: pytest.Pytester, admin: An
 # --- TAB-T-X18: an admin without superuser ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def plain_admin(admin: Any, scratch_database: str) -> Iterator[tuple[str, str]]:
+@pytest.fixture(params=["INHERIT", "NOINHERIT"])
+def plain_admin(request: pytest.FixtureRequest, admin: Any, scratch_database: str) -> Iterator[tuple[str, str]]:
     """A LOGIN role with only CREATEDB and CREATEROLE, owner of a scratch database: its URLs (that database, and
-    the admin's own database, which it does not own)."""
+    the admin's own database, which it does not own). Also as ``NOINHERIT`` (review L-1 of the re-review: from
+    PostgreSQL 16 the fixtures' memberships must inherit explicitly)."""
+    if request.param == "NOINHERIT" and admin.info.server_version < 160000:
+        pytest.skip("a NOINHERIT admin needs the membership options of PostgreSQL 16 (contract I-60)")
     name = new_name("adm_")
     password = secrets.token_hex(16)
     admin.execute(
-        sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS CREATEDB CREATEROLE PASSWORD {}").format(
-            sql.Identifier(name), sql.Literal(password)
+        sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS CREATEDB CREATEROLE {} PASSWORD {}").format(
+            sql.Identifier(name), sql.SQL(request.param), sql.Literal(password)
         )
     )
     try:
@@ -638,3 +641,142 @@ def test_x15_errors(admin: Any, filled: PostgresSchema) -> None:
 
 def test_x15_empty_schema(tabrion_postgres_schema: PostgresSchema) -> None:
     assert truncate_tables(tabrion_postgres_schema.owner_url) == 0
+
+
+# --- Re-review M-1: truncate_tables never empties a schema the run did not create by default ------------------------
+
+
+def test_m1_default_schema_must_be_a_test_schema(scratch_database: str) -> None:
+    """The admin URL's current schema is ``public``: without ``schema=`` nothing is emptied (a ``ValueError``);
+    ``schema="public"`` is a deliberate choice and works."""
+    with psycopg.connect(scratch_database, autocommit=True) as conn:
+        conn.execute("CREATE TABLE public.prod (id serial PRIMARY KEY, v text)")
+        conn.execute("INSERT INTO public.prod (v) VALUES ('keep')")
+        with pytest.raises(ValueError, match=r"current schema 'public' is not a test schema.*pass schema="):
+            truncate_tables(scratch_database)
+        with pytest.raises(ValueError, match="not a test schema"):
+            truncate_tables(conn)
+        assert conn.info.transaction_status == pq.TransactionStatus.IDLE
+        assert conn.execute("SELECT count(*) FROM public.prod").fetchone() == (1,)
+        assert truncate_tables(conn, schema="public") == 1
+        assert conn.execute("SELECT count(*) FROM public.prod").fetchone() == (0,)
+
+
+@pytest.mark.parametrize("via_excluded", [False, True], ids=["direct", "through_an_excluded_table"])
+def test_m1_cascade_into_another_schema_is_refused(scratch_database: str, via_excluded: bool) -> None:
+    """A foreign key from another schema (directly, or through a table of the schema that the CASCADE reaches):
+    a ``ValueError`` naming it, before anything is emptied."""
+    test_schema = new_name()
+    with psycopg.connect(scratch_database, autocommit=True) as conn:
+        conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(test_schema)))
+        conn.execute(sql.SQL("SET search_path = {}").format(sql.Identifier(test_schema)))
+        conn.execute("CREATE TABLE parent (id int PRIMARY KEY); INSERT INTO parent VALUES (1)")
+        referenced = "parent"
+        if via_excluded:
+            conn.execute("CREATE TABLE middle (id int PRIMARY KEY REFERENCES parent); INSERT INTO middle VALUES (1)")
+            referenced = "middle"
+        conn.execute(
+            sql.SQL("CREATE TABLE public.audit (ref int REFERENCES {}); INSERT INTO public.audit VALUES (1)").format(
+                sql.Identifier(test_schema, referenced)
+            )
+        )
+        exclude = ["middle"] if via_excluded else []
+        with pytest.raises(ValueError, match=r'would also empty "public"\."audit" in another schema'):
+            truncate_tables(conn, exclude=exclude)
+        assert conn.execute("SELECT count(*) FROM parent").fetchone() == (1,)
+        assert conn.execute("SELECT count(*) FROM public.audit").fetchone() == (1,)
+        conn.execute("DROP TABLE public.audit")
+        assert truncate_tables(conn, exclude=exclude) == 1
+        assert conn.execute("SELECT count(*) FROM parent").fetchone() == (0,)
+
+
+# --- Re-review L-2: the teardown steps of the roles ------------------------------------------------------------------
+
+
+def test_l2_drop_all_ends_the_roles_sessions_everywhere(admin: Any, admin_url: str, scratch_database: str) -> None:
+    """Sessions of a fixture role in the admin's database and in another one are ended before ``DROP ROLE`` (else
+    they would live on as orphans of a dropped role)."""
+    from tabrion.testing.postgres import _RoleSet
+
+    roles = _RoleSet(admin_url)
+    role = roles.create(new_name("own_"))
+    sessions = [psycopg.connect(role.url(url), autocommit=True) for url in (admin_url, scratch_database)]
+    try:
+        roles.drop_all()
+        for session in sessions:
+            with pytest.raises(psycopg.OperationalError):
+                session.execute("SELECT 1")
+        assert admin.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role.name,)).fetchone() is None
+    finally:
+        for session in sessions:
+            session.close()
+
+
+def test_l2_drop_all_tries_every_role(admin: Any, admin_url: str, scratch_database: str) -> None:
+    """One role that cannot be dropped (it still owns a database) does not keep the others; its error is raised.
+    The roles are dropped in reverse order, so the blocked one is the last created."""
+    from tabrion.testing.postgres import _RoleSet
+
+    roles = _RoleSet(admin_url)
+    first, second = roles.create(new_name("own_")), roles.create(new_name("app_"))
+    database = psycopg.conninfo.conninfo_to_dict(scratch_database)["dbname"]
+    admin.execute(
+        sql.SQL("ALTER DATABASE {} OWNER TO {}").format(sql.Identifier(database), sql.Identifier(second.name))
+    )
+    try:
+        with pytest.raises(psycopg.errors.DependentObjectsStillExist):
+            roles.drop_all()
+        names = {
+            r[0]
+            for r in admin.execute(
+                "SELECT rolname FROM pg_roles WHERE rolname = ANY (%s)", ([first.name, second.name],)
+            ).fetchall()
+        }
+        assert names == {second.name}
+    finally:
+        admin.execute(sql.SQL("ALTER DATABASE {} OWNER TO CURRENT_USER").format(sql.Identifier(database)))
+        admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(second.name)))
+
+
+def test_l2_drop_owned_fails_within_its_lock_timeout(
+    admin: Any, scratch_database: str, make_role: Callable[..., Role]
+) -> None:
+    """Another role's lock on a table the fixture role owns: ``DROP OWNED`` fails after its ``lock_timeout``
+    instead of waiting forever, and the other session is not ended."""
+    import threading
+    import time
+
+    from tabrion.testing.postgres import _RoleSet
+
+    roles = _RoleSet(scratch_database)
+    role = roles.create(new_name("own_"))
+    other = make_role(dbname=psycopg.conninfo.conninfo_to_dict(scratch_database)["dbname"])
+    with psycopg.connect(scratch_database, autocommit=True) as conn:
+        conn.execute(sql.SQL("CREATE TABLE public.owned (id int)"))
+        conn.execute(sql.SQL("ALTER TABLE public.owned OWNER TO {}").format(sql.Identifier(role.name)))
+        conn.execute(sql.SQL("GRANT SELECT ON public.owned TO {}").format(sql.Identifier(other.name)))
+    holder = psycopg.connect(other.url)
+    try:
+        holder.execute("SELECT count(*) FROM public.owned")  # ACCESS SHARE until the rollback
+        errors: list[BaseException] = []
+
+        def drop() -> None:
+            try:
+                roles.drop_owned(scratch_database)
+            except BaseException as exc:
+                errors.append(exc)
+
+        worker = threading.Thread(target=drop)
+        started = time.monotonic()
+        worker.start()
+        worker.join(25)
+        waited = time.monotonic() - started
+        holder.execute("SELECT 1")  # still alive: the other role's session is never ended
+        holder.rollback()  # lets a DROP OWNED without a timeout finish, so the thread ends
+        worker.join(30)
+        assert waited < 25, "DROP OWNED waited without a lock_timeout"
+        assert waited >= 9 and len(errors) == 1 and isinstance(errors[0], psycopg.errors.LockNotAvailable), errors
+        roles.drop_owned(scratch_database)
+    finally:
+        holder.close()
+        roles.drop_all()

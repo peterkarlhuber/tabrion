@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import secrets
 from typing import TYPE_CHECKING, Any
 
@@ -132,6 +132,8 @@ def _new_name(kind: str = "") -> str:
 
 
 def _search_path_url(url: str, schema: str) -> str:
+    """``url`` with ``-c search_path=<schema>`` in ``options``. ``schema`` is unquoted: only for names this module
+    generates (``[a-z0-9_]``, ``_new_name``), never for a caller's name."""
     from psycopg.conninfo import conninfo_to_dict
 
     options = str(conninfo_to_dict(url).get("options") or "")
@@ -197,7 +199,24 @@ def _drop_schema(url: str, name: str, *, also: Sequence[str] = ()) -> None:
                     " require_extension create it (in the schema public)",
                     pytrace=False,
                 )
+            # An object of the schema may also be a member of an extension that lives elsewhere (ALTER EXTENSION
+            # ... ADD, or an extension script that creates objects in a second schema): the CASCADE would then drop
+            # the whole extension (review DL-1). Compare the extensions before and after, in this transaction.
+            before = _extension_oids(conn)
             conn.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(name)))
+            gone = sorted(before[oid] for oid in before.keys() - _extension_oids(conn).keys())
+            if gone:
+                pytest.fail(  # raised inside the transaction: the DROP is rolled back
+                    f"tabrion.testing: dropping the schema {name!r} would also drop the extension(s)"
+                    f" {', '.join(gone)} (an object of the schema is a member of it), so the schema is left in"
+                    " place. Remove that object from the extension (ALTER EXTENSION ... DROP) first",
+                    pytrace=False,
+                )
+
+
+def _extension_oids(conn: psycopg.Connection[Any]) -> dict[int, str]:
+    rows = conn.execute("SELECT e.oid::pg_catalog.int8, e.extname::pg_catalog.text FROM pg_catalog.pg_extension e")
+    return {int(oid): str(extname) for oid, extname in rows.fetchall()}
 
 
 @pytest.fixture
@@ -313,7 +332,11 @@ def tabrion_postgres_database(
                 with psycopg.connect(tabrion_postgres_url, autocommit=True, connect_timeout=10) as conn:
                     conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
         finally:
-            roles.drop_all()
+            try:
+                # A grant or object of the roles in the admin's database would block DROP ROLE (review Info 4).
+                roles.drop_owned(tabrion_postgres_url)
+            finally:
+                roles.drop_all()
 
 
 def _role_names(setup: RoleSetup) -> tuple[str, str]:
@@ -337,12 +360,14 @@ def _role_names(setup: RoleSetup) -> tuple[str, str]:
 
 
 _NAME_BYTES = 63
+_MEMBERSHIP_OPTIONS = 160000
+"""``GRANT ... WITH INHERIT TRUE, SET TRUE``: PostgreSQL 16 or later."""
 
 
 @dataclass(frozen=True, slots=True)
 class _Role:
     name: str
-    password: str
+    password: str = field(repr=False)  # never in a traceback with --showlocals (review Info 3)
 
     def url(self, base: str) -> str:
         return _with_params(base, user=self.name, password=self.password)
@@ -376,8 +401,13 @@ class _RoleSet:
             role = _Role(name, password)
             self._roles.append(role)
             # Membership lets a non-superuser admin (CREATEROLE) create the database for the role and drop what
-            # it owns; DROP ROLE ends it.
-            conn.execute(sql.SQL("GRANT {} TO CURRENT_USER").format(sql.Identifier(name)))
+            # it owns; DROP ROLE ends it. From PostgreSQL 16 a membership has its own INHERIT option, which by
+            # default follows the admin's rolinherit: a NOINHERIT admin would get a membership whose privileges
+            # it does not use, and could neither hand the role a schema nor drop its database (review L-1).
+            grant = "GRANT {} TO CURRENT_USER"
+            if conn.info.server_version >= _MEMBERSHIP_OPTIONS:
+                grant += " WITH INHERIT TRUE, SET TRUE"
+            conn.execute(sql.SQL(grant).format(sql.Identifier(name)))
         return role
 
     @property
@@ -398,16 +428,24 @@ class _RoleSet:
             conn.execute(sql.SQL("DROP OWNED BY {}").format(identifiers))
 
     def drop_all(self) -> None:
+        """End the roles' sessions in every database, then ``DROP ROLE`` each one; a role that cannot be dropped
+        does not keep the others (the first error is raised at the end; review L-1)."""
         import psycopg
         from psycopg import sql
 
         if not self._roles:
             return
+        first: psycopg.Error | None = None
         with psycopg.connect(self._admin_url, autocommit=True, connect_timeout=10) as conn:
             _terminate(conn, self.names, everywhere=True)
             for role in reversed(self._roles):
-                conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role.name)))
+                try:
+                    conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role.name)))
+                except psycopg.Error as exc:
+                    first = first or exc
         self._roles.clear()
+        if first is not None:
+            raise first
 
 
 def _terminate(conn: psycopg.Connection[Any], names: Sequence[str], *, everywhere: bool = False) -> None:
@@ -494,10 +532,14 @@ def truncate_tables(
 
     ``target`` is a connection (the statement runs in ``conn.transaction()``: committed on an idle connection, a
     savepoint inside the caller's transaction) or a URL (a connection of its own). ``schema`` defaults to
-    ``current_schema()``. The tables are the ordinary and partitioned tables of the schema (a partition goes with its
-    parent), optionally only those whose name matches the ``LIKE`` pattern ``like``, without the names in
-    ``exclude``; the identifiers are quoted. No table: no statement, ``0``. ``CASCADE`` also empties tables that
-    reference a truncated table through a foreign key, an excluded one included (contract I-60).
+    ``current_schema()``, and then only a schema with the run's ``schema_prefix`` (one the plugin created) is
+    accepted: anything else, ``public`` of a shared database for example, is a ``ValueError`` unless named
+    explicitly (``schema="public"``). The tables are the ordinary and partitioned tables of the schema (a partition
+    goes with its parent), optionally only those whose name matches the ``LIKE`` pattern ``like`` (``_`` and ``%``
+    are wildcards: ``like=r"app\\_%"`` for a literal ``app_`` prefix), without the names in ``exclude``; the
+    identifiers are quoted. No table: no statement, ``0``. ``CASCADE`` also empties tables of the schema that
+    reference a truncated table through a foreign key, an excluded one included; a table in another schema that it
+    would reach is a ``ValueError`` before anything is emptied (contract I-60).
     """
     import psycopg
 
@@ -518,7 +560,7 @@ def _truncate(conn: psycopg.Connection[Any], schema: str | None, like: str | Non
 
     with conn.transaction():
         row = conn.execute(
-            "SELECT n.nspname::pg_catalog.text FROM pg_catalog.pg_namespace n"
+            "SELECT n.oid::pg_catalog.int8, n.nspname::pg_catalog.text FROM pg_catalog.pg_namespace n"
             " WHERE n.nspname::pg_catalog.text OPERATOR(pg_catalog.=)"
             " COALESCE(%s::pg_catalog.text, pg_catalog.current_schema()::pg_catalog.text)",
             (schema,),
@@ -529,29 +571,64 @@ def _truncate(conn: psycopg.Connection[Any], schema: str | None, like: str | Non
                 if schema is None
                 else f"truncate_tables: the schema {schema!r} does not exist"
             )
-        name = str(row[0])
-        tables = [
-            str(table)
-            for (table,) in conn.execute(
-                "SELECT c.relname::pg_catalog.text FROM pg_catalog.pg_class c, pg_catalog.pg_namespace n"
-                " WHERE c.relnamespace OPERATOR(pg_catalog.=) n.oid"
-                " AND n.nspname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
-                " AND c.relkind OPERATOR(pg_catalog.=) ANY ('{r,p}'::pg_catalog.\"char\"[]) AND NOT c.relispartition"
-                " AND (%s::pg_catalog.text IS NULL"
-                "   OR c.relname::pg_catalog.text OPERATOR(pg_catalog.~~) %s::pg_catalog.text)"
-                " AND NOT c.relname::pg_catalog.text OPERATOR(pg_catalog.=) ANY (%s::pg_catalog.text[])",
-                (name, like, like, list(exclude)),
-            ).fetchall()
-        ]
-        if not tables:
+        namespace, name = int(row[0]), str(row[1])
+        if schema is None and not name.startswith(_config.current.schema_prefix):
+            # Without schema= the current schema is often public of a shared database (tabrion_postgres_url, a
+            # connection opened by hand): never empty that by default (review M-1). schema="public" is a choice.
+            raise ValueError(
+                f"truncate_tables: the current schema {name!r} is not a test schema (prefix"
+                f" {_config.current.schema_prefix!r}); pass schema= explicitly"
+            )
+        found = conn.execute(
+            "SELECT c.oid::pg_catalog.int8, c.relname::pg_catalog.text FROM pg_catalog.pg_class c"
+            " WHERE c.relnamespace OPERATOR(pg_catalog.=) %s::pg_catalog.oid"
+            " AND c.relkind OPERATOR(pg_catalog.=) ANY ('{r,p}'::pg_catalog.\"char\"[]) AND NOT c.relispartition"
+            " AND (%s::pg_catalog.text IS NULL"
+            "   OR c.relname::pg_catalog.text OPERATOR(pg_catalog.~~) %s::pg_catalog.text)"
+            " AND NOT c.relname::pg_catalog.text OPERATOR(pg_catalog.=) ANY (%s::pg_catalog.text[])",
+            (namespace, like, like, list(exclude)),
+        ).fetchall()
+        if not found:
             return 0
-        tables.sort()
+        _refuse_cascade_out_of(conn, namespace, name, [int(oid) for oid, _ in found])
+        tables = sorted(str(table) for _, table in found)
         conn.execute(
             sql.SQL("TRUNCATE TABLE {} RESTART IDENTITY CASCADE").format(
                 sql.SQL(", ").join(sql.Identifier(name, table) for table in tables)
             )
         )
     return len(tables)
+
+
+# Every table the TRUNCATE ... CASCADE reaches: the tables, their partitions, and (repeatedly) every table with a
+# foreign key to one reached; those outside the schema. One recursive reference (a LATERAL union of both steps).
+_CASCADE_OUTSIDE_SQL = (
+    "WITH RECURSIVE reached (oid) AS ("
+    " SELECT pg_catalog.unnest(%(tables)s::pg_catalog.oid[])"
+    " UNION"
+    " SELECT next.oid FROM reached r, LATERAL ("
+    "   SELECT i.inhrelid AS oid FROM pg_catalog.pg_inherits i WHERE i.inhparent OPERATOR(pg_catalog.=) r.oid"
+    "   UNION ALL"
+    "   SELECT k.conrelid FROM pg_catalog.pg_constraint k"
+    "   WHERE k.confrelid OPERATOR(pg_catalog.=) r.oid AND k.contype OPERATOR(pg_catalog.=) 'f') next)"
+    " SELECT n.nspname::pg_catalog.text, c.relname::pg_catalog.text"
+    " FROM reached r, pg_catalog.pg_class c, pg_catalog.pg_namespace n"
+    " WHERE c.oid OPERATOR(pg_catalog.=) r.oid AND n.oid OPERATOR(pg_catalog.=) c.relnamespace"
+    " AND c.relnamespace OPERATOR(pg_catalog.<>) %(namespace)s::pg_catalog.oid"
+)
+
+
+def _refuse_cascade_out_of(conn: psycopg.Connection[Any], namespace: int, name: str, tables: list[int]) -> None:
+    """``ValueError`` if the ``CASCADE`` would empty a table in another schema (through a foreign key)."""
+    from psycopg import sql
+
+    outside = conn.execute(_CASCADE_OUTSIDE_SQL, {"tables": tables, "namespace": namespace}).fetchall()
+    if outside:
+        names = ", ".join(sorted(sql.Identifier(str(n), str(t)).as_string(conn) for n, t in outside))
+        raise ValueError(
+            f"truncate_tables: TRUNCATE ... CASCADE of the schema {name!r} would also empty {names} in another"
+            " schema (a foreign key); empty those tables yourself or remove the foreign key"
+        )
 
 
 _EXTENSION_HOME = "public"

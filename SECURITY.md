@@ -130,8 +130,10 @@ Accepted residual risks (documented, not vulnerabilities):
   role's session, a backup for example, is waited for), never change or drop a role or schema they did not create,
   never move an extension and never let a schema teardown cascade into one (contract I-36, I-60). Their roles are
   `NOSUPERUSER NOBYPASSRLS` with random passwords; the passwords are in the URLs they return (whose `repr` masks
-  them) and, as with any `CREATE ROLE ... PASSWORD`, in the server log when it logs DDL. Use them on a test server
-  only.
+  them) and, as with any `CREATE ROLE ... PASSWORD`, in the server log when it logs DDL (`log_statement = ddl` or
+  `all`) and in `pg_stat_statements`. They are throwaway roles, dropped at the end of the run; still, use the
+  fixtures on a test server only, and do not ship its logs. `truncate_tables` without `schema=` empties only a
+  schema the plugin created, and refuses a `CASCADE` that would reach a table in another schema.
 - `tabrion.testing._faults` (internal, for tests only) listens on `127.0.0.1` and relays the PostgreSQL protocol in
   plain text: its `dsn()` disables TLS and GSS encryption, so the password travels unencrypted over loopback. Never
   point it at a production server or use it outside a test.

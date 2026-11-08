@@ -122,7 +122,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
 - **Status note:** TAB-020 and TAB-032 are in the fourth lane C pull request (#11; contract I-36, I-60), after #8
-  (TAB-031) merged.
+  (TAB-031) merged. Re-review at `5110c8f`: TAB-020 accepted, TAB-032 accepted with conditions; M-1 (the condition),
+  DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73).
 - **Next step:** after TAB-014 and TAB-015. TAB-018 first decides TB-040 (review N-4), also settles F-11 (TB-020) and
   F-14 (`Database()` without a
   factory raises `TypeError`); TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture `tabrion_role_setup`

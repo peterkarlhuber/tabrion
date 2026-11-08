@@ -245,6 +245,26 @@ def test_h1_teardown_refuses_a_schema_holding_an_extension(fresh_db: Any, scratc
     # (the scratch database, with all of it, is dropped by its fixture)
 
 
+def test_dl1_teardown_refuses_to_drop_an_extension_member(fresh_db: Any, scratch_database: str) -> None:
+    """Re-review DL-1: an object of the schema is a member of an extension in another schema (``ALTER EXTENSION
+    ... ADD``); the CASCADE would drop the whole extension. The DROP is rolled back and the teardown fails."""
+    _need_citext(fresh_db)
+    fresh_db.execute("CREATE SCHEMA ext; CREATE EXTENSION citext SCHEMA ext")
+    fresh_db.execute("CREATE TABLE public.users (id int, email ext.citext); INSERT INTO public.users VALUES (1, 'A')")
+    test_schema = new_name()
+    fresh_db.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(test_schema)))
+    function = sql.Identifier(test_schema, "f")
+    fresh_db.execute(sql.SQL("CREATE FUNCTION {}() RETURNS int LANGUAGE sql AS 'select 1'").format(function))
+    fresh_db.execute(sql.SQL("ALTER EXTENSION citext ADD FUNCTION {}()").format(function))
+    with pytest.raises(pytest.fail.Exception, match=r"would also drop the extension\(s\) citext.*left in place"):
+        _drop_schema(scratch_database, test_schema)
+    assert _schema_exists(fresh_db, test_schema) and _extension_schema(fresh_db, "citext") == "ext"
+    assert fresh_db.execute("SELECT email::text FROM public.users").fetchone() == ("A",)
+    fresh_db.execute(sql.SQL("ALTER EXTENSION citext DROP FUNCTION {}()").format(function))
+    _drop_schema(scratch_database, test_schema)
+    assert not _schema_exists(fresh_db, test_schema) and _extension_schema(fresh_db, "citext") == "ext"
+
+
 # --- Review L-1, L-2: whose sessions the teardown ends ----------------------------------------------------------------
 
 
@@ -305,20 +325,21 @@ def test_l1_another_roles_session_is_waited_for_not_ended(
         admin.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(test_schema)))
 
 
-def test_l2_a_lock_in_another_schema_is_left_alone(admin: Any, admin_url: str) -> None:
-    """Same role, same database, a lock in a schema other than the dropped one: the session survives."""
+def test_l2_a_lock_in_another_schema_is_left_alone(fresh_db: Any, scratch_database: str) -> None:
+    """Same role, same database, a lock in a schema other than the dropped one: the session survives. In a scratch
+    database (re-review DL-2): a mutant of the lock filter must not reach other runs' sessions in the shared
+    admin database."""
     test_schema, other_schema = new_name(), new_name()
     for name in (test_schema, other_schema):
-        admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
-        admin.execute(sql.SQL("CREATE TABLE {}.t (id int)").format(sql.Identifier(name)))
-    other = _locking_session(admin_url, sql.Identifier(other_schema, "t").as_string(admin))
+        fresh_db.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
+        fresh_db.execute(sql.SQL("CREATE TABLE {}.t (id int)").format(sql.Identifier(name)))
+    other = _locking_session(scratch_database, sql.Identifier(other_schema, "t").as_string(fresh_db))
     try:
-        _drop_schema(admin_url, test_schema)
+        _drop_schema(scratch_database, test_schema)
         assert _alive(other)
-        assert not _schema_exists(admin, test_schema)
+        assert not _schema_exists(fresh_db, test_schema)
     finally:
         other.close()
-        admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(other_schema)))
 
 
 def test_l2_a_lock_in_another_database_is_left_alone(admin: Any, admin_url: str) -> None:

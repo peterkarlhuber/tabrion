@@ -20,6 +20,8 @@ X11 = "tests/postgres/test_testing_database.py::test_x11_database_with_split_rol
 X14 = "tests/postgres/test_testing_database.py::test_x14_one_statement_restart_identity"
 X16 = "tests/postgres/test_testing_database.py::test_x16_runtime_role_mode"
 X15 = "tests/postgres/test_testing_database.py::test_x15"
+DB = "tests/postgres/test_testing_database.py"
+PLUGIN = "tests/postgres/test_testing_plugin.py"
 
 PROBES = [
     # T-NOTX: the implicit transaction a reader opened is rolled back (IDLE stays IDLE).
@@ -525,17 +527,16 @@ PROBES = [
     # TAB-032: exclude.
     (
         "testing/postgres.py",
-        '                " AND NOT c.relname::pg_catalog.text OPERATOR(pg_catalog.=) ANY (%s::pg_catalog.text[])",\n'
-        "                (name, like, like, list(exclude)),\n",
-        '                " AND %s::pg_catalog.text[] IS NOT NULL",\n'
-        "                (name, like, like, list(exclude)),\n",
+        '            " AND NOT c.relname::pg_catalog.text OPERATOR(pg_catalog.=) ANY (%s::pg_catalog.text[])",\n'
+        "            (namespace, like, like, list(exclude)),\n",
+        '            " AND %s::pg_catalog.text[] IS NOT NULL",\n            (namespace, like, like, list(exclude)),\n',
         f"{X15}_like_and_exclude",
     ),
     # TAB-032: like.
     (
         "testing/postgres.py",
-        '                " AND (%s::pg_catalog.text IS NULL"\n',
-        '                " AND (%s::pg_catalog.text IS NULL OR true"\n',
+        '            " AND (%s::pg_catalog.text IS NULL"\n',
+        '            " AND (%s::pg_catalog.text IS NULL OR true"\n',
         f"{X15}_like_and_exclude",
     ),
     # TAB-032: truncate_tables runs in conn.transaction() (an idle connection is committed).
@@ -579,7 +580,7 @@ PROBES = [
     # TAB-032: the admin's membership in the roles it creates (an admin without superuser needs it).
     (
         "testing/postgres.py",
-        '            conn.execute(sql.SQL("GRANT {} TO CURRENT_USER").format(sql.Identifier(name)))\n',
+        "            conn.execute(sql.SQL(grant).format(sql.Identifier(name)))\n",
         "",
         "tests/postgres/test_testing_database.py::test_x18_both_fixtures_without_superuser",
     ),
@@ -610,6 +611,70 @@ PROBES = [
         "            try:\n                roles.drop_owned(tabrion_postgres_url)\n",
         "            try:\n                pass\n",
         X16,
+    ),
+    # Re-review M-1 (#11): without schema= only a schema of this run is emptied, never public of a shared database.
+    (
+        "testing/postgres.py",
+        "        if schema is None and not name.startswith(_config.current.schema_prefix):\n",
+        "        if False:\n",
+        f"{DB}::test_m1_default_schema_must_be_a_test_schema",
+    ),
+    # Re-review M-1 (#11): a CASCADE into another schema is refused.
+    (
+        "testing/postgres.py",
+        "        _refuse_cascade_out_of(conn, namespace, name, [int(oid) for oid, _ in found])\n",
+        "",
+        f"{DB}::test_m1_cascade_into_another_schema_is_refused[direct]",
+    ),
+    # Re-review M-1 (#11): ... also through tables of the schema the CASCADE reaches (one step only: no recursion).
+    (
+        "testing/postgres.py",
+        """    "   WHERE k.confrelid OPERATOR(pg_catalog.=) r.oid AND k.contype OPERATOR(pg_catalog.=) 'f') next)"\n""",
+        """    "   WHERE k.confrelid OPERATOR(pg_catalog.=) r.oid AND k.contype OPERATOR(pg_catalog.=) 'f'"\n"""
+        """    " AND r.oid OPERATOR(pg_catalog.=) ANY (%(tables)s::pg_catalog.oid[])) next)"\n""",
+        f"{DB}::test_m1_cascade_into_another_schema_is_refused[through_an_excluded_table]",
+    ),
+    # Re-review DL-1 (#11): the DROP is rolled back when an extension disappeared with it.
+    (
+        "testing/postgres.py",
+        "            if gone:\n",
+        "            if False:\n",
+        f"{PLUGIN}::test_dl1_teardown_refuses_to_drop_an_extension_member",
+    ),
+    # Re-review L-1 (#11): the membership inherits also for a NOINHERIT admin (PostgreSQL 16+).
+    (
+        "testing/postgres.py",
+        '                grant += " WITH INHERIT TRUE, SET TRUE"\n',
+        "                pass\n",
+        f"{DB}::test_x18_both_fixtures_without_superuser[NOINHERIT]",
+    ),
+    # Re-review L-1 (#11): drop_all tries every role.
+    (
+        "testing/postgres.py",
+        "                    first = first or exc\n",
+        "                    raise\n",
+        f"{DB}::test_l2_drop_all_tries_every_role",
+    ),
+    # Re-review L-2 (#11): drop_all ends the roles' sessions ...
+    (
+        "testing/postgres.py",
+        "            _terminate(conn, self.names, everywhere=True)\n",
+        "",
+        f"{DB}::test_l2_drop_all_ends_the_roles_sessions_everywhere",
+    ),
+    # ... in every database.
+    (
+        "testing/postgres.py",
+        "_terminate(conn, self.names, everywhere=True)",
+        "_terminate(conn, self.names)",
+        f"{DB}::test_l2_drop_all_ends_the_roles_sessions_everywhere",
+    ),
+    # Re-review L-2 (#11): DROP OWNED fails within its lock_timeout.
+    (
+        "testing/postgres.py",
+        "            conn.execute(\"SET lock_timeout = '10s'\")  # an error rather than a teardown that never ends\n",
+        "",
+        f"{DB}::test_l2_drop_owned_fails_within_its_lock_timeout",
     ),
 ]
 
