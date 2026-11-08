@@ -9,7 +9,7 @@
 > **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M2 lane B pull request: TABRION
 > TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`). Lane C entries (TB-032..TB-037)
 > updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged); the TB-031 port
-> (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`; layer B (TB-007, TB-011, TB-020, TB-040, TB-054)
+> (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`; layer B (TB-007, TB-020, TB-040, TB-054)
 > on branch `claude/project-thread-rdo6g3-layerb` (TABRION TAB-018).
 
 ## Summary
@@ -159,9 +159,10 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Priority:** P1 High · **Status:** Blocked · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
 - **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); the tag `v0.1.0` and gate G-T2 (TAB-040).
-  The internal tag `v0.1.0a1` does not need TB-001; the tag `v0.1.0` does (owner decision 2026-11-08: TB-001 gates
-  G-T2 and the public release, and an internal git tag is neither). No GitHub release and no PyPI upload without G-R.
-- **Next step:** TAB-038 after TAB-010..TAB-012 and TAB-005.
+  The tag `v0.1.0` needs TB-001 done first; no GitHub release and no PyPI upload without G-R.
+- **Next step:** TAB-038 is merged (#9, `a463422`, accepted after independent review); the annotated tag `v0.1.0a1`
+  on that commit is an owner action (the agent's Git proxy only pushes branches). Consumers pin the commit SHA. The
+  internal a1 tag does not need TB-001; the tag `v0.1.0` does. Then TAB-041 and TAB-040.
 
 ### TB-022 · Release check: no 0.1 name is still a stub (TABRION TAB-040, G-T1 F-08)
 

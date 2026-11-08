@@ -8,6 +8,38 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
+  `testing()`; `Database.from_url`, `from_env` and `from_engine` for SQLite (`pysqlite`) and PostgreSQL
+  (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode`, the SQLite path checks and `0600`
+  creation before the first connect, `StaticPool` for memory databases, `safe_url`, `close` and a `ResourceWarning`
+  for a forgotten `close`; `transaction()` (SQLite `BEGIN IMMEDIATE`, PostgreSQL isolation levels) and `read()`
+  (`query_only` or `BEGIN READ ONLY`, enforced by the database), nesting refused per thread, per-statement and
+  per-transaction timeouts, `execute` (with `executemany`), `fetch_one`, `fetch_all`, `fetch_scalar` and the
+  short forms on `Database`; driver errors become the `DatabaseError` subclass of their kind without a cause chain,
+  and a lost `COMMIT` is outcome unknown; `health(timeout=..., deep=...)` never raises for database errors; `check()`
+  calls `tabrion.check.check`. The layer-A profile runs on the same DBAPI connection through `tabrion.sqlite.connect`
+  and SQLAlchemy events (no second connection). Tested on SQLAlchemy 2.0.30 and 2.1, with mutation probes.
+
+### Changed
+
+- `classify(error, during_commit=True)` on a `TabrionError` whose stored classification is a connection error now
+  reports the outcome as unknown and not retryable (R-NORETRY, TB-040). `Database()` and `Transaction()` raise
+  `TypeError` instead of building an unusable object (G-T1 F-14).
+- Master builds as `0.1.0a2.dev0` after the `0.1.0a1` commit (TB-053), so later commits never build as the
+  internal pre-release. The installation guide pins the a1 commit SHA instead of the tag name and says not to run
+  `release.yml` for it (TAB-038 review Info notes).
+
+## [0.1.0a1] - internal pre-release, not published
+
+TABRION TAB-038: the tag `v0.1.0a1` on the merge commit of this version is an internal pre-release for **unmerged**
+integration branches only (RC-8; [installation](docs/getting-started/installation.md#internal-pre-release-v010a1)).
+Its scope is `tabrion.errors`, `tabrion.sql` and `tabrion.config` (TAB-010..TAB-012). The other modules that are
+already in the tree (`tabrion.sqlite`, `tabrion.postgres`) are included as they are, without the a1 promise; layer
+B, `tabrion.check`, `tabrion.migrations` and `tabrion.testing` still raise `NotImplementedError`. No PyPI upload,
+no GitHub release and no announcement (G-R). It satisfies no final range such as `tabrion>=0.1,<0.2`.
+
+### Added
+
 - `tabrion.errors` (TAB-010): `classify` maps psycopg, sqlite3 and SQLAlchemy errors to a value-free
   `Classification` (kind, retryable, outcome unknown, connection usable, SQLSTATE or SQLite code, object names) by
   duck typing, without importing a driver, and never raises; it never marks an error retryable whose outcome is
@@ -100,17 +132,6 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
   transaction state, and carry 43 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
-- Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
-  `testing()`; `Database.from_url`, `from_env` and `from_engine` for SQLite (`pysqlite`) and PostgreSQL
-  (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode`, the SQLite path checks and `0600`
-  creation before the first connect, `StaticPool` for memory databases, `safe_url`, `close` and a `ResourceWarning`
-  for a forgotten `close`; `transaction()` (SQLite `BEGIN IMMEDIATE`, PostgreSQL isolation levels) and `read()`
-  (`query_only` or `BEGIN READ ONLY`, enforced by the database), nesting refused per thread, per-statement and
-  per-transaction timeouts, `execute` (with `executemany`), `fetch_one`, `fetch_all`, `fetch_scalar` and the
-  short forms on `Database`; driver errors become the `DatabaseError` subclass of their kind without a cause chain,
-  and a lost `COMMIT` is outcome unknown; `health(timeout=..., deep=...)` never raises for database errors; `check()`
-  calls `tabrion.check.check`. The layer-A profile runs on the same DBAPI connection through `tabrion.sqlite.connect`
-  and SQLAlchemy events (no second connection). Tested on SQLAlchemy 2.0.30 and 2.1, with mutation probes.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`
   and `all`; ruff, mypy `--strict` and import-linter contracts (layers, stdlib-only core, no Levuvo platform).
@@ -135,9 +156,6 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 - Import contracts: `tabrion.errors` is the bottom layer under `tabrion.sql` and `tabrion.config`, because
   `tabrion.config` raises `ConfigurationError`.
-- `classify(error, during_commit=True)` on a `TabrionError` whose stored classification is a connection error now
-  reports the outcome as unknown and not retryable (R-NORETRY, TB-040). `Database()` and `Transaction()` raise
-  `TypeError` instead of building an unusable object (G-T1 F-14).
 
 - G-T1 follow-up: the 0.2 names (`Result`, `Column` and the 0.2 methods of `Database` and `Transaction`) are no
   longer exported before 0.2; `tabrion.testing.profiles.ConnectionFactory` is replaced by `SQLiteConnect`.
