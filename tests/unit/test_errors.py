@@ -959,6 +959,51 @@ def test_h2_found_errors_inside_containers_set_the_record_attributes() -> None:
     assert "SQLSTATE 23505" in record.getMessage() and CANARY not in record.getMessage()
 
 
+def test_n2_container_whose_iteration_raises_keeps_the_record(capture: Any) -> None:
+    """Review N-2: a container argument that raises while iterating is no internal error of the filter."""
+    e = _unique_violation()
+
+    class Broken(list[object]):
+        def __iter__(self) -> Any:
+            raise RuntimeError("lazy collection")
+
+    class Half(list[object]):
+        def __iter__(self) -> Any:
+            yield e
+            raise RuntimeError("lazy collection")
+
+    class BrokenMapping(dict[str, object]):
+        def items(self) -> Any:
+            raise RuntimeError("proxy")
+
+    capture.logger.error("hello %s", Broken([1]))
+    capture.logger.error("mapping %s", BrokenMapping(a=1))
+    capture.logger.error("half %s", Half([e]))
+    text = capture.text.getvalue()
+    assert "hello [1]" in text and "mapping {'a': 1}" in text, text
+    assert "internal error" not in text
+    assert CANARY not in text and "SQLSTATE 23505" in text
+
+
+def test_n3_containers_are_not_copied_in_full() -> None:
+    """Review N-3 (part): the walk reads at most 1,000 items of a container, lazily."""
+    read = 0
+
+    def items() -> Any:
+        nonlocal read
+        for i in range(10**6):
+            read += 1
+            yield i
+
+    class Huge(list[int]):
+        def __iter__(self) -> Any:
+            return items()
+
+    found: list[BaseException] = []
+    errors._collect((Huge(),), found)
+    assert read <= errors._MAX_COLLECT_ITEMS + 1
+
+
 def test_m2_multi_line_detail_is_removed_completely(capture: Any) -> None:
     e = pg_error("23505", "duplicate key", detail=f"Key (email)=(l1\n{CANARY}-line2\n{CANARY}-3) already exists.")
     capture.logger.error("x %s" % e)  # noqa: UP031 - preformatted on purpose
