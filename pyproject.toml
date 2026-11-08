@@ -1,0 +1,192 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tabrion"
+dynamic = ["version"]
+description = "Small, secure database foundations for SQLite and PostgreSQL"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Peter Karlhuber" }]
+keywords = ["database", "sqlite", "postgresql", "psycopg", "sqlalchemy", "security"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database",
+    "Typing :: Typed",
+]
+# The core is the standard library only (K-03, TAB-T-180): `pip install tabrion` installs no other package.
+dependencies = []
+
+[project.optional-dependencies]
+# Only the driver: no "binary" and no "pool" extra (the product chooses psycopg[binary] or psycopg[c]).
+postgres = ["psycopg>=3.2,<4"]
+sqlalchemy = ["sqlalchemy>=2.0.30,<2.2"]
+migrations = ["tabrion[sqlalchemy]", "alembic>=1.13,<2"]
+# tabrion.testing uses tabrion.postgres when the postgres extra is installed as well.
+testing = ["pytest>=8"]
+all = ["tabrion[postgres,sqlalchemy,migrations,testing]"]
+dev = [
+    "tabrion[all]",
+    # The binary wheels bring libpq, so the PostgreSQL tests run on runners without it.
+    "psycopg[binary]>=3.2,<4",
+    "pytest-cov>=5",
+    "hypothesis>=6",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "import-linter>=2.1",
+    # mkdocs-material pulls MkDocs 1.x; MkDocs 2 drops the plugin system that Material uses.
+    "mkdocs-material>=9.5",
+    "build>=1.2",
+    "twine>=6",
+]
+
+[project.urls]
+Repository = "https://github.com/peterkarlhuber/tabrion"
+Issues = "https://github.com/peterkarlhuber/tabrion/issues"
+Changelog = "https://github.com/peterkarlhuber/tabrion/blob/master/CHANGELOG.md"
+Security = "https://github.com/peterkarlhuber/tabrion/blob/master/SECURITY.md"
+
+[tool.hatch.version]
+path = "src/tabrion/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tabrion"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/tabrion", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "mkdocs.yml", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "postgres: needs TABRION_TEST_POSTGRES",
+    "pgvector: needs the vector extension (image pgvector/pgvector)",
+    "slow: concurrency and fault-injection tests (> 2 s)",
+    "conformance: runs the Levuvo Database Profile vectors",
+    "security: leak, permission and symlink regressions",
+    "packaging: builds wheels and creates fresh virtual environments (slow)",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["tabrion"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["tabrion"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Frozen dataclasses: safe as default arguments (04: `profile: SQLiteProfile = SQLiteProfile()`).
+extend-immutable-calls = [
+    "tabrion.sqlite.SQLiteProfile",
+    "tabrion.postgres.SessionSettings",
+    "tabrion.testing.postgres.RoleSetup",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, start subprocesses with fixed arguments and use throwaway credentials.
+"tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["tabrion"]
+mypy_path = "src"
+warn_unused_ignores = true
+
+# Import contracts (AC-1 = QA-16, 05 §2.3 and §4.2, edge list K-33). CI runs `lint-imports` (jobs "lint" and
+# "architecture"); tests/architecture checks that the lists below name every module of the package and that a
+# forbidden import turns the run red (mutation probe). Imports under `if TYPE_CHECKING:` are only for type checkers
+# and never run, so they are not edges.
+[tool.importlinter]
+root_packages = ["tabrion"]
+include_external_packages = true
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+id = "core-stdlib-only"
+name = "Driver core is stdlib-only"
+type = "forbidden"
+source_modules = ["tabrion.errors", "tabrion.sql", "tabrion.config", "tabrion.sqlite", "tabrion.check"]
+forbidden_modules = [
+    "psycopg",
+    "psycopg_pool",
+    "sqlalchemy",
+    "alembic",
+    "pytest",
+    "tabrion._sa",
+    "tabrion.testing",
+    "tabrion.postgres",
+    "tabrion.migrations",
+]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+id = "postgres-psycopg-only"
+name = "PostgreSQL helpers need only psycopg"
+type = "forbidden"
+source_modules = ["tabrion.postgres"]
+forbidden_modules = [
+    "psycopg_pool",
+    "sqlalchemy",
+    "alembic",
+    "pytest",
+    "tabrion._sa",
+    "tabrion.testing",
+    "tabrion.migrations",
+]
+
+[[tool.importlinter.contracts]]
+id = "layers"
+name = "Layer B builds on layer A, never the reverse"
+type = "layers"
+layers = [
+    "tabrion.testing",
+    "tabrion.migrations",
+    "tabrion._sa",
+    "tabrion.postgres",
+    "tabrion.sqlite | tabrion.check",
+    "tabrion.errors | tabrion.sql | tabrion.config",
+]
+
+[[tool.importlinter.contracts]]
+id = "no-levuvo-platform"
+name = "Tabrion depends on no Levuvo platform (P6/K-33, AC-1 = QA-16)"
+type = "forbidden"
+source_modules = ["tabrion"]
+forbidden_modules = [
+    "orkexa",
+    "axentra",
+    "axentra_studio",
+    "nodestro",
+    "nodestro_runtime",
+    "nodestro_api",
+    "nodestro_studio",
+    "nodestro_examples",
+    "nodestro_integrations",
+    "nodestro_sdk",
+    "nodestro_client",
+    "levuvo_nextcloud_mcp",
+    "tabrion_studio",
+]

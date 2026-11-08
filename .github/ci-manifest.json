@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "comment": "Mandatory checks per CI-FAST (TAB-004, 05 section 2.5). A PR is ok only if every listed check ran on the PR head SHA and succeeded. Changing this list needs a reason in the PR.",
+  "pull_request": {
+    "ci.yml": [
+      "architecture",
+      "build and install (fresh virtual environments)",
+      "core without extras",
+      "dependency audit",
+      "docs",
+      "extras matrix",
+      "lint",
+      "pg (PostgreSQL 16, Python 3.11)",
+      "pg (PostgreSQL 16, Python 3.14)",
+      "pg (PostgreSQL 17, Python 3.11)",
+      "pg (PostgreSQL 17, Python 3.14)",
+      "pg (PostgreSQL 18, Python 3.11)",
+      "pg (PostgreSQL 18, Python 3.14)",
+      "pg (pgvector 17, Python 3.11)",
+      "pg (pgvector 17, Python 3.14)",
+      "security tests",
+      "test (Python 3.11)",
+      "test (Python 3.12)",
+      "test (Python 3.12, SQLAlchemy 2.0)",
+      "test (Python 3.13)",
+      "test (Python 3.14)",
+      "test (lowest supported dependency versions)"
+    ]
+  },
+  "pull_request_path_filtered": {
+    "platforms.yml": [
+      "sqlite (macos-latest)",
+      "sqlite (windows-latest)"
+    ]
+  },
+  "path_filters": {
+    "platforms.yml": {
+      "paths": [
+        "src/tabrion/sqlite.py",
+        "tests/sqlite/**"
+      ]
+    }
+  },
+  "advisory": [],
+  "nightly": {
+    "nightly.yml": [
+      "report"
+    ]
+  }
+}

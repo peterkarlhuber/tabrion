@@ -1,0 +1,80 @@
+site_name: Tabrion
+site_description: Safe, model-neutral database building blocks for Python applications on SQLite and PostgreSQL.
+repo_url: https://github.com/peterkarlhuber/tabrion
+repo_name: peterkarlhuber/tabrion
+copyright: Copyright &copy; 2026 Peter Karlhuber – MIT License
+strict: true
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+plugins:
+  - search
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: getting-started/installation.md
+  - Specification: specification.md
+  - API contract: api/contract.md
+  - Architecture decisions:
+      - adr/README.md
+      - "0001 Standalone library": adr/0001-standalone-library.md
+      - "0002 Two layers, one distribution": adr/0002-two-layers-one-distribution.md
+      - "0003 Existing platforms use layer A": adr/0003-existing-platforms-layer-a.md
+      - "0004 Error model": adr/0004-error-model.md
+      - "0005 SQLite profile": adr/0005-sqlite-profile.md
+      - "0006 PostgreSQL session profile": adr/0006-postgres-session-profile.md
+      - "0007 No shared migration runner": adr/0007-no-shared-migration-runner.md
+      - "0008 Dependency principles and edges": adr/0008-dependency-principles-and-edges.md
+      - "0009 Distribution and versioning": adr/0009-distribution-and-versioning.md
+      - "0010 Model neutrality": adr/0010-model-neutrality.md
+      - "0011 LDP internal, T-NOTX": adr/0011-ldp-internal-and-t-notx.md
+      - "0012 Architecture checks": adr/0012-architecture-checks.md
+      - "0013 Axentra adopts Tabrion": adr/0013-axentra-adopts-tabrion.md
+  - Program:
+      - Status: program/STATUS.md
+      - Risks and rollback: program/risks.md
+      - "Report: name check": program/reports/name-check.md
+      - Open work: TODO.md

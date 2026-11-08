@@ -1,0 +1,274 @@
+name: CI
+
+# TAB-004 (05 section 2.5, 07 section 4.2). Every job name below is a mandatory check in .github/ci-manifest.json;
+# ci-ok.yml aggregates them. Actions are pinned by commit SHA and images by digest (TAB-T-181,
+# tests/security/test_workflow_pins.py). Jobs whose content arrives with later work packages are added by them:
+# "api surface" (TAB-023), "conformance" (TAB-050), "golden files" (TAB-022) and "examples" (RA-A, RA-B).
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  # The nightly (nightly.yml) runs this workflow once a night on master.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push to a pull request cancels the older run of that pull request; every other run gets its own group.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy --strict src tests
+      # AC-1 (QA-16): the import contracts in pyproject.toml ([tool.importlinter], edge list K-33).
+      - run: lint-imports
+      # CI-FAST: the manifest, the workflow files and ci-ok.yml agree.
+      - run: python3 -I .github/scripts/ci_ok.py --self-check --root .
+      - run: python3 -m unittest discover -s .github/scripts -p "test_ci_ok.py"
+
+  test:
+    name: test (Python ${{ matrix.python-version }}${{ matrix.sqlalchemy && format(', SQLAlchemy {0}', matrix.sqlalchemy) || '' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        sqlalchemy: [""]
+        include:
+          # 05 section 2.4: SQLAlchemy 2.0.x next to the current 2.1.x (the other entries).
+          - python-version: "3.12"
+            sqlalchemy: "2.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - if: matrix.sqlalchemy
+        run: pip install "sqlalchemy~=${{ matrix.sqlalchemy }}.0"
+      - run: pip list
+      # The PostgreSQL tests run in the pg jobs, the packaging tests in "build and install" and "extras matrix".
+      - run: pytest -m "not postgres and not packaging" --cov=tabrion --cov-report=term-missing
+
+  lowest-versions:
+    name: test (lowest supported dependency versions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # The lower bounds of pyproject.toml (05 section 2.4); psycopg-binary is pinned by name to match psycopg.
+      - run: pip install "psycopg==3.2.0" "psycopg-binary==3.2.0" "sqlalchemy==2.0.30" "alembic==1.13.0" "pytest==8.0.0"
+      - run: pip list
+      - run: pytest -m "not postgres and not packaging" -p no:cacheprovider
+
+  core-no-extras:
+    name: core without extras
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      # The core and pytest only (05 section 2.3).
+      - run: pip install . "pytest==9.2.0"
+      - run: python -c "import importlib.util as u; assert all(u.find_spec(n) is None for n in ('psycopg', 'sqlalchemy', 'alembic'))"
+      - run: pytest tests/packaging/core_without_extras.py -v -p no:cacheprovider
+      # The core suite under the meta-path blockade of the extras (AC-3).
+      - run: >-
+          python -m pytest -p tests.packaging.block_extras -p no:cacheprovider
+          tests/unit/test_import_isolation.py tests/packaging/test_isolation_probe.py
+
+  extras:
+    name: extras matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install "build==1.6.1" "pytest==9.2.0"
+      - run: python -m build --outdir dist
+      # TAB-005: every extras combination in a fresh virtual environment from the built wheel.
+      - run: pytest -m packaging tests/packaging/test_extras_matrix.py -v -p no:cacheprovider
+        env:
+          TABRION_DIST: dist
+
+  pg:
+    name: pg (${{ matrix.label }}, Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [PostgreSQL 16, PostgreSQL 17, PostgreSQL 18, pgvector 17]
+        python: ["3.11", "3.14"]
+        include:
+          - label: PostgreSQL 16
+            image: postgres@sha256:f9a7b9ebf6f56201f949db745e47bc423c0f0f8294bafe991cc10bf74b029657 # postgres:16
+            major: "16"
+            pgvector: "0"
+          - label: PostgreSQL 17
+            image: postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 # postgres:17
+            major: "17"
+            pgvector: "0"
+          - label: PostgreSQL 18
+            image: postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 # postgres:18
+            major: "18"
+            pgvector: "0"
+          - label: pgvector 17
+            image: pgvector/pgvector@sha256:7d0a41464797aeb9862dfdc0bbf1526b82cfd324cdd8036df19e3545f4a9ccb8 # pgvector/pgvector:pg17
+            major: "17"
+            pgvector: "1"
+    services:
+      postgres:
+        image: ${{ matrix.image }}
+        env:
+          POSTGRES_PASSWORD: tabrion-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TABRION_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=tabrion-ci dbname=postgres
+      TABRION_REQUIRE_POSTGRES: "1"
+      TABRION_EXPECT_SERVER_MAJOR: ${{ matrix.major }}
+      TABRION_REQUIRE_PGVECTOR: ${{ matrix.pgvector }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # The PostgreSQL suites of M2 (superuser and runtime-role mode) join tests/postgres.
+      - run: pytest -m postgres -v -p no:cacheprovider
+
+  security:
+    name: security tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # K8: TAB-T-181 (actions by SHA, images by digest) now; leak, permission and symlink tests join with M2.
+      - run: pytest -m security -v -p no:cacheprovider
+      # ruff's flake8-bandit rules (S) over the package.
+      - run: ruff check --select S src
+
+  architecture:
+    name: architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # AC-1 (QA-16): contracts kept and the mutation probe red for every forbidden edge; AC-3: blocked modules.
+      - run: lint-imports
+      - run: pytest tests/architecture tests/unit/test_import_isolation.py tests/packaging/test_isolation_probe.py -v
+
+  packaging:
+    name: build and install (fresh virtual environments)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install "build==1.6.1" "pytest==9.2.0" "twine==7.0.0"
+      - run: python -m build --outdir dist
+      - run: twine check --strict dist/*
+      - run: pytest -m packaging tests/packaging/test_artifacts.py -v -p no:cacheprovider
+        env:
+          TABRION_DIST: dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: mkdocs build --strict
+
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      # Every optional extra and the development toolchain.
+      - run: pip install "pip-audit==2.10.1" -e ".[dev]"
+      - run: pip-audit --skip-editable --progress-spinner off

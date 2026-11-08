@@ -1,0 +1,111 @@
+# Builds and verifies a Tabrion release from an existing tag. It NEVER publishes on its own.
+#
+# * Manual only (workflow_dispatch; only users with write access can start it). Nothing here runs on pushes, tags,
+#   pull requests or published GitHub releases.
+# * Publishing (PyPI, GitHub release, any public announcement) needs the owner's approval G-R for every single
+#   version (00 section 13, E-PyPI; stop criterion ST-6). The PyPI path is work package TAB-043, bound to G-R.
+#   Until then the job "publish" contains no upload step: it stops with an error, and it runs only when the
+#   "publish" input is set AND the protected environment "pypi" (required reviewer: the owner) approves the job.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated tag on a master merge commit, e.g. v0.1.0
+        required: true
+        type: string
+      publish:
+        description: Request publication (refused until TAB-043 is approved under G-R)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  nightly-gate:
+    # No release build unless the latest completed nightly (nightly.yml on master) passed within 36 hours.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+    steps:
+      - name: The latest nightly of this repository passed within 36 hours
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/nightly.yml/runs?branch=master&status=completed&per_page=1" > nightly.json
+          python3 -I - nightly.json <<'PY'
+          import datetime, json, sys
+          runs = json.load(open(sys.argv[1])).get("workflow_runs") or []
+          if not runs:
+              sys.exit("::error::no completed nightly.yml run on master")
+          run = runs[0]
+          started = datetime.datetime.fromisoformat(run["created_at"].replace("Z", "+00:00"))
+          age = datetime.datetime.now(datetime.timezone.utc) - started
+          print(f"nightly {run['html_url']} {run['conclusion']}, started {run['created_at']} ({age} ago)")
+          if run["conclusion"] != "success":
+              sys.exit(f"::error::the latest nightly did not pass ({run['conclusion']}): {run['html_url']}")
+          if age >= datetime.timedelta(hours=36):
+              sys.exit(f"::error::the latest nightly is older than 36 hours: {run['html_url']}")
+          PY
+
+  build:
+    needs: nightly-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # build provenance attestations
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: The tag is annotated, on master, and matches the package version
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(git cat-file -t "refs/tags/$TAG")" = tag || { echo "::error::$TAG is not an annotated tag"; exit 1; }
+          git fetch --no-tags origin master
+          git merge-base --is-ancestor "$TAG" origin/master || { echo "::error::$TAG is not on master"; exit 1; }
+          version=$(python -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('src/tabrion/_version.py').read()).group(1))")
+          test "$TAG" = "v$version" || { echo "::error::tag $TAG does not match version $version"; exit 1; }
+      - run: pip install "build==1.6.1" "pytest==9.2.0" "twine==7.0.0"
+      - run: python -m build --outdir dist
+      - run: twine check --strict dist/*
+      - run: pytest -m packaging tests/packaging -v -p no:cacheprovider
+        env:
+          TABRION_DIST: dist
+      - name: SHA-256 of the artifacts
+        run: sha256sum dist/* | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "dist/*"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-dist
+          path: dist/
+
+  publish:
+    needs: build
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+    permissions:
+      contents: read
+    steps:
+      - name: Publishing is not set up (G-R, TAB-043)
+        run: |
+          echo "::error::Publishing needs the owner's approval G-R for this version and work package TAB-043 (PyPI trusted publisher). This workflow uploads nothing."
+          exit 1
