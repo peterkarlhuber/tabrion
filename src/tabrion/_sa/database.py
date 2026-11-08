@@ -824,9 +824,12 @@ class Database:
                 # The caller's SQL lifted read-only (SET TRANSACTION READ WRITE, PRAGMA query_only = OFF, ...):
                 # nothing of it is committed (I-56). A guard against accidents, not a security boundary.
                 _rollback(connection)
-                if postgres:
-                    # A session default switched off earlier and committed (TB-061) would stay on this pooled
-                    # connection; the pool opens a fresh one instead (re-review N-1 of #12).
+                if postgres or _sqlite_file_backed(connection):
+                    # What the caller changed outside the transaction stays on this pooled connection: on
+                    # PostgreSQL a session default switched off earlier and committed (TB-061), on SQLite an
+                    # attached database or a raised attach limit, which no rollback undoes. The pool opens a fresh
+                    # connection instead (re-review N-1 and R-2 of #12). The one shared connection of an in-memory
+                    # database is the database itself and stays.
                     with contextlib.suppress(Exception):
                         connection.invalidate()
                 raise UsageError("database.read_only") from None
@@ -1029,6 +1032,21 @@ def _rollback(connection: sqlalchemy.Connection) -> None:
     except Exception:
         with contextlib.suppress(Exception):  # the connection is gone either way
             connection.invalidate()
+
+
+def _sqlite_file_backed(connection: sqlalchemy.Connection) -> bool:
+    """Whether the main database of this SQLite connection is a file (not ``:memory:`` or a temporary database)."""
+    try:
+        dbapi: Any = connection.connection.dbapi_connection
+        cursor = dbapi.cursor()
+        try:
+            cursor.row_factory = None
+            rows = cursor.execute("PRAGMA database_list").fetchall()
+        finally:
+            cursor.close()
+    except Exception:
+        return False  # unknown: keep the connection, as before
+    return any(row[1] == "main" and row[2] for row in rows)
 
 
 def _query_only_off(connection: sqlalchemy.Connection) -> None:

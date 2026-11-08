@@ -26,7 +26,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   connection's transaction or row factory: the finding codes TAB-SQ-001..009 and TAB-PG-001..011, 020, 021 and 030
   of specification section 9. `expect="owner"` suppresses TAB-PG-003 and TAB-PG-009, `expect="any"` reports them
   as `info`; a missing privilege or an unreadable file gives an `info` finding "Not checked"; no detail names a
-  path. A `Database` target, TAB-PG-012 and TAB-B-001/002 follow with layer B (TODO TB-060).
+  path. For a `Database` (and `Database.check()`), the dialect's checks run on the pooled driver connection inside
+  one `read()`, plus TAB-PG-012, TAB-B-001 and TAB-B-002; TAB-B-002 is an `info` "Not checked" when an
+  `alembic_version` table exists, since `check()` has no script directory (TB-060, D-66).
 - `tabrion.migrations.status` and `require_current` (TAB-019): the Alembic schema state (current revisions,
   heads, pending revisions in order, unknown newer revisions) read in one `Database.read()` without running
   `env.py` and without migrating; `require_current` raises `SchemaNotCurrent`. `is_current` means nothing
@@ -36,6 +38,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- A `read()` refused by the read-back now also invalidates a file-backed SQLite connection, so an attached database
+  or a raised attach limit does not stay in the pool (re-review 2 R-2 of #12). `tabrion.migrations` maps a
+  `revision` or `down_revision` of the wrong type to `ConfigurationError("migrations.revisions")` (DL-1 of #14).
 - `classify(error, during_commit=True)` on a `TabrionError` whose stored classification is a connection error now
   reports the outcome as unknown and not retryable (R-NORETRY, TB-040). `Database()` and `Transaction()` raise
   `TypeError` instead of building an unusable object (G-T1 F-14).

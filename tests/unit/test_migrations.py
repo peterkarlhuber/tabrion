@@ -16,6 +16,7 @@ import hashlib
 from pathlib import Path
 import subprocess
 import sys
+import warnings
 
 import pytest
 
@@ -26,6 +27,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util import CommandError
+import sqlalchemy.exc
 
 from tabrion import Database, Profile, migrations
 from tabrion.errors import ConfigurationError, SchemaNotCurrent
@@ -276,6 +278,15 @@ def test_m05_uneven_merge(db: Database, tmp_path: Path, stamped: tuple[str, ...]
     assert result.heads == ("n",) and result.pending == expected and result.is_current is (expected == ())
 
 
+def upgrade(config: Config, revision: str) -> None:
+    """``alembic upgrade``. Alembic 1.13 passes an empty parameter sequence to ``execute()``, which SQLAlchemy 2.1
+    deprecates; only Alembic's own upgrade is under test here, so that warning is ignored (re-review DL-2 of #14).
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", sqlalchemy.exc.SADeprecationWarning)
+        command.upgrade(config, revision)
+
+
 def test_m05_depends_on_after_a_real_upgrade(tmp_path: Path) -> None:
     """``y2`` depends_on ``x2``: after ``alembic upgrade heads`` the version table holds ``y2`` only (review H-1).
 
@@ -293,13 +304,13 @@ def test_m05_depends_on_after_a_real_upgrade(tmp_path: Path) -> None:
     config = Config()
     config.set_main_option("script_location", str(location))
     config.set_main_option("sqlalchemy.url", f"sqlite:///{path}")
-    command.upgrade(config, "x1")
-    command.upgrade(config, "y1")
+    upgrade(config, "x1")
+    upgrade(config, "y1")
     with Database.from_url(f"sqlite:///{path}") as database:
         partly = status(database, script_location=location)
         assert partly.current == ("x1", "y1") and partly.heads == ("x2", "y2")
         assert partly.pending == ("x2", "y2") and not partly.is_current
-    command.upgrade(config, "heads")
+    upgrade(config, "heads")
     with Database.from_url(f"sqlite:///{path}") as database:
         assert database.fetch_all("SELECT version_num FROM alembic_version") == [("y2",)]
         done = require_current(database, script_location=location)
@@ -325,6 +336,11 @@ def broken(location: Path, case: str) -> None:
         revision_file(location, "a1", None, extra="import tabrion_no_such_module")
     elif case == "SyntaxError":
         revision_file(location, "a1", None, extra="def (:")
+    elif case == "revision of the wrong type":
+        (location / "versions" / "a1_step.py").write_text(REVISION.format(revision=1, down=None))
+    elif case == "down_revision of the wrong type":
+        revision_file(location, "a1", None)
+        (location / "versions" / "a2_step.py").write_text(REVISION.format(revision="a2", down=5))
     else:  # a cycle
         revision_file(location, "a1", "a2")
         revision_file(location, "a2", "a1")
@@ -339,6 +355,8 @@ def broken(location: Path, case: str) -> None:
         "branch label as down_revision",
         "ImportError",
         "SyntaxError",
+        "revision of the wrong type",
+        "down_revision of the wrong type",
         "cycle",
     ],
 )
