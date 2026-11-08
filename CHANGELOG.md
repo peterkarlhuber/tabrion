@@ -8,6 +8,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Internal test asset "Levuvo Database Profile" LDP-0.1.0 (TAB-050, K-35; not in the wheel, not vendored by any
+  other repository): `conformance/SPEC.md` (33 rules in ten areas, MUST/SHOULD/INFO, with the reference behavior of
+  Nodestro, Orkexa and Axentra), the JSON Schema of API contract section 10.1, 93 vectors in `conformance/vectors/`,
+  `conformance/MANIFEST.json` and the internal loader `tests/support/conformance.py`. Tabrion passes every vector;
+  a changed expectation fails the tests until the manifest is regenerated and this file names the new digest.
+  LDP digest 1425b433c8eb.
+
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
   `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`

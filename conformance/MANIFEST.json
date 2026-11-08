@@ -1,0 +1,20 @@
+{
+  "comment": "SHA-256 of every file of the Levuvo Database Profile (TAB-050). Regenerate with 'python -m tests.support.conformance --write' and name the new digest in CHANGELOG.md.",
+  "format": "ldp-manifest/1",
+  "standard_version": "LDP-0.1.0",
+  "files": {
+    "SPEC.md": "32bbec3d6d37861a4b8f4c39d642769c0ecd2d673c29086cee4aa3dd24d2bff4",
+    "schema/vector-file.schema.json": "d9ad84c02b7280cc6521abbea0b9e935fc908ddb0ee4faf3b77624cd24d83a1f",
+    "vectors/errors-classification.json": "b9cd3ae89db52910b348af04c57cab5e19941ca8dc936dd7a707e9969dd6d665",
+    "vectors/errors-redaction.json": "5b23db09bc274fc094811b6925e5a05f3621d331c6ecf4c8d0f37dfaf446e219",
+    "vectors/postgres-extensions.json": "a63ed5d38d94d35cf929b2ce7ca0dd3a0ea52be0777ce03b83ccb81bbcf659b8",
+    "vectors/postgres-locks.json": "d477b6226205509950498c72769829ebd6fc067b4c1db428e0a90b8b72832910",
+    "vectors/postgres-roles.json": "d7a8c790da620017d0c4c3eba07af507d78bdfe5363656cc60a28b0cff84c807",
+    "vectors/postgres-session.json": "0d06f9f4d014153ca25490562eca81ea8a8c3a92fda8ad2040cefa80c254b955",
+    "vectors/sql-split.json": "962fa4e9203ad944517625a0d89ac3a65823062e448c2e4976d5dd56c125cc1c",
+    "vectors/sqlite-migrate.json": "750e0d74a83f61e284ed57bda808c88bd40a68a3dabeed0c45d92a5b7bfb8872",
+    "vectors/sqlite-profile.json": "585937e03a29b1fa680d252949f6924d0acc7a629ca87911a4ad162a0c98f6cb",
+    "vectors/sqlite-transactions.json": "24fa931dfb50a1bb7b5ce53f7b9c25b311b438a27207320cb25ec92f33ea1f91"
+  },
+  "digest": "1425b433c8eba1bd277163dbd2064d89896b27e0d04931134d87f1522d8fd130"
+}

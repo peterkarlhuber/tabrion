@@ -1,0 +1,138 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.0",
+  "area": "postgres-session",
+  "vectors": [
+    {
+      "id": "LDP-PGS-001",
+      "level": "MUST",
+      "rule": "PGS-1",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "session_settings",
+        "args": {
+          "settings": {},
+          "extra_field": "row_security"
+        }
+      },
+      "expect": {
+        "error": "postgres.setting_not_allowed"
+      },
+      "provenance": "tabrion docs/api/contract.md R-SET"
+    },
+    {
+      "id": "LDP-PGS-002",
+      "level": "MUST",
+      "rule": "PGS-1",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "session_settings",
+        "args": {
+          "settings": {},
+          "extra_field": "role"
+        }
+      },
+      "expect": {
+        "error": "postgres.setting_not_allowed"
+      },
+      "provenance": "tabrion docs/api/contract.md R-SET"
+    },
+    {
+      "id": "LDP-PGS-003",
+      "level": "MUST",
+      "rule": "PGS-2",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "session_settings",
+        "args": {
+          "settings": {}
+        }
+      },
+      "expect": {
+        "positive": [
+          "statement_timeout",
+          "idle_in_transaction_session_timeout"
+        ],
+        "show": {
+          "application_name": "tabrion"
+        }
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage_postgres.py:279-290; axentra@ea7aa9f src/axentra/data/database.py:264-266"
+    },
+    {
+      "id": "LDP-PGS-004",
+      "level": "SHOULD",
+      "rule": "PGS-3",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "session_settings",
+        "args": {
+          "settings": {}
+        }
+      },
+      "expect": {
+        "positive": [
+          "lock_timeout"
+        ]
+      },
+      "provenance": "tabrion docs/api/contract.md section 4.1"
+    },
+    {
+      "id": "LDP-PGS-005",
+      "level": "MUST",
+      "rule": "PGS-4",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "session_settings",
+        "args": {
+          "settings": {
+            "search_path": "public",
+            "application_name": "ldp"
+          }
+        }
+      },
+      "expect": {
+        "unchanged": [
+          "app.tenant_id",
+          "role",
+          "row_security"
+        ],
+        "show": {
+          "application_name": "ldp"
+        }
+      },
+      "provenance": "tabrion docs/api/contract.md R-SET",
+      "setup": [
+        "SELECT set_config('app.tenant_id', 'tenant-1', false)"
+      ]
+    },
+    {
+      "id": "LDP-PGS-006",
+      "level": "INFO",
+      "rule": "PGS-5",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "session_settings",
+        "args": {
+          "settings": {}
+        }
+      },
+      "expect": {
+        "show": {
+          "statement_timeout": "30s",
+          "lock_timeout": "10s",
+          "idle_in_transaction_session_timeout": "5min",
+          "TimeZone": "UTC",
+          "application_name": "tabrion"
+        }
+      },
+      "provenance": "tabrion docs/api/contract.md section 4.1"
+    }
+  ]
+}

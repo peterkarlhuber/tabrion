@@ -19,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 10 |
-| P3 Low | 28 |
+| P3 Low | 29 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -142,7 +142,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   and the nightly `downstream` job (TAB-022); the internal "Levuvo Database Profile" with `conformance/SPEC.md`,
   vectors, manifest and the job `conformance` (TAB-050); the API stability policy and a deprecation helper
   (TAB-051).
-- **Next step:** TAB-022 after TAB-014, TAB-016 and TAB-030; TAB-050 after TAB-016; TAB-051 after TAB-023.
+- **Next step:** TAB-022 after TAB-014, TAB-016 and TAB-030; TAB-051 after TAB-023. TAB-050 is in review (branch
+  `claude/project-thread-rdo6g3-tab050`; its CI job is TB-092).
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
@@ -282,6 +283,14 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **What:** `conformance`, `golden files` and `examples` in `ci.yml` (`api surface` arrived with TAB-023); fault injection, stress and
   `downstream` in `nightly.yml`. Each is added with its work package and listed in `.github/ci-manifest.json`.
 - **Next step:** with each work package.
+
+### TB-092 · CI job `conformance` (TABRION TAB-050, deviation D-92)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-050, TB-017, contract I-82
+- **What:** the LDP vectors run inside the jobs `test (...)` and `pg (...)`; planning document 02 names a job
+  `conformance` of its own (`pytest -m conformance` with and without PostgreSQL, `python -m tests.support.conformance`),
+  listed in `.github/ci-manifest.json`.
+- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml` and `ci-manifest.json`.
 
 ### TB-018 · PostgreSQL matrix cost on pull requests
 

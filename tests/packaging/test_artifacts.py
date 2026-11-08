@@ -42,12 +42,16 @@ def test_wheel_contains_only_the_package(wheel: Path) -> None:
     assert "tabrion/__init__.py" in names
     top = {n.split("/")[0] for n in names}
     assert {t for t in top if not t.endswith(".dist-info")} == {"tabrion"}, top
+    # The LDP vectors are an internal test asset (K-35, TAB-050): never in the wheel.
+    assert not [n for n in names if "conformance" in n or n.endswith("vector-file.schema.json")], names
 
 
 def test_sdist_contains_the_sources_and_tests(sdist: Path) -> None:
     with tarfile.open(sdist) as tf:
         names = {n.split("/", 1)[1] for n in tf.getnames() if "/" in n}
     assert {"pyproject.toml", "LICENSE", "README.md", "src/tabrion/__init__.py", "tests/conftest.py"} <= names
+    # The sdist carries the tests, so it carries the vectors they run (TAB-050); the wheel does not.
+    assert {"conformance/SPEC.md", "conformance/MANIFEST.json", "tests/support/conformance.py"} <= names
 
 
 def test_install_from_wheel_in_a_fresh_venv(wheel: Path, tmp_path: Path) -> None:
