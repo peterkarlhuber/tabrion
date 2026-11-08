@@ -1,0 +1,304 @@
+{
+ "about": "Behavior of axentra at the commit below for contract section 8.1 (TAB-022a), recorded by scripts/record_golden.py with tests/golden/consumers/record_axentra.py. Do not edit by hand: change the commit in scripts/record_golden.py and record again.",
+ "commit": "ea7aa9f8e0af493f1ce70fc06e49cc975cf8795a",
+ "consumer": "axentra",
+ "recorded_with": {
+  "postgres": "160015",
+  "python": "3.13.18",
+  "sqlite": "3.53.1"
+ },
+ "records": {
+  "configure.statement_timeout_ms=0": {
+   "changed": {},
+   "status_after": "IDLE"
+  },
+  "configure.statement_timeout_ms=5000": {
+   "changed": {
+    "statement_timeout": "5s"
+   },
+   "status_after": "IDLE"
+  },
+  "inspect_role": {
+   "bypassrls": {
+    "bypass_rls": true,
+    "can_create": false,
+    "connect": true,
+    "owned_tables": [],
+    "owner": "<owner>",
+    "restricted": false,
+    "role": "<bypassrls>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "can_create": {
+    "bypass_rls": false,
+    "can_create": true,
+    "connect": true,
+    "owned_tables": [],
+    "owner": "<owner>",
+    "restricted": true,
+    "role": "<can_create>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "no_connect": {
+    "bypass_rls": false,
+    "can_create": false,
+    "connect": false,
+    "owned_tables": [],
+    "owner": "<owner>",
+    "restricted": true,
+    "role": "<no_connect>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "owner": {
+    "bypass_rls": false,
+    "can_create": true,
+    "connect": true,
+    "owned_tables": [
+     "alpha",
+     "beta"
+    ],
+    "owner": "<owner>",
+    "restricted": false,
+    "role": "<owner>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "owns_one": {
+    "bypass_rls": false,
+    "can_create": false,
+    "connect": true,
+    "owned_tables": [
+     "delta"
+    ],
+    "owner": "<owner>",
+    "restricted": false,
+    "role": "<owns_one>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "runtime": {
+    "bypass_rls": false,
+    "can_create": false,
+    "connect": true,
+    "owned_tables": [],
+    "owner": "<owner>",
+    "restricted": true,
+    "role": "<runtime>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   }
+  },
+  "leader_lock": [
+   [
+    "a.acquire",
+    true
+   ],
+   [
+    "b.acquire",
+    false
+   ],
+   [
+    "a.acquire again",
+    true
+   ],
+   [
+    "a's connection ended",
+    1
+   ],
+   [
+    "a.acquire after the loss",
+    true
+   ],
+   [
+    "b.acquire",
+    false
+   ],
+   [
+    "b.acquire after a.release",
+    true
+   ],
+   [
+    "a.acquire after b.release",
+    true
+   ]
+  ],
+  "ping": {
+   "healthy": true,
+   "unreachable": false
+  },
+  "role_info.check_role": {
+   "bypassrls": {
+    "accepted": {
+     "superuser=False,table_owner=False": false,
+     "superuser=False,table_owner=True": false,
+     "superuser=True,table_owner=False": true,
+     "superuser=True,table_owner=True": true
+    },
+    "info": {
+     "bypass_rls": true,
+     "superuser": false,
+     "table_owner": false
+    }
+   },
+   "member_of_rls_owner": {
+    "accepted": {
+     "superuser=False,table_owner=False": false,
+     "superuser=False,table_owner=True": true,
+     "superuser=True,table_owner=False": true,
+     "superuser=True,table_owner=True": true
+    },
+    "info": {
+     "bypass_rls": false,
+     "superuser": false,
+     "table_owner": true
+    }
+   },
+   "plain": {
+    "accepted": {
+     "superuser=False,table_owner=False": true,
+     "superuser=False,table_owner=True": true,
+     "superuser=True,table_owner=False": true,
+     "superuser=True,table_owner=True": true
+    },
+    "info": {
+     "bypass_rls": false,
+     "superuser": false,
+     "table_owner": false
+    }
+   },
+   "plain_table_owner": {
+    "accepted": {
+     "superuser=False,table_owner=False": true,
+     "superuser=False,table_owner=True": true,
+     "superuser=True,table_owner=False": true,
+     "superuser=True,table_owner=True": true
+    },
+    "info": {
+     "bypass_rls": false,
+     "superuser": false,
+     "table_owner": false
+    }
+   },
+   "rls_table_owner": {
+    "accepted": {
+     "superuser=False,table_owner=False": false,
+     "superuser=False,table_owner=True": true,
+     "superuser=True,table_owner=False": true,
+     "superuser=True,table_owner=True": true
+    },
+    "info": {
+     "bypass_rls": false,
+     "superuser": false,
+     "table_owner": true
+    }
+   },
+   "superuser": {
+    "accepted": {
+     "superuser=False,table_owner=False": false,
+     "superuser=False,table_owner=True": false,
+     "superuser=True,table_owner=False": true,
+     "superuser=True,table_owner=True": true
+    },
+    "info": {
+     "bypass_rls": true,
+     "superuser": true,
+     "table_owner": true
+    }
+   }
+  },
+  "safe_message": {
+   "check_violation": {
+    "leaks": false,
+    "message": "check violation (SQLSTATE 23514, constraint positive)",
+    "sqlstate": "23514"
+   },
+   "division_by_zero": {
+    "leaks": false,
+    "message": "data error (SQLSTATE 22012)",
+    "sqlstate": "22012"
+   },
+   "foreign_key_violation": {
+    "leaks": false,
+    "message": "foreign key violation (SQLSTATE 23503, constraint child_parent_fkey)",
+    "sqlstate": "23503"
+   },
+   "insufficient_privilege": {
+    "leaks": false,
+    "message": "insufficient privilege (SQLSTATE 42501)",
+    "sqlstate": "42501"
+   },
+   "invalid_text_representation": {
+    "leaks": false,
+    "message": "data error (SQLSTATE 22P02)",
+    "sqlstate": "22P02"
+   },
+   "lock_not_available": {
+    "leaks": false,
+    "message": "lock not available (SQLSTATE 55P03)",
+    "sqlstate": "55P03"
+   },
+   "not_null_violation": {
+    "leaks": false,
+    "message": "not null violation (SQLSTATE 23502)",
+    "sqlstate": "23502"
+   },
+   "numeric_value_out_of_range": {
+    "leaks": false,
+    "message": "data error (SQLSTATE 22003)",
+    "sqlstate": "22003"
+   },
+   "query_canceled": {
+    "leaks": false,
+    "message": "query canceled (SQLSTATE 57014)",
+    "sqlstate": "57014"
+   },
+   "string_data_right_truncation": {
+    "leaks": false,
+    "message": "data error (SQLSTATE 22001)",
+    "sqlstate": "22001"
+   },
+   "syntax_error": {
+    "leaks": false,
+    "message": "syntax error (SQLSTATE 42601)",
+    "sqlstate": "42601"
+   },
+   "undefined_column": {
+    "leaks": false,
+    "message": "syntax error or access rule violation (SQLSTATE 42703)",
+    "sqlstate": "42703"
+   },
+   "undefined_table": {
+    "leaks": false,
+    "message": "syntax error or access rule violation (SQLSTATE 42P01)",
+    "sqlstate": "42P01"
+   },
+   "unique_violation": {
+    "leaks": false,
+    "message": "unique violation (SQLSTATE 23505, constraint parent_email_key)",
+    "sqlstate": "23505"
+   }
+  },
+  "wait_for_lock": {
+   "key": 27435449781088865,
+   "result": {
+    "contended": {
+     "held_after": true,
+     "returned_after_release": true
+    },
+    "free": {
+     "held_after": true
+    }
+   }
+  }
+ },
+ "repository": "https://github.com/peterkarlhuber/axentra"
+}
