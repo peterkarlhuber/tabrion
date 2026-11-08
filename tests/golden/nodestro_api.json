@@ -1,0 +1,26 @@
+{
+ "about": "Behavior of nodestro_api at the commit below for contract section 8.2 (TAB-022a), recorded by scripts/record_golden.py with tests/golden/consumers/record_nodestro_api.py. Do not edit by hand: change the commit in scripts/record_golden.py and record again.",
+ "commit": "221f9e16025fff12336cad74f99627fdc5ba55cd",
+ "consumer": "nodestro_api",
+ "recorded_with": {
+  "python": "3.13.18",
+  "sqlite": "3.53.1"
+ },
+ "records": {
+  "diagnostics.database": {
+   "damaged": {
+    "code": "unreadable",
+    "status": "error"
+   },
+   "healthy": {
+    "code": "ok",
+    "status": "ok"
+   },
+   "not_a_database": {
+    "code": "unreadable",
+    "status": "error"
+   }
+  }
+ },
+ "repository": "https://github.com/peterkarlhuber/nodestro-api"
+}

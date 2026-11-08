@@ -100,7 +100,8 @@ violation as `SQLITE_CONSTRAINT_TRIGGER`, which Tabrion does not classify as a f
 
 `upgrade` and `downgrade` run Alembic inside `database.transaction()`, as does the command line through `env.py`:
 one transaction for all revisions, `BEGIN IMMEDIATE` on SQLite (two instances starting at once, or a running writer,
-are waited for, not a `database is locked` failure) and Tabrion's errors.
+are waited for, not a `database is locked` failure) and Tabrion's errors. A test pins this for `upgrade`,
+`downgrade` and the command line.
 
 ## Tests
 
