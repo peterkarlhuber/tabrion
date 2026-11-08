@@ -5,6 +5,7 @@ from __future__ import annotations
 import email.parser
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -63,20 +64,49 @@ def test_install_from_wheel_in_a_fresh_venv(wheel: Path, tmp_path: Path) -> None
     assert smoke.returncode == 0, smoke.stdout + smoke.stderr
 
 
-def _build_wheel(outdir: Path) -> Path:
+def _build_wheel(outdir: Path, *, epoch: str | None = None) -> Path:
+    """``python -m build --wheel`` with the hashed backend pins of ``build-constraints.txt`` (review M-1).
+
+    ``PIP_NO_INDEX``/``PIP_FIND_LINKS`` from the environment pass through, so the build also runs offline from a
+    local wheel cache.
+    """
+    env = {
+        **os.environ,
+        "PIP_CONSTRAINT": str(ROOT / "build-constraints.txt"),
+        "PIP_REQUIRE_HASHES": "1",
+    }
+    env.pop("SOURCE_DATE_EPOCH", None)
+    if epoch is not None:
+        env["SOURCE_DATE_EPOCH"] = epoch
     subprocess.run(
-        [sys.executable, "-m", "build", "--wheel", "--outdir", str(outdir), str(ROOT)], check=True, capture_output=True
+        [sys.executable, "-m", "build", "--wheel", "--outdir", str(outdir), str(ROOT)],
+        check=True,
+        capture_output=True,
+        env=env,
     )
     (path,) = outdir.glob("tabrion-*.whl")
     return path
 
 
 def test_two_builds_give_the_same_wheel_hash(wheel: Path, tmp_path: Path) -> None:
-    """QA-8: the wheel is reproducible: two fresh builds and the job's own build have the same SHA-256."""
+    """QA-8: the wheel is reproducible: two fresh builds and the job's own build have the same SHA-256.
+
+    It holds for the pinned backend (``hatchling`` in ``build-constraints.txt``); another backend version writes
+    another ``WHEEL`` file and so another hash.
+    """
     first = _build_wheel(tmp_path / "first")
     second = _build_wheel(tmp_path / "second")
     digests = {_sha256(p) for p in (first, second, wheel)}
     assert len(digests) == 1, digests
+
+
+def test_two_builds_with_source_date_epoch_match(tmp_path: Path) -> None:
+    """QA-8 review I-1: with the same ``SOURCE_DATE_EPOCH`` two builds match too (the zip entries carry that time)."""
+    first = _build_wheel(tmp_path / "first", epoch="1767225600")
+    second = _build_wheel(tmp_path / "second", epoch="1767225600")
+    assert _sha256(first) == _sha256(second)
+    with zipfile.ZipFile(first) as zf:
+        assert {info.date_time[:3] for info in zf.infolist()} == {(2026, 1, 1)}
 
 
 def test_sbom_of_the_wheel(wheel: Path, tmp_path: Path) -> None:
@@ -95,6 +125,16 @@ def test_sbom_of_the_wheel(wheel: Path, tmp_path: Path) -> None:
     names = {c["name"] for c in doc["components"]}
     assert {"psycopg", "sqlalchemy", "alembic", "pytest"} <= names
     assert all(c["scope"] == "optional" for c in doc["components"])
+    pinned = _pinned_backend()
+    assert {"type": "application", "name": pinned[0], "version": pinned[1]} in doc["metadata"]["tools"]["components"]
+
+
+def _pinned_backend() -> tuple[str, str]:
+    import tomllib
+
+    (requirement,) = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["build-system"]["requires"]
+    name, _, version = requirement.partition("==")
+    return name, version
 
 
 def _sha256(path: Path) -> str:

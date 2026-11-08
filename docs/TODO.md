@@ -242,14 +242,35 @@ required (owner decision of 2026-11-08 11:26Z).
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
-### TB-130 · SBOM step in CI and in the release workflow (TABRION QA-8)
+### TB-130 · Hashed build and SBOM step in CI and in the release workflow (TABRION QA-8)
 
-- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request) · **Refs:** TABRION QA-8, QA-11, 07 TM-10
-- **What:** `scripts/sbom.py` writes the CycloneDX SBOM of a wheel and is tested on the CI build's wheel, but no
-  workflow stores it yet.
-- **Next step:** in `ci.yml` job `build and install`, run
-  `python -I scripts/sbom.py dist/tabrion-*.whl --vcs-ref "$GITHUB_SHA" -o dist/tabrion.cdx.json` before the upload;
-  in `release.yml` the same in job `build`, and include the SBOM in the files attested by job `attest`.
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8, QA-11,
+  07 TM-10, review of PR #30 (M-1)
+- **What:** `scripts/sbom.py` writes the CycloneDX SBOM of a wheel and is tested on the CI build's wheel, and
+  `build-constraints.txt` pins the build backend with hashes, but no workflow uses either yet.
+- **Next step:** in `ci.yml`, jobs `build and install` and `extras matrix`, and in `release.yml`, job `build`, replace
+  `- run: python -m build --outdir dist` with
+
+  ```yaml
+      - run: python -m build --outdir dist
+        env:
+          PIP_CONSTRAINT: build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
+  ```
+
+  In `build and install` and in the release `build`, add after `twine check --strict dist/*`
+  `- run: mkdir -p sbom && python -I scripts/sbom.py dist/tabrion-*.whl --vcs-ref "$GITHUB_SHA" -o sbom/tabrion.cdx.json`
+  and upload `sbom/` with `dist/` (`path: |` with both lines). In `release.yml`, add `sbom/tabrion.cdx.json` to the
+  files attested by job `attest`. The SBOM stays outside `dist/`, because `twine check dist/*` checks every file.
+
+### TB-133 · Keep the two build backend pins in step (TABRION QA-8 review M-1)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-8, `build-constraints.txt`, `.github/dependabot.yml`
+- **What:** `pyproject.toml` (`requires = ["hatchling==1.33.0"]`) and the hashed `build-constraints.txt` must name
+  the same hatchling; `tests/unit/test_build_constraints.py` fails when they differ. Whether Dependabot's pip updater
+  proposes both files in one pull request is not verified.
+- **Next step:** after the first hatchling release, check the Dependabot pull request; if it updates only one file,
+  regenerate the other by the recipe in `build-constraints.txt` in the same pull request.
 
 ## M3, M5 and M8: work in this repository
 
