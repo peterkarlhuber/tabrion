@@ -44,4 +44,9 @@ Accepted residual risks (documented, not vulnerabilities):
 - On Windows `O_NOFOLLOW` does not exist; only the symlink check protects new files there.
 - `TLSMode.INSECURE` is an explicit opt-in for local development.
 - Using `Database.engine` directly bypasses Tabrion's transaction modes.
+- `DbErrorRedactionFilter` protects only the records it sees: the application installs it (on its handlers, its
+  loggers or through the log record factory); Tabrion installs it nowhere. A value the application logs on its own
+  (for example `exc.diag.message_detail` as a plain string) is not recognized.
+- `safe_url` cannot tell where a password with a raw, not percent-encoded `?` ends; such a URL gives
+  `"<unparseable url>"`. Percent-encode special characters in URL passwords.
 - Vulnerabilities in SQLite, PostgreSQL, psycopg, SQLAlchemy or Alembic belong to their maintainers.

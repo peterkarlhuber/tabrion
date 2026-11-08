@@ -4,8 +4,8 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, G-T1 follow-up pull request [#2](https://github.com/peterkarlhuber/tabrion/pull/2) (branch `claude/project-thread-rdo6g3`), after the M1 pull
-> request [#1](https://github.com/peterkarlhuber/tabrion/pull/1) merged (`b0309c5`).
+> **Last update:** 2026-11-08, M2 lane A pull request (TAB-010, TAB-011, TAB-012; branch `claude/project-thread-rdo6g3`),
+> after the G-T1 follow-up pull request [#2](https://github.com/peterkarlhuber/tabrion/pull/2) merged (`c31529d`).
 > Detailed open work for this repository: [docs/TODO.md](../TODO.md). Risks: [risks.md](risks.md).
 
 ## Status values
@@ -27,7 +27,7 @@ the owning thread reports it.
 | Milestone | Content | Entry | Exit gate | Status |
 |---|---|---|---|---|
 | M1 | Foundation: repositories, skeleton, API freeze | G-A | G-T1 (TAB-002) | Done: conditional (#1 merged; G-T1 conditions below; GOV-2 and GOV-3 wait for owner actions) |
-| M2 | Tabrion 0.1, internal alpha, reference applications; lane JQ in parallel | G-T1 | G-T2 (TAB-040) | Not started |
+| M2 | Tabrion 0.1, internal alpha, reference applications; lane JQ in parallel | G-T1 | G-T2 (TAB-040) | In progress (TAB-010..TAB-012 in review, [M2 evidence](#m2-evidence)) |
 | M3 | Versioning, Axentra security evidence, waves W1 and W2, architecture checks | TAB-040 `v0.1.0` final (RC-8) | G-M per step | Not started |
 | M4 | Tabrion 0.2 (Studio APIs); TAB-CR-1/2 from CR-DB | G-T2 | G-T2 for 0.2 (TAB-042); PyPI only after G-R | Not started |
 | M5 | Waves W3-W6 | M3 | G-M per step | Not started |
@@ -84,9 +84,9 @@ Planned effort: 60.75 + 21.25 agent days.
 | JQ-2 | Impact analysis including the export | nodestro-runtime, nodestro-api | JQ-1 | G-M | 1 + 0.5 | JQ | Not started |  |
 | JQ-3 | Fix option A and allowlist guard | nodestro-runtime | JQ-2 | G-M | 1.5 + 1 | JQ | Not started |  |
 | MIG-AXE-0 | Local B-06-1 fix in Axentra right after G-A, independent of Tabrion (replaced later by MIG-AXE-3) | axentra | G-A | G-M | 1 + 0.5 | JQ | Not started |  |
-| TAB-010 | tabrion.errors | tabrion | TAB-002 | - | 2 + 1 | Core | Not started |  |
-| TAB-011 | tabrion.sql split_statements | tabrion | TAB-002 | - | 1 + 0.25 | Core | Not started |  |
-| TAB-012 | tabrion.config safe_url/url_from_env | tabrion | TAB-002 | - | 0.5 + 0 | Core | Not started |  |
+| TAB-010 | tabrion.errors | tabrion | TAB-002 | - | 2 + 1 | Core | In review | `src/tabrion/errors.py`; `tests/unit/test_errors.py` (E01..E13, E15..E24), `tests/postgres/test_errors_postgres.py` (server errors, E12, E14 fault proxy, E15, E21, E23), mutation probes in `tests/unit/test_mutation_probes.py`; [M2 evidence](#m2-evidence). Independent review required (plan document 07 section 6), not yet done |
+| TAB-011 | tabrion.sql split_statements | tabrion | TAB-002 | - | 1 + 0.25 | Core | In review | `src/tabrion/sql.py`; `tests/unit/test_sql.py` (Q01..Q10), golden file `tests/golden/axentra_splitter.json` (all 17 SQL files of Axentra 9c4666f byte-identical); [M2 evidence](#m2-evidence) |
+| TAB-012 | tabrion.config safe_url/url_from_env | tabrion | TAB-002 | - | 0.5 + 0 | Core | In review | `src/tabrion/config.py`; `tests/unit/test_config.py` (C01..C08); [M2 evidence](#m2-evidence) |
 | QA-8 | Supply chain (pip-audit, npm audit, SBOM) | tabrion, tabrion-studio | TAB-004 | - | 1 + 0.25 | QA | Not started |  |
 | TAB-051 | API stability policy and deprecation helper | tabrion | TAB-023 | - | 1 + 0.25 | Core | Not started |  |
 | JQ-4 | Docs, CHANGELOG, export adjustment, pin wave W7 (JQ) | runtime, api, studio | JQ-3 | G-M | 1 + 0.5 | JQ | Not started |  |
@@ -293,6 +293,34 @@ What the M1 pull request delivers against the acceptance criteria of planning do
 | TAB-006 | MkDocs skeleton, README, CONTRIBUTING, SECURITY | `mkdocs.yml` with `strict: true`, CI job `docs` (`mkdocs build --strict`); README, CONTRIBUTING, SECURITY, SUPPORT, CODE_OF_CONDUCT, CHANGELOG |
 | TAB-005 | Import isolation and extras matrix (with QA-5): every combination installs and imports; `import tabrion.sqlite` without psycopg and SQLAlchemy; negative probe red once | `tests/packaging/test_extras_matrix.py` (8 combinations in fresh virtual environments from the built wheel), `tests/unit/test_import_isolation.py`, `tests/packaging/test_isolation_probe.py` (an injected `import psycopg` must fail), CI jobs `extras matrix` and `core without extras` |
 
+## M2 evidence
+
+What the M2 lane A pull request delivers against the acceptance criteria of planning document 09 and the Definition
+of Done (planning document 07 section 6). Local run on 2026-11-08: Python 3.13, PostgreSQL 16.15; CI runs Python
+3.11-3.14 and PostgreSQL 16, 17, 18 and pgvector 17.
+
+| WP | Acceptance criterion (plan document 09) | Evidence |
+|---|---|---|
+| TAB-010 | TAB-T-E01..E20 green including canary values and `DETAIL` removal (B-06-1); stdlib-only; SQLSTATE table complete per doc 04 | Every row of the mapping table: stand-ins in `test_e01_e09_postgres_mapping` and `test_e04_e08_sqlite_codes`, real server errors in `test_e01_e09_server_errors`, `test_e05`..`test_e08` (permission, read-only, timeout, cancel, lock, deadlock, serialization, terminated and closed connections), real SQLite errors in `test_e04_e08_sqlite_real_errors`. Canary `SECRET-4711` (E10) over every SQLSTATE and four `DETAIL` shapes; E11 no `__cause__`; E12 conninfo password; E13 1 000 Hypothesis exceptions, hostile objects, cycles; E14 fault proxy (reply lost after sending and during COMMIT: `outcome_unknown`, not retryable, the row was written once); E15 German message (unit; the server test skips without a `de_DE` locale, TB-025); E16 fresh interpreter; E17..E20 hierarchy (contract I-8); E21..E24 filter (text and JSON output, chains, exception groups, depth 12, SQLAlchemy `[parameters]` with a real `IntegrityError`, preformatted messages, non-database exceptions unchanged). Stdlib-only: `lint-imports` and the allowlist test of TB-019 |
+| TAB-011 | TAB-T-Q01..Q10; byte-identical to Axentra for every test vector and every Axentra migration file | Q01 Axentra's vector; Q02 `tests/golden/axentra_splitter.json`: the 14 shipped migrations, two example migrations and the init script of Axentra 9c4666f, compared as bytes, and `tests/golden/axentra_splitter.py` (Axentra's splitter verbatim) reproduces the file; Q10 also 1 000 Hypothesis scripts identical to the oracle. The documented differences (contract I-9) are tested in both directions, and `test_no_axentra_sql_file_hits_a_difference` is the MIG-AXE evidence |
+| TAB-012 | TAB-T-C01..C08; the password never in `safe_url`, `repr`, error text | C01..C04 URL, conninfo, query parameter, unparseable and never-raises (Hypothesis, also a property that the password never survives); C05..C08 `url_from_env` (file without the trailing newline, symlink, ambiguous, missing, empty, unreadable, directory, FIFO, invalid UTF-8; no value or path in `str`, `repr`, `args` or `details`) |
+
+| DoD point (07 section 6) | TAB-010 | TAB-011 | TAB-012 |
+|---|---|---|---|
+| 1. English; acceptance criteria checked one by one with test IDs | Yes (table above) | Yes | Yes |
+| 2. Required CI jobs green; no new skip without a reason | CI of this pull request; one new conditional skip (E15 server locale, TB-025) | CI | CI |
+| 3. Public API documented, CHANGELOG; security notes | Contract section 1 and I-1..I-8, CHANGELOG, SECURITY.md residual risks | Contract 2.1, I-9, CHANGELOG | Contract 2.3, I-10, I-11, CHANGELOG |
+| 4. No parameter value or secret in new log or error paths | E10, E12, E17, E21..E24 | No error path | C06..C08 |
+| 5. Rollback path | Revert of this pull request (no consumer uses it yet; TAB-038 not tagged) | Same | Same |
+| 6. STATUS.md and TODO.md updated | Yes | Yes | Yes |
+| Review model | **Independent review agent required** (TAB package in `errors`); open, TODO TB-026 | Self-review | Self-review |
+
+Mutation probes (`tests/unit/test_mutation_probes.py`): each of 13 safety rules broken in a copy of the package turns
+its test red (R-NORETRY, `outcome_unknown` after COMMIT, statement timeout, depth 5, server-text stripping, clearing
+`exc_info`, scrubbing wrappers, nested comments, `E'...'` escapes, comment-only statements, conninfo masking, raw `@`
+in a URL password, the regular-file rule); a positive control passes on the unchanged copy. Three new import-linter
+probes for the new bottom layer `tabrion.errors` (contract I-12).
+
 ## G-T1 conditions
 
 The independent G-T1 review (2026-11-08, planning folder `reviews/g-t1-review.md`) passed the API freeze with eight
@@ -316,10 +344,10 @@ Recorded here as the review asks; none blocks M2. Each is picked up by the work 
 
 | Finding | Note | Where it goes |
 |---|---|---|
-| F-09 | "stdlib-only" is a denylist: any other third-party import (for example `pluggy`, which comes with pytest) passes. An AST test should allow only `sys.stdlib_module_names` and the core modules in `errors`, `sql`, `config`, `sqlite`, `check`. `check.py` already has such a test (C-1) | TAB-010..TAB-014 (first implementation PR), TODO TB-019 |
-| F-10 | The root package `tabrion` is in no contract; `from tabrion import Database` inside a core function goes through `__getattr__` to layer B unseen. Extend the AST test of F-09: no `import tabrion` or `from tabrion import` outside `tabrion/__init__.py` | with F-09, TB-019 |
+| F-09 | "stdlib-only" is a denylist: any other third-party import (for example `pluggy`, which comes with pytest) passes. An AST test should allow only `sys.stdlib_module_names` and the core modules in `errors`, `sql`, `config`, `sqlite`, `check`. `check.py` already has such a test (C-1) | Fixed in the M2 lane A pull request: `test_core_imports_only_the_standard_library_and_core_modules` with a negative probe (TB-019 closed) |
+| F-10 | The root package `tabrion` is in no contract; `from tabrion import Database` inside a core function goes through `__getattr__` to layer B unseen. Extend the AST test of F-09: no `import tabrion` or `from tabrion import` outside `tabrion/__init__.py` | Fixed with F-09 (the same test rejects `import tabrion` and `from tabrion import` in the core files) |
 | F-11 | `Statement` and `Params` appear in public layer-B signatures but are not exported from `tabrion` (G-5 rule). Decide: export them as `tabrion.Statement`/`tabrion.Params`, or document them as documentation-only aliases and drop them from `_sa.database.__all__` | TAB-018, TB-020 |
-| F-12 | `DatabaseError.kind` over `classification: Classification \| None`: make `classification` required for `DatabaseError` or return `Kind.UNKNOWN`; plus `args = (code,)` and `__reduce__` for pickling (G-1 notes) | TAB-010 |
+| F-12 | `DatabaseError.kind` over `classification: Classification \| None`: make `classification` required for `DatabaseError` or return `Kind.UNKNOWN`; plus `args = (code,)` and `__reduce__` for pickling (G-1 notes) | Fixed in TAB-010: `Kind.UNKNOWN` without a classification, `args == (code,)`, `__reduce__` (E18, E19) |
 | F-13 | Specification section 10 omitted `Transaction.stream` and the CR-DB modules TAB-CR-1/2 in the 0.2 row | Fixed in the follow-up pull request; the TAB-CR-1/2 modules need a place in the layers contract when they arrive (TB-014, TB-015) |
 | F-14 | `Database` has no `__init__`, so `Database()` builds an unusable object | TAB-018: a private keyword-only constructor or an `__init__` that raises `TypeError` pointing to `from_url`/`from_env`/`from_engine` |
 | F-15 | macOS and Windows run on pull requests only when `sqlite.py` or `tests/sqlite/**` change; `config.py`, `errors.py`, `testing/sqlite.py` and `pyproject.toml` also matter there | TB-021: add them to `platforms.yml` and the manifest's `path_filters` together (`--self-check` keeps them equal) |
@@ -380,6 +408,11 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-18 | TAB-002, TAB-023 | Contract section 0 lists `Result`, `Column` and the 0.2 methods; the stubs had them | Not exported before 0.2; staged in `tabrion._sa._v02`, frozen in `surface.json` with `since: "0.2"` | G-T1 C-6: the 0.1.0 surface must not export a 0.2 name |
 | D-19 | TAB-021 | Doc 04 section 6: `portability_cases() -> list[ProfileCase]` | `list[PortabilityCase]` | G-T1 C-2: a portability case needs a `Database` (both engines), a profile case a path |
 | D-20 | TAB-004 | nodestro-studio design note: post the verdict as a check run (`checks: write`) | A commit status (`statuses: write`) | The G-T1 review (F-06, option b) and the G-T1 follow-up brief ask for a commit status; a check run from the workflow token comes from the same app and is no harder to forge (ADR 0012) |
+| D-21 | TAB-012, QA-16 | Layers contract: `tabrion.errors \| tabrion.sql \| tabrion.config` as one layer of independent modules | `tabrion.errors` is its own bottom layer under `tabrion.sql \| tabrion.config` | `url_from_env` raises `ConfigurationError` (contract 2.3), so `tabrion.config` must import `tabrion.errors`; still six contracts, three new probes (contract I-12) |
+| D-22 | TAB-012 | Codes `config.ambiguous` and `config.missing` | Also `config.unreadable` and `config.not_regular_file` | The contract requires a regular file but names no code for a violation or for an unreadable file (contract I-11) |
+| D-23 | TAB-010 | Tests TAB-T-E01..E20 | E17..E20 assigned to the hierarchy (contract I-8) | Plan document 04 defines only E01..E16 and E21..E24 |
+| D-24 | TAB-011 | Differences from Axentra only for `E'...\'...'` and nested comments | Also dollar tags with digits, `$` inside identifiers, `--` ending at a carriage return, block-comment-only statements (contract I-9) | Each is an input Axentra splits wrongly by PostgreSQL's rules; no Axentra SQL file contains one (golden file) |
+| D-25 | TAB-010 | `outcome_unknown` whenever `kind == CONNECTION` and (`sent` or `during_commit`) | Not for SQLSTATE 53300 | The mapping table makes 53300 retryable without condition; it occurs only while connecting (contract I-2) |
 
 ## Score review
 

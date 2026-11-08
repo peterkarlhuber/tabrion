@@ -10,6 +10,11 @@ This is the English version of planning document 04 (revision 3) and the subject
     `__all__` list of every module against section 0. Points where the stubs had to decide something the plan leaves
     open are listed under [Open points for G-T1](#open-points-for-g-t1).
 
+!!! note "M2 status"
+    `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011) and `tabrion.config` (TAB-012) are implemented; what the
+    implementation settled is listed under [Implementation notes (M2)](#implementation-notes-m2). The other modules
+    are still stubs.
+
 ## Conventions
 
 - Python 3.11 or later and `from __future__ import annotations`. Every returned dataclass is
@@ -1427,3 +1432,23 @@ C-4. The deviation log is D-6..D-12 in [STATUS.md](../program/STATUS.md#deviatio
 | G-8 | `tabrion.postgres.roles` and `tabrion.postgres.locks` | Submodules with the role and lock names; `tabrion.postgres` re-exports them, so both import paths are public; `tabrion.postgres` is the canonical path in the docs and in `surface.json` |
 | G-9 | `Database.health`: section 5.5 prose names `deep=True`, the signature has no `deep` (C-3) | `health(self, *, timeout: float = 5.0, deep: bool = False)`: keyword-only and additive, as doc 04 intends (`quick_check` only on request) |
 | G-10 | `tabrion_postgres_database` has a "parameter `roles`", but a session fixture takes no arguments (C-4) | An overridable session fixture `tabrion_role_setup() -> RoleSetup \| None` (default `RoleSetup()`), which `tabrion_postgres_database` requests; one mechanism only, no `configure()` argument |
+
+## Implementation notes (M2)
+
+Points the implementation had to settle where the text above leaves room. None changes a signature or a name of
+`surface.json`; each is recorded in the deviation log of [STATUS.md](../program/STATUS.md#deviation-log).
+
+| # | Section | Note |
+|---|---|---|
+| I-1 | 1.3 | `classify` walks the chain breadth first along `.orig`, `__cause__` and `__context__` (in that order) and visits at most 5 links. It takes the first error with a SQLSTATE or a SQLite code, then the first driver error (a psycopg error without SQLSTATE, a `sqlite3.Error` without `sqlite_errorname`), then the outermost object. A driver error is recognized by its class's module (`psycopg`, `psycopg2`, `psycopg_pool`) or by `isinstance(..., sqlite3.Error)` |
+| I-2 | 1.3 | `outcome_unknown = kind is CONNECTION and (sent or during_commit)`, with one exception: SQLSTATE 53300 is raised only while a connection is being established, so nothing ran; it is `retryable` without condition, as the mapping table says. Whenever `outcome_unknown` is true, `retryable` is false (R-NORETRY) |
+| I-3 | 1.3 | A psycopg error without SQLSTATE: `OperationalError` (lost or refused connection, "the connection is closed", pool timeout) is CONNECTION; `DataError` is DATA; `PipelineAborted` and everything else is UNKNOWN. SQLAlchemy's `connection_invalidated` makes `connection_usable` false (and an UNKNOWN kind CONNECTION). Additional rows beyond the table, all additive: 57P04 and 57P05 CONNECTION; 25P04 (`transaction_timeout`, PostgreSQL 17) TIMEOUT without a usable connection; 23001 FOREIGN_KEY; classes 53 and 54 RESOURCE; SQLite `SQLITE_PERM` PERMISSION, `SQLITE_NOMEM` RESOURCE, `SQLITE_TOOBIG`, `SQLITE_MISMATCH` and `SQLITE_CONSTRAINT_DATATYPE` DATA. Any other SQLSTATE is UNKNOWN |
+| I-4 | 1.3 | The text of a driver error is read only to tell cases apart (57014 "statement timeout"; SQLite `SQLITE_ERROR` with "no such ..." or "syntax error"; SQLite errors without a code) and never reaches an output. SQLite object names come from "... constraint failed: t.a, t.b" and must be identifiers; a CHECK expression gives no name. Object names that are not printable or longer than 128 characters are dropped |
+| I-5 | 1.3 | `safe_message` gives `"<kind text> (SQLSTATE x \| SQLite code, constraint c, table t, column c, outcome unknown)"`, each part only when present; a non-database exception gives `"database error"` |
+| I-6 | 1.3 | `DbErrorRedactionFilter` follows Axentra's reviewed MIG-AXE-0 filter: it walks the whole chain (not only 5 links) and exception groups, scrubs wrappers that quote a database error, removes `DETAIL:`/`HINT:`/`CONTEXT:`/`QUERY:`/`LINE n:` and `[parameters: ...]` parts from messages formatted before logging, handles mapping arguments, and on an internal error keeps the record with a fixed message and the redacted traceback. After it rewrote `exc_text` it clears `exc_info`, so a formatter that formats `exc_info` itself (JSON formatters) cannot print the original; the exception object stays unchanged |
+| I-7 | 1.4 | `TabrionError`: `args == (code,)`; `str` is `"<code> (k=v, ...): <safe message>"` (details and classification only when present), `repr` is `"Class('code')"`; `statement` is cut to 200 characters and never part of `str`/`repr`; `details` is a read-only copy; `__reduce__` pickles every attribute. `DatabaseError.kind` is `Kind.UNKNOWN` without a classification (F-12). The internal table `tabrion.errors._ERROR_CLASS` maps every `Kind` to its subclass for TAB-018 (RESOURCE to `ConnectionFailed`, as its docstring says) |
+| I-8 | 1.4 | Tests TAB-T-E17..E20 (the plan names E01..E20 but defines only E01..E16): E17 `str`/`repr`/`details` without values, E18 pickling and copying, E19 `DatabaseError.kind`, E20 the kind-to-class table |
+| I-9 | 2.1 | Differences from Axentra's splitter, all inputs Axentra splits wrongly by PostgreSQL's rules, besides the two named above: a dollar-quote tag may contain digits (`$a1$`) and a `$` inside an identifier (`a$b$`) starts no tag; a `--` comment also ends at a carriage return; a statement of nothing but block comments is dropped. An unterminated block comment counts as content, so the server reports it instead of the statement vanishing. Not handled, as in Axentra: parentheses (`CREATE RULE ... DO (...; ...)`) and `BEGIN ATOMIC` bodies. Evidence: `tests/golden/axentra_splitter.json` (every SQL file of Axentra 9c4666f, byte-identical) |
+| I-10 | 2.3 | `safe_url`: in URL form the user information ends at the last `@` before the query, so a raw `@`, `/`, `#` or `:` in a password is hidden; a raw `?` in a password makes the input unparseable rather than half masked. Keyword conninfo follows libpq's quoting and backslash rules; `password` and `sslpassword` are masked, in either case, as keywords and as query parameters. An empty string stays empty |
+| I-11 | 2.3 | `url_from_env`: an empty variable and an empty file count as not set. Two codes beyond the contract: `config.unreadable` (the file is missing, unreadable or not UTF-8) and `config.not_regular_file` (a directory, FIFO or device; opened without blocking). The details name the variable (`{"name": ...}`), never its value or the path |
+| I-12 | `pyproject.toml` | `tabrion.config` raises `ConfigurationError`, so it imports `tabrion.errors`: the layers contract now has `tabrion.errors` as its own bottom layer under `tabrion.sql \| tabrion.config` (they stay independent of each other); three new mutation probes |
