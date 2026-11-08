@@ -10,10 +10,11 @@ in a schema ``t_<hex>`` of its own (the ``search_path`` of the profile), dropped
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+import threading
 from typing import Any
 
 import pytest
@@ -26,7 +27,10 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from parts import downgrade, metadata, open_database, require_current, status, upgrade
+import parts.catalog as catalog
+from parts.catalog import Component
 from parts.db import SCRIPT_LOCATION
+from parts.errors import AlreadyExists, CycleRefused, InUse, InvalidTransition, NotFound, StaleVersion
 import parts.schema as schema
 import sqlalchemy as sa
 
@@ -256,3 +260,169 @@ def test_alembic_command_line_configuration(tmp_path: Path) -> None:
     command.upgrade(config, "head")
     with open_database(url) as database:
         assert require_current(database).is_current
+
+
+# --- RA-A-2: the catalog functions, on both engines --------------------------------------------------------------
+
+
+@pytest.fixture
+def catalog_db(db: Database) -> Database:
+    upgrade(db)
+    catalog.create_material(db, "STEEL", "Steel")
+    return db
+
+
+def test_crud(catalog_db: Database) -> None:
+    db = catalog_db
+    created = catalog.create_part(db, "P-100", "Bracket", "STEEL")
+    assert (created.status, created.version, created.material_code) == ("draft", 1, "STEEL")
+    assert created.created_at.tzinfo is not None
+    with pytest.raises(AlreadyExists):
+        catalog.create_part(db, "P-100", "Again", "STEEL")
+    with pytest.raises(NotFound):
+        catalog.create_part(db, "P-101", "No material", "WOOD")
+    with pytest.raises(NotFound):
+        catalog.get_part(db, "P-999")
+    assert catalog.rename_part(db, "P-100", "Angle bracket", expected_version=1) == 2
+    assert catalog.get_part(db, "P-100").name == "Angle bracket"
+    with pytest.raises(StaleVersion):
+        catalog.rename_part(db, "P-100", "Lost", expected_version=1)
+    with pytest.raises(NotFound):
+        catalog.rename_part(db, "P-999", "x", expected_version=1)
+    catalog.create_part(db, "P-050", "Plate", "STEEL")
+    assert [p.part_number for p in catalog.list_parts(db)] == ["P-050", "P-100"]
+    with pytest.raises(InUse):
+        catalog.delete_material(db, "STEEL")
+    with pytest.raises(StaleVersion):
+        catalog.delete_part(db, "P-100", expected_version=1)
+    catalog.delete_part(db, "P-100", expected_version=2)
+    assert [p.part_number for p in catalog.list_parts(db)] == ["P-050"]
+
+
+def test_status_life_cycle(catalog_db: Database) -> None:
+    db = catalog_db
+    catalog.create_part(db, "P-1", "Bolt", "STEEL")
+    version = 1
+    for wanted in ("released", "blocked", "released"):
+        version = catalog.change_status(db, "P-1", wanted, expected_version=version)
+    assert catalog.list_parts(db, status="released")[0].version == version == 4
+    with pytest.raises(InvalidTransition):
+        catalog.change_status(db, "P-1", "draft", expected_version=version)
+    with pytest.raises(StaleVersion):
+        catalog.change_status(db, "P-1", "obsolete", expected_version=version - 1)
+    version = catalog.change_status(db, "P-1", "obsolete", expected_version=version)
+    for wanted in schema.STATUSES:
+        with pytest.raises(InvalidTransition):
+            catalog.change_status(db, "P-1", wanted, expected_version=version)  # obsolete is final
+    with pytest.raises(ValueError, match="unknown status"):
+        catalog.change_status(db, "P-1", "archived", expected_version=version)
+    catalog.create_part(db, "P-2", "Nut", "STEEL")
+    with pytest.raises(InvalidTransition):
+        catalog.change_status(db, "P-2", "blocked", expected_version=1)  # a draft is never blocked
+    assert catalog.list_parts(db, status="draft")[0].part_number == "P-2"
+
+
+def test_properties_are_exact(catalog_db: Database) -> None:
+    db = catalog_db
+    catalog.create_part(db, "P-1", "Bolt", "STEEL")
+    catalog.set_property(db, "P-1", "mass", Decimal("0.100001"), "kg")
+    catalog.set_property(db, "P-1", "length", Decimal("12.5"), "mm")
+    catalog.set_property(db, "P-1", "mass", Decimal("0.100002"), "kg")  # replaced
+    assert catalog.properties(db, "P-1") == {
+        "length": (Decimal("12.5"), "mm"),
+        "mass": (Decimal("0.100002"), "kg"),
+    }
+
+
+def test_relations_and_bill_of_materials(catalog_db: Database) -> None:
+    db = catalog_db
+    for number in ("A", "B", "C", "D"):
+        catalog.create_part(db, number, f"Part {number}", "STEEL")
+    catalog.add_component(db, "A", "B", Decimal(2))
+    catalog.add_component(db, "A", "C", Decimal(3))
+    catalog.add_component(db, "B", "C", Decimal("0.5"))
+    catalog.add_component(db, "C", "D", Decimal(4))
+    assert catalog.components(db, "A") == [Component("B", Decimal(2)), Component("C", Decimal(3))]
+    # C: 3 directly plus 2 * 0.5 through B = 4; D: 4 * 4 = 16, at depth 2 (A -> C -> D) and 3 (A -> B -> C -> D).
+    assert catalog.bill_of_materials(db, "A") == [
+        Component("B", Decimal(2), 1),
+        Component("C", Decimal("4.0"), 1),
+        Component("D", Decimal("16.0"), 2),
+    ]
+    assert catalog.where_used(db, "D") == ["A", "B", "C"]
+    assert catalog.where_used(db, "A") == []
+    with pytest.raises(CycleRefused):
+        catalog.add_component(db, "D", "A", Decimal(1))  # A -> C -> D -> A
+    with pytest.raises(CycleRefused):
+        catalog.add_component(db, "B", "B", Decimal(1))
+    with pytest.raises(AlreadyExists):
+        catalog.add_component(db, "A", "B", Decimal(1))
+    with pytest.raises(InUse):
+        catalog.delete_part(db, "D", expected_version=1)  # a component of C
+    catalog.delete_part(db, "A", expected_version=1)  # an assembly: its component rows go with it
+    assert catalog.where_used(db, "B") == []
+    assert catalog.where_used(db, "D") == ["B", "C"]
+
+
+def _counter_threads(db: Database, step: Callable[[], None], workers: int = 5) -> None:
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            step()
+        except BaseException as exc:  # reported below, so a failing thread fails the test
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(workers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    assert not errors, errors
+    assert not any(thread.is_alive() for thread in threads)
+
+
+def test_lost_update_is_impossible(catalog_db: Database) -> None:
+    """MW-3 (planning document 09 section 7): five concurrent read-then-write changes of one part, all reading
+    before any writes. With the optimistic lock four of them get ``StaleVersion`` and retry: the end value is 5 and
+    the version 6, with no lock error, on both engines."""
+    db = catalog_db
+    catalog.create_part(db, "P-1", "0", "STEEL")
+    barrier = threading.Barrier(5)
+    conflicts: list[int] = []
+
+    def increment() -> None:
+        first = True
+        while True:
+            current = catalog.get_part(db, "P-1")
+            if first:
+                barrier.wait(timeout=30)  # everyone has read the same version
+                first = False
+            try:
+                catalog.rename_part(db, "P-1", str(int(current.name) + 1), expected_version=current.version)
+                return
+            except StaleVersion:
+                conflicts.append(1)
+
+    _counter_threads(db, increment)
+    final = catalog.get_part(db, "P-1")
+    assert (final.name, final.version) == ("5", 6)
+    assert len(conflicts) >= 4
+
+
+def test_lost_update_without_the_version_check(catalog_db: Database) -> None:
+    """The contrast: the same five changes without the version check lose four of them (the end value is 1)."""
+    db = catalog_db
+    catalog.create_part(db, "P-1", "0", "STEEL")
+    barrier = threading.Barrier(5)
+
+    def increment_blindly() -> None:
+        current = catalog.get_part(db, "P-1")
+        barrier.wait(timeout=30)
+        with db.transaction() as tx:
+            tx.connection.execute(
+                sa.update(schema.part).where(schema.part.c.part_number == "P-1").values(name=str(int(current.name) + 1))
+            )
+
+    _counter_threads(db, increment_blindly)
+    assert catalog.get_part(db, "P-1").name == "1"

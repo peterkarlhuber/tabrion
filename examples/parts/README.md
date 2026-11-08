@@ -2,8 +2,8 @@
 
 Reference application A, part 1 (TABRION RA-A-1). This is a parts catalog that runs the same way on SQLite and on
 PostgreSQL. It uses layer B (`tabrion.Database`) and `tabrion.migrations`; there is one schema and one set of Alembic
-migrations, and `require_current` is the start-up gate. RA-A-2 adds the functions (CRUD, status changes with an
-optimistic lock, relation queries).
+migrations, and `require_current` is the start-up gate. `parts.catalog` (RA-A-2) adds the functions: CRUD, status
+changes with an optimistic lock and relation queries.
 
 ## Run it
 
@@ -24,12 +24,40 @@ The Alembic command line works too; it takes the URL from `sqlalchemy.url` in `a
 $ alembic -c examples/parts/alembic.ini upgrade head
 ```
 
+## The catalog functions (RA-A-2)
+
+`parts.catalog` takes the application's `Database`; each function is one Tabrion transaction (`read()` for queries,
+`transaction()` for changes), and the same code runs on both engines:
+
+| Function | What it does |
+|---|---|
+| `create_material`, `delete_material` | a material; deleting one in use raises `InUse` |
+| `create_part`, `get_part`, `list_parts(status=...)` | a part starts as `draft` with version 1 |
+| `rename_part`, `change_status`, `delete_part` | each needs `expected_version`, the version the caller read |
+| `set_property`, `properties` | exact `Decimal` values with their unit |
+| `add_component`, `components`, `bill_of_materials`, `where_used` | the relations; a cycle raises `CycleRefused` |
+
+**Optimistic lock.** A change runs `UPDATE part SET ..., version = version + 1 WHERE part_number = ? AND
+version = ?`. When no row changes, another writer was first and the call raises `StaleVersion`: read again and
+retry. Nothing is held between the read and the write, so there is no lost update.
+
+**Life cycle** (`catalog.TRANSITIONS`): `draft` goes to `released` or `obsolete`; `released` to `blocked` or
+`obsolete`; `blocked` back to `released` or to `obsolete`; `obsolete` is final. Any other change raises
+`InvalidTransition`.
+
+**Errors** are the application's own (`parts.errors`), with fixed texts. A Tabrion `IntegrityViolation` becomes one
+of them by its `Kind` (`UNIQUE` → `AlreadyExists`, `FOREIGN_KEY` → `InUse`), raised outside the `except` block, so
+no driver message (which may quote a value) is chained.
+
+**Bill of materials.** The recursive queries (`WITH RECURSIVE`) are the same SQL on both engines. The quantities
+are multiplied along each path and summed over the paths in Python, with exact `Decimal`s.
+
 ## The schema
 
 | Table | Columns | Rules |
 |---|---|---|
 | `material` | `id`, `code`, `name`, `created_at` | `code` unique |
-| `part` | `id`, `part_number`, `name`, `material_id`, `status`, `version`, `created_at`, `updated_at` | `part_number` unique; `status` one of `draft`, `released`, `blocked`, `obsolete` (default `draft`); `version` starts at 1, for the optimistic lock of RA-A-2; a material in use cannot be deleted |
+| `part` | `id`, `part_number`, `name`, `material_id`, `status`, `version`, `created_at`, `updated_at` | `part_number` unique; `status` one of `draft`, `released`, `blocked`, `obsolete` (default `draft`); `version` starts at 1, for the optimistic lock of RA-A-2; a material in use cannot be deleted (`NO ACTION`, see below) |
 | `property` | `id`, `part_id`, `key`, `value`, `unit` | one value per part and key; deleted with its part |
 | `part_relation` | `assembly_id`, `component_id`, `quantity` | an assembly and its components; no part in itself; `quantity > 0`; a part used as a component cannot be deleted |
 
@@ -43,7 +71,9 @@ The portable mappings follow specification section 6 and the cases TAB-T-D01..D0
 | Text | `str` | `VARCHAR` plus a `CHECK` on `length()` | `varchar(n)` plus the same `CHECK` | `schema.py` |
 | References | | foreign keys, enforced (`foreign_keys=ON` in the profile) | foreign keys | `schema.py` |
 
-Every constraint and index has a name of its own, so both engines carry the same names. Do arithmetic on decimals
+Every constraint and index has a name of its own, so both engines carry the same names. References that must
+block a delete use the default `NO ACTION`, not `RESTRICT`: SQLite reports a `RESTRICT` violation as
+`SQLITE_CONSTRAINT_TRIGGER`, which Tabrion does not classify as a foreign key yet (TODO TB-110). Do arithmetic on decimals
 in Python, not in SQL: SQLite would compute with text, and its result type differs.
 
 ## Tests
@@ -60,7 +90,11 @@ cover:
 - `downgrade base` and a second `upgrade`;
 - exact round trips (`Decimal`, UTC timestamps, the server defaults) and the constraints (status, length, version,
   relation rules, foreign key) on both engines;
-- the `alembic.ini` command line path through `env.py`.
+- the `alembic.ini` command line path through `env.py`;
+- RA-A-2: CRUD, the life cycle, stale versions, exact properties, the relations and the bill of materials, and the
+  **lost-update test**: five threads read the same version and then write; with the optimistic lock four get
+  `StaleVersion` and retry, so the counter ends at 5 (version 6) with no lock error. Without the version check the
+  same five writes end at 1.
 
 ## Measurement notes for RA-EVAL (planning document 09 section 7)
 
@@ -68,4 +102,7 @@ cover:
   (`schema.py`, the migration) is domain code in both variants.
 - **MW-8:** the application code switches engines by its URL only (`open_database("sqlite:///...")` or
   `open_database("postgresql://...")`); the tests run unchanged on both.
-- MW-2, MW-3 and MW-4 follow with the functions of RA-A-2; MW-5 is measured from this README.
+- **MW-3:** `test_lost_update_is_impossible` (5 / 0 on both engines); `test_lost_update_without_the_version_check`
+  shows what the baseline must prevent itself.
+- MW-1 also counts `_write` in `parts/catalog.py` (the error mapping); the rest of `catalog.py` is domain code.
+- MW-2 and MW-4 follow with RA-A-3 and RA-EVAL; MW-5 is measured from this README.
