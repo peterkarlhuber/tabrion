@@ -52,12 +52,32 @@ report exists. The evaluation runs with `CI_OK_ENFORCE=1`. Branch protection on 
 (owner action O-1). `ci_ok.py` stays byte-identical to the canonical copy in nodestro-studio; the status script is the
 Tabrion addition.
 
-Residual risk: a commit status can be posted by any workflow with `statuses: write`, so a pull request could add such
-a workflow and forge `ci-ok`. The nodestro-studio design note prefers a check run (`checks: write`) for that reason;
-a check run created with the workflow token belongs to the GitHub Actions app as well, so it does not close this path
-either. Countermeasures: a unit test fails when any workflow other than `ci-ok.yml` requests `statuses: write`;
-`CODEOWNERS` for `/.github/**` with code-owner review (owner action O-1); and every pull request in this repository
-is reviewed by the owner before the merge.
+**Workflow-change gate** (Studio CI review F-03). The mandatory jobs run from the pull request's own workflow files,
+so a same-repository pull request could weaken them (for example a test step that cannot fail), or add a workflow
+with `statuses: write` that forges `ci-ok`. Therefore `ci_ok_status.py` posts `failure` for every pull request that
+changes `.github/workflows/**` or `.github/scripts/**`, with the message "needs label `workflow-change-reviewed`",
+until that label is set. Rules:
+
+- Only the owner, or an independent review (a reviewer who did not write the change), sets
+  `workflow-change-reviewed`, and only after reading the workflow and script diff. The author of the change never
+  sets it.
+- A label does not trigger `workflow_run`; after setting it, re-run any job of the pull request's CI run so that ci-ok
+  evaluates again.
+- A pull request whose number cannot be determined (a fork run without a pull request list) fails closed.
+- The gate takes effect once it is on `master`. The pull request that introduces it is judged by the previous gate;
+  every later workflow-changing pull request needs the label.
+
+The status post is retried with backoff (2, 4, 8, 16 s), and the job fails loudly when it never succeeds (F-11), so
+a missing status is visible and the required check stays "expected", never green.
+
+`CODEOWNERS` for `/.github/**` with "Require review from Code Owners" is **recommended, not required**: with a single
+owner it would block every workflow change that the owner authors. The label is the required control.
+
+Residual risk: a commit status can be posted by any workflow with `statuses: write`. The nodestro-studio design note
+prefers a check run (`checks: write`); a check run created with the workflow token belongs to the GitHub Actions app
+as well, so it does not close this path either. The workflow-change gate closes it for this repository's own pull
+requests (adding such a workflow is a workflow change), and a unit test fails when any workflow other than
+`ci-ok.yml` requests `statuses: write`.
 
 ## Rationale
 

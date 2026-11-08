@@ -45,6 +45,68 @@ class CombinedStateTest(unittest.TestCase):
         self.assertLessEqual(len(cs.combined_state(report)[1]), cs.DESCRIPTION_MAX)
 
 
+PR_EVENT = {"workflow_run": {"event": "pull_request", "head_sha": SHA, "pull_requests": [{"number": 2}]}}
+
+
+def fake_api(files: list[str], labels: tuple[str, ...] | list[str] = ()) -> cs.Getter:
+    def get(path: str) -> object:
+        if path.startswith("/repos/owner/repo/pulls/2/files"):
+            return [{"filename": f} for f in files] if path.endswith("page=1") else []
+        if path == "/repos/owner/repo/pulls/2":
+            return {"labels": [{"name": name} for name in labels]}
+        raise AssertionError(path)
+
+    return get
+
+
+class WorkflowGateTest(unittest.TestCase):
+    def test_no_gated_change_passes(self) -> None:
+        self.assertIsNone(cs.workflow_gate("owner/repo", [2], fake_api(["src/tabrion/sql.py"])))
+
+    def test_workflow_change_without_label_fails(self) -> None:
+        for path in (".github/workflows/ci.yml", ".github/workflows/new.yml", ".github/scripts/ci_ok.py"):
+            gate = cs.workflow_gate("owner/repo", [2], fake_api(["README.md", path]))
+            self.assertIsNotNone(gate)
+            assert gate is not None
+            self.assertEqual(gate[0], "failure")
+            self.assertIn(cs.REVIEWED_LABEL, gate[1])
+
+    def test_label_lets_it_pass(self) -> None:
+        api = fake_api([".github/workflows/ci.yml"], [cs.REVIEWED_LABEL])
+        self.assertIsNone(cs.workflow_gate("owner/repo", [2], api))
+
+    def test_other_labels_do_not_count(self) -> None:
+        api = fake_api([".github/workflows/ci.yml"], ["reviewed", "workflow-change"])
+        self.assertIsNotNone(cs.workflow_gate("owner/repo", [2], api))
+
+    def test_unknown_pull_request_fails_closed(self) -> None:
+        gate = cs.workflow_gate("owner/repo", [], fake_api([]))
+        self.assertIsNotNone(gate)
+        assert gate is not None
+        self.assertEqual(gate[0], "failure")
+
+
+class RetryTest(unittest.TestCase):
+    def test_retries_then_succeeds(self) -> None:
+        calls: list[int] = []
+        slept: list[float] = []
+
+        def post() -> int:
+            calls.append(1)
+            if len(calls) < 3:
+                raise OSError("connection reset")
+            return 201
+
+        self.assertEqual(cs.post_with_retry(post, slept.append), 201)
+        self.assertEqual(slept, [2, 4])
+
+    def test_never_posted_raises(self) -> None:
+        slept: list[float] = []
+        with self.assertRaises(RuntimeError):
+            cs.post_with_retry(lambda: 500, slept.append)
+        self.assertEqual(slept, list(cs.RETRY_DELAYS))
+
+
 class MainTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -69,30 +131,57 @@ class MainTest(unittest.TestCase):
             "GH_TOKEN": "t",
         }
 
+    def _main(
+        self,
+        report: str,
+        event: dict,
+        files: tuple[str, ...] | list[str] = (),
+        labels: tuple[str, ...] | list[str] = (),
+    ) -> int:
+        return cs.main(
+            ["--report", report], self._env(event), self._poster, fake_api(list(files), labels), lambda _: None
+        )
+
     def test_posts_on_the_head_sha(self) -> None:
-        env = self._env({"workflow_run": {"event": "pull_request", "head_sha": SHA}})
         report = self._file("r.json", [{"target": "PR #2", "verdict": "OK"}])
-        self.assertEqual(cs.main(["--report", report], env, self._poster), 0)
+        self.assertEqual(self._main(report, PR_EVENT, ["src/tabrion/sql.py"]), 0)
         ((repo, sha, body),) = self.posted
         self.assertEqual((repo, sha), ("owner/repo", SHA))
         self.assertEqual((body["state"], body["context"]), ("success", "ci-ok"))
         self.assertEqual(body["target_url"], "https://github.com/owner/repo/actions/runs/7")
 
+    def test_workflow_change_turns_ok_into_failure(self) -> None:
+        report = self._file("r.json", [{"target": "PR #2", "verdict": "OK"}])
+        self._main(report, PR_EVENT, [".github/workflows/ci.yml"])
+        body = self.posted[0][2]
+        self.assertEqual(body["state"], "failure")
+        self.assertIn(cs.REVIEWED_LABEL, body["description"])
+
+    def test_reviewed_workflow_change_is_ok(self) -> None:
+        report = self._file("r.json", [{"target": "PR #2", "verdict": "OK"}])
+        self._main(report, PR_EVENT, [".github/workflows/ci.yml"], [cs.REVIEWED_LABEL])
+        self.assertEqual(self.posted[0][2]["state"], "success")
+
     def test_missing_report_posts_an_error(self) -> None:
-        env = self._env({"workflow_run": {"event": "pull_request", "head_sha": SHA}})
-        cs.main(["--report", os.path.join(self.tmp.name, "absent.json")], env, self._poster)
+        self._main(os.path.join(self.tmp.name, "absent.json"), PR_EVENT)
         self.assertEqual(self.posted[0][2]["state"], "error")
 
     def test_push_runs_post_nothing(self) -> None:
-        env = self._env({"workflow_run": {"event": "push", "head_sha": SHA}})
         report = self._file("r.json", [{"verdict": "OK"}])
-        self.assertEqual(cs.main(["--report", report], env, self._poster), 0)
+        self.assertEqual(self._main(report, {"workflow_run": {"event": "push", "head_sha": SHA}}), 0)
         self.assertEqual(self.posted, [])
 
     def test_malformed_sha_posts_nothing(self) -> None:
-        env = self._env({"workflow_run": {"event": "pull_request", "head_sha": "../x"}})
-        cs.main(["--report", self._file("r.json", [{"verdict": "OK"}])], env, self._poster)
+        self._main(
+            self._file("r.json", [{"verdict": "OK"}]), {"workflow_run": {"event": "pull_request", "head_sha": "../x"}}
+        )
         self.assertEqual(self.posted, [])
+
+    def test_failed_post_fails_the_job(self) -> None:
+        report = self._file("r.json", [{"verdict": "OK"}])
+        env = self._env(PR_EVENT)
+        result = cs.main(["--report", report], env, lambda *a: 503, fake_api([]), lambda _: None)
+        self.assertEqual(result, 1)
 
 
 class WorkflowTest(unittest.TestCase):
@@ -110,6 +199,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("default/.github/scripts/ci_ok_status.py", self.text)
         self.assertNotIn("pull_request_target", self.text)
         self.assertNotIn("pull-requests: write", self.text)
+        self.assertIn("pull-requests: read", self.text)
 
     def test_no_other_workflow_may_post_statuses(self) -> None:
         workflows = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workflows")
