@@ -381,8 +381,9 @@ def test_t110_layer_b_session_settings_profile(admin_url: str, s: str, canary: s
 # --- Coverage ---------------------------------------------------------------------------------------------------------
 
 
-def test_t110_every_kind_on_both_layers(request: pytest.FixtureRequest) -> None:
-    """Defined last, so it runs last: every kind was raised for real on layer A and on layer B (QA-2)."""
+def test_t110_every_kind_on_both_layers(request: pytest.FixtureRequest, tabrion_postgres_url: str) -> None:
+    """Defined last, so it runs last: every kind was raised for real on layer A and on layer B (QA-2). Asks for the
+    server fixture, so it skips with the other tests when no server is configured (the job "security tests")."""
     if not module_fully_selected(request):
         pytest.skip("only meaningful when every test of this file runs")
     assert set(Kind) <= COVERED_A, f"layer A never raised {sorted(set(Kind) - COVERED_A)}"
