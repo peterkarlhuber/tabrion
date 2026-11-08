@@ -14,9 +14,9 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 1 |
-| P1 High | 11 |
-| P2 Medium | 6 |
-| P3 Low | 10 |
+| P1 High | 12 |
+| P2 Medium | 7 |
+| P3 Low | 11 |
 | P4 Optional | 0 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -90,7 +90,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-006 · Layer A implementation (TABRION TAB-010..TAB-017, TAB-030, TAB-031)
 
-- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-012 in the M2 lane A pull request) · **Refs:**
+- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-012 in the M2 lane A pull request; TAB-015 and
+  TAB-016 in the M2 lane C pull request) · **Refs:**
   TABRION TAB-010, TAB-011, TAB-012, TAB-013, TAB-014, TAB-015, TAB-016, TAB-017, TAB-030, TAB-031
 - **What:** replace the stubs in order of the critical path: `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011),
   `tabrion.config` (TAB-012), `tabrion.sqlite` connection and profile (TAB-013) then transactions, `migrate`,
@@ -101,7 +102,10 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   is TB-026). TAB-013 and TAB-015 can start once they are merged. `test_stubs_raise_not_implemented` shrinks module
   by module as stubs are replaced (`errors`, `sql`, `config` have left it); every change to a signature also runs
   `scripts/api_surface.py --write` and updates the contract. TAB-017 follows the dispatch of C-1 (contract section
-  7). Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
+  7). TAB-015 and TAB-016 are in review (contract I-14..I-19, [M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence),
+  independent review TB-032); `IMPLEMENTED` in `tests/unit/test_public_api.py` lists the functions of the partly
+  implemented `tabrion.postgres`. TAB-030 (locks) follows in the next lane C pull request, then TAB-031 on
+  `role_info`/`inspect_role`. Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
   `sent=False` for checkout errors.
 
 ### TB-007 · Layer B, migrations, testing (TABRION TAB-018..TAB-021, TAB-032, TAB-034)
@@ -304,6 +308,37 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   analog (a lost COMMIT classified by the `__context__` error being handled) and must be checked.
 - **Next step:** an Axentra pull request ports the collection and escaped-form scrubbing of contract I-6 and the
   H-2 tests, checks its chain rule against I-13, or replaces the filter by `tabrion.errors` with MIG-AXE-3.
+
+### TB-032 · Independent review of TAB-015 and TAB-016 (planning document 07 section 6)
+
+- **Priority:** P1 High · **Status:** Needs external review · **Refs:** TABRION TAB-015, TAB-016, T-NOTX, R-SET,
+  TM-07, TM-08, SR-02, SR-10
+- **What:** the review model requires an independent review agent for TAB packages in `postgres` (roles, locks);
+  `configure` and `session_configurator` sit next to R-SET (settings on shared pools, M10). The M2 lane C pull request
+  carries the self-review ([M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence)).
+- **Next step:** review agent with fresh context on the pull request head; result "accepted" or "not accepted" with
+  IDs; fixes and a delta re-review in the same pull request.
+
+### TB-033 · `tabrion.testing.faults` is not in the frozen API surface (TABRION TAB-034)
+
+- **Priority:** P2 Medium · **Status:** Needs decision · **Refs:** TABRION TAB-034, QA-3, RA-B-3, MIG-T-AXE-8,
+  `docs/api/surface.json`
+- **What:** planning documents 07 (K7: `tabrion.testing.faults.DropReplyProxy`) and 09 (TAB-034) make the
+  fault-injection proxy a public module, and RA-B-3 and the Axentra test MIG-T-AXE-8 would use it; planning document 04
+  and the frozen contract place it in `tests/support/` and `surface.json` has no `tabrion.testing.faults`. A new public
+  module is an API addition after G-T1.
+- **Next step:** owner decides before TAB-034: (a) a contract addendum with `surface.json` entries (`since: "0.1"`,
+  stability X) and a short G-T1 style review, or (b) an internal helper under `tests/support/` and a public module
+  later.
+
+### TB-034 · `ping` has no client-side deadline (TABRION TAB-015)
+
+- **Priority:** P3 Low · **Status:** Accepted risk · **Refs:** TABRION TAB-015, contract I-14, SECURITY.md
+- **What:** `ping` bounds the server's work (`SET LOCAL statement_timeout`) and a pool checkout, but a network that
+  stops answering mid-statement blocks until TCP gives up, because psycopg has no client-side statement deadline.
+- **Reason for accepting:** the contract defines the limit on the server; callers that need a hard deadline run the
+  check in a thread (as Nodestro's `DatabaseHealth` does) and set TCP keepalives or `tcp_user_timeout`. Revisit with
+  the delay mode of TAB-034.
 
 ### TB-024 · Circular import of the staged 0.2 mixins (G-T1 condition check CC-2)
 

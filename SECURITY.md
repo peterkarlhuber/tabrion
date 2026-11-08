@@ -64,4 +64,11 @@ Accepted residual risks (documented, not vulnerabilities):
   or property propagates.
 - `safe_url` cannot tell where a password with both a raw `/` and a raw `?` ends; such a URL gives
   `"<unparseable url>"`. Percent-encode special characters in URL passwords.
+- `tabrion.postgres.ping` bounds the server's work (`SET LOCAL statement_timeout`) and the pool checkout, not a
+  network that stops answering in the middle of a statement; set TCP keepalives or `tcp_user_timeout` on the
+  connection, or run the check in a thread, when a hard deadline matters (TODO TB-034).
+- `tabrion.postgres` qualifies catalog functions and relations with `pg_catalog`, but not operators: a role that can
+  create objects in a schema that its `search_path` names *before* `pg_catalog` can still define operators there.
+  PostgreSQL searches `pg_catalog` first unless the path names it explicitly later; do not do that for roles that run
+  Tabrion's checks.
 - Vulnerabilities in SQLite, PostgreSQL, psycopg, SQLAlchemy or Alembic belong to their maintainers.

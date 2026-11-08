@@ -32,6 +32,25 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   Hypothesis properties, mutation probes for the safety rules, and an allowlist check that the core imports only the
   standard library (G-T1 F-09, F-10).
 
+- `tabrion.postgres` session helpers (TAB-015): `configure` applies `SessionSettings` in one
+  `SELECT set_config(..., false)` round trip from a fixed allowlist (R-SET) and never commits;
+  `session_configurator` validates once and commits only the transaction it opened (a `psycopg_pool` callback);
+  `SessionSettings.unchanged()`; `transaction_timeout` from PostgreSQL 17. `ping` checks a connection or a pool under
+  `SET LOCAL statement_timeout` in a transaction or savepoint of its own and never raises for database errors;
+  `diagnose` reads server, session, SSL and role facts (fields without the read privilege are `None`);
+  `extension_status` reports `active`, `other_schema`, `installable` or `unavailable` with the fixing command, with
+  Nodestro's semantics for `probe_type`.
+- `tabrion.postgres` reading role functions (TAB-016): `role_info` with `owner_scope="schema"` (Nodestro) or
+  `"rls"` (Axentra), `check_role` raising `RoleUnsafe` with reason codes, `inspect_role` returning a `RoleReport`
+  whose `as_dict()` has the keys of both existing formats; `RoleMissing` without the role name.
+- Every `tabrion.postgres` function reads through its own `tuple_row` cursor, leaves the transaction state, row
+  factory and `autocommit` of a handed-in connection unchanged (T-NOTX) and names catalog functions with
+  `pg_catalog`, so a hostile `search_path` cannot replace them.
+- Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
+  results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
+  transaction state, and carry 15 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  pool tests.
+
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`
   and `all`; ruff, mypy `--strict` and import-linter contracts (layers, stdlib-only core, no Levuvo platform).
 - The complete public API of 0.1 and 0.2 as typed stubs (`__all__` in every module, every function raises

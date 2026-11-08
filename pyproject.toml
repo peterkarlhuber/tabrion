@@ -39,6 +39,8 @@ dev = [
     "tabrion[all]",
     # The binary wheels bring libpq, so the PostgreSQL tests run on runners without it.
     "psycopg[binary]>=3.2,<4",
+    # A real pool for the session_configurator and ping tests (TAB-015); Tabrion itself never imports it.
+    "psycopg-pool>=3.2,<4",
     "pytest-cov>=5",
     "hypothesis>=6",
     "ruff>=0.8",

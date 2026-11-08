@@ -1,0 +1,156 @@
+"""Mutation probes for TAB-015 and TAB-016 (planning document 07 section 7), against a real PostgreSQL.
+
+Like ``tests/unit/test_mutation_probes.py``: a copy of the package with one rule broken must turn the named test
+red (exit code 1: a failure, not a skip, since ``TABRION_TEST_POSTGRES`` reaches the subprocess). Each anchor must
+exist exactly once, so a refactoring cannot silently disarm a probe.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from tests.unit.test_mutation_probes import _copy, _run
+
+from .conftest import admin_conninfo
+
+pytestmark = [pytest.mark.postgres, pytest.mark.slow]
+
+READERS = "tests/postgres/test_contract_rules.py::test_g01_g02_readers"
+
+PROBES = [
+    # T-NOTX: the implicit transaction a reader opened is rolled back (IDLE stays IDLE).
+    (
+        "postgres/_common.py",
+        "            connection.rollback()\n",
+        "            pass\n",
+        f"{READERS}[superuser-role_info-idle-tuple]",
+    ),
+    # T-NOTX: a caller's running transaction is never rolled back.
+    (
+        "postgres/_common.py",
+        "    own = not connection.autocommit and connection.info.transaction_status == pq.TransactionStatus.IDLE\n",
+        "    own = not connection.autocommit\n",
+        f"{READERS}[superuser-diagnose-intrans-tuple]",
+    ),
+    # Own tuple_row cursor, whatever the connection's row and cursor factories.
+    (
+        "postgres/_common.py",
+        "        with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n",
+        "        with connection.cursor() as cursor:\n",
+        f"{READERS}[superuser-inspect_role-idle-autocommit-dict_row]",
+    ),
+    # configure never commits.
+    (
+        "postgres/__init__.py",
+        "    _apply(connection, _validated(settings))\n",
+        "    _apply(connection, _validated(settings))\n    connection.commit()\n",
+        "tests/postgres/test_session.py::test_p02_configure_never_commits",
+    ),
+    # session_configurator commits the transaction it opened (psycopg_pool needs IDLE).
+    (
+        "postgres/__init__.py",
+        "            connection.commit()\n",
+        "            pass\n",
+        "tests/postgres/test_session.py::test_p02_session_configurator_commits_and_leaves_idle",
+    ),
+    # R-SET: a field outside the allowlist is refused.
+    (
+        "postgres/__init__.py",
+        "        if guc is None:\n",
+        "        if guc is None and False:\n",
+        "tests/postgres/test_session.py::test_g03_allowlist_r_set",
+    ),
+    # search_path is validated before it is sent.
+    (
+        "postgres/__init__.py",
+        "            if type(value) is not str or not _SCHEMA_NAME.fullmatch(value):\n",
+        "            if type(value) is not str:\n",
+        "tests/postgres/test_session.py::test_p04_validation_against_the_server",
+    ),
+    # ping limits its SELECT on the server.
+    (
+        "postgres/__init__.py",
+        '            cur.execute(sql.SQL("SET LOCAL statement_timeout = {}")'
+        ".format(sql.Literal(_timeout_ms(seconds))))\n",
+        "            pass\n",
+        "tests/postgres/test_health.py::test_p08_statement_timeout",
+    ),
+    # Catalog functions are schema-qualified.
+    (
+        "postgres/__init__.py",
+        "_PING_SQL = \"SELECT pg_catalog.current_setting('server_version_num')::int,"
+        ' pg_catalog.pg_is_in_recovery()"\n',
+        "_PING_SQL = \"SELECT pg_catalog.current_setting('server_version_num')::int, pg_is_in_recovery()\"\n",
+        "tests/postgres/test_contract_rules.py::test_catalog_functions_cannot_be_hijacked",
+    ),
+    # diagnose reads pg_stat_ssl only with the privilege.
+    (
+        "postgres/__init__.py",
+        "        if ssl_readable:\n",
+        "        if True:\n",
+        "tests/postgres/test_health.py::test_p11_without_read_privileges",
+    ),
+    # extension_status: installed but not visible is other_schema, not active.
+    (
+        "postgres/__init__.py",
+        "    if installed is not None and visible and (probe_type is None or probe_ok):\n",
+        "    if installed is not None and (probe_type is None or probe_ok):\n",
+        "tests/postgres/test_health.py::test_p14_other_schema",
+    ),
+    # The rls scope counts only tables with row-level security.
+    (
+        "postgres/roles.py",
+        '    + "c.relrowsecurity AND n.nspname = ANY (pg_catalog.current_schemas(false))"\n',
+        '    + "n.nspname = ANY (pg_catalog.current_schemas(false))"\n',
+        "tests/postgres/test_roles.py::test_r04_table_owner_without_rls",
+    ),
+    # allow_superuser implies allow_table_owner (Axentra).
+    (
+        "postgres/roles.py",
+        "    if info.table_owner and not (allow_table_owner or allow_superuser):\n",
+        "    if info.table_owner and not allow_table_owner:\n",
+        "tests/postgres/test_roles.py::test_r07_flags_and_reasons",
+    ),
+    # A bypass_rls role is refused without allow_superuser.
+    (
+        "postgres/roles.py",
+        "        if info.bypass_rls:\n",
+        "        if False:\n",
+        "tests/postgres/test_roles.py::test_r03_bypass_rls",
+    ),
+    # inspect_role reports the tables the role owns.
+    (
+        "postgres/roles.py",
+        "        owned_tables=tuple(str(name) for name, owned in tables if owned),\n",
+        "        owned_tables=(),\n",
+        "tests/postgres/test_roles.py::test_r09_inspect_role_report",
+    ),
+]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _needs_postgres() -> None:
+    admin_conninfo()
+
+
+def test_unmutated_copy_passes(tmp_path: Path) -> None:
+    """Positive control: the probed tests pass on an unchanged copy."""
+    result = _run(_copy(tmp_path), sorted({p[3] for p in PROBES}))
+    assert result.returncode == 0, result.stdout[-3000:]
+
+
+@pytest.mark.parametrize(
+    ("module", "anchor", "replacement", "test"),
+    PROBES,
+    ids=[p[3].split("::")[1].split("[")[0] + f"-{i}" for i, p in enumerate(PROBES)],
+)
+def test_mutation_turns_the_test_red(tmp_path: Path, module: str, anchor: str, replacement: str, test: str) -> None:
+    copy = _copy(tmp_path)
+    target = copy / "tabrion" / module
+    text = target.read_text(encoding="utf-8")
+    assert text.count(anchor) == 1, f"probe anchor not found exactly once in {module}: {anchor!r}"
+    target.write_text(text.replace(anchor, replacement), encoding="utf-8")
+    result = _run(copy, [test])
+    assert result.returncode == 1, f"mutation in {module} went unnoticed by {test}:\n{result.stdout[-3000:]}"
