@@ -4,7 +4,9 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, fourth M2 lane C pull request [#11](https://github.com/peterkarlhuber/tabrion/pull/11) (TAB-020 with the review fixes, DL-1 of #8, TAB-032; branch
+> **Last update:** 2026-11-08, governance simplification by the owner decision of 2026-11-08 11:26Z (Git-pin
+> distribution, optional repository hardening, G-T2 without a trademark check; branch `claude/project-thread-rdo6g3`;
+> [owner actions](#owner-actions), D-67). Before: fourth M2 lane C pull request [#11](https://github.com/peterkarlhuber/tabrion/pull/11) (TAB-020 with the review fixes, DL-1 of #8, TAB-032; branch
 > `claude/project-thread-rdo6g3-pg4`, after #8 merged at `6e833f4`). Before: TAB-038 `v0.1.0a1` preparation (branch `claude/project-thread-rdo6g3-a1`, after #7
 > merged at `c2711b5`). Before: TB-031 port to `tabrion.errors` (branch `claude/project-thread-rdo6g3-errfix`, after
 > #6 merged). Before: second M2 lane C pull request [#6](https://github.com/peterkarlhuber/tabrion/pull/6) (TAB-030, TAB-034, reviews DL-1 and of #6; branch
@@ -31,10 +33,10 @@ the owning thread reports it.
 
 | Milestone | Content | Entry | Exit gate | Status |
 |---|---|---|---|---|
-| M1 | Foundation: repositories, skeleton, API freeze | G-A | G-T1 (TAB-002) | Done: conditional (#1 merged; G-T1 conditions below; GOV-2 and GOV-3 wait for owner actions) |
+| M1 | Foundation: repositories, skeleton, API freeze | G-A | G-T1 (TAB-002) | Done: conditional (#1 merged; G-T1 conditions below; GOV-3 continues in tabrion-studio; branch protection is optional, owner decision of 2026-11-08 11:26Z) |
 | M2 | Tabrion 0.1, internal alpha, reference applications; lane JQ in parallel | G-T1 | G-T2 (TAB-040) | In progress (TAB-010..TAB-012 done, [M2 evidence](#m2-evidence); TAB-013, TAB-014 in review, [lane B evidence](#m2-lane-b-evidence-tab-013-tab-014)) |
 | M3 | Versioning, Axentra security evidence, waves W1 and W2, architecture checks | TAB-040 `v0.1.0` final (RC-8) | G-M per step | Not started |
-| M4 | Tabrion 0.2 (Studio APIs); TAB-CR-1/2 from CR-DB | G-T2 | G-T2 for 0.2 (TAB-042); PyPI only after G-R | Not started |
+| M4 | Tabrion 0.2 (Studio APIs); TAB-CR-1/2 from CR-DB | G-T2 | G-T2 for 0.2 (TAB-042); no PyPI publication planned, one only after G-R | Not started |
 | M5 | Waves W3-W6 | M3 | G-M per step | Not started |
 | M6 | Studio MVP 0.1 | GOV-3, TAB-002 (skeleton), TAB-042 (main part) | G-S1 (STU-016) | Not started |
 | M7 | Studio 1.0 without the data editor | G-S1 | G-R for a public release (STU-028) | Not started |
@@ -46,15 +48,15 @@ the owning thread reports it.
 | Gate | Meaning | Status |
 |---|---|---|
 | G-A | Overall plan approval | Passed 2026-11-07 |
-| G-0 | Name cleared, repositories may be created (after GOV-1) | Passed conditionally: the owner keeps the name and checks the registers before G-T2 (O-3) |
+| G-0 | Name cleared, repositories may be created (after GOV-1) | Passed conditionally: the owner keeps the name. The register check (O-3) is not ordered and no prerequisite of G-T2 (owner decision of 2026-11-08 11:26Z); a later public marketing under the name needs a new assessment |
 | G-T1 | API freeze of the Tabrion contract (TAB-002) | **Passed with conditions** 2026-11-08 (independent review, planning folder `reviews/g-t1-review.md`); conditions C-1..C-8 in [G-T1 conditions](#g-t1-conditions) |
-| G-T2 | Tabrion release gate (0.1.0 by TAB-040, 0.2.0 by TAB-042) | Open; requires O-3 first |
+| G-T2 | Tabrion release gate (0.1.0 by TAB-040, 0.2.0 by TAB-042) | Open; no trademark check required (owner decision of 2026-11-08 11:26Z) |
 | G-M | Merge gate per migration, JQ and pin step (rollback probe QA-14, AC checks) | Per step |
 | G-S1 | Studio MVP security review (STU-016) | Open |
 | G-S2 | Owner decision on Studio write functions (STU-026) | Open |
 | G-S3 | Studio 1.1 security review and acceptance of the schema designer (STU-CR-8; defined by STU-CR-1) | Open (added with CR-DB) |
 | G-CR | Inclusion of CR-DB and decisions E-CR-1..E-CR-8 | Inclusion approved 2026-11-08; the individual decisions E-CR-1..E-CR-7 are to be confirmed (O-6); E-CR-8 (M9, M10, TAB-CR-1/2 in 0.2) is in force |
-| G-R | Owner approval per public release (PyPI, GitHub release, announcement); no standing approval (E-PyPI) | Open for every release |
+| G-R | Owner approval per public release (PyPI, npm, GitHub release, announcement); no standing approval (E-PyPI) | Open for every release |
 | G-EM | Merge of the migration runners | Decided **no** (2026-11-07 23:26Z); MIG-AXE-7, S6, S7 dropped |
 
 ## Work packages
@@ -65,9 +67,9 @@ Planned effort: 12.5 + 3 agent days.
 
 | WP | Title | Repositories | Depends on | Gate | Effort (impl + review) | Lane | Status | Evidence |
 |---|---|---|---|---|---|---|---|---|
-| GOV-1 | Name and trademark check | - | G-A | - | 0.5 + 0 | Gov | Done: conditional | [name-check.md](reports/name-check.md); owner keeps the name, manual register check before G-T2 (owner action O-3) |
-| GOV-2 | Create the tabrion repository | tabrion | GOV-1 | G-0 | 0.5 + 0 | Gov | In progress | Repository public with MIT license; branch protection is owner action O-1; first CI run is the M1 pull request |
-| GOV-3 | Create the tabrion-studio repository | tabrion-studio | GOV-1 | G-0 | 0.5 + 0 | Gov | In progress | Repository `peterkarlhuber/tabrion-studio` exists with the MIT license only; branch protection and CI follow there (STU-001, STU-018) |
+| GOV-1 | Name and trademark check | - | G-A | - | 0.5 + 0 | Gov | Done: conditional | [name-check.md](reports/name-check.md); owner keeps the name; the register check is not ordered and no prerequisite of G-T2 (O-3 dropped, owner decision of 2026-11-08 11:26Z); a later public marketing under the name needs a new assessment |
+| GOV-2 | Create the tabrion repository | tabrion | GOV-1 | G-0 | 0.5 + 0 | Gov | Done | Repository public with MIT license; first CI run was the M1 pull request (#1); branch protection (O-1) is optional repository hardening (owner decision of 2026-11-08 11:26Z) |
+| GOV-3 | Create the tabrion-studio repository | tabrion-studio | GOV-1 | G-0 | 0.5 + 0 | Gov | In progress | Repository `peterkarlhuber/tabrion-studio` exists with the MIT license only; CI follows there (STU-001, STU-018); branch protection is optional (O-7) |
 | QA-12 | Risk register and STATUS.md | tabrion | GOV-2 | - | 0.5 + 0 | QA | Done | [risks.md](risks.md), this file |
 | QA-16 | AC-1: import-linter per edge list K-33 with a mutation probe | tabrion, orkexa, axentra, tabrion-studio | GOV-2 | - | 1 + 0.25 | QA | Done (tabrion part) | `pyproject.toml` `[tool.importlinter]` (six contracts since G-T1 C-5), `tests/architecture/test_import_contracts.py`; the orkexa, axentra and tabrion-studio parts are open |
 | TAB-001 | English specification in the repository | tabrion | GOV-2 | - | 1 + 0.25 | Core | Done | [specification.md](../specification.md) |
@@ -98,7 +100,7 @@ Planned effort: 60.75 + 21.25 agent days.
 | QA-11 | Release workflow without publishing | tabrion | TAB-005 | - | 1 + 0.25 | QA | Not started |  |
 | TAB-013 | tabrion.sqlite connection and profile | tabrion | TAB-010 | - | 2 + 1 | Core | In review | `src/tabrion/sqlite.py` (`SQLiteProfile`, `create_private_file`, `connect`, `apply_profile`, `check_path`, `loading_extensions`); `tests/sqlite/test_connect.py` (S01..S12), `tests/sqlite/test_profile.py` (S13..S15), mutation probes in `tests/sqlite/test_mutation_probes_sqlite.py`; contract I-21..I-23; [lane B evidence](#m2-lane-b-evidence-tab-013-tab-014). Independent review pending (TB-044) |
 | TAB-015 | tabrion.postgres configure, ping, diagnose, extension_status | tabrion | TAB-010, TAB-012 | - | 2 + 0.5 | Core | Done | `src/tabrion/postgres/__init__.py`, `_common.py`; `tests/postgres/test_session.py` (P01..P05, P16, G03), `tests/postgres/test_health.py` (P06..P15), `tests/postgres/test_contract_rules.py` (G01, G02, `search_path` hijack), `tests/unit/test_postgres_unit.py`, PostgreSQL mutation probes; [M2 lane C evidence](#m2-lane-c-evidence). Independent review required (TB-032) |
-| TAB-038 | Internal pre-release v0.1.0a1 (errors, sql, config) for unmerged integration branches (RC-8) | tabrion | TAB-010, TAB-011, TAB-012, TAB-005 | - | 0.25 + 0.25 | Core | Done (code); tag pending, owner action (TB-011) | `__version__ = "0.1.0a1"` at merge commit `a463422` of [#9](https://github.com/peterkarlhuber/tabrion/pull/9) (independent review accepted), CHANGELOG `[0.1.0a1]`, `docs/getting-started/installation.md` (pin the commit SHA, RC-8). Annotated tag `v0.1.0a1` on `a463422`: owner action (TB-011). No PyPI, no GitHub release, `release.yml` not run. Master moved on to `0.1.0a2.dev0` (TB-053 done) |
+| TAB-038 | Internal pre-release v0.1.0a1 (errors, sql, config) for unmerged integration branches (RC-8) | tabrion | TAB-010, TAB-011, TAB-012, TAB-005 | - | 0.25 + 0.25 | Core | Done | `__version__ = "0.1.0a1"` at merge commit `a463422` of [#9](https://github.com/peterkarlhuber/tabrion/pull/9) (independent review accepted), CHANGELOG `[0.1.0a1]`, `docs/getting-started/installation.md` (pin the commit SHA, RC-8). Annotated tag `v0.1.0a1` on `a463422`: created by the agent (owner decision of 2026-11-08 11:26Z), not on GitHub because the agent's Git proxy refuses tag pushes; an optional label, consumers pin the SHA. No PyPI, no GitHub release, `release.yml` not run. Master moved on to `0.1.0a2.dev0` (TB-053 done) |
 | QA-22 | Conventions audit of the new repositories | tabrion, tabrion-studio | TAB-004, STU-018 | - | 0.5 + 0 | QA | Not started |  |
 | TAB-016 | tabrion.postgres reading roles | tabrion | TAB-015 | - | 1.5 + 0.75 | Core | Done | `src/tabrion/postgres/roles.py`; `tests/postgres/test_roles.py` (R01..R10 against the verbatim Axentra and Nodestro queries; R19/R20 roles a session can become, renumbered from R11/R12 in the third lane C pull request because contract 4.6 assigns R11..R18 to the grant), G01/G02; [M2 lane C evidence](#m2-lane-c-evidence). Independent review (TB-032): accepted after the delta re-review; merged in [#5](https://github.com/peterkarlhuber/tabrion/pull/5) (`b34abb2`); DL-1 fixed in the second lane C pull request |
 | TAB-030 | SessionLock and advisory lock helpers (0.1) | tabrion | TAB-015 | - | 2 + 1 | Core | Done | `src/tabrion/postgres/locks.py`; `tests/postgres/test_locks.py` (L01..L15, G01), `tests/postgres/test_faults.py` (locks under faults), `tests/unit/test_locks_and_faults_unit.py`, mutation probes; contract I-32; [M2 lane C2 evidence](#m2-lane-c2-evidence). Independent review of #6: accepted with conditions at 0cd79eb, fix round in the same pull request, accepted after the delta re-review at ce5ad7d; merged in [#6](https://github.com/peterkarlhuber/tabrion/pull/6) (`b274d89`); DL-1 and the Info items of the delta re-review in the third lane C pull request ([M2 lane C3 evidence](#m2-lane-c3-evidence)) |
@@ -108,7 +110,7 @@ Planned effort: 60.75 + 21.25 agent days.
 | TAB-031 | grant_runtime_role unifying Nodestro and Axentra (0.1) | tabrion | TAB-016 | - | 2 + 1 | Core | Done | `src/tabrion/postgres/roles.py` (`grant_runtime_role`); `tests/postgres/test_grants.py` (R11..R18), the verbatim reference grants `tests/golden/role_grants.py` and their catalog snapshots `tests/golden/role_grants.json`, `tests/unit/test_postgres_unit.py`, mutation probes; contract I-35, D-46..D-50; [M2 lane C3 evidence](#m2-lane-c3-evidence). Independent review: accepted after the delta re-review; merged in [#8](https://github.com/peterkarlhuber/tabrion/pull/8) (`6e833f4`); DL-1 fixed in #11 |
 | TAB-032 | testing: database per session, roles without superuser, truncate, runtime-role mode (0.1) | tabrion | TAB-020 | - | 2 + 0.5 | Core | In review | `src/tabrion/testing/postgres.py` (`tabrion_postgres_database`, `tabrion_postgres_roles`, `truncate_tables`, runtime-role mode); `tests/postgres/test_testing_database.py` (X11..X18), `tests/golden/axentra_conftest.py` and `.json` (X17); contract I-60, D-70, D-72, D-73; [M2 lane C4 evidence](#m2-lane-c4-evidence). Re-review at `5110c8f`: TAB-020 accepted, TAB-032 accepted with conditions (M-1); M-1, DL-1, DL-2, L-1, L-2 and the Info items fixed in #11 |
 | QA-4 | Concurrency and stress suite | tabrion | TAB-014, TAB-015 | - | 1 + 0.25 | QA | Not started |  |
-| RA-B-1 | Measurements: local capture on SQLite | tabrion (examples/measurements) | TAB-014 | - | 1.5 + 0.5 | Ref-Apps | Not started |  |
+| RA-B-1 | Measurements: local capture on SQLite | tabrion (examples/measurements) | TAB-014 | - | 1.5 + 0.5 | Ref-Apps | In review (fix round after the review of #16: M-1 `seq` `AUTOINCREMENT`, L-1..L-5, Info) | `examples/measurements` (layer A only, branched from master); `tests/examples/test_measurements.py` runs in the normal suite: 10 000 rows in one `write_transaction` (statement trace), `migrate` with mandatory backup (`BackupRequired`, `BackupFailed`), `0600` files, `SIGKILL` inside the batch leaves 0 rows, after the commit 10 000. Natural key `(device_id, channel, ts_utc)` and `seq` for RA-B-2 |
 | TAB-017 | tabrion.check and finding codes | tabrion | TAB-014, TAB-016 | - | 1.5 + 0.5 | Core | Done | `src/tabrion/check.py` (TAB-SQ-001..009), `src/tabrion/postgres/_check.py` (TAB-PG-001..011, 020, 021, 030); `tests/sqlite/test_findings.py` (K01..K09, K27..K30), `tests/postgres/test_check_findings.py` (K10..K20, K22..K24, K27..K30); contract I-50..I-55; independent review accepted with conditions at `397669e`, fix round M-1 and L-1..L-5 in the same pull request (TB-062, TB-063). TAB-PG-012 and TAB-B-001/002 (K21, K25, K26) and `Database.check()` follow the layer-B core (D-60, TODO TB-060); merged in #13 (`ca21de6`) |
 | TAB-018 | Layer B core (Database, Profile, Transaction, fetch_*) | tabrion | TAB-014, TAB-015 | - | 4 + 1 | Core | In review | `src/tabrion/_sa/` (`profile.py`, `database.py`, `events.py`); `tests/unit/test_database.py` (SQLite, URLs, TLS, profiles), `tests/postgres/test_database.py`, `tests/unit/test_mutation_probes_layer_b.py`; contract section 5.7 (I-37..I-44, I-56); decides TB-020 (F-11), TB-040 (N-4) and F-14; independent review accepted with conditions at `b9ac2e1`, fix round C-1..C-3 and L-1..L-3 in the same pull request (I-56, D-61, TB-061); [M2 lane B2 evidence](#m2-lane-b2-evidence-tab-018). TAB-017 follows in a pull request of its own |
 | TAB-022 | Consumer protection: golden files (blocking) and nightly downstream | tabrion | TAB-014, TAB-016, TAB-030 | - | 3 + 0.75 | Core | Not started |  |
@@ -123,7 +125,7 @@ Planned effort: 60.75 + 21.25 agent days.
 | RA-B-4 | Measurements: plain SQLAlchemy baseline | tabrion (examples/measurements-baseline) | RA-B-2 | - | 1 + 0.25 | Ref-Apps | Not started |  |
 | RA-A-2 | Parts: functions and tests on SQLite and PostgreSQL | tabrion (examples/parts) | RA-A-1 | - | 2 + 0.5 | Ref-Apps | Not started |  |
 | RA-A-3 | Parts: plain SQLAlchemy baseline | tabrion (examples/parts-baseline) | RA-A-2 | - | 1 + 0.25 | Ref-Apps | Not started |  |
-| TAB-040 | Release 0.1.0 (tag), G-T2 | tabrion | TAB-041, TAB-021, TAB-022, TAB-030, TAB-031, TAB-032, RA-A-2, RA-B-3, QA-2, QA-11, TAB-034, TAB-050, TAB-051 | G-T2 | 0.5 + 0.5 | Core | Not started |  |
+| TAB-040 | Release 0.1.0 (tag), G-T2 | tabrion | TAB-041, TAB-021, TAB-022, TAB-030, TAB-031, TAB-032, RA-A-2, RA-B-3, QA-2, QA-11, TAB-034, TAB-050, TAB-051 | G-T2 | 0.5 + 0.5 | Core | Not started | `v0.1.0` final is the merge commit of the version-bump pull request that sets `0.1.0`; its full SHA goes here, into CHANGELOG `[0.1.0]` and `installation.md`, and the next pull request bumps master to `0.1.1.dev0`. Consumers pin it by full SHA via `git+https`; a tag is an optional label (ADR 0009, amendment of 2026-11-08) |
 | RA-EVAL | Measurement report: value over SQLAlchemy | tabrion | RA-A-3, RA-B-3, RA-B-4 | - | 1 + 0.5 | Ref-Apps | Not started |  |
 
 ### M3: Versioning (VER-1), Axentra security evidence, waves W1 (S1 fixtures) and W2 (S2a errors), architecture checks
@@ -158,7 +160,7 @@ Planned effort: 4.5 + 1.75 agent days; with CR-DB also TAB-CR-1 and TAB-CR-2 (3.
 | WP | Title | Repositories | Depends on | Gate | Effort (impl + review) | Lane | Status | Evidence |
 |---|---|---|---|---|---|---|---|---|
 | TAB-033 | 0.2: query/Result, stream, cancel, inspector (Studio APIs) | tabrion | TAB-040 | - | 3 + 0.75 | Core | Not started |  |
-| TAB-043 | PyPI path V-B (bound to G-R): trusted publisher, 0.1.0rc1 | tabrion | TAB-040, GOV-1 | G-R | 0.5 + 0.5 | Core | Not started |  |
+| TAB-043 | PyPI path V-B (bound to G-R): trusted publisher, 0.1.0rc1 | tabrion | TAB-040, GOV-1 | G-R | 0.5 + 0.5 | Core | Not started | Not planned (owner decision of 2026-11-08 11:26Z): consumers use Git SHA pins; only if a publication is decided, then with G-R and the environment `pypi` (O-2) |
 | TAB-042 | Release 0.2.0 (Studio APIs) and 0.2 documentation | tabrion | TAB-033 | G-T2 | 1 + 0.5 | Core | Not started |  |
 
 ### M5: Waves W3-W6 (S2b session and locks, S2c, S3 roles, S4 SQLite including Desktop); G-EM = no
@@ -286,8 +288,8 @@ What the M1 pull request delivers against the acceptance criteria of planning do
 
 | WP | Acceptance criterion (plan document 09) | Evidence |
 |---|---|---|
-| GOV-1 | Report `docs/program/reports/name-check.md`; no identical hit in classes 9/42, else stop ST-10 | The report exists; it found identical unregistered prior use (R-36) and recommended HOLD. The owner decided to continue and to check the registers manually before G-T2 (O-3), so the status is "Done: conditional" |
-| GOV-2 | Repository public, MIT, branch protection (required check `ci-ok`, no force push, no deletion) active; first CI run green | Public with MIT; the first CI run is the M1 pull request. Branch protection cannot be set by the agent (the agent proxy gets HTTP 403), so it is owner action O-1 |
+| GOV-1 | Report `docs/program/reports/name-check.md`; no identical hit in classes 9/42, else stop ST-10 | The report exists; it found identical unregistered prior use (R-36) and recommended HOLD. The owner decided to continue and to check the registers manually before G-T2 (O-3), so the status is "Done: conditional". By the owner decision of 2026-11-08 11:26Z the check is not ordered and no prerequisite of G-T2 |
+| GOV-2 | Repository public, MIT, branch protection (required check `ci-ok`, no force push, no deletion) active; first CI run green | Public with MIT; the first CI run is the M1 pull request. Branch protection cannot be set by the agent (the agent proxy gets HTTP 403), so it is owner action O-1, optional by the owner decision of 2026-11-08 11:26Z |
 | QA-12 | `docs/program/risks.md` equals plan document 11; `STATUS.md` with every WP ID of the backlog | [risks.md](risks.md) (all of plan document 11 plus R-36 and R-CR-1..6); this file lists all 125 backlog IDs and the 26 CR-DB IDs |
 | QA-16 | AC-1: contracts per edge list K-33 (tabrion imports nothing from Levuvo); mutation probe red per repository | Four contracts in `pyproject.toml` (six after G-T1 C-5); `tests/architecture/test_import_contracts.py`: positive control, 13 mutation probes (18 after C-5) that must each name their broken contract, coverage of every module by the layers contract, AST prefix scan. The orkexa, axentra and tabrion-studio parts belong to their repositories |
 | TAB-001 | `docs/specification.md` (English) covers plan document 02 chapters 1-11; the review agent finds no contradiction to plan document 04 | [specification.md](../specification.md), chapters 1-11 plus chapter 12 (stability policy) |
@@ -542,8 +544,8 @@ part of C-7 and C-8; the rest is owner action.
 | C-4 | How a consumer passes `RoleSetup` (F-04) | G-10: overridable session fixture `tabrion_role_setup() -> RoleSetup \| None`, requested by `tabrion_postgres_database`; `tests/unit/test_testing_fixtures.py` (pytester) | In review |
 | C-5 | Contracts for `_sa` and `migrations` (F-05) | Contracts "Layer B needs only SQLAlchemy" and "Migration helpers never import pytest", five new mutation probes | In review |
 | C-6 | TAB-023 before the first M2 implementation pull request (F-08) | `scripts/api_surface.py`, `docs/api/surface.json` with `since` and `stability`; 0.2 names (`Result`, `Column`, `query`, `stream`, `cancel`, `inspector`, `run_transaction`, `on_begin`, `savepoint`) are not exported in 0.1 and are staged in `tabrion._sa._v02`; CI job `api surface` | In review |
-| C-7 | `ci-ok` cannot be a required PR check; `master` unprotected (F-06) | `ci-ok.yml` posts the commit status `ci-ok` on the PR head SHA (`ci_ok_status.py`, `statuses: write`, `CI_OK_ENFORCE=1`); ADR 0012 "Merge gate". From the Studio CI review: a PR that changes `.github/workflows/**` or `.github/scripts/**` is NOT OK without the label `workflow-change-reviewed` (F-03), and the status post is retried and fails loudly (F-11). The condition check confirmed C-1..C-6 closed and C-7/C-8 down to owner settings. Takes effect once on `master`; then owner action O-1 | In review; O-1 open |
-| C-8 | Environment `pypi` and the OIDC token (F-07) | Job `attest` alone holds `id-token: write`; ADR 0009 "Release environment" lists the settings; owner action O-2 | In review; O-2 open |
+| C-7 | `ci-ok` cannot be a required PR check; `master` unprotected (F-06) | `ci-ok.yml` posts the commit status `ci-ok` on the PR head SHA (`ci_ok_status.py`, `statuses: write`, `CI_OK_ENFORCE=1`); ADR 0012 "Merge gate". From the Studio CI review: a PR that changes `.github/workflows/**` or `.github/scripts/**` is NOT OK without the label `workflow-change-reviewed` (F-03), and the status post is retried and fails loudly (F-11). The condition check confirmed C-1..C-6 closed and C-7/C-8 down to owner settings. Takes effect once on `master`; then owner action O-1 (optional) | In review; O-1 optional |
+| C-8 | Environment `pypi` and the OIDC token (F-07) | Job `attest` alone holds `id-token: write`; ADR 0009 "Release environment" lists the settings; owner action O-2 | In review; O-2 needed only if a PyPI publication is decided |
 
 ### Notes from the G-T1 review (Low and Info findings)
 
@@ -568,7 +570,7 @@ Recorded here as the review asks; none blocks M2. Each is picked up by the work 
 | CC-2 | `tabrion._sa._v02` imports `Isolation`, `Statement` and `Transaction` from `tabrion._sa.database`; in 0.2 `Database`/`Transaction` inherit from the `_v02` mixins, a circular import | Open, before TAB-033: move the aliases to `tabrion._sa._types` and type `fn` against a forward reference (TODO TB-024) |
 | CC-3 | F-15 still open: macOS and Windows run on PRs only for SQLite paths, so they did not run on #2 | Open, TODO TB-021 |
 | BR-1 | Nothing excluded the logo from the MIT license | Fixed in #2: `TRADEMARKS.md`, linked from the README and `assets/branding/README.md` |
-| BR-2 | The committed master carried a C2PA manifest (`caBX`) and an `eXIf` chunk | Fixed in #2: the chunks are removed without touching the image data; `tests/unit/test_branding.py` pins the new sha256 and the sha256 of the supplied file's decompressed pixel data. The supplied file in the planning folder is unchanged. The designer's original and a vector master for the trademark filing stay with the owner (O-3) |
+| BR-2 | The committed master carried a C2PA manifest (`caBX`) and an `eXIf` chunk | Fixed in #2: the chunks are removed without touching the image data; `tests/unit/test_branding.py` pins the new sha256 and the sha256 of the supplied file's decompressed pixel data. The supplied file in the planning folder is unchanged. The designer's original and a vector master for a possible trademark filing stay with the owner |
 | BR-3 | The regenerate command was unpinned | Fixed in #2: `pillow==12.3.0`, `numpy==2.5.3` (the versions that produced the committed files) |
 | BR-4 | Relative README image paths break on PyPI | Fixed in #2: absolute `raw.githubusercontent.com/.../master/...` URLs (they render once the logo is on `master`) |
 
@@ -576,17 +578,25 @@ Recorded here as the review asks; none blocks M2. Each is picked up by the work 
 
 Actions only the owner can take. The agent cannot do them (missing rights) or must not (approval limits).
 
+**Owner decision of 2026-11-08 11:26Z** (plan document 00 section 13): the agent may create Git tags (no GitHub
+release); branch protection (O-1, O-7), private vulnerability reporting (O-5) and the social preview (O-9) are
+optional repository hardening, never a prerequisite for implementation; a PyPI publication is not needed now, so the
+environment `pypi` (O-2) is needed only if a publication is decided later; the trademark check (O-3) is not ordered
+and no longer a prerequisite of G-T2. Unchanged: G-R per public publication, the human security review before a
+public Tabrion Studio release, and every security, test and quality requirement. No new owner tasks unless they are
+technically or legally required.
+
 | # | Action | Needed for | Status |
 |---|---|---|---|
-| O-1 | **Corrected after G-T1 (C-7, F-06).** Protect `master` of `peterkarlhuber/tabrion` (the agent proxy gets HTTP 403 on the branch protection API): after the follow-up pull request is merged and `ci-ok` has posted its commit status on one pull request, require the status check `ci-ok` (source: GitHub Actions); "require branches to be up to date"; no force pushes, no deletion. Create the label `workflow-change-reviewed`; only the owner or an independent reviewer sets it, on pull requests that change `.github/workflows/**` or `.github/scripts/**` (ADR 0012, "Workflow-change gate"). Recommended, not required (solo owner): `CODEOWNERS` for `/.github/**`, and approval for outside collaborators' workflow runs | GOV-2, C-7 | Open |
-| O-2 | Before any use of `release.yml` with `publish: true` (C-8, F-07): create the environment `pypi` with the owner as required reviewer, "prevent self-review" on, deployment branches and tags restricted to the tag pattern `v*` (no branch rule), no secrets; with TAB-043 bind the PyPI trusted publisher to workflow `release.yml` and environment `pypi` (ADR 0009, "Release environment") | G-R, TAB-043, C-8 | Open |
-| O-3 | **Manual TM register check (TMview/EUIPO/DPMA/WIPO) before G-T2; rename if conflict.** Also assess the prior user of the name (R-36) | GOV-1, G-T2 | Open |
+| O-1 | **Corrected after G-T1 (C-7, F-06).** Protect `master` of `peterkarlhuber/tabrion` (the agent proxy gets HTTP 403 on the branch protection API): after the follow-up pull request is merged and `ci-ok` has posted its commit status on one pull request, require the status check `ci-ok` (source: GitHub Actions); "require branches to be up to date"; no force pushes, no deletion. Create the label `workflow-change-reviewed`; only the owner or an independent reviewer sets it, on pull requests that change `.github/workflows/**` or `.github/scripts/**` (ADR 0012, "Workflow-change gate"). Recommended, not required (solo owner): `CODEOWNERS` for `/.github/**`, and approval for outside collaborators' workflow runs | GOV-2, C-7 | Optional (owner decision of 2026-11-08 11:26Z); never a prerequisite |
+| O-2 | Before any use of `release.yml` with `publish: true` (C-8, F-07): create the environment `pypi` with the owner as required reviewer, "prevent self-review" on, deployment branches and tags restricted to the tag pattern `v*` (no branch rule), no secrets; with TAB-043 bind the PyPI trusted publisher to workflow `release.yml` and environment `pypi` (ADR 0009, "Release environment") | G-R, TAB-043, C-8 | Only if a PyPI publication is decided later (owner decision of 2026-11-08 11:26Z) |
+| O-3 | ~~Manual TM register check (TMview/EUIPO/DPMA/WIPO) before G-T2; rename if conflict. Also assess the prior user of the name (R-36).~~ | GOV-1 | Dropped (owner decision of 2026-11-08 11:26Z): not ordered and removed from G-T2; a later public marketing under the name needs a new assessment |
 | O-4 | G-T1 review of [contract.md](../api/contract.md), including its open points | TAB-002, G-T1 | Done 2026-11-08: passed with conditions (C-1..C-8) |
-| O-5 | Enable private vulnerability reporting in the repository settings (SECURITY.md points to it) | TAB-006 | Open |
+| O-5 | Enable private vulnerability reporting in the repository settings (SECURITY.md points to it) | TAB-006 | Optional (owner decision of 2026-11-08 11:26Z) |
 | O-6 | Confirm the CR-DB decisions E-CR-1..E-CR-7 (planning document 14 section 9.1) | G-CR, ARC-CR-1, STU-CR-1 | Open |
-| O-7 | The same branch protection as O-1 for `peterkarlhuber/tabrion-studio` | GOV-3 | Open |
+| O-7 | The same branch protection as O-1 for `peterkarlhuber/tabrion-studio` | GOV-3 | Optional (owner decision of 2026-11-08 11:26Z) |
 | O-8 | Record the planning errata of F-17 (doc 05 section 2.3 lazy-import comment, doc 02 section 9 `tabrion.check(target)`) in the planning documents | G-T1 | Open |
-| O-9 | Upload `assets/branding/social-preview.png` as the social preview in the repository settings (no API for it) | TAB-006 | Open |
+| O-9 | Upload `assets/branding/social-preview.png` as the social preview in the repository settings (no API for it) | TAB-006 | Optional, not a blocker (owner decision of 2026-11-08 11:26Z) |
 
 ### M2 lane B evidence (TAB-013, TAB-014)
 
@@ -745,6 +755,7 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-62 | TAB-021 | Specification section 6, UUID row: "text (36 characters) in SQLite, `uuid` in PostgreSQL; SQLAlchemy `Uuid`" | TAB-T-D04 maps UUIDs to `String(36)` on SQLite and `Uuid` on PostgreSQL | SQLAlchemy's `Uuid` stores 32 hex characters without hyphens on SQLite, which is not the 36-character text of the rule; the case follows the stored format the rule names (contract I-58). Trade-off: with this mapping the application gets a `str` on SQLite and a `uuid.UUID` on PostgreSQL, so portable code needs a `TypeDecorator` over `String(36)` that converts both ways, or `Uuid().with_variant(String(36), "sqlite")` plus its own conversion of the SQLite `str`; with plain `Uuid` it gets `uuid.UUID` on both engines but 32-character text in SQLite files |
 | D-63 | TAB-021 | Specification section 6, timestamp row: "in SQLite ISO 8601 text `YYYY-MM-DDTHH:MM:SS.ffffffZ`. SQLAlchemy: `DateTime(timezone=True)`" | TAB-T-D01 maps timestamps to `String(32)` holding that text on SQLite (written as UTC with `Z`) and `DateTime(timezone=True)` (`timestamptz`) on PostgreSQL | On SQLite, `DateTime(timezone=True)` stores `2024-01-02 03:04:05.000000` (space, no `Z`) and reads it back naive, dropping the offset without converting to UTC; the two halves of the row cannot both hold, so the case follows the stored format the rule names, as D-62 does for UUIDs. A test of the repository pins the pitfall (contract I-58, review L-2). The application gets a `str` on SQLite and an aware `datetime` on PostgreSQL; portable code uses a `TypeDecorator` that writes the UTC text and parses it back |
 | D-66 | TB-060 | Specification section 9: TAB-B-002 "Alembic schema not current" (error) | `check(database)` reports TAB-B-002 only as "Not checked" (info) when a table `alembic_version` is visible, pointing to `tabrion.migrations.require_current` | `check()` takes no script directory (frozen API), and layer B must not import Alembic or `tabrion.migrations` (import contracts); `require_current` is the gate that raises (contract I-55) |
+| D-67 | GOV-1, TAB-038, TAB-040, TAB-043, GOV-2 | ADR 0009 E-VER: V-B (PyPI) as the goal; G-T2 after the manual register check (O-3); tags `v0.1.0a1` and `v0.1.0` by the owner; branch protection as GOV-2 acceptance | Git SHA pins are the distribution, no PyPI publication planned; `v0.1.0` final is the master merge commit with package version `0.1.0`, pinned by full SHA; tags are optional labels the agent may create; G-T2 without the register check; branch protection, private vulnerability reporting and the social preview optional | Owner decision of 2026-11-08 11:26Z (plan document 00 section 13); ADR 0009 and ADR 0001 amendments of 2026-11-08. G-R per public publication unchanged |
 
 ## Score review
 
