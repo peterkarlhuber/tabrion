@@ -14,7 +14,11 @@ A final version is the merge commit of the version-bump pull request that sets a
 final (TABRION TAB-040) is the one that sets `0.1.0`. Its full SHA is recorded here, in the CHANGELOG section of the
 version and in `docs/program/STATUS.md` (TAB-040), and the next pull request bumps master to the next `.dev0`
 version (`0.1.1.dev0`), so no other commit builds as `0.1.0`. Consumers pin that commit by its full SHA; a tag
-`v0.1.0` on it is an optional label, never what a pin names. `0.1.0` is not released yet, so no SHA is recorded.
+`v0.1.0` on it is an optional label, never what a pin names.
+
+| Version | Release commit (full SHA) | Date |
+|---|---|---|
+| `0.1.0` | `RELEASE-SHA` (recorded by the pull request that moves master to `0.1.1.dev0`) | RELEASE-DATE |
 
 Pin only a recorded release commit. pip does not check that: it accepts a pin on any master commit whose version is
 inside the range, for example `0.1.1.dev0`; only the architecture check AC-6 (planned, QA-15) refuses it. Always
