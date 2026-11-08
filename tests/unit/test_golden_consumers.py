@@ -10,6 +10,7 @@ golden_record`` checks that every A/B row of contract section 8 has its records,
 from __future__ import annotations
 
 from collections.abc import Callable
+import contextlib
 import copy
 import json
 import os
@@ -116,7 +117,9 @@ def test_nodestro_api_database_check(tmp_path: Path) -> None:
             return {"status": "error", "code": "unreadable"}
         if found.quick_check != "ok":
             return {"status": "error", "code": "damaged"}
-        if "ENABLE_FTS5" not in {row[0] for row in sqlite3.connect(":memory:").execute("PRAGMA compile_options")}:
+        with contextlib.closing(sqlite3.connect(":memory:")) as probe:  # never left to the garbage collector
+            options = {row[0] for row in probe.execute("PRAGMA compile_options")}
+        if "ENABLE_FTS5" not in options:
             return {"status": "warning", "code": "no_fts"}
         return {"status": "ok", "code": "ok"}
 
