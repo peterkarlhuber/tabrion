@@ -452,7 +452,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   path. `query_only` blocks writes into it, and the main file stays byte-identical, but the file appears.
 - **Next step:** set `SQLITE_LIMIT_ATTACHED` to 0 for read-only connections (`Connection.setlimit`, Python 3.11+), or
   document it in I-22; decide with TAB-017. Layer B has the same gap inside `read()` (contract I-56, TAB-018 review
-  L-1: the file gets the process umask, not `0600`); the same limit would close both.
+  L-1: the file gets the process umask, not `0600`); the same limit would close both. Since the second TAB-018 fix
+  round the layer-B creator sets `SQLITE_LIMIT_ATTACHED` to 0 under `Profile.read_only` (I-56, re-review N-2);
+  `tabrion.sqlite.connect(read_only=True)` itself still allows `ATTACH`.
 
 ### TB-047 · Windows: file modes are cosmetic, the `CREATE_NEW` race remains (review I-2)
 
@@ -514,10 +516,16 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, contract I-56, SECURITY.md, plan 03:245-247,
   07 SQ-05, SR-03
-- **What:** SQL inside `read()` that ends the transaction and commits its own (`ROLLBACK; BEGIN READ WRITE; ...;
-  COMMIT`) writes, on both profiles, and can leave `default_transaction_read_only = off` on a pooled connection. The
-  check before `COMMIT` (I-56) catches the in-transaction lifts only. A server cannot refuse transaction control;
-  the hard boundary is a role without write rights.
+- **What:** the read-back before `COMMIT` (I-56) sees the state at the end of a `read()` only. SQL inside `read()`
+  that lifts read-only, writes and restores it (`SET TRANSACTION READ WRITE; INSERT ...; SET transaction_read_only =
+  on`, `set_config(..., true)`, `SET LOCAL default_transaction_read_only = on`, SQLite `PRAGMA query_only = OFF;
+  ...; PRAGMA query_only = ON` under a writable profile), or that ends the transaction and commits its own
+  (`ROLLBACK; BEGIN READ WRITE; ...; COMMIT`), writes, on both profiles, and can leave
+  `default_transaction_read_only = off` on a pooled connection until the next `read()` invalidates it. Pinned by
+  `test_b11_documents_the_gap_lift_write_restore`, `test_b12_documents_the_gap_lift_write_restore`,
+  `test_b12_documents_the_gap_session_default_restored_locally` and
+  `test_b12_documents_the_gap_transaction_control_in_read`. A server cannot refuse transaction control; the hard
+  boundary is a role without write rights (or SQLite file permissions).
 - **Next step:** Studio and TAB-032 (runtime-role mode) run untrusted SQL only under such a role. Optional: a
   `checkin` check of `default_transaction_read_only` under `Profile.read_only` that invalidates the connection, and
   a snapshot-taking statement after `BEGIN READ ONLY` (review H-1); decide with TAB-041.
