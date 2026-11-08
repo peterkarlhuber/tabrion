@@ -19,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 10 |
-| P3 Low | 25 |
+| P3 Low | 26 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -127,7 +127,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
 - **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
-  TAB-019 and TAB-021 build on it; TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture
+  TAB-019 (`tabrion.migrations`, contract I-57) is in review on branch `claude/project-thread-rdo6g3-migrations`,
+  stacked on the layer-B branch. TAB-021 builds on TAB-018; TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture
   `tabrion_role_setup` (G-10). TAB-017 (`tabrion.check`, which `Database.check()` calls) is a pull request of its own.
 
 ### TB-008 · Consumer protection, conformance, stability policy (TABRION TAB-022, TAB-050, TAB-051)
@@ -195,6 +196,16 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   at `info.host` only; `tabrion.check` uses `info.hostaddr` itself.
 - **Next step:** an owner rule for TAB-SQ-003 (or a new code, by addendum); `diagnose` to prefer `info.hostaddr`
   when set (lane C, a note in I-17).
+
+### TB-066 · `tabrion.migrations`: `version_locations` and recursive version directories (TAB-019 review L-3 of #14)
+
+- **Priority:** P3 Low · **Status:** Open (0.2) · **Refs:** TABRION TAB-019, contract I-57
+- **What:** `status` builds `ScriptDirectory(script_location)` itself and never reads `alembic.ini`, so it sees
+  only `<script_location>/versions`. A project that keeps revisions elsewhere (`version_locations`, also per
+  branch) or in subdirectories (`recursive_version_locations`) gets an incomplete graph: missing parents raise
+  `migrations.revisions`, missing heads make the database look current or newer (`unknown`).
+- **Next step:** in 0.2, keyword arguments `version_locations` and `recursive_version_locations` passed through to
+  `ScriptDirectory` (a contract addendum, as `surface.json` is frozen for 0.1); until then I-57 documents the rule.
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 

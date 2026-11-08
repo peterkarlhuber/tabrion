@@ -27,6 +27,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   of specification section 9. `expect="owner"` suppresses TAB-PG-003 and TAB-PG-009, `expect="any"` reports them
   as `info`; a missing privilege or an unreadable file gives an `info` finding "Not checked"; no detail names a
   path. A `Database` target, TAB-PG-012 and TAB-B-001/002 follow with layer B (TODO TB-060).
+- `tabrion.migrations.status` and `require_current` (TAB-019): the Alembic schema state (current revisions,
+  heads, pending revisions in order, unknown newer revisions) read in one `Database.read()` without running
+  `env.py` and without migrating; `require_current` raises `SchemaNotCurrent`. `is_current` means nothing
+  unknown and nothing pending, so a head covered by `depends_on` counts as applied; a script directory Alembic
+  cannot resolve raises `ConfigurationError("migrations.revisions")` without path or cause chain. Only
+  `<script_location>/versions` is read (TODO TB-066).
 
 ### Changed
 
