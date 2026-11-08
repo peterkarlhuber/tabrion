@@ -22,6 +22,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   calls `tabrion.check.check`. The layer-A profile runs on the same DBAPI connection through `tabrion.sqlite.connect`
   and SQLAlchemy events (no second connection). Tested on SQLAlchemy 2.0.30 and 2.1, with mutation probes.
 
+- `tabrion.migrations.status` and `require_current` (TAB-019): the Alembic schema state (current revisions,
+  heads, pending revisions in order, unknown newer revisions) read in one `Database.read()` without running
+  `env.py` and without migrating; `require_current` raises `SchemaNotCurrent`.
+
 ### Changed
 
 - `classify(error, during_commit=True)` on a `TabrionError` whose stored classification is a connection error now
