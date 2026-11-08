@@ -60,7 +60,7 @@
           "application_name": "tabrion"
         }
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage_postgres.py:279-290; axentra@ea7aa9f src/axentra/data/database.py:264-266"
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage_postgres.py:279-290 (both timeouts); axentra@ea7aa9f src/axentra/data/database.py:264-266 (statement_timeout only); application_name: tabrion docs/api/contract.md section 4.1, set by neither consumer"
     },
     {
       "id": "LDP-PGS-004",
@@ -79,7 +79,7 @@
           "lock_timeout"
         ]
       },
-      "provenance": "tabrion docs/api/contract.md section 4.1"
+      "provenance": "tabrion docs/api/contract.md section 4.1 (SessionSettings)"
     },
     {
       "id": "LDP-PGS-005",
@@ -132,7 +132,7 @@
           "application_name": "tabrion"
         }
       },
-      "provenance": "tabrion docs/api/contract.md section 4.1"
+      "provenance": "tabrion docs/api/contract.md section 4.1 (SessionSettings)"
     }
   ]
 }

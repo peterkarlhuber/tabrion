@@ -18,6 +18,8 @@ import stat
 import threading
 from typing import Any
 
+import pytest
+
 from tabrion import sqlite as tsqlite
 from tabrion.errors import DbErrorRedactionFilter, TabrionError, classify, safe_message
 from tabrion.sql import split_statements
@@ -59,8 +61,16 @@ def _min_check(observed: Observed, expect: dict[str, Any]) -> Observed:
     return observed
 
 
+def _posix_only(vector: Vector) -> None:
+    """File modes and symlinks hold on POSIX only (SPEC appendix A; as ``posix_only`` of TAB-T-S12)."""
+    if os.name != "posix":
+        pytest.skip(f"{vector.id}: POSIX only (file modes and symlinks; Windows has neither 0600 nor plain symlinks)")
+
+
 def open_new_file(vector: Vector, tmp: Path) -> Observed:
     args = vector.args
+    if "symlink" in args or "file_mode" in vector.expect:
+        _posix_only(vector)
     path = tmp / "ldp.db"
     side = args.get("symlink")
     if side is not None:
@@ -83,6 +93,7 @@ def open_new_file(vector: Vector, tmp: Path) -> Observed:
 
 
 def open_existing(vector: Vector, tmp: Path) -> Observed:
+    _posix_only(vector)
     path = tmp / "ldp.db"
     sqlite3.connect(path).close()
     os.chmod(path, int(vector.args["mode"], 8))
@@ -202,7 +213,55 @@ def migrate(vector: Vector, tmp: Path) -> Observed:
         connection.close()
 
 
-def _error(vector: Vector) -> BaseException:
+def _expect_error(vector: Vector, action: Callable[[], object]) -> sqlite3.Error:
+    try:
+        action()
+    except sqlite3.Error as exc:
+        return exc
+    raise AssertionError(f"{vector.id}: the scenario did not fail")
+
+
+def _sqlite_scenario(vector: Vector, tmp: Path) -> sqlite3.Error:
+    """A real SQLite error that needs more than one statement on a memory database (SPEC appendix A)."""
+    scenario = vector.args["scenario"]
+    path = tmp / "ldp.db"
+    if scenario == "busy":  # another connection holds the write lock; no busy wait
+        with closing(sqlite3.connect(path, isolation_level=None)) as holder:
+            holder.execute("CREATE TABLE t (a INTEGER)")
+            holder.execute("BEGIN IMMEDIATE")
+            with closing(sqlite3.connect(path, timeout=0, isolation_level=None)) as other:
+                error = _expect_error(vector, lambda: other.execute("BEGIN IMMEDIATE"))
+            holder.execute("ROLLBACK")
+        return error
+    if scenario == "readonly":
+        with closing(sqlite3.connect(path)) as setup:
+            setup.execute("CREATE TABLE t (a INTEGER)")
+        with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as reader:
+            return _expect_error(vector, lambda: reader.execute("INSERT INTO t VALUES (1)"))
+    if scenario == "notadb":
+        path.write_bytes(b"LDP: not a database file. " * 200)
+        with closing(sqlite3.connect(path)) as broken:
+            return _expect_error(vector, lambda: broken.execute("SELECT * FROM sqlite_master").fetchall())
+    if scenario == "cantopen":
+        return _expect_error(
+            vector, lambda: sqlite3.connect(f"{(tmp / 'missing' / 'x.db').as_uri()}?mode=rw", uri=True)
+        )
+    with closing(sqlite3.connect(":memory:")) as connection:
+        if scenario == "full":
+            connection.execute("CREATE TABLE t (a BLOB)")
+            connection.execute("PRAGMA max_page_count = 3")
+            return _expect_error(vector, lambda: connection.execute("INSERT INTO t VALUES (randomblob(100000))"))
+        if scenario == "interrupt":
+            connection.set_progress_handler(lambda: 1, 1)
+            return _expect_error(vector, lambda: connection.execute("SELECT 1 UNION SELECT 2").fetchall())
+        if scenario == "auth":
+            connection.execute("CREATE TABLE t (a INTEGER)")
+            connection.set_authorizer(lambda *_: sqlite3.SQLITE_DENY)
+            return _expect_error(vector, lambda: connection.execute("SELECT * FROM t"))
+    raise AssertionError(f"{vector.id}: unknown scenario {scenario!r}")
+
+
+def _error(vector: Vector, tmp: Path) -> BaseException:
     """The driver error of a ``classify_error``/``redact_error`` vector: a real one, never a stand-in."""
     args = vector.args
     if args["driver"] == "psycopg":
@@ -212,6 +271,8 @@ def _error(vector: Vector) -> BaseException:
         if args.get("detail"):
             text += f"\nDETAIL:  {args['detail']}"
         return psycopg.errors.lookup(args["sqlstate"])(text)
+    if "scenario" in args:
+        return _sqlite_scenario(vector, tmp)
     connection = sqlite3.connect(":memory:")
     try:
         for statement in vector.setup:
@@ -227,7 +288,7 @@ def _error(vector: Vector) -> BaseException:
 
 def classify_error(vector: Vector, tmp: Path) -> Observed:
     c = classify(
-        _error(vector), sent=vector.args.get("sent", True), during_commit=vector.args.get("during_commit", False)
+        _error(vector, tmp), sent=vector.args.get("sent", True), during_commit=vector.args.get("during_commit", False)
     )
     return {
         "kind": c.kind.value,
@@ -241,7 +302,7 @@ def classify_error(vector: Vector, tmp: Path) -> Observed:
 
 
 def redact_error(vector: Vector, tmp: Path) -> Observed:
-    error = _error(vector)
+    error = _error(vector, tmp)
     buffer = io.StringIO()
     handler = logging.StreamHandler(buffer)
     handler.addFilter(DbErrorRedactionFilter())

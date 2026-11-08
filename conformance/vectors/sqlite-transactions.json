@@ -19,7 +19,7 @@
         "final": 5,
         "lock_errors": 0
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:302-360",
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:321",
       "note": "the q.py lost-update scenario (specification section 11)"
     },
     {

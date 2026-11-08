@@ -27,7 +27,7 @@
           "SQLSTATE 23505"
         ]
       },
-      "provenance": "axentra@ea7aa9f MIG-AXE-0 redaction filter"
+      "provenance": "axentra@ea7aa9f src/axentra/core/db_errors.py:585 (DbErrorRedactionFilter), :790 (install_db_error_redaction)"
     },
     {
       "id": "LDP-ERR-002",
@@ -53,7 +53,7 @@
           "SQLSTATE 23503"
         ]
       },
-      "provenance": "axentra@ea7aa9f MIG-AXE-0 redaction filter"
+      "provenance": "axentra@ea7aa9f src/axentra/core/db_errors.py:585 (DbErrorRedactionFilter), :790 (install_db_error_redaction)"
     },
     {
       "id": "LDP-ERR-003",

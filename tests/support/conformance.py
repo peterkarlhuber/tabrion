@@ -5,8 +5,8 @@ the vectors. ``load`` checks the required fields, the ID pattern and unique IDs;
 ``validate_schema`` (dev dependency ``jsonschema``). An error names the file and the vector ID, never the content.
 
 ``python -m tests.support.conformance --write`` regenerates ``conformance/MANIFEST.json`` after a deliberate change.
-The new digest must then be named in ``CHANGELOG.md`` (``LDP digest <first 12 hex digits>``), or the conformance
-tests fail.
+The new digest must then be named in ``CHANGELOG.md`` (``LDP-<version> digest <first 12 hex digits>``, a new LDP
+version when the vectors changed), or the conformance tests fail.
 """
 
 from __future__ import annotations
@@ -162,9 +162,16 @@ def validate_schema(path: Path) -> None:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def manifest_files() -> list[Path]:
-    """Every file the manifest covers: SPEC.md, the schema and the vector files."""
-    return [SPEC, SCHEMA, *sorted(VECTORS.glob("*.json"))]
+HANDLERS = (ROOT / "tests" / "conformance" / "actions.py", ROOT / "tests" / "postgres" / "test_conformance_vectors.py")
+"""The action handlers: they decide what an ``expect`` key asserts, so they are hashed too (review L-2)."""
+
+
+def manifest_files() -> list[tuple[str, Path]]:
+    """(manifest key, file): SPEC.md, the schema, the vector files and the action handlers."""
+    conformance = [SPEC, SCHEMA, *sorted(VECTORS.glob("*.json"))]
+    return [(f"conformance/{p.relative_to(CONFORMANCE).as_posix()}", p) for p in conformance] + [
+        (p.relative_to(ROOT).as_posix(), p) for p in HANDLERS
+    ]
 
 
 def _sha256(path: Path) -> str:
@@ -172,13 +179,13 @@ def _sha256(path: Path) -> str:
 
 
 def build_manifest() -> dict[str, Any]:
-    files = {p.relative_to(CONFORMANCE).as_posix(): _sha256(p) for p in manifest_files()}
+    files = {name: _sha256(p) for name, p in manifest_files()}
     digest = hashlib.sha256("".join(f"{name}\0{sha}\n" for name, sha in sorted(files.items())).encode()).hexdigest()
     standard = re.search(r"\*\*Version:\*\* (LDP-\d+\.\d+\.\d+)", SPEC.read_text(encoding="utf-8"))
     return {
         "comment": (
             "SHA-256 of every file of the Levuvo Database Profile (TAB-050). Regenerate with "
-            "'python -m tests.support.conformance --write' and name the new digest in CHANGELOG.md."
+            "'python -m tests.support.conformance --write' and name 'LDP-<version> digest <12 hex>' in CHANGELOG.md."
         ),
         "format": "ldp-manifest/1",
         "standard_version": standard.group(1) if standard else None,
@@ -203,10 +210,25 @@ def verify_manifest() -> None:
         raise VectorFileError(f"MANIFEST.json: checksum differs for {changed} (an expectation changed)")
     if recorded.get("digest") != actual["digest"] or recorded.get("standard_version") != actual["standard_version"]:
         raise VectorFileError("MANIFEST.json: digest or standard_version differs")
-    if f"LDP digest {actual['digest'][:12]}" not in CHANGELOG.read_text(encoding="utf-8"):
+    check_changelog(str(actual["standard_version"]), str(actual["digest"]), CHANGELOG.read_text(encoding="utf-8"))
+
+
+def check_changelog(version: str, digest: str, changelog: str) -> None:
+    """CHANGELOG.md names ``<version> digest <12 hex>``, and no other digest for that version (review L-5).
+
+    A changed vector, schema, SPEC.md or handler changes the digest; as one LDP version cannot carry two digests,
+    the change also needs a new LDP version in SPEC.md.
+    """
+    short = digest[:12]
+    named = {d for v, d in re.findall(r"\b(LDP-\d+\.\d+\.\d+) digest ([0-9a-f]{12})\b", changelog) if v == version}
+    if short not in named:
         raise VectorFileError(
-            f"CHANGELOG.md does not name the current vectors ('LDP digest {actual['digest'][:12]}'): "
+            f"CHANGELOG.md does not name the current vectors ('{version} digest {short}'): "
             "a changed expectation needs a CHANGELOG entry"
+        )
+    if named != {short}:
+        raise VectorFileError(
+            f"CHANGELOG.md names more than one digest for {version}: a changed expectation needs a new LDP version"
         )
 
 
@@ -216,11 +238,31 @@ def write_manifest() -> str:
     return str(data["digest"])
 
 
-def spec_rules() -> dict[str, str]:
-    """Rule ID -> level, from the rule table of ``SPEC.md``."""
+RULE_LEVELS = ("MUST", "SHOULD", "INFO")
+"""The levels a rule may have: those of the vector schema, so every rule can have vectors (review L-4)."""
+
+
+def spec_rules(text: str | None = None) -> dict[str, str]:
+    """Rule ID -> level, from the rule table of ``SPEC.md``.
+
+    Every table row that starts with a rule ID counts; a row with another level, a duplicate ID, or a rule count
+    that differs from the ``## Changes`` entry of the current version raises ``VectorFileError``.
+    """
+    text = SPEC.read_text(encoding="utf-8") if text is None else text
     rules: dict[str, str] = {}
-    for match in re.finditer(r"^\| ([A-Z]{2,4}-\d+) \| (MUST|SHOULD|INFO) \|", SPEC.read_text(encoding="utf-8"), re.M):
-        rules[match.group(1)] = match.group(2)
+    for match in re.finditer(r"^\|\s*([A-Z]{2,4}-\d+)\s*\|\s*([^|]*?)\s*\|", text, re.M):
+        rule, level = match.group(1), match.group(2)
+        if level not in RULE_LEVELS:
+            raise VectorFileError(f"SPEC.md {rule}: level {level!r} is not one of {', '.join(RULE_LEVELS)}")
+        if rule in rules:
+            raise VectorFileError(f"SPEC.md {rule}: duplicate rule")
+        rules[rule] = level
+    version = re.search(r"\*\*Version:\*\* (LDP-\d+\.\d+\.\d+)", text)
+    count = (
+        re.search(rf"^- \*\*{re.escape(version.group(1))}\*\*.*?(\d+) rules", text, re.M | re.S) if version else None
+    )
+    if count is None or int(count.group(1)) != len(rules):
+        raise VectorFileError(f"SPEC.md: the Changes entry of the current version does not count {len(rules)} rules")
     return rules
 
 
@@ -229,7 +271,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write", action="store_true", help="regenerate the manifest")
     args = parser.parse_args(argv)
     if args.write:
-        print(f"conformance: wrote MANIFEST.json; name 'LDP digest {write_manifest()[:12]}' in CHANGELOG.md")
+        digest = write_manifest()[:12]
+        print(f"conformance: wrote MANIFEST.json; name 'LDP-<version> digest {digest}' in CHANGELOG.md")
         return 0
     try:
         vectors = load_all()

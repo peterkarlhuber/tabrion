@@ -32,7 +32,7 @@
         ],
         "backed_up": false
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-640"
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637"
     },
     {
       "id": "LDP-SQM-002",
@@ -63,7 +63,7 @@
         ],
         "backed_up": true
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-640",
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
       "setup": [
         "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
       ]
@@ -97,7 +97,7 @@
           "parts"
         ]
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-640",
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
       "setup": [
         "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
       ]
@@ -131,7 +131,7 @@
           "parts"
         ]
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-640",
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
       "setup": [
         "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
       ]
@@ -165,7 +165,7 @@
           "parts"
         ]
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-640",
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
       "setup": [
         "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
       ]
@@ -198,7 +198,7 @@
         "user_version": 0,
         "tables": []
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-640",
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
       "note": "step 2 fails on its second statement; step 1 is rolled back with it"
     },
     {
@@ -230,7 +230,7 @@
         ],
         "backed_up": false
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-640"
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637"
     },
     {
       "id": "LDP-SQM-008",

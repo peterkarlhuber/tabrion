@@ -21,8 +21,8 @@
         "foreign_keys": true,
         "busy_timeout_ms_min": 1000
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:272-300",
-      "note": "SQP-1, SQP-3, SQP-4 and SQP-5 at once"
+      "provenance": "tabrion docs/api/contract.md section 3.1 (SQLiteProfile defaults)",
+      "note": "SQP-1, SQP-3, SQP-4 and SQP-5 at once; POSIX only (file mode)"
     },
     {
       "id": "LDP-SQP-002",
@@ -42,8 +42,8 @@
         "foreign_keys": true,
         "busy_timeout_ms_min": 1000
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:31,80-94",
-      "note": "SQP-1, SQP-3, SQP-4 and SQP-5 at once"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:31,80-94 (0600), :156 (timeout=30), :162 (WAL); foreign_keys: tabrion docs/api/contract.md section 3.1; not in nodestro-runtime@463e0d9 or orkexa@5bf139e (a tightening, SPEC SQP-3 note)",
+      "note": "SQP-1, SQP-3, SQP-4 and SQP-5 at once; POSIX only (file mode)"
     },
     {
       "id": "LDP-SQP-003",
@@ -63,8 +63,8 @@
         "foreign_keys": true,
         "busy_timeout_ms_min": 1000
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:272-300",
-      "note": "SQP-1, SQP-3, SQP-4 and SQP-5 at once"
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:280 (timeout=30), :282 (WAL); 0600 and foreign_keys: tabrion docs/api/contract.md section 3.1; not in nodestro-runtime@463e0d9 or orkexa@5bf139e (a tightening, SPEC SQP-3 note)",
+      "note": "SQP-1, SQP-3, SQP-4 and SQP-5 at once; POSIX only (file mode)"
     },
     {
       "id": "LDP-SQP-004",
@@ -83,7 +83,8 @@
       "expect": {
         "error": "sqlite.symlink"
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:96-115"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
     },
     {
       "id": "LDP-SQP-005",
@@ -102,7 +103,8 @@
       "expect": {
         "error": "sqlite.symlink"
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:96-115"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
     },
     {
       "id": "LDP-SQP-006",
@@ -121,7 +123,8 @@
       "expect": {
         "error": "sqlite.symlink"
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:96-115"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
     },
     {
       "id": "LDP-SQP-007",
@@ -140,7 +143,8 @@
       "expect": {
         "error": "sqlite.symlink"
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:96-115"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
     },
     {
       "id": "LDP-SQP-008",
@@ -159,7 +163,8 @@
       "expect": {
         "error": "sqlite.symlink"
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:96-115"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
     },
     {
       "id": "LDP-SQP-009",
@@ -178,7 +183,8 @@
       "expect": {
         "error": "sqlite.symlink"
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:96-115"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
     },
     {
       "id": "LDP-SQP-010",
@@ -197,7 +203,8 @@
       "expect": {
         "error": "sqlite.symlink"
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:96-115"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
     },
     {
       "id": "LDP-SQP-011",
@@ -216,7 +223,8 @@
       "expect": {
         "error": "sqlite.symlink"
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:96-115"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
     },
     {
       "id": "LDP-SQP-012",
@@ -234,7 +242,7 @@
       "expect": {
         "foreign_keys": true
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:272-300"
+      "provenance": "tabrion docs/api/contract.md section 3.1 (SQLiteProfile.foreign_keys); not in nodestro-runtime@463e0d9 or orkexa@5bf139e (a tightening, SPEC SQP-3 note)"
     },
     {
       "id": "LDP-SQP-013",
@@ -252,7 +260,7 @@
       "expect": {
         "foreign_keys": true
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:272-300"
+      "provenance": "tabrion docs/api/contract.md section 3.1 (SQLiteProfile.foreign_keys); not in nodestro-runtime@463e0d9 or orkexa@5bf139e (a tightening, SPEC SQP-3 note)"
     },
     {
       "id": "LDP-SQP-014",
@@ -270,7 +278,7 @@
       "expect": {
         "busy_timeout_ms_min": 1000
       },
-      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:146-170"
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:156"
     },
     {
       "id": "LDP-SQP-015",
@@ -288,7 +296,7 @@
       "expect": {
         "journal_mode": "wal"
       },
-      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:272-300"
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:282"
     },
     {
       "id": "LDP-SQP-016",
@@ -309,7 +317,7 @@
         "trusted_schema": false,
         "busy_timeout_ms": 30000
       },
-      "provenance": "tabrion docs/api/contract.md section 3.1"
+      "provenance": "tabrion docs/api/contract.md section 3.1 (SQLiteProfile defaults)"
     },
     {
       "id": "LDP-SQP-017",
@@ -328,7 +336,8 @@
         "file_mode": "0644",
         "foreign_keys": true
       },
-      "provenance": "tabrion docs/api/contract.md section 3 (connect)"
+      "provenance": "tabrion docs/api/contract.md section 3.1 (connect)",
+      "note": "POSIX only (file mode)"
     },
     {
       "id": "LDP-SQP-018",
@@ -347,7 +356,8 @@
         "file_mode": "0640",
         "foreign_keys": true
       },
-      "provenance": "tabrion docs/api/contract.md section 3 (connect)"
+      "provenance": "tabrion docs/api/contract.md section 3.1 (connect)",
+      "note": "POSIX only (file mode)"
     }
   ]
 }

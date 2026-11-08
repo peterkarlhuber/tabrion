@@ -20,7 +20,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 12 |
-| P2 Medium | 12 |
+| P2 Medium | 13 |
 | P3 Low | 32 |
 | P4 Optional | 5 |
 
@@ -331,8 +331,19 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-050, TB-017, contract I-82
 - **What:** the LDP vectors run inside the jobs `test (...)` and `pg (...)`; planning document 02 names a job
   `conformance` of its own (`pytest -m conformance` with and without PostgreSQL, `python -m tests.support.conformance`),
-  listed in `.github/ci-manifest.json`.
-- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml` and `ci-manifest.json`.
+  listed in `.github/ci-manifest.json`; and `conformance/**` and `tests/conformance/**` in the path filter of
+  `platforms.yml`, so a vector change runs on Windows and macOS (the POSIX-only vectors skip there; review H-1).
+- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml`, `platforms.yml` and
+  `ci-manifest.json` (lane J has the `platforms.yml` filter).
+
+### TB-093 · Foreign keys turn on when Nodestro and Orkexa switch to Tabrion (TABRION TAB-050 review M-1)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-050, LDP SQP-1, SQP-3, MIG-NOD, MIG-ORK
+- **What:** LDP SQP-3 (every connection has `foreign_keys` on) is a tightening: Nodestro `storage.py` and Orkexa
+  `_storage.py` open SQLite without it at the pinned commits, and Nodestro sets no file mode (SQP-1). After the switch,
+  existing rows that violate a foreign key make writes fail.
+- **Next step:** the MIG-NOD and MIG-ORK SQLite steps run `tabrion.sqlite.foreign_key_check` on existing databases
+  before the switch and record the result (conformance/SPEC.md, migration note).
 
 ### TB-018 · PostgreSQL matrix cost on pull requests
 

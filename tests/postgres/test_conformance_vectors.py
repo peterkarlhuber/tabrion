@@ -188,7 +188,10 @@ def lock_acquire(vector: Vector, ctx: Context) -> Observed:
                     _, state, snapshot = _activity(admin, names[session])
                     states["snapshot" if snapshot else state] += 1
                 waiter.join(timeout=10)
-                results.append(states.most_common(1)[0][0])
+                # Every sample must be idle without a snapshot, except at most one that catches the poll itself
+                # (SPEC appendix A, review L-3); a blocking wait or an open snapshot shows in (nearly) all of them.
+                busy = sum(count for key, count in states.items() if key != "idle")
+                results.append("idle" if busy <= 1 else f"open in {busy} of {sum(states.values())} samples")
             else:
                 raise AssertionError(f"{vector.id}: unknown lock operation {operation!r}")
     finally:

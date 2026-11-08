@@ -21,7 +21,7 @@
           "SELECT 2"
         ]
       },
-      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-200"
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
     },
     {
       "id": "LDP-SPL-002",
@@ -41,7 +41,7 @@
           "SELECT 2"
         ]
       },
-      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-200"
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
     },
     {
       "id": "LDP-SPL-003",
@@ -61,7 +61,7 @@
           "SELECT 2"
         ]
       },
-      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-200"
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
     },
     {
       "id": "LDP-SPL-004",
@@ -80,7 +80,7 @@
           "-- comment; here\nSELECT 1"
         ]
       },
-      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-200"
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
     },
     {
       "id": "LDP-SPL-005",
@@ -100,7 +100,7 @@
           "SELECT 2"
         ]
       },
-      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-200"
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
     },
     {
       "id": "LDP-SPL-006",
@@ -120,7 +120,7 @@
           "SELECT 2"
         ]
       },
-      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-200"
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
     },
     {
       "id": "LDP-SPL-007",
@@ -140,7 +140,7 @@
           "SELECT 3"
         ]
       },
-      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-200"
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
     },
     {
       "id": "LDP-SPL-008",
@@ -157,7 +157,7 @@
       "expect": {
         "statements": []
       },
-      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-200"
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
     },
     {
       "id": "LDP-SPL-009",
@@ -177,7 +177,7 @@
           "SELECT 2"
         ]
       },
-      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-200"
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
     }
   ]
 }

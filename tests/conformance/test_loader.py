@@ -9,7 +9,9 @@ holds the redaction marker outside a redaction vector.
 from __future__ import annotations
 
 import copy
+import importlib
 import json
+import os
 from pathlib import Path
 import shutil
 from typing import Any
@@ -41,6 +43,14 @@ ACTIONS = {
 """The closed action list of the schema (contract section 10.2)."""
 
 
+def _require_jsonschema() -> None:
+    """The schema check is an acceptance criterion: in CI a missing ``jsonschema`` fails, locally it skips (L-7)."""
+    if os.environ.get("CI") or os.environ.get("TABRION_REQUIRE_POSTGRES"):
+        importlib.import_module("jsonschema")
+    else:
+        pytest.importorskip("jsonschema")
+
+
 def _file(area: str = "sql-split") -> tuple[Path, dict[str, Any]]:
     path = conformance.VECTORS / f"{area}.json"
     return path, json.loads(path.read_text(encoding="utf-8"))
@@ -55,7 +65,7 @@ def test_v01_every_area_has_a_file_and_every_file_loads() -> None:
 
 @pytest.mark.parametrize("area", AREAS)
 def test_v01_every_file_validates_against_the_json_schema(area: str) -> None:
-    pytest.importorskip("jsonschema")
+    _require_jsonschema()
     validate_schema(conformance.VECTORS / f"{area}.json")
 
 
@@ -86,7 +96,7 @@ def test_v02_a_changed_expectation_fails_the_manifest(tmp_path: Path, monkeypatc
     monkeypatch.setattr(conformance, "SCHEMA", copy_root / "schema" / "vector-file.schema.json")
     monkeypatch.setattr(conformance, "SPEC", copy_root / "SPEC.md")
     monkeypatch.setattr(conformance, "MANIFEST", copy_root / "MANIFEST.json")
-    with pytest.raises(VectorFileError, match=r"checksum differs for \['vectors/sql-split.json'\]"):
+    with pytest.raises(VectorFileError, match=r"checksum differs for \['conformance/vectors/sql-split.json'\]"):
         conformance.verify_manifest()
     # Regenerating the manifest is not enough: the CHANGELOG must name the new digest.
     changelog = tmp_path / "CHANGELOG.md"
@@ -95,8 +105,46 @@ def test_v02_a_changed_expectation_fails_the_manifest(tmp_path: Path, monkeypatc
     digest = conformance.write_manifest()
     with pytest.raises(VectorFileError, match=r"CHANGELOG\.md does not name the current vectors"):
         conformance.verify_manifest()
-    changelog.write_text(changelog.read_text(encoding="utf-8") + f"\n- LDP digest {digest[:12]}\n", encoding="utf-8")
+    # Naming the new digest under the old version is not enough either: one LDP version has one digest (L-5).
+    changelog.write_text(
+        changelog.read_text(encoding="utf-8") + f"\n- LDP-0.1.0 digest {digest[:12]}\n", encoding="utf-8"
+    )
+    with pytest.raises(VectorFileError, match=r"more than one digest for LDP-0\.1\.0"):
+        conformance.verify_manifest()
+    # A new LDP version in SPEC.md (and its Changes entry) and its digest in the CHANGELOG pass.
+    spec = copy_root / "SPEC.md"
+    text = spec.read_text(encoding="utf-8").replace("**Version:** LDP-0.1.0", "**Version:** LDP-1.0.0")
+    spec.write_text(
+        text.replace("## Changes\n\n", "## Changes\n\n- **LDP-1.0.0**: LDP-SPL-001 changed; 33 rules.\n"),
+        encoding="utf-8",
+    )
+    for area in AREAS:
+        vector_file = copy_root / "vectors" / f"{area}.json"
+        vector_file.write_text(
+            vector_file.read_text(encoding="utf-8").replace("LDP-0.1.0", "LDP-1.0.0"), encoding="utf-8"
+        )
+    digest = conformance.write_manifest()
+    changelog.write_text(
+        changelog.read_text(encoding="utf-8") + f"\n- LDP-1.0.0 digest {digest[:12]}\n", encoding="utf-8"
+    )
     conformance.verify_manifest()
+
+
+@pytest.mark.parametrize(
+    ("row", "message"),
+    [
+        ("| SQP-8 | MAY | sqlite-profile | x | y |", "level 'MAY' is not one of"),
+        ("|SQP-8|MUST| sqlite-profile | x | y |", "does not count 34 rules"),
+        ("| SQP-1 | MUST | sqlite-profile | again | y |", "SQP-1: duplicate rule"),
+    ],
+)
+def test_spec_rules_refuses_unknown_rows(row: str, message: str) -> None:
+    """Review L-4: every rule row counts; another level, a duplicate or a wrong rule count fails."""
+    text = conformance.SPEC.read_text(encoding="utf-8")
+    anchor = "| SQP-1 | MUST |"
+    text = text.replace(anchor, row + "\n" + anchor, 1)
+    with pytest.raises(VectorFileError, match=message):
+        spec_rules(text)
 
 
 @pytest.mark.parametrize(
@@ -129,7 +177,7 @@ def test_v03_unreadable_json_is_refused(tmp_path: Path) -> None:
 
 
 def test_v03_schema_violation_is_reported(tmp_path: Path) -> None:
-    pytest.importorskip("jsonschema")
+    _require_jsonschema()
     _, data = _file()
     data["vectors"][0]["unknown_field"] = 1
     path = tmp_path / "sql-split.json"
