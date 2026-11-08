@@ -6,6 +6,7 @@ exactly once, so a refactoring cannot disarm a probe silently.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,8 @@ pytest.importorskip("sqlalchemy")
 pytest.importorskip("psycopg")
 
 T = "tests/unit/test_database.py::"
+POSIX_ONLY = {T + "test_b04_sqlite_path_checks_run_in_from_url"}
+"""Probed tests that skip on Windows: a skipped test cannot turn red, so their probes skip there too."""
 
 PROBES = [
     # Write transactions take the write lock at BEGIN (specification 3.2).
@@ -59,6 +62,13 @@ PROBES = [
         "            pass\n",
         T + "test_b04_sqlite_path_checks_run_in_from_url",
     ),
+    # safe_url shows a SQLite path as it is, not percent-encoded (Windows nightly of 546d254).
+    (
+        "_sa/database.py",
+        '        if url.get_backend_name() == "sqlite" and database:\n',
+        "        if False:\n",
+        T + "test_b01_safe_url_shows_the_sqlite_path_as_it_is",
+    ),
     # TLS: a weak sslmode for a remote host is refused.
     ("_sa/database.py", "if sslmode in _WEAK_SSLMODES or", "if False and", T + "test_b03_tls_violations"),
     # TLS: a remote host without sslmode gets require.
@@ -80,7 +90,7 @@ PROBES = [
 
 def test_unmutated_copy_passes(tmp_path: Path) -> None:
     """Positive control: the probed tests pass on an unchanged copy."""
-    result = _run(_copy(tmp_path), sorted({p[3] for p in PROBES}))
+    result = _run(_copy(tmp_path), sorted({p[3] for p in PROBES} - (POSIX_ONLY if os.name == "nt" else set())))
     assert result.returncode == 0, result.stdout[-2000:]
 
 
@@ -90,6 +100,8 @@ def test_unmutated_copy_passes(tmp_path: Path) -> None:
     ids=[p[3].split("::")[1] + f"-{i}" for i, p in enumerate(PROBES)],
 )
 def test_mutation_turns_the_test_red(tmp_path: Path, module: str, anchor: str, replacement: str, test: str) -> None:
+    if os.name == "nt" and test in POSIX_ONLY:
+        pytest.skip("the probed test skips on Windows")
     copy = _copy(tmp_path)
     target = copy / "tabrion" / module
     text = target.read_text(encoding="utf-8")

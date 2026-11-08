@@ -555,9 +555,20 @@ def _postgres_engine(url: sqlalchemy.URL, profile: Profile, options: dict[str, A
     return sqlalchemy.create_engine(url, **kwargs)
 
 
+_DATABASE_SLOT = "tabrion-database-slot"
+"""Stands for a SQLite file path while the URL is rendered; nothing in it is percent-encoded."""
+
+
 def _safe_url(url: sqlalchemy.URL) -> str:
+    """The URL with its password masked. A SQLite file path is shown as it is: SQLAlchemy percent-encodes it when it
+    renders the URL (``C%3A%5C...`` for ``C:\\...`` on Windows), which no reader of a log recognizes."""
     try:
-        rendered = url.render_as_string(hide_password=True)
+        database = url.database
+        if url.get_backend_name() == "sqlite" and database:
+            rendered = url.set(database=_DATABASE_SLOT).render_as_string(hide_password=True)
+            rendered = rendered.replace(_DATABASE_SLOT, database, 1)
+        else:
+            rendered = url.render_as_string(hide_password=True)
     except Exception:
         return "<unparseable url>"
     return _config.safe_url(rendered)

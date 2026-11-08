@@ -51,6 +51,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- `Database.safe_url` and `repr(Database)` show a SQLite file path as it is: a Windows path is no longer
+  percent-encoded (`C%3A%5C...`; TB-074).
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
   final (TAB-040) is the merge commit of the version-bump pull request that sets `0.1.0`, pinned by full SHA; its

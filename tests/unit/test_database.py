@@ -160,6 +160,21 @@ def test_b01_sqlite_file_urls(path: Path, scheme: str) -> None:
     assert path.exists()
 
 
+@pytest.mark.parametrize(
+    ("database", "shown"),
+    [
+        (r"C:\Users\a b\layer-b.db", r"sqlite+pysqlite:///C:\Users\a b\layer-b.db?mode=ro"),  # a Windows path
+        ("/srv/a@b/x%y.db", "sqlite+pysqlite:////srv/a@b/x%y.db?mode=ro"),  # "@" is no user name, "%" no escape
+        (":memory:", "sqlite+pysqlite:///:memory:?mode=ro"),
+    ],
+)
+def test_b01_safe_url_shows_the_sqlite_path_as_it_is(database: str, shown: str) -> None:
+    """SQLAlchemy percent-encodes the path when it renders a URL (``C%3A%5CUsers...``); ``safe_url`` does not
+    (Windows nightly of 546d254, TAB-040 readiness gap 2). Checked on every OS with a Windows-style path."""
+    url = sqlalchemy.URL.create("sqlite+pysqlite", database=database, query={"mode": "ro"})
+    assert tabrion._sa.database._safe_url(url) == shown
+
+
 def test_b01_url_object(path: Path) -> None:
     url = sqlalchemy.URL.create("sqlite", database=str(path))
     with Database.from_url(url) as database:
