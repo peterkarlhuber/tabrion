@@ -1,0 +1,140 @@
+{
+ "about": "State after Axentra's tests/conftest.py pg_urls (split roles) and truncate_all, verbatim in tests/golden/axentra_conftest.py (TAB-032, TAB-T-X17); TABRION_RECORD_GOLDEN=1 rewrites it.",
+ "axentra_commit": "1a59c84",
+ "state": {
+  "app_sees_users": [
+   [
+    "x"
+   ]
+  ],
+  "app_writes_bookkeeping": false,
+  "connect": [
+   [
+    true
+   ]
+  ],
+  "database_owner": [
+   [
+    "<owner>"
+   ]
+  ],
+  "public_schema": [
+   [
+    "<owner>",
+    false,
+    true,
+    false
+   ]
+  ],
+  "roles": [
+   [
+    "<app>",
+    false,
+    false,
+    true,
+    false,
+    false,
+    false
+   ],
+   [
+    "<owner>",
+    false,
+    false,
+    true,
+    false,
+    false,
+    false
+   ]
+  ],
+  "rows_after_truncate": [
+   [
+    "axentra_schema_migrations",
+    1
+   ],
+   [
+    "axentra_tenants",
+    0
+   ],
+   [
+    "axentra_users",
+    0
+   ],
+   [
+    "other_data",
+    1
+   ]
+  ],
+  "table_owners": [
+   [
+    "axentra_schema_migrations",
+    "<owner>"
+   ],
+   [
+    "axentra_tenants",
+    "<owner>"
+   ],
+   [
+    "axentra_users",
+    "<owner>"
+   ],
+   [
+    "other_data",
+    "<owner>"
+   ]
+  ],
+  "table_privileges": [
+   [
+    "axentra_schema_migrations",
+    "SELECT"
+   ],
+   [
+    "axentra_tenants",
+    "DELETE"
+   ],
+   [
+    "axentra_tenants",
+    "INSERT"
+   ],
+   [
+    "axentra_tenants",
+    "SELECT"
+   ],
+   [
+    "axentra_tenants",
+    "UPDATE"
+   ],
+   [
+    "axentra_users",
+    "DELETE"
+   ],
+   [
+    "axentra_users",
+    "INSERT"
+   ],
+   [
+    "axentra_users",
+    "SELECT"
+   ],
+   [
+    "axentra_users",
+    "UPDATE"
+   ],
+   [
+    "other_data",
+    "DELETE"
+   ],
+   [
+    "other_data",
+    "INSERT"
+   ],
+   [
+    "other_data",
+    "SELECT"
+   ],
+   [
+    "other_data",
+    "UPDATE"
+   ]
+  ]
+ }
+}
