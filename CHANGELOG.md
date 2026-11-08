@@ -31,6 +31,31 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Tests: the mapping table against PostgreSQL and SQLite, a fault-injection proxy for `outcome_unknown`, canary values,
   Hypothesis properties, mutation probes for the safety rules, and an allowlist check that the core imports only the
   standard library (G-T1 F-09, F-10).
+- `tabrion.sqlite` connection and profile (TAB-013): `SQLiteProfile` with validation and the `orkexa()`/`nodestro()`
+  presets; `connect` creates new files `0600` (exactly, whatever the umask) with `O_CREAT|O_EXCL|O_NOFOLLOW` before
+  SQLite opens them, refuses symbolic links for the file and its `-wal`, `-shm` and `-journal` files, checks after
+  opening that SQLite opened the checked file, opens `read_only` as `mode=ro` plus `query_only`, and applies the
+  profile (`foreign_keys` on, WAL, `synchronous=FULL`, `secure_delete`, `trusted_schema` off, busy timeout 30 s);
+  `apply_profile`, `check_path`, `create_private_file` and `loading_extensions`.
+- `tabrion.sqlite` transactions, migrations, backup and checks (TAB-014): `write_transaction` (`BEGIN IMMEDIATE`)
+  and `read_transaction` (snapshot, `query_only`), both refusing to nest; `migrate` with Nodestro's semantics (one
+  write transaction, backup first, the file unchanged on every error, a concurrent migration is seen);
+  `backup` (online, `0600` temporary file, `quick_check`, `fsync`, atomic rename, never replaces a target that
+  appeared meanwhile); `integrity_check`, `quick_check`, `foreign_key_check` and `diagnose`. Every function that
+  takes a connection follows rule T-NOTX. Contract section 3.9 lists what the implementation settled (I-21..I-31).
+- Tests `tests/sqlite/` (TAB-T-S01..S41): file modes under several umasks, symbolic-link and race cases, the
+  five-thread lost-update scenario, two processes migrating at once, byte-identical files after failed migrations,
+  backups under concurrent writes, damaged files, T-NOTX in every state, and the mutation probes; the platforms
+  workflow runs them on macOS and Windows.
+- Fixes from the independent review of TAB-013/TAB-014: `connect` refuses an existing file (or side file) owned by
+  another user or writable by group or others unless `allow_shared_file` (M-1); `diagnose` warns when the database
+  directory is world-writable without the sticky bit (M-2); `backup` checks that SQLite opened the temporary file it
+  created before the first page is written, and again before publishing (M-3); the checks run on idle connections
+  with driver-managed transactions (L-2); `executescript` in a migration step and `loading_extensions` documented
+  (L-1, I-3); 26 mutation probes (L-3).
+- Fixes from the delta re-review of TAB-010..TAB-012: `DbErrorRedactionFilter` no longer replaces a record whose
+  container argument raises while it is iterated, and reads containers lazily (at most 1,000 items, review N-2 and
+  the `islice` part of N-3); a misplaced docstring in `tabrion.errors` (N-5).
 
 - `tabrion.postgres` session helpers (TAB-015): `configure` applies `SessionSettings` in one
   `SELECT set_config(..., false)` round trip from a fixed allowlist (R-SET) and never commits;

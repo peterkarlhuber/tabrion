@@ -75,7 +75,9 @@ def test_the_master_carries_no_metadata_and_the_supplied_pixels() -> None:
 
 @pytest.mark.parametrize("name", sorted(VENDORED_SHA256))
 def test_the_brand_kit_scripts_are_vendored_unchanged(name: str) -> None:
-    assert _sha256(BRANDING / name) == VENDORED_SHA256[name]
+    # A Windows checkout may convert the scripts' line endings (core.autocrlf); the content is what counts.
+    text = (BRANDING / name).read_bytes().replace(b"\r\n", b"\n")
+    assert hashlib.sha256(text).hexdigest() == VENDORED_SHA256[name]
 
 
 @pytest.mark.parametrize("name", KEPT)

@@ -20,6 +20,7 @@ from collections.abc import Iterator, Mapping
 import contextlib
 from dataclasses import dataclass
 import enum
+import itertools
 import logging
 import re
 import sqlite3
@@ -165,11 +166,11 @@ _PG_CLASSES: dict[str, tuple[Kind, bool, bool]] = {
     "54": (Kind.RESOURCE, False, True),
 }
 _ESTABLISHMENT_STATES = frozenset({"53300"})
+"""Raised only while a connection is being established: nothing was sent, so the outcome is known (``retryable``
+without condition, contract mapping table)."""
 _OUTCOME_UNKNOWN_STATES = frozenset({"08007", "40003"})
 """``transaction_resolution_unknown`` and ``statement_completion_unknown``: the outcome is unknown by definition,
 whatever the caller says (contract I-3)."""
-"""Raised only while a connection is being established: nothing was sent, so the outcome is known (``retryable``
-without condition, contract mapping table)."""
 
 _QUERY_CANCELED = "57014"
 _STATEMENT_TIMEOUT_TEXT = "statement timeout"
@@ -756,7 +757,8 @@ def _scrub(text: str, errors: list[BaseException]) -> str:
 
 def _collect(value: object, found: list[BaseException]) -> None:
     """Add the database errors held by ``value``: itself, its chain, and inside lists, tuples, sets, dicts and
-    exception ``args`` (at most 3 levels and 1,000 objects, review H-2)."""
+    exception ``args`` (at most 3 levels and 1,000 objects, review H-2). Containers are read lazily (``islice``,
+    never copied in full); when iterating a container raises, what was read before stays (review N-3, N-2)."""
     stack: list[tuple[object, int]] = [(value, 0)]
     seen: set[int] = set()
     while stack and len(seen) < _MAX_COLLECT_ITEMS:
@@ -771,11 +773,13 @@ def _collect(value: object, found: list[BaseException]) -> None:
             if isinstance(args, tuple):
                 children.extend(args)
         elif isinstance(current, (list, tuple, set, frozenset)):
-            children.extend(current)
+            # A subclass may raise while iterating (a lazy collection, a proxy): keep what was read (review N-2).
+            with contextlib.suppress(Exception):
+                children.extend(itertools.islice(current, _MAX_COLLECT_ITEMS))
         elif isinstance(current, Mapping):
             with contextlib.suppress(Exception):
-                children.extend(current.keys())
-                children.extend(current.values())
+                for key, item in itertools.islice(current.items(), _MAX_COLLECT_ITEMS // 2):
+                    children.extend((key, item))
         if depth < _MAX_COLLECT_DEPTH:
             stack.extend((child, depth + 1) for child in children[:_MAX_COLLECT_ITEMS])
 
@@ -1124,4 +1128,7 @@ class RoleUnsafe(TabrionError):
 
 
 class UnsafePath(TabrionError):
-    """Codes ``sqlite.symlink`` and ``sqlite.unsafe_path``. The message never names the path."""
+    """Codes ``sqlite.symlink``, ``sqlite.unsafe_path``, ``sqlite.unsafe_owner`` and ``sqlite.unsafe_mode``.
+
+    The message never names the path.
+    """

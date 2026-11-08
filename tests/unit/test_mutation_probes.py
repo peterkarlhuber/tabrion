@@ -192,7 +192,7 @@ PROBES = [
         "        if False:\n",
         "tests/unit/test_config.py::test_c08_fifo_is_rejected_without_blocking"
         if hasattr(os, "mkfifo")
-        else "tests/unit/test_config.py::test_c08_directory_is_not_a_regular_file",
+        else "tests/unit/test_config.py::test_c08_device_is_not_a_regular_file",
     ),
 ]
 

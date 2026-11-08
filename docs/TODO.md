@@ -6,9 +6,9 @@
 > planning documents 09 and 14); this file is the entry point and summary. "TABRION <WP-ID>" names a work package of
 > that backlog.
 >
-> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M2 lane A pull request: TABRION
-> TAB-010, TAB-011, TAB-012, after the G-T1 follow-up pull request #2 merged). Lane C entries (TB-032..TB-037)
-> updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #5 merged).
+> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M2 lane B pull request: TABRION
+> TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`). Lane C entries (TB-032..TB-037)
+> updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged).
 
 ## Summary
 
@@ -16,17 +16,19 @@
 |---|---|
 | P0 Critical | 1 |
 | P1 High | 13 |
-| P2 Medium | 7 |
-| P3 Low | 13 |
-| P4 Optional | 0 |
+| P2 Medium | 9 |
+| P3 Low | 19 |
+| P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
 before G-R in any case; there is no published version.
 
 M1 and the G-T1 follow-up are merged: the package skeleton, the frozen API as typed stubs, CI, the import contracts,
-the documentation and the program files ([STATUS.md](program/STATUS.md#g-t1-conditions)). M2 has started: the M2 lane
-A pull request implements `tabrion.errors`, `tabrion.sql` and `tabrion.config` (TABRION TAB-010..TAB-012,
-[M2 evidence](program/STATUS.md#m2-evidence)); every other function still raises `NotImplementedError`.
+the documentation and the program files ([STATUS.md](program/STATUS.md#g-t1-conditions)). M2 has started:
+`tabrion.errors`, `tabrion.sql` and `tabrion.config` are merged (TABRION TAB-010..TAB-012, pull request #3); the M2
+lane B pull request implements `tabrion.sqlite` (TABRION TAB-013, TAB-014,
+[M2 lane B evidence](program/STATUS.md#m2-lane-b-evidence-tab-013-tab-014)); the functions of `tabrion.postgres`,
+`tabrion.check`, layer B and `tabrion.testing` still raise `NotImplementedError`.
 
 ## Priorities and statuses
 
@@ -91,20 +93,20 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-006 · Layer A implementation (TABRION TAB-010..TAB-017, TAB-030, TAB-031)
 
-- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-012, TAB-015 and TAB-016 merged; TAB-030 in the
-  second lane C pull request) · **Refs:**
+- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-016 merged; TAB-030 in the second lane C pull
+  request) · **Refs:**
   TABRION TAB-010, TAB-011, TAB-012, TAB-013, TAB-014, TAB-015, TAB-016, TAB-017, TAB-030, TAB-031
 - **What:** replace the stubs in order of the critical path: `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011),
   `tabrion.config` (TAB-012), `tabrion.sqlite` connection and profile (TAB-013) then transactions, `migrate`,
   `backup` and checks (TAB-014), `tabrion.postgres` configure, ping, diagnose, extension status (TAB-015), roles
   (TAB-016), `tabrion.check` and finding codes (TAB-017), `SessionLock` and advisory helpers (TAB-030),
   `grant_runtime_role` (TAB-031). Each with the TAB-T test IDs of the contract.
-- **Next step:** TAB-010..TAB-012 are in review (the G-1 notes and F-12 are done; the independent review of TAB-010
-  is TB-026). TAB-013 and TAB-015 can start once they are merged. `test_stubs_raise_not_implemented` shrinks module
-  by module as stubs are replaced (`errors`, `sql`, `config` have left it); every change to a signature also runs
+- **Next step:** TAB-010..TAB-012 are merged (independent review accepted at `ece7572`). TAB-013 and TAB-014 are in
+  review (independent review TB-044). `test_stubs_raise_not_implemented` shrinks module by module as stubs are
+  replaced (`errors`, `sql`, `config`, `sqlite` have left it); every change to a signature also runs
   `scripts/api_surface.py --write` and updates the contract. TAB-017 follows the dispatch of C-1 (contract section
   7). TAB-015 and TAB-016 are merged (contract I-14..I-20, [M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence),
-  independent review TB-032 accepted); TAB-030 is in review (I-21, I-23); `IMPLEMENTED` in
+  independent review TB-032 accepted); TAB-030 is in review (I-32, I-34); `IMPLEMENTED` in
   `tests/unit/test_public_api.py` lists the functions of the partly implemented `tabrion.postgres` (only
   `grant_runtime_role` is left). Then TAB-031 on `role_info`/`inspect_role`. Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
   `sent=False` for checkout errors.
@@ -117,7 +119,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tabrion.testing` 0.1 (TAB-020) with a database per session, roles without superuser, truncate and runtime-role
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
-- **Next step:** after TAB-014 and TAB-015. TAB-018 also settles F-11 (TB-020) and F-14 (`Database()` without a
+- **Next step:** after TAB-014 and TAB-015. TAB-018 first decides TB-040 (review N-4), also settles F-11 (TB-020) and
+  F-14 (`Database()` without a
   factory raises `TypeError`); TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture `tabrion_role_setup`
   (G-10).
 
@@ -250,17 +253,6 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   unit test `test_e15_localized_cancel_message_is_canceled` covers the classification with a German message.
 - **Next step:** with TAB-034 or QA-4, build or select an image with the `de_DE` locale for one PostgreSQL job.
 
-### TB-026 · Independent review of TAB-010 (planning document 07 section 6)
-
-- **Priority:** P1 High · **Status:** Needs external review (delta re-review) · **Refs:** TABRION TAB-010, TAB-011,
-  TAB-012, B-06-1, review `tab-010-012-review.md`
-- **What:** the review model requires an independent review agent for every TAB package in `errors`. The review of
-  pull request #3 at `9fe568f` was **not accepted** (H-1 R-NORETRY through `__context__`, H-2 `DETAIL` in `repr` and
-  container arguments). The fix round in the same pull request fixes H-1, H-2, M-1..M-3, L-1..L-3, L-6, I-1, I-2,
-  I-6 and part of I-5 ([M2 evidence](program/STATUS.md#m2-evidence), D-26, D-27); L-4, L-5, I-3, I-4, the rest of
-  I-5 and I-7 are TB-028..TB-030 and SECURITY.md.
-- **Next step:** delta re-review on the new pull request head.
-
 ### TB-027 · Statement splitter limitations (TABRION TAB-011)
 
 - **Priority:** P3 Low · **Status:** Accepted risk · **Refs:** TABRION TAB-011, contract I-9
@@ -323,7 +315,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   D-33), M-2 by qualifying every type and operator, L-2 (NOINHERIT member test) and I-1 (ping without a savepoint in
   an aborted transaction); L-1 is documented in I-14 and I-16; I-2..I-4 are in TB-034, TB-036 and TB-037.
 - **Delta re-review:** accepted; one new Low, DL-1 (in psycopg pipeline mode no savepoint was opened, so a failing
-  reader aborted the caller's pipeline transaction). Fixed in the second lane C pull request (contract I-23, test
+  reader aborted the caller's pipeline transaction). Fixed in the second lane C pull request (contract I-34, test
   `test_dl1_*`, a mutation probe).
 - **Next step:** none for TAB-015/TAB-016. TAB-030 (locks) needs the same independent review: the second lane C pull
   request carries the self-review ([M2 lane C2 evidence](program/STATUS.md#m2-lane-c2-evidence)).
@@ -331,7 +323,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 ### TB-033 · Public `tabrion.testing.faults`: a 0.2 surface decision (TABRION TAB-034)
 
 - **Priority:** P3 Low · **Status:** Decided for 0.1 (internal module); open for 0.2 · **Refs:** TABRION TAB-034,
-  QA-3, RA-B-3, MIG-T-AXE-8, `docs/api/surface.json`, contract I-22
+  QA-3, RA-B-3, MIG-T-AXE-8, `docs/api/surface.json`, contract I-33
 - **What:** planning documents 07 (K7: `tabrion.testing.faults.DropReplyProxy`) and 09 (TAB-034) made the
   fault-injection proxy a public module, while the frozen contract has no `tabrion.testing.faults`. Decision
   (coordinator, 2026-11-08): do not extend the frozen surface now. TAB-034 ships the proxy as the internal, unstable
@@ -382,6 +374,115 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   know; reached only without `pg_settings`, where `current_setting` always prints one unit.
 - **Next step:** with layer B (TAB-018), recommend calling the checks outside a transaction in the guide; make
   `_milliseconds` return `None` for an unknown format if a server ever prints one.
+
+### TB-038 · Redaction: multi-line `DETAIL` skipping ends at a value line that looks like a boundary (review N-1)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-010, contract I-6, review N-1
+- **What:** in pre-formatted text, `_strip_server_text` skips from a `DETAIL:` line to the next line starting with
+  one of `_BOUNDARIES` (`[SQL: `, `File "`, `+-`, `Traceback ...`). A value with an embedded newline followed by such
+  a token (`"a\n+-SECRET"`) ends the skip early and the rest is printed. Errors found as objects and `repr` forms are
+  redacted correctly.
+- **Next step:** end the skip only at a boundary followed by its expected structure (for example
+  `File "<path>", line N`), or accept it as a residual next to R-1 in SECURITY.md.
+
+### TB-039 · Redaction: each record is formatted twice (review N-3)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-010, review N-3
+- **What:** the filter calls `record.getMessage()` for every record, and the formatter formats it again, so argument
+  `__str__` methods run twice. The `islice` part (containers are no longer copied in full) is done in the M2 lane B
+  pull request.
+- **Next step:** a fast path for records whose arguments are only `str`, `int`, `float` and `None` and whose
+  template has no marker; freeze a clean expensive message (`record.msg, record.args = message, None`); document the
+  double `__str__` call.
+
+### TB-040 · `classify(tabrion_error, during_commit=True)` ignores the flags (review N-4; before TAB-018)
+
+- **Priority:** P2 Medium · **Status:** Open (prerequisite of TABRION TAB-018) · **Refs:** TABRION TAB-010, TAB-018,
+  R-NORETRY, contract I-1, I-13, review N-4
+- **What:** `classify` returns a `TabrionError`'s stored classification unchanged, ignoring `sent` and
+  `during_commit`: a `ConnectionFailed` classified at checkout (`sent=False`, retryable) stays retryable for
+  `classify(err, during_commit=True)`. Nothing builds such errors before layer B.
+- **Next step:** decide in TAB-018 before its retry and translation code: apply R-NORETRY on top of the stored
+  classification (CONNECTION with `during_commit` or a later `sent` forces `outcome_unknown` and not retryable), or
+  document in I-1/I-13 that the flags are ignored and add a TAB-018 test.
+
+### TB-041 · Equivalent mutant of the `msg` replacement (review N-6)
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** TABRION TAB-010, review N-6
+- **What:** dropping the replacement of a database exception passed as `msg` survives every test, because the
+  formatted-message scrub replaces its text anyway.
+- **Next step:** optionally assert that `record.msg` is the safe message, which kills the mutant.
+
+### TB-042 · Inline `DETAIL:` with a single space is not stripped (review N-7)
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** TABRION TAB-010, contract I-6, review N-7
+- **What:** the inline alternative of `_SERVER_TEXT_START` needs two spaces after `DETAIL:`; text rewritten to single
+  spaces (`str(e).replace("\n", " ").replace("  ", " ")`) keeps the value. It needs a deliberate rewrite; the same
+  text with a newline is caught.
+- **Next step:** accept `\s+` after a sentence end (`." DETAIL:`), or document it as a residual.
+
+### TB-043 · Parent directory and side-file checks for SQLite files (07 TM-03, TABRION TAB-017)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-013, TAB-017, TM-03, TAB-SQ-003, TAB-SQ-004,
+  contract I-22, SECURITY.md
+- **What:** planning document 07 TM-03 asks for a warning when the database's directory is world-writable without
+  the sticky bit. Since the review fix round (M-2) `diagnose` logs a WARNING on `tabrion.sqlite` for it; the frozen
+  `SQLiteDiagnosis` has no field (deviation D-40). SQLite opens `-wal`/`-shm`/`-journal` by name after `connect`
+  checked them, so such a directory is the remaining way to redirect them (SECURITY.md).
+- **Next step:** TAB-017 checks the directory of `SQLiteDiagnosis.path` itself and reports a finding (a new code
+  next to TAB-SQ-003/004 needs a contract addendum); 0.2 may add a `directory_unsafe` field to `SQLiteDiagnosis`
+  by contract addendum.
+
+### TB-044 · Independent review of TAB-013 and TAB-014 (planning document 07 section 6)
+
+- **Priority:** P1 High · **Status:** In progress (fix round in pull request #4) · **Refs:** TABRION TAB-013, TAB-014,
+  B-06-3, B-06-5, MIG-NOD-6, `reviews/tab-013-014-review.md`
+- **What:** the review model requires an independent review agent for TAB packages in `sqlite` (file permissions,
+  transactions). The review at `8e78e9c` is ACCEPTED WITH CONDITIONS (M-1..M-3); the fix round fixes M-1..M-3 and
+  L-1..L-3 in the same pull request ([STATUS.md](program/STATUS.md#review-fix-round-tab-013-tab-014)); the Info
+  items are TB-046..TB-049.
+- **Next step:** delta re-review of the fix round, then merge.
+
+### TB-045 · Randomized symlink race (TAB-T-123) in the nightly stress suite (QA-4)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-013, QA-4, TM-04, TAB-T-123
+- **What:** planning document 07 asks for a race test with 1,000 repetitions (a link swapped in between the check
+  and the open, 0 hits). The pull request tests every window deterministically through seams (TAB-T-S07: before
+  creation, after the check, while SQLite opens and swapped back, an inode swap); a randomized repetition test would
+  be timing-dependent on pull requests.
+- **Next step:** add it to the nightly stress job with QA-4.
+
+### TB-046 · ATTACH on a read-only SQLite connection creates an empty file (review I-1)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-013, contract I-22, review I-1
+- **What:** `ATTACH 'other.db'` on a `connect(read_only=True)` connection creates an empty file at the attached
+  path. `query_only` blocks writes into it, and the main file stays byte-identical, but the file appears.
+- **Next step:** set `SQLITE_LIMIT_ATTACHED` to 0 for read-only connections (`Connection.setlimit`, Python 3.11+), or
+  document it in I-22; decide with TAB-017.
+
+### TB-047 · Windows: file modes are cosmetic, the `CREATE_NEW` race remains (review I-2)
+
+- **Priority:** P3 Low · **Status:** Open (accepted for M2) · **Refs:** TABRION TAB-013, TAB-T-S12, contract I-22,
+  SECURITY.md, review I-2
+- **What:** Windows does not enforce 0600 (ACLs are inherited from the directory), and between the `_is_link` check
+  and `CREATE_NEW` (which follows a dangling link) a link can still be planted.
+- **Next step:** with S4 (Desktop), set an owner-only ACL on new files (`SetSecurityInfo`) and create through
+  `CreateFileW` with `FILE_FLAG_OPEN_REPARSE_POINT`; both need `ctypes` code in the core, so an ADR first.
+
+### TB-048 · `loading_extensions` cannot restore an enabled state (review I-3)
+
+- **Priority:** P4 Optional · **Status:** Open (documented) · **Refs:** TABRION TAB-013, contract I-23, review I-3
+- **What:** the block always disables extension loading on exit, even when the caller had enabled it before;
+  `sqlite3` has no getter. Documented in the docstring and I-23 in the fix round.
+- **Next step:** none unless a consumer needs it; then track the state on the connection in a `WeakKeyDictionary`.
+
+### TB-049 · Backup tests have no explicit timeout (review L-3, mutant 8; I-4)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-014, QA-4, review L-3, I-4
+- **What:** removing the `in_transaction` guard of `backup` makes the backup block on its own lock: the suite hangs
+  instead of failing (the review counts it as caught, CI times out). `pytest-timeout` is not a development
+  dependency. (I-4: review N-3, the double formatting cost, stays TB-039.)
+- **Next step:** add `pytest-timeout` with QA-4 and mark the backup and migration tests with a timeout.
 
 ### TB-024 · Circular import of the staged 0.2 mixins (G-T1 condition check CC-2)
 
