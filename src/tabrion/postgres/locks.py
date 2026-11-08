@@ -139,7 +139,8 @@ class SessionLock:
     by default with ``tabrion.postgres.configure(conn, SessionSettings(application_name="tabrion-lock"))``. Before
     every operation on held locks a ``SELECT 1`` checks that it is alive. Not fork-safe: a child process (another
     PID) leaves the parent's connection alone and opens its own, holding nothing; its internal lock is new, also when
-    another thread of the parent was inside a method at the fork.
+    another thread of the parent was inside a method at the fork. ``configure`` must not fork: a child that returns
+    into the method would use the parent's socket mid-operation (review DI-1 of #6).
     """
 
     def __init__(
@@ -270,7 +271,8 @@ class SessionLock:
     def acquire(self, key: int, *, timeout: float | None = None, poll_interval: float = 0.2) -> bool:
         """Poll ``try_acquire`` every ``poll_interval`` seconds; ``False`` after ``timeout`` (``None``: no limit).
 
-        The internal lock is released while sleeping, so other threads keep using this ``SessionLock``.
+        The internal lock is released while sleeping, so other threads keep using this ``SessionLock``. A key that
+        was held on a lost connection raises ``UsageError("postgres.lock_lost")`` at once, without polling.
         """
         key = _key(key)
         interval = _poll_interval(poll_interval)
@@ -323,7 +325,7 @@ class SessionLock:
                 self._drop()
 
     def held_keys(self) -> frozenset[int]:
-        """The keys held on a live connection."""
+        """The keys held on a live connection; does not acknowledge a loss (``try_acquire`` still raises)."""
         with self._guard:
             self._check_open()
             if self._held:

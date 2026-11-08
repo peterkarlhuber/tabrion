@@ -100,6 +100,16 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   given connection. Errors are never retried. A key held on a lost connection raises
   `UsageError("postgres.lock_lost")` until `holds` or `release` acknowledges the loss; a forked child gets a fresh
   internal lock; `lock_key` raises `ValueError` for a string without a UTF-8 form.
+- `tabrion.postgres.grant_runtime_role` (TAB-031), unifying Axentra's and Nodestro's: run as the owner role, it grants
+  the runtime role `USAGE` on the schema, `SELECT, INSERT, UPDATE, DELETE` on its tables, `USAGE, SELECT` on its
+  sequences, `EXECUTE` on its functions and the same default privileges, revokes the write privileges on each of
+  `protected_tables` that exists in the schema, all in one transaction, then grants `CONNECT` where the owner may,
+  and returns a fresh `inspect_role`. Idempotent; never `CREATE`. Refuses (`RoleUnsafe`, nothing granted) the owner
+  itself, a role that can become the owner or a superuser or BYPASSRLS role (also as a NOINHERIT member), and a role
+  owning tables of the schema or owning the schema itself (or able to become its owner); refuses a schema that does
+  not exist (`UsageError("postgres.schema_missing")`), names over 63 bytes (`ValueError`) and running inside the
+  caller's transaction (`UsageError("postgres.nested_transaction")`). The catalog afterwards equals the Axentra and Nodestro results
+  (golden files of both reference functions).
 - `tabrion.testing` (TAB-020), activated with `pytest_plugins = ["tabrion.testing"]`: `configure` chooses the
   environment variable names (`env_prefix`, or the consumers' own names) and the name prefix; `tabrion_postgres_url`
   skips without a server and fails under the require variable, and masks the password in pytest's reports;
@@ -123,7 +133,7 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 43 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  transaction state, and carry 65 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`
