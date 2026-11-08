@@ -118,7 +118,7 @@ extend-immutable-calls = [
 python_version = "3.11"
 strict = true
 packages = ["tabrion"]
-mypy_path = "src"
+mypy_path = "src:examples/measurements:examples/parts"
 warn_unused_ignores = true
 
 # Import contracts (AC-1 = QA-16, 05 §2.3 and §4.2, edge list K-33). CI runs `lint-imports` (jobs "lint" and

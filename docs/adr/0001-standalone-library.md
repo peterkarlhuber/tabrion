@@ -3,6 +3,9 @@
 - **Status:** Accepted (2026-11-07, plan approval G-A). The name `tabrion` is conditional on GOV-1: the name check
   ([report](../program/reports/name-check.md)) is done with a conditional result, and the owner checks the trademark
   registers manually before G-T2. A conflict leads to a rename (decision E-Name).
+- **Amendment 2026-11-08** (owner decision of 2026-11-08 11:26Z): the owner did not order the register check; it
+  is no longer a prerequisite of G-T2. Tabrion is consumed through Git SHA pins without public marketing; a later
+  public marketing under this name needs a new assessment first.
 - **Plan reference:** TAB-ADR-0001 (planning document 10)
 
 ## Context
