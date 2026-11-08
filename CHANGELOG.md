@@ -8,6 +8,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
+  and remove a stable name, and the downstream notice in the release flow. The internal helper
+  `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
+  replacement and the removal version, and refuses a window shorter than S-3. `scripts/api_surface.py` checks every
+  deprecation against `surface.json` (`"deprecated"`) and the CHANGELOG, and with `--base <ref>` that every surface
+  change since `<ref>` is named under `Deprecated`, `Removed` or `Changed` in `[Unreleased]` (S-6).
+
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
   `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`

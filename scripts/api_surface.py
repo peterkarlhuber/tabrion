@@ -11,14 +11,22 @@ fails when:
 * a name whose ``since`` is newer than the package version is importable from its public path (the 0.1.0 surface must
   not export a 0.2 name). Such a name is *staged*: ``staged`` says where its frozen stub lives (``module:qualname``),
   and its signature is compared there;
-* a re-exported name (``alias_of``) is not the same object as its canonical path.
+* a re-exported name (``alias_of``) is not the same object as its canonical path;
+* a deprecation (``tabrion._deprecated.REGISTRY``, TAB-051) and the ``deprecated`` value of its entry differ, the
+  CHANGELOG names it under no ``### Deprecated`` heading, or the package reached its removal version.
+
+``--base REF`` (S-6 of the API stability policy, ``docs/development/api-stability.md``) also compares the file with
+its state at the git revision ``REF``: a removed name must be named under ``### Removed``, a changed signature under
+``### Changed`` (or ``### Removed``/``### Security``), and a new deprecation under ``### Deprecated`` in the
+``[Unreleased]`` section of ``CHANGELOG.md``. A name counts as named when its full path (``tabrion.sqlite.connect``) or
+the path without ``tabrion.`` (``sqlite.connect``) appears there in backticks.
 
 ``--write`` regenerates the file from the code and keeps ``since``, ``stability`` and ``staged`` of every existing
 entry; a new name gets the current minor version and ``S``. Review the diff: a changed signature after the API freeze
 is an API change and needs the contract updated in the same pull request.
 
-Usage: ``python scripts/api_surface.py [--write] [--surface docs/api/surface.json]``. Needs every extra installed
-(``pip install -e ".[dev]"``), because it imports every public module.
+Usage: ``python scripts/api_surface.py [--write] [--base REF] [--surface docs/api/surface.json]``. Needs every extra
+installed (``pip install -e ".[dev]"``), because it imports every public module.
 """
 
 from __future__ import annotations
@@ -31,12 +39,15 @@ import inspect
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 from types import ModuleType
 from typing import Any
+import warnings
 
 ROOT = Path(__file__).resolve().parent.parent
 SURFACE = ROOT / "docs" / "api" / "surface.json"
+CHANGELOG = ROOT / "CHANGELOG.md"
 
 PUBLIC_MODULES = (
     "tabrion",
@@ -191,7 +202,10 @@ def collect() -> dict[str, Entry]:
         for name in module.__all__:
             if name in SKIP:
                 continue
-            obj = getattr(module, name)
+            with warnings.catch_warnings():
+                # A deprecated name stays in __all__ until its removal (S-3); describing it is no use of it.
+                warnings.simplefilter("ignore", DeprecationWarning)
+                obj = getattr(module, name)
             path = f"{module_name}.{name}"
             objects[path] = obj
             if not isinstance(obj, ModuleType):
@@ -269,7 +283,7 @@ def package_minor() -> tuple[int, int]:
 # Check and write
 # ---------------------------------------------------------------------------------------------------------------------
 
-META = ("since", "stability", "staged")
+META = ("since", "stability", "staged", "deprecated")
 
 
 def check(recorded: dict[str, Entry], actual: dict[str, Entry], current: tuple[int, int]) -> list[str]:
@@ -318,17 +332,113 @@ def check(recorded: dict[str, Entry], actual: dict[str, Entry], current: tuple[i
     return problems
 
 
-def write(recorded: dict[str, Entry], actual: dict[str, Entry], current: tuple[int, int]) -> dict[str, Entry]:
+def write(
+    recorded: dict[str, Entry], actual: dict[str, Entry], current: tuple[int, int], registry: dict[str, Any]
+) -> dict[str, Entry]:
     out: dict[str, Entry] = {}
     default_since = f"{current[0]}.{current[1]}"
     for path, body in actual.items():
         old = recorded.get(path, {})
         out[path] = {**body, "since": old.get("since", default_since), "stability": old.get("stability", "S")}
+        if path in registry:
+            out[path]["deprecated"] = registry[path].as_surface()
     for path, entry in recorded.items():
         if path not in actual and "staged" in entry and minor(entry["since"]) > current:
             meta = {k: entry[k] for k in META}
             out[path] = {**describe_staged(entry["staged"]), **meta}
     return dict(sorted(out.items()))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Deprecations and the CHANGELOG (TAB-051, policy S-3 and S-6)
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def registry() -> dict[str, Any]:
+    """The deprecations registered while :func:`collect` imported the public modules."""
+    from tabrion._deprecated import REGISTRY
+
+    return dict(REGISTRY)
+
+
+def changelog_sections(text: str, *, unreleased_only: bool) -> dict[str, str]:
+    """``### Heading`` -> its text, joined over every release (or only ``[Unreleased]``)."""
+    if unreleased_only:
+        match = re.search(r"^## \[Unreleased\][^\n]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+        text = match.group(1) if match else ""
+    sections: dict[str, str] = {}
+    for match in re.finditer(r"^### +(\w+)[^\n]*\n(.*?)(?=^##+ |\Z)", text, re.M | re.S):
+        sections[match.group(1)] = sections.get(match.group(1), "") + match.group(2)
+    return sections
+
+
+def named(path: str, text: str) -> bool:
+    """``path`` or ``path`` without ``tabrion.`` in backticks, as a whole name (not only its last part)."""
+    short = path.removeprefix("tabrion.")
+    return any(re.search(rf"`{re.escape(name)}(?:\(|`)", text) for name in {path, short})
+
+
+def check_deprecations(
+    recorded: dict[str, Entry], registered: dict[str, Any], changelog: str, current: tuple[int, int]
+) -> list[str]:
+    problems: list[str] = []
+    deprecated_text = changelog_sections(changelog, unreleased_only=False).get("Deprecated", "")
+    for path, entry in sorted(registered.items()):
+        if path not in recorded:
+            problems.append(f"{path}: deprecated, but not in surface.json (only a public name can be deprecated)")
+            continue
+        if recorded[path].get("deprecated") != entry.as_surface():
+            problems.append(
+                f"{path}: deprecation differs\n  surface.json: {recorded[path].get('deprecated')}\n"
+                f"  code:         {entry.as_surface()}"
+            )
+        if not named(path, deprecated_text):
+            problems.append(f"{path}: deprecated, but CHANGELOG.md names it under no '### Deprecated' heading")
+        if current >= minor(entry.remove_in):
+            problems.append(f"{path}: due for removal in {entry.remove_in}; remove it (CHANGELOG '### Removed')")
+    for path, entry in sorted(recorded.items()):
+        if "deprecated" in entry and path not in registered:
+            problems.append(f"{path}: 'deprecated' in surface.json, but the code does not warn (tabrion._deprecated)")
+    return problems
+
+
+def check_changelog(base: dict[str, Entry], recorded: dict[str, Entry], changelog: str) -> list[str]:
+    """S-6: every surface change since ``base`` is named in the matching ``[Unreleased]`` CHANGELOG section."""
+    sections = changelog_sections(changelog, unreleased_only=True)
+
+    def text(*names: str) -> str:
+        return "".join(sections.get(name, "") for name in names)
+
+    problems: list[str] = []
+    for path in sorted(set(base) - set(recorded)):
+        if not named(path, text("Removed")):
+            problems.append(f"{path}: removed since the base, but not named under '### Removed' in [Unreleased]")
+    for path in sorted(set(base) & set(recorded)):
+        old = {k: v for k, v in base[path].items() if k != "deprecated"}
+        new = {k: v for k, v in recorded[path].items() if k != "deprecated"}
+        if old != new and not named(path, text("Changed", "Removed", "Security")):
+            problems.append(f"{path}: changed since the base, but not named under '### Changed' in [Unreleased]")
+        new_deprecation = "deprecated" in recorded[path] and "deprecated" not in base[path]
+        if new_deprecation and not named(path, text("Deprecated")):
+            problems.append(f"{path}: deprecated since the base, but not named under '### Deprecated'")
+    return problems
+
+
+def load_base(ref: str, surface: Path) -> dict[str, Entry]:
+    """``surface`` at the git revision ``ref``; an empty surface when the file did not exist there."""
+    relative = surface.resolve().relative_to(ROOT).as_posix()
+    result = subprocess.run(  # noqa: S603 - fixed argument list, no shell
+        ["git", "-C", str(ROOT), "show", f"{ref}:{relative}"],  # noqa: S607 - git from PATH, as in CI
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        if "does not exist" in result.stderr or "exists on disk, but not in" in result.stderr:
+            return {}
+        raise SystemExit(f"api surface: git show {ref}:{relative} failed: {result.stderr.strip()}")
+    names: dict[str, Entry] = json.loads(result.stdout)["names"]
+    return names
 
 
 def load(path: Path) -> dict[str, Entry]:
@@ -355,18 +465,24 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0] if __doc__ else None)
     parser.add_argument("--write", action="store_true", help="regenerate the file (keeps since/stability/staged)")
     parser.add_argument("--surface", type=Path, default=SURFACE, help="default: docs/api/surface.json")
+    parser.add_argument("--changelog", type=Path, default=CHANGELOG, help="default: CHANGELOG.md")
+    parser.add_argument("--base", help="git revision: every surface change since it must be in the CHANGELOG (S-6)")
     args = parser.parse_args(argv)
     recorded = load(args.surface)
     actual = collect()
+    registered = registry()
     current = package_minor()
     if args.write:
-        dump(args.surface, write(recorded, actual, current))
+        dump(args.surface, write(recorded, actual, current, registered))
         print(f"api surface: wrote {args.surface} ({len(actual)} public paths)")
         return 0
     if not recorded:
         print(f"api surface: {args.surface} is missing or empty", file=sys.stderr)
         return 1
-    problems = check(recorded, actual, current)
+    changelog = args.changelog.read_text(encoding="utf-8") if args.changelog.exists() else ""
+    problems = check(recorded, actual, current) + check_deprecations(recorded, registered, changelog, current)
+    if args.base:
+        problems += check_changelog(load_base(args.base, args.surface), recorded, changelog)
     for problem in problems:
         print(f"api surface: {problem}", file=sys.stderr)
     staged = sum(1 for e in recorded.values() if minor(e.get("since", "0.0")) > current)
