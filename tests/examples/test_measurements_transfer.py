@@ -40,11 +40,15 @@ def postgres_url(conninfo: str) -> sa.URL:
     params = {key: str(value) for key, value in conninfo_to_dict(conninfo).items() if value is not None}
     port = params.get("port")
     query = {"options": params["options"]} if params.get("options") else {}
+    host = params.get("host") or params.get("hostaddr")
+    if host is not None and host.startswith("/"):
+        # A Unix-socket directory is no URL host; libpq takes it as the ``host`` query parameter (review L-2 of #23).
+        query["host"], host = host, None
     return sa.URL.create(
         "postgresql",
         username=params.get("user"),
         password=params.get("password"),
-        host=params.get("host") or params.get("hostaddr"),
+        host=host,
         port=int(port) if port else None,
         database=params.get("dbname"),
         query=query,
@@ -263,6 +267,29 @@ def test_cli_transfer(
     assert capsys.readouterr().out == "2500 sent in 3 batches, 2500 new upstream, mark 2500\n"
     assert main([*base, "transfer"]) == 0
     assert capsys.readouterr().out == "0 sent in 0 batches, 0 new upstream, mark 2500\n"
+
+
+def test_transfer_from_start_fills_a_switched_upstream(
+    tmp_path: Path, upstream_url: sa.URL, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review L-1 of #23: the mark says what was sent, not where. Pointed at a fresh upstream, a plain run sends
+    nothing; ``--from-start`` sends everything again, and a repeat against the old upstream adds nothing."""
+    base = ["--db", str(tmp_path / "cli.db"), "--backup-dir", str(tmp_path / "backups")]
+    monkeypatch.delenv(f"{URL_ENV}_FILE", raising=False)
+    fresh = sa.make_url(f"sqlite:///{tmp_path / 'fresh.db'}")
+    with open_upstream(fresh) as database:
+        create_upstream(database)
+    assert main([*base, "demo", "100"]) == 0
+    for url in (upstream_url, fresh):
+        monkeypatch.setenv(URL_ENV, url.render_as_string(hide_password=False))
+        capsys.readouterr()
+        assert main([*base, "transfer"]) == 0
+    assert capsys.readouterr().out == "0 sent in 0 batches, 0 new upstream, mark 100\n"  # the silent case
+    assert main([*base, "transfer", "--from-start"]) == 0
+    assert capsys.readouterr().out == "100 sent in 1 batches, 100 new upstream, mark 100\n"
+    monkeypatch.setenv(URL_ENV, upstream_url.render_as_string(hide_password=False))
+    assert main([*base, "transfer", "--from-start"]) == 0
+    assert capsys.readouterr().out == "100 sent in 1 batches, 0 new upstream, mark 100\n"
 
 
 def test_cli_transfer_errors_name_no_values(

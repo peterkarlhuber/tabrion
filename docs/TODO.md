@@ -172,6 +172,9 @@ required (owner decision of 2026-11-08 11:26Z).
   `examples/measurements` (local capture, layer A). RA-B-2 adds the idempotent transfer through layer B
   (`measurements/transfer.py`, `measurements/upstream.py`: batches by the high-water mark `seq`, `ON CONFLICT DO
   NOTHING` on the natural key, the mark moved only after the upstream commit; local migration 3 `transfer_mark`).
+  The mark is not tied to an upstream identity (review L-1 of #23): `transfer --from-start` (`Store.reset_mark`) is
+  the documented reset after switching or restoring the upstream; storing an upstream fingerprint with the mark
+  (for example a UUID row that `init-upstream` creates) is open for RA-EVAL.
   The tests live in `tests/examples/` and run inside the normal suite: `tests/examples/conftest.py` puts each
   application on `sys.path`, and `mypy_path` in `pyproject.toml` names it for `mypy --strict src tests scripts`. The
   transfer tests run against an upstream SQLite file in the core jobs and against PostgreSQL (marker `postgres`) in
