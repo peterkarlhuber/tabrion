@@ -278,6 +278,20 @@ PROBES = [
         "    if redacted is not None:\n        return redacted\n    return event_dict\n    try:\n",
         "tests/unit/test_errors.py::test_r2_1_processor_fallback_keeps_only_the_event",
     ),
+    # TAB-022a: the consumer golden files catch a changed write transaction (Orkexa's BEGIN IMMEDIATE helpers) ...
+    (
+        "sqlite.py",
+        '    connection.execute("BEGIN IMMEDIATE")\n',
+        '    connection.execute("BEGIN")\n',
+        "tests/unit/test_golden_consumers.py::test_orkexa_write_transactions",
+    ),
+    # ... and a changed profile against Nodestro's recorded pragmas.
+    (
+        "sqlite.py",
+        "    foreign_keys: bool = True\n",
+        "    foreign_keys: bool = False\n",
+        "tests/unit/test_golden_consumers.py::test_nodestro_open",
+    ),
 ]
 
 
