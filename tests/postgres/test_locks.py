@@ -702,21 +702,24 @@ def test_l12_pipeline_autocommit_holds_no_snapshot_while_waiting(
 
         waiter = threading.Thread(target=wait)
         waiter.start()
-        samples = []
-        for _ in range(12):
-            time.sleep(0.1)
-            samples.append(
-                admin.execute(
-                    "SELECT state, backend_xmin IS NULL FROM pg_stat_activity WHERE pid = %s", (pid,)
-                ).fetchone()
-            )
+        # Sample for the whole wait (2 s), not a fixed count: how many samples meet an attempt while it runs depends
+        # on the runner's scheduling (CI saw 7 or 8 idle of 12 against a threshold of 9).
+        samples: list[tuple[Any, ...]] = []
+        while waiter.is_alive() and len(samples) < 200:
+            time.sleep(0.05)
+            row = admin.execute(
+                "SELECT state, backend_xmin IS NULL FROM pg_stat_activity WHERE pid = %s", (pid,)
+            ).fetchone()
+            if row is not None and waiter.is_alive():
+                samples.append(tuple(row))
         waiter.join(10)
         assert result == [False]
-        # The property: the session never waits in a transaction or with a snapshot. A sample may meet an attempt
-        # while it runs ("active"); how often depends on the runner's speed, so only a majority of idle samples is
-        # required (a CI run saw 8 of 12).
+        # Between attempts the session is idle without a snapshot; a sample may also meet an attempt running
+        # ("active"), never "idle in transaction". Without the sync after each attempt (the mutant of review L-1) every
+        # sample is "active" with a snapshot, for the whole wait: a few idle samples prove the sync, whatever the
+        # scheduling.
         assert all(s == ("idle", True) or s[0] == "active" for s in samples), samples
-        assert sum(s == ("idle", True) for s in samples) >= 6, samples
+        assert sum(s == ("idle", True) for s in samples) >= 3, samples
     finally:
         holder.stop()
 
