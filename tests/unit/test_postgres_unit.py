@@ -24,6 +24,7 @@ from tabrion.postgres import (
     configure,
     diagnose,
     extension_status,
+    grant_runtime_role,
     inspect_role,
     ping,
     role_info,
@@ -149,6 +150,7 @@ def test_connection_type_is_checked(bad: object) -> None:
         lambda: role_info(bad),  # type: ignore[arg-type]
         lambda: check_role(bad),  # type: ignore[arg-type]
         lambda: inspect_role(bad, "app"),  # type: ignore[arg-type]
+        lambda: grant_runtime_role(bad, "app"),  # type: ignore[arg-type]
         lambda: ping(bad),  # type: ignore[arg-type]
     ):
         with pytest.raises(TypeError):
@@ -185,6 +187,28 @@ def test_argument_types() -> None:
         check_role(None, owner_scope=["rls"])  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         check_role(None, allow_table_owner=1)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("args", "kwargs", "match"),
+    [
+        (("",), {}, "role"),
+        ((5,), {}, "role"),
+        (("app",), {"schema": ""}, "schema"),
+        (("app",), {"schema": 5}, "schema"),
+        (("app",), {"protected_tables": "axentra_schema_migrations"}, "protected_tables"),
+        (("app",), {"protected_tables": b"x"}, "protected_tables"),
+        (("app",), {"protected_tables": {"x"}}, "protected_tables"),
+        (("app",), {"protected_tables": ("x", "")}, "protected_tables"),
+        (("app",), {"protected_tables": ("x", 5)}, "protected_tables"),
+        (("app",), {"grant_connect": 1}, "grant_connect"),
+        (("app",), {"grant_connect": None}, "grant_connect"),
+    ],
+)
+def test_grant_runtime_role_arguments(args: tuple[object, ...], kwargs: dict[str, object], match: str) -> None:
+    """TAB-031: the arguments are checked before the connection is touched (here: no connection at all)."""
+    with pytest.raises(TypeError, match=match):
+        grant_runtime_role(None, *args, **kwargs)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -289,6 +313,7 @@ def test_postgres_functions_give_the_installation_hint_without_psycopg() -> None
         "calls = [lambda: p.configure(None, s), lambda: p.session_configurator(s), lambda: p.ping(None),\n"
         "         lambda: p.diagnose(None), lambda: p.extension_status(None, 'vector'), lambda: p.role_info(None),\n"
         "         lambda: p.check_role(None), lambda: p.inspect_role(None, 'app'), lambda: p.SessionLock('dbname=x'),\n"
+        "         lambda: p.grant_runtime_role(None, 'app'),\n"
         "         lambda: p.try_advisory_lock(None, 1), lambda: p.wait_advisory_lock(None, 1),\n"
         "         lambda: p.advisory_unlock(None, 1)]\n"
         "assert p.lock_key('a') == p.lock_key('a')  # pure: no driver needed\n"

@@ -9,7 +9,7 @@
 > **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M2 lane B pull request: TABRION
 > TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`). Lane C entries (TB-032..TB-037)
 > updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged); the TB-031 port
-> (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`; layer B (TB-007, TB-020, TB-040, TB-056)
+> (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`; layer B (TB-007, TB-020, TB-040, TB-056, TB-061)
 > on branch `claude/project-thread-rdo6g3-layerb` (TABRION TAB-018).
 
 ## Summary
@@ -19,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 12 |
 | P2 Medium | 10 |
-| P3 Low | 21 |
+| P3 Low | 23 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -29,10 +29,10 @@ M1 and the G-T1 follow-up are merged: the package skeleton, the frozen API as ty
 the documentation and the program files ([STATUS.md](program/STATUS.md#g-t1-conditions)). M2 has started:
 `tabrion.errors`, `tabrion.sql` and `tabrion.config` are merged (TABRION TAB-010..TAB-012, pull request #3); the M2
 lane B pull request implements `tabrion.sqlite` (TABRION TAB-013, TAB-014,
-[M2 lane B evidence](program/STATUS.md#m2-lane-b-evidence-tab-013-tab-014)); the layer-B pull request implements
-the layer-B core (TABRION TAB-018, [M2 lane B2 evidence](program/STATUS.md#m2-lane-b2-evidence-tab-018)); the
-functions of `tabrion.check`, `tabrion.migrations` and `tabrion.testing` and the rest of `tabrion.postgres` still
-raise `NotImplementedError`.
+[M2 lane B evidence](program/STATUS.md#m2-lane-b-evidence-tab-013-tab-014)); `tabrion.postgres` is merged up to
+TAB-030 and completed by TAB-031 in the third lane C pull request; the layer-B pull request implements the
+layer-B core (TABRION TAB-018, [M2 lane B2 evidence](program/STATUS.md#m2-lane-b2-evidence-tab-018)); the
+functions of `tabrion.check`, `tabrion.migrations` and `tabrion.testing` still raise `NotImplementedError`.
 
 ## Priorities and statuses
 
@@ -97,8 +97,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-006 · Layer A implementation (TABRION TAB-010..TAB-017, TAB-030, TAB-031)
 
-- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-016 merged; TAB-030 in the second lane C pull
-  request) · **Refs:**
+- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-016, TAB-030 merged; TAB-031 in the third lane C
+  pull request) · **Refs:**
   TABRION TAB-010, TAB-011, TAB-012, TAB-013, TAB-014, TAB-015, TAB-016, TAB-017, TAB-030, TAB-031
 - **What:** replace the stubs in order of the critical path: `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011),
   `tabrion.config` (TAB-012), `tabrion.sqlite` connection and profile (TAB-013) then transactions, `migrate`,
@@ -110,9 +110,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   replaced (`errors`, `sql`, `config`, `sqlite` have left it); every change to a signature also runs
   `scripts/api_surface.py --write` and updates the contract. TAB-017 follows the dispatch of C-1 (contract section
   7). TAB-015 and TAB-016 are merged (contract I-14..I-20, [M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence),
-  independent review TB-032 accepted); TAB-030 is in review (I-32, I-34); `IMPLEMENTED` in
-  `tests/unit/test_public_api.py` lists the functions of the partly implemented `tabrion.postgres` (only
-  `grant_runtime_role` is left). Then TAB-031 on `role_info`/`inspect_role`. Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
+  independent review TB-032 accepted); TAB-030 is merged (#6, I-32, I-34); TAB-031 is in review (I-35,
+  [M2 lane C3 evidence](program/STATUS.md#m2-lane-c3-evidence)) and completes `tabrion.postgres`, which has left
+  `STUB_MODULES` in `tests/unit/test_public_api.py`. Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
   `sent=False` for checkout errors.
 
 ### TB-007 · Layer B, migrations, testing (TABRION TAB-018..TAB-021, TAB-032, TAB-034)
@@ -346,10 +346,14 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   Nodestro (`storage_postgres.py:757-768` `role_info`, `947-984` `inspect_role`) read `rolsuper` and `rolbypassrls`
   of `current_user` (or the named role) only. A login role that is a member of a superuser or BYPASSRLS role
   (INHERIT or NOINHERIT), and a superuser session after `SET ROLE app`, pass their start checks; row-level security
-  then does not protect against SQL that runs as that role. Tabrion's fix (I-20) shows the gap: TAB-T-R11 asserts
-  that the reference queries miss it.
+  then does not protect against SQL that runs as that role. Tabrion's fix (I-20) shows the gap: TAB-T-R19 asserts
+  that the reference queries miss it. Their `grant_runtime_role` functions share it: TAB-T-R14 asserts that both
+  grant a NOINHERIT member of a SUPERUSER or BYPASSRLS role and of another table's owner, and Axentra's grants a
+  member of the owner in an empty schema (D-46). Both also grant a role that owns the target schema, or can become
+  its owner (NOINHERIT too), which may then drop every table in it (review M-1 of #8, D-49; asserted in TAB-T-R14),
+  and grant on a different schema when a 64-byte schema name is truncated by the server (review L-2, D-50).
 - **Next step:** fix both in their MIG waves (MIG-AXE, MIG-NOD) by moving to `tabrion.postgres.check_role` and
-  `inspect_role`, or earlier with the membership query of I-20 and the R11/R12 cases in their own suites.
+  `inspect_role`, or earlier with the membership query of I-20 and the R19/R20 cases in their own suites.
 
 ### TB-036 · Superuser-equivalent predefined roles and `CREATEROLE` are not reported (review I-4)
 
@@ -526,6 +530,28 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Next step:** document both in the layer-B guide (TAB-041); decide for 0.2 whether `health` checks out with
   `min(timeout, pool_timeout)` (needs no API change).
 
+### TB-052 · MIG-NOD note: one `lock_lost` in the scheduler pattern after a loss (delta re-review of #6)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-030, MIG-NOD, contract I-32, D-43, planning
+  folder `reviews/tab-030-034-review.md` (delta re-review)
+- **What:** Nodestro's scheduler pattern (`jobs.py:933`: `held and holds(K)`, else `try_acquire(K)`) keeps working
+  after a lost lock connection, with one narrow window: when the connection dies between `holds(K)` returning `True`
+  and the next `try_acquire(K)`, that `try_acquire` raises `UsageError("postgres.lock_lost")` once (the loss was not
+  acknowledged yet); the next round recovers. A consumer that expects a bool there catches `UsageError` with that
+  code, or calls `holds(K)` once more.
+- **Next step:** in the MIG-NOD wave, when Nodestro moves to `tabrion.postgres.SessionLock`: catch the code in the
+  scheduler loop and add a test for the window.
+
+### TB-054 · `grant_runtime_role`: the checks run before the grant transaction (review I-1 of #8)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-031, contract I-35, planning folder
+  `reviews/tab-031-review.md` (I-1)
+- **What:** the refusal checks read the catalog in `inspect_role`'s and an own read transaction; the grants run in a
+  later one. A membership granted in between (for example `GRANT superuser_role TO runtime`) is not seen. Whoever can
+  do that already has the power, so it is no escalation; running the checks inside the grant transaction would make
+  the guarantee exact.
+- **Next step:** decide with the next change of `grant_runtime_role` (a contract note for the order of statements).
+
 ## Cross-repository dependencies
 
 | This repo item | Other repo | Other item | Relation |
@@ -535,7 +561,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 | TB-015 | nodestro-runtime | TABRION NOD-CR-5 | Uses the schema fingerprint |
 | TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need `v0.1.0` final (RC-8) |
 | TB-008 | nodestro-studio | TABRION QA-20 (AC-5) | Consumer compat gates Tabrion tags |
-| TB-035 | axentra, nodestro-runtime | TABRION MIG-AXE, MIG-NOD | Their role checks miss roles reachable with `SET ROLE` (review H-1); fix in their MIG waves or earlier |
+| TB-035 | axentra, nodestro-runtime | TABRION MIG-AXE, MIG-NOD | Their role checks miss roles reachable with `SET ROLE` (review H-1), and their grants accept the schema's owner and its members (review M-1 of #8); fix in their MIG waves or earlier |
+| TB-052 | nodestro-runtime | TABRION MIG-NOD | Catch the one-shot `lock_lost` of the scheduler pattern after a lost lock connection |
 | TB-006 | axentra | TABRION MIG-AXE-2, MIG-AXE-3 | Re-export `split_statements` and use `tabrion.errors`; the splitter differences of contract I-9 go into Axentra's CHANGELOG as a fix |
 
 ## Maintaining this file
