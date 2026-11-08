@@ -21,8 +21,8 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import tuple_row
 
-AXENTRA_COMMIT = "1a59c84"
-NODESTRO_COMMIT = "6698265"
+AXENTRA_COMMIT = "1a59c84237f77bf9b699187e25005b1fe28f2a2f"
+NODESTRO_COMMIT = "6698265c134b17a337ad0568da02361900050c70"
 
 # --- Axentra src/axentra/data/roles.py ------------------------------------------------------------------------------
 

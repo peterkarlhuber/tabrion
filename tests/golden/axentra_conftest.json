@@ -1,6 +1,6 @@
 {
  "about": "State after Axentra's tests/conftest.py pg_urls (split roles) and truncate_all, verbatim in tests/golden/axentra_conftest.py (TAB-032, TAB-T-X17); TABRION_RECORD_GOLDEN=1 rewrites it.",
- "axentra_commit": "1a59c84",
+ "axentra_commit": "1a59c84237f77bf9b699187e25005b1fe28f2a2f",
  "state": {
   "app_sees_users": [
    [

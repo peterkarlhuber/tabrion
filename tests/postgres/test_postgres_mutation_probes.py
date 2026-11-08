@@ -619,11 +619,12 @@ PROBES = [
         "        if False:\n",
         f"{DB}::test_m1_default_schema_must_be_a_test_schema",
     ),
-    # Re-review M-1 (#11): a CASCADE into another schema is refused.
+    # Re-review M-1 (#11): a CASCADE into another schema is refused (both checks gone: either one alone refuses, the
+    # second one after the TRUNCATE with a rollback, review L-1 of #19).
     (
         "testing/postgres.py",
-        "        _refuse_cascade_out_of(conn, namespace, name, [int(oid) for oid, _ in found])\n",
-        "",
+        '    it empties, a partition or an inheritance child (each reason is named)."""\n',
+        '    it empties, a partition or an inheritance child (each reason is named)."""\n    return\n',
         f"{DB}::test_m1_cascade_into_another_schema_is_refused[direct]",
     ),
     # Re-review M-1 (#11): ... also through tables of the schema the CASCADE reaches (one step only: no recursion).
@@ -675,6 +676,54 @@ PROBES = [
         "            conn.execute(\"SET lock_timeout = '10s'\")  # an error rather than a teardown that never ends\n",
         "",
         f"{DB}::test_l2_drop_owned_fails_within_its_lock_timeout",
+    ),
+    # TAB-022a: the golden files catch Nodestro's role_info scope (every table of current_schema()) ...
+    (
+        "postgres/roles.py",
+        '"n.nspname OPERATOR(pg_catalog.=) pg_catalog.current_schema()" + _ROLE_INFO_TAIL',
+        '"c.relrowsecurity AND n.nspname OPERATOR(pg_catalog.=) pg_catalog.current_schema()" + _ROLE_INFO_TAIL',
+        "tests/postgres/test_golden_consumers.py::test_nodestro_role_info",
+    ),
+    # ... and Nodestro's counted session locks.
+    (
+        "postgres/locks.py",
+        "            self._held[key] = 1\n",
+        "            self._held[key] = 0\n",
+        "tests/postgres/test_golden_consumers.py::test_nodestro_session_locks",
+    ),
+    # Re-review 2 Info (#11): the selected tables are locked before the catalog check.
+    (
+        "testing/postgres.py",
+        '            sql.SQL("LOCK TABLE ONLY {} IN ACCESS EXCLUSIVE MODE").format(',
+        '            sql.SQL("SELECT 1 WHERE false AND {} IS NULL").format(',
+        f"{DB}::test_m1_selected_tables_are_locked_before_the_check",
+    ),
+    # Re-review 2 RR2-L1 (#11): partitions and inheritance children are part of the cascade check.
+    (
+        "testing/postgres.py",
+        '   WHERE i.inhparent OPERATOR(pg_catalog.=) r.oid AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"\n',
+        '   WHERE false AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"\n',
+        f"{DB}::test_m1_cascade_into_another_schema_is_refused[inheritance_child_in_another_schema]",
+    ),
+    (
+        "testing/postgres.py",
+        '   WHERE i.inhparent OPERATOR(pg_catalog.=) r.oid AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"\n',
+        '   WHERE false AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"\n',
+        f"{DB}::test_m1_cascade_into_another_schema_is_refused[foreign_key_to_a_partition]",
+    ),
+    # Re-review 2 RR2-L1 (#11): the database fixture drops what its roles hold in the admin's database.
+    (
+        "testing/postgres.py",
+        "                roles.drop_owned(tabrion_postgres_url)\n"
+        "            finally:\n                roles.drop_all()\n\n\ndef _role_names",
+        "                pass\n            finally:\n                roles.drop_all()\n\n\ndef _role_names",
+        f"{DB}::test_rr2_database_fixture_drops_the_roles_grants_in_the_admin_database",
+    ),
+    (  # review L-1 of #19: without the second check a foreign key committed after the first one is emptied
+        "testing/postgres.py",
+        "(review L-1 of #19).\n        _refuse_cascade_out_of(conn, namespace, name, oids)\n",
+        "(review L-1 of #19).\n",
+        f"{DB}::test_l1_a_foreign_key_committed_after_the_check_is_refused_and_rolled_back[idle]",
     ),
 ]
 
