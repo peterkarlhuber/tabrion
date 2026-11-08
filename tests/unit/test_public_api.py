@@ -258,6 +258,23 @@ STUB_MODULES = [
 ]
 
 
+# Functions of a partly implemented module that left the stub check (TAB-015, TAB-016); the module's other functions
+# must still raise NotImplementedError.
+IMPLEMENTED = {
+    f"tabrion.postgres.{name}"
+    for name in (
+        "configure",
+        "session_configurator",
+        "ping",
+        "diagnose",
+        "extension_status",
+        "role_info",
+        "check_role",
+        "inspect_role",
+    )
+}
+
+
 @pytest.mark.parametrize("module_name", [*STUB_MODULES, "tabrion.migrations", "tabrion.testing.profiles"])
 def test_stubs_raise_not_implemented(module_name: str) -> None:
     """M1 delivers signatures only: every function raises NotImplementedError (implementation in M2)."""
@@ -265,6 +282,8 @@ def test_stubs_raise_not_implemented(module_name: str) -> None:
     functions = _public_callables(module)
     assert functions
     for _name, fn in functions:
+        if f"{module_name}.{_name}" in IMPLEMENTED:
+            continue
         args, kwargs = _dummy_args(fn)
         with pytest.raises(NotImplementedError):
             result = fn(*args, **kwargs)

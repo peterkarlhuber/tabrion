@@ -1,6 +1,6 @@
 """TAB-014: ``write_transaction`` and ``read_transaction`` (TAB-T-S16..S21; 07 DI-02, TAB-T-002/003).
 
-Contract section 3.4 and the T-NOTX rule; implementation notes I-17 and I-18.
+Contract section 3.4 and the T-NOTX rule; implementation notes I-24 and I-25.
 """
 
 from __future__ import annotations
@@ -178,7 +178,7 @@ def test_s20_query_only_is_off_afterwards(db: sqlite3.Connection) -> None:
 
 
 def test_s20_query_only_of_a_read_only_connection_stays_on(tmp_path: Path, db: sqlite3.Connection) -> None:
-    """Contract I-18: the previous value is restored, so ``connect(read_only=True)`` keeps ``query_only=ON``."""
+    """Contract I-25: the previous value is restored, so ``connect(read_only=True)`` keeps ``query_only=ON``."""
     reader = ts.connect(tmp_path / "a.db", read_only=True)
     try:
         with ts.read_transaction(reader):
@@ -200,7 +200,7 @@ def test_s21_keyboard_interrupt_rolls_back(db: sqlite3.Connection) -> None:
 
 
 def test_failing_commit_is_rolled_back(db: sqlite3.Connection) -> None:
-    """Contract I-17: a COMMIT that fails (a deferred foreign key) leaves the connection idle."""
+    """Contract I-24: a COMMIT that fails (a deferred foreign key) leaves the connection idle."""
     db.execute("CREATE TABLE parent (id INTEGER PRIMARY KEY)")
     db.execute("CREATE TABLE child (p INTEGER REFERENCES parent (id) DEFERRABLE INITIALLY DEFERRED)")
     with pytest.raises(sqlite3.IntegrityError) as info, ts.write_transaction(db):

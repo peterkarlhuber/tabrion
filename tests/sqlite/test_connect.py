@@ -1,6 +1,6 @@
 """TAB-013: ``SQLiteProfile``, ``create_private_file`` and ``connect`` (TAB-T-S01..S12; 07 TM-03, TM-04, DI-01).
 
-Contract section 3.1 and 3.2, implementation notes I-14..I-16.
+Contract section 3.1 and 3.2, implementation notes I-21..I-23.
 """
 
 from __future__ import annotations
@@ -485,7 +485,7 @@ def test_s07_link_followed_while_opening_and_swapped_back(
     monkeypatch.setattr(ts, "_open", open_through_link)
     link_name = os.path.normcase(os.path.abspath(tmp_path / "link.db"))
     if os.path.normcase(resolved) == link_name or os.path.realpath(resolved) != os.path.realpath(victim):
-        # Windows (and old SQLite builds): the opened name is the link's own; the inode check remains (I-15).
+        # Windows (and old SQLite builds): the opened name is the link's own; the inode check remains (I-22).
         pytest.skip("this SQLite build does not resolve links in the name it opens")
     with pytest.raises(UnsafePath) as info:
         leaked = ts.connect(path)

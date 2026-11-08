@@ -1,5 +1,5 @@
 """TAB-014: ``integrity_check``, ``quick_check``, ``foreign_key_check`` (TAB-T-S35..S38) and ``diagnose``
-(TAB-T-S39..S41). Contract sections 3.7 and 3.8, implementation notes I-22 and I-23.
+(TAB-T-S39..S41). Contract sections 3.7 and 3.8, implementation notes I-29 and I-30.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ def _error(cls: type[sqlite3.Error], name: str) -> sqlite3.Error:
 
 
 def test_s36_corrupt_error_becomes_a_report(db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Contract I-22: when the check itself fails with SQLITE_CORRUPT, the report carries its safe message."""
+    """Contract I-29: when the check itself fails with SQLITE_CORRUPT, the report carries its safe message."""
     raised: list[sqlite3.Error] = []
 
     @contextmanager

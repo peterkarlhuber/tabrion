@@ -105,7 +105,7 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         False,
         False,
     ),
-    # Contract I-19: the version is read again inside the write transaction (two processes apply a step once).
+    # Contract I-26: the version is read again inside the write transaction (two processes apply a step once).
     (
         "            found = _user_version(connection)\n",
         "            found = current\n",

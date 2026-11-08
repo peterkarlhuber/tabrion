@@ -1,4 +1,4 @@
-"""TAB-014: ``backup`` (TAB-T-S31..S34; 07 TM-12, TAB-T-122, TAB-T-200/201). Contract 3.6, notes I-20, I-21."""
+"""TAB-014: ``backup`` (TAB-T-S31..S34; 07 TM-12, TAB-T-122, TAB-T-200/201). Contract 3.6, notes I-27, I-28."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def test_backup_result_and_content(tmp_path: Path, source: sqlite3.Connection) -
 
 
 def test_backup_is_one_self_contained_file(tmp_path: Path, source: sqlite3.Connection, opened: Opened) -> None:
-    """Contract I-21: the copy is in rollback mode; ``connect`` switches it back to WAL when it is used."""
+    """Contract I-28: the copy is in rollback mode; ``connect`` switches it back to WAL when it is used."""
     target = tmp_path / "copy.db"
     ts.backup(source, target)
     raw = opened(sqlite3.connect(target))

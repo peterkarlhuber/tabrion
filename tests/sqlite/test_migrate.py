@@ -1,4 +1,4 @@
-"""TAB-014: ``migrate`` (TAB-T-S22..S30; 07 DI-06, TAB-T-010/011). Contract section 3.5, implementation note I-19.
+"""TAB-014: ``migrate`` (TAB-T-S22..S30; 07 DI-06, TAB-T-010/011). Contract section 3.5, implementation note I-26.
 
 Every error path checks that the database file is byte-identical afterwards (SHA-256 of the closed file).
 """
@@ -200,7 +200,7 @@ def test_s28_failing_step_leaves_the_file_unchanged(path: Path, unchanged: Calla
 
 
 def test_s28_failing_version_write(unchanged: Callable[[], sqlite3.Connection]) -> None:
-    """A step that ends the transaction itself is a failure (it may have committed, contract I-19)."""
+    """A step that ends the transaction itself is a failure (it may have committed, contract I-26)."""
 
     def commits(connection: sqlite3.Connection) -> None:
         connection.execute("ROLLBACK")
@@ -273,7 +273,7 @@ def test_busy_begin_passes_the_driver_error(path: Path, opened: Opened) -> None:
 
 
 def test_s30_a_concurrent_migration_is_seen(path: Path, opened: Opened) -> None:
-    """Contract I-19: another connection migrated between the first read and ``BEGIN IMMEDIATE``."""
+    """Contract I-26: another connection migrated between the first read and ``BEGIN IMMEDIATE``."""
     connection = opened(ts.connect(path))
     other = opened(ts.connect(path))
 

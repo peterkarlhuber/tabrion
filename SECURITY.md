@@ -45,10 +45,10 @@ Accepted residual risks (documented, not vulnerabilities):
   - on Windows `O_NOFOLLOW` does not exist and SQLite does not resolve links in the name it opens; there the
     `lstat` check (reparse points included, also right before a new file is created, because `CREATE_NEW` follows a
     dangling link) and the inode comparison after opening protect the file, not the resolved-name comparison of
-    POSIX (contract I-15);
+    POSIX (contract I-22);
   - SQLite opens `-wal`, `-shm` and `-journal` by name when it first needs them, after `connect` has checked them;
     a link planted later in the database's directory is followed. Keep databases in a directory that only the
-    owner can write (a world-writable directory without the sticky bit is a TM-03 finding, TODO TB-037);
+    owner can write (a world-writable directory without the sticky bit is a TM-03 finding, TODO TB-043);
   - a `read_only` connection to a WAL database may create `-wal` and `-shm` with the main file's mode, which an
     existing world-readable file passes on; `connect` never changes the mode of an existing file (MIG-NOD-9 does
     that for Nodestro);
@@ -75,4 +75,18 @@ Accepted residual risks (documented, not vulnerabilities):
   or property propagates.
 - `safe_url` cannot tell where a password with both a raw `/` and a raw `?` ends; such a URL gives
   `"<unparseable url>"`. Percent-encode special characters in URL passwords.
+- `tabrion.postgres.ping` bounds the server's work (`SET LOCAL statement_timeout`) and the pool checkout, not a
+  network that stops answering in the middle of a statement, nor a connection another thread holds (psycopg's
+  connection lock); set TCP keepalives or `tcp_user_timeout` on the connection, or run the check in a thread, when a
+  hard deadline matters (TODO TB-034).
+- `tabrion.postgres` qualifies every catalog function, relation, type and operator it uses with `pg_catalog`
+  (`::pg_catalog.text`, `OPERATOR(pg_catalog.=)`), so a schema that a caller's `search_path` names *before*
+  `pg_catalog` (the CVE-2018-1058 pattern) can neither change its answers nor run its owner's code as the role that
+  calls the checks. Nothing of this kind is known to remain; the contract test traps functions, operators and domains
+  (contract I-16). Your own SQL on such a connection is not protected: keep `pg_catalog` first, or leave it out of
+  the path, for roles that run privileged checks.
+- `tabrion.postgres.check_role` reports a role as superuser or BYPASSRLS also when it, or the session's login role,
+  can become one with `SET ROLE` (contract I-20). Membership of predefined roles such as `pg_execute_server_program`
+  is not reported yet (TODO TB-036). Applications that still use Axentra's or Nodestro's own checks have the older
+  gap (TODO TB-035).
 - Vulnerabilities in SQLite, PostgreSQL, psycopg, SQLAlchemy or Alembic belong to their maintainers.

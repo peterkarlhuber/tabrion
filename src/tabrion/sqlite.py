@@ -1,6 +1,6 @@
 """SQLite foundations (layer A, standard library only).
 
-Contract: ``docs/api/contract.md`` section 3 and the implementation notes I-14..I-24. TAB-013 implements the
+Contract: ``docs/api/contract.md`` section 3 and the implementation notes I-21..I-31. TAB-013 implements the
 connection and the profile (:class:`SQLiteProfile`, :func:`create_private_file`, :func:`connect`,
 :func:`apply_profile`, :func:`check_path`, :func:`loading_extensions`); TAB-014 the transactions, :func:`migrate`,
 :func:`backup`, the checks and :func:`diagnose`.
@@ -118,7 +118,7 @@ class SQLiteProfile:
     Validation (``busy_timeout >= 0``, ``file_mode & 0o077 == 0`` unless ``allow_shared_file``) raises
     ``ConfigurationError("sqlite.invalid_profile", details={"field": ...})``. A ``journal_mode`` or ``synchronous``
     given as a string is converted to the enum member; the booleans must be ``bool``; ``file_mode`` must keep the
-    owner's read and write bits and have no bits above ``0o777`` (contract I-14).
+    owner's read and write bits and have no bits above ``0o777`` (contract I-21).
     """
 
     journal_mode: JournalMode = JournalMode.WAL
@@ -362,7 +362,7 @@ def connect(
     ``read_only`` opens the URI ``file:...?mode=ro`` and sets ``PRAGMA query_only=ON``; it never creates or changes
     the database file (for a WAL database SQLite may create ``-wal``/``-shm`` with the main file's mode). After
     opening, the path must still be the file that was checked, and SQLite must have opened that file, not a link
-    target (``UnsafePath``, contract I-15).
+    target (``UnsafePath``, contract I-22).
     """
     name = os.fspath(path)
     memory = _is_memory(name)
@@ -499,7 +499,7 @@ def write_transaction(connection: sqlite3.Connection) -> Iterator[sqlite3.Connec
     ``UsageError("sqlite.nested_transaction")`` when a transaction is already open; ``UsageError`` when
     ``isolation_level`` is not ``None`` (``sqlite.not_autocommit``; Python 3.12 ``autocommit=True`` is accepted).
     A block that ends the transaction itself gets ``UsageError("sqlite.transaction_ended")``; a failing ``COMMIT``
-    is rolled back, so the connection is idle afterwards (contract I-17).
+    is rolled back, so the connection is idle afterwards (contract I-24).
     """
     _require_own_transaction(connection)
     connection.execute("BEGIN IMMEDIATE")
@@ -520,7 +520,7 @@ def read_transaction(connection: sqlite3.Connection, *, enforce: bool = True) ->
     """Deferred ``BEGIN`` (consistent snapshot); with ``enforce`` also ``PRAGMA query_only`` for the block.
 
     ``query_only`` is set before ``BEGIN`` and afterwards restored to the value it had (``OFF`` unless the
-    connection was opened ``read_only``), also after an exception (contract I-18). The transaction ends with
+    connection was opened ``read_only``), also after an exception (contract I-25). The transaction ends with
     ``COMMIT`` on a normal exit (a no-op for a read) and ``ROLLBACK`` on an exception. Same ``UsageError`` rules as
     :func:`write_transaction`.
     """
@@ -611,7 +611,7 @@ def migrate(
 
     The version is read again after ``BEGIN IMMEDIATE``: when another connection migrated in the meantime, the
     steps that are still needed run (none when it reached ``target``), so two processes migrating at once apply
-    each step once (contract I-19). ``BackupFailed`` and ``MigrationFailed`` carry the exception as ``original``,
+    each step once (contract I-26). ``BackupFailed`` and ``MigrationFailed`` carry the exception as ``original``,
     never as ``__cause__`` or ``__context__``, and never its text.
     """
     _require_own_transaction(connection)
@@ -681,7 +681,7 @@ class BackupResult:
 
 
 _NOT_CHECKED = "not checked"
-"""``BackupResult.quick_check`` with ``verify=False`` (contract I-21)."""
+"""``BackupResult.quick_check`` with ``verify=False`` (contract I-28)."""
 
 
 def _fsync_directory(directory: str) -> None:
@@ -756,9 +756,9 @@ def backup(
     The temporary file ``<target>.<random>.tmp`` sits in the target's directory and is removed on every error.
     ``FileExistsError`` when the target exists and ``overwrite`` is false (also when it appears during the copy);
     ``UnsafePath`` for a link; ``UsageError("sqlite.transaction_open")`` while the connection has an open
-    transaction (contract I-20); ``TabrionError("sqlite.backup_corrupt")`` when the copy fails ``quick_check``.
+    transaction (contract I-27); ``TabrionError("sqlite.backup_corrupt")`` when the copy fails ``quick_check``.
     The backup is written in rollback-journal mode (``journal_mode=DELETE``), so it is one self-contained file;
-    :func:`connect` switches it back to WAL when it is opened (contract I-21).
+    :func:`connect` switches it back to WAL when it is opened (contract I-28).
     """
     destination = os.fspath(target)
     if _is_memory(destination):
@@ -849,7 +849,7 @@ def integrity_check(connection: sqlite3.Connection, *, max_errors: int = 100) ->
     """``PRAGMA integrity_check`` (read only).
 
     A file whose damage makes the check itself fail gives ``ok=False`` with the safe message of that error (contract
-    I-22), not an exception. ``messages`` is empty when ``ok``.
+    I-29), not an exception. ``messages`` is empty when ``ok``.
     """
     return _check(connection, "integrity_check", max_errors)
 
@@ -944,7 +944,7 @@ def diagnose(connection: sqlite3.Connection, *, run_quick_check: bool = False) -
     """Read-only diagnosis of a connection and its file; the basis of ``tabrion.check`` (TAB-SQ-*).
 
     ``path`` is the file SQLite opened (``PRAGMA database_list``). ``file_mode`` is ``None`` on Windows, where POSIX
-    modes say nothing (contract I-23); ``is_symlink`` covers the file and its ``-wal``, ``-shm`` and ``-journal``
+    modes say nothing (contract I-30); ``is_symlink`` covers the file and its ``-wal``, ``-shm`` and ``-journal``
     files. Reads inside the caller's transaction, if any, and changes no setting.
     """
     name = _main_file(connection) or None
