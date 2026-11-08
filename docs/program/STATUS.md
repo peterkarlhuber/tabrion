@@ -4,7 +4,7 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, G-T1 follow-up pull request (branch `claude/project-thread-rdo6g3`), after the M1 pull
+> **Last update:** 2026-11-08, G-T1 follow-up pull request [#2](https://github.com/peterkarlhuber/tabrion/pull/2) (branch `claude/project-thread-rdo6g3`), after the M1 pull
 > request [#1](https://github.com/peterkarlhuber/tabrion/pull/1) merged (`b0309c5`).
 > Detailed open work for this repository: [docs/TODO.md](../TODO.md). Risks: [risks.md](risks.md).
 
@@ -296,7 +296,7 @@ What the M1 pull request delivers against the acceptance criteria of planning do
 ## G-T1 conditions
 
 The independent G-T1 review (2026-11-08, planning folder `reviews/g-t1-review.md`) passed the API freeze with eight
-conditions. The follow-up pull request on branch `claude/project-thread-rdo6g3` closes C-1..C-6 and the repository
+conditions. The follow-up pull request [#2](https://github.com/peterkarlhuber/tabrion/pull/2) closes C-1..C-6 and the repository
 part of C-7 and C-8; the rest is owner action.
 
 | # | Condition (finding) | Decision and evidence | Status |
