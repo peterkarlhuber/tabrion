@@ -58,7 +58,11 @@ BASELINE = App(
     read=_read,
     not_current=parts_baseline.db.SchemaNotCurrent,
     integrity_error=sa.exc.IntegrityError,
-    usage_error=sa.exc.StatementError,
+    refused_value=lambda error: (
+        isinstance(error, sa.exc.StatementError)
+        and not isinstance(error, sa.exc.DBAPIError)
+        and isinstance(error.orig, ValueError)
+    ),
     constraint_name=lambda error: None,
     deviations={
         "test_violations_name_their_constraint": (

@@ -142,7 +142,7 @@ TABRION = App(
     read=_read,
     not_current=SchemaNotCurrent,
     integrity_error=IntegrityViolation,
-    usage_error=UsageError,
+    refused_value=lambda error: isinstance(error, UsageError) and error.code == "database.invalid_statement",
     constraint_name=_constraint_name,
 )
 

@@ -61,8 +61,8 @@ class App:
     not_current: type[Exception]
     integrity_error: type[Exception]
     """What a violated constraint raises."""
-    usage_error: type[Exception]
-    """What a value the column type refuses raises."""
+    refused_value: Callable[[BaseException], bool]
+    """Whether an error is the variant's refusal of a value the column type does not accept."""
     constraint_name: Callable[[BaseException], str | None]
     """The name of the constraint an ``integrity_error`` names, if the variant tells it."""
     deviations: Mapping[str, str] = field(default_factory=dict)
@@ -520,12 +520,14 @@ class PartsSuite:
             ("value", Decimal("0.0000001")),  # more digits after the point than the scale
             ("value", Decimal("1" * 13)),  # more digits before the point than numeric(18, 6) holds
         ):
-            with pytest.raises(app.usage_error), app.write(db) as connection:
+            with pytest.raises(Exception) as raised, app.write(db) as connection:
                 connection.execute(
                     sa.insert(app.schema.property_).values(part_id=part_id, key="k", unit="u", **{column: value})
                 )
-        with pytest.raises(app.usage_error), app.write(db) as connection:
+            assert app.refused_value(raised.value), raised.value
+        with pytest.raises(Exception) as raised, app.write(db) as connection:
             connection.execute(sa.update(app.schema.part).values(updated_at=datetime(2026, 1, 1)))
+        assert app.refused_value(raised.value), raised.value
 
     # --- the catalog functions (RA-A-2) ---------------------------------------------------------------------------
 

@@ -91,7 +91,7 @@ reason. It runs as a strict `xfail`: the suite stays green, and it turns red if 
 | Result | Tabrion | Baseline |
 |---|---|---|
 | Suite, SQLite and PostgreSQL 16 | all pass | all pass but one test (8 cases per engine) |
-| **Deviation:** a violated `CHECK` names its constraint (`test_violations_name_their_constraint`) | yes (`classification.constraint`) | no: `classify` gives the kind only |
+| **Deviation:** a violated `CHECK` names its constraint (`test_violations_name_their_constraint`) | yes (`classification.constraint`) | no: `classify` gives the kind only. In plain SQLAlchemy this is about 5 lines (`orig.diag.constraint_name` on PostgreSQL, the text after `CHECK constraint failed: ` on SQLite), and the application never uses the name, so RA-EVAL must not count it as an MW-2 probe hit |
 | MW-3, lost update (5 threads, SQLite and PostgreSQL) | 5, no lock error | 5, no lock error: the optimistic lock is in the shared `catalog.py` |
 | A failing upgrade; concurrent cycle additions; migrations under a concurrent SQLite writer | atomic; serialized; wait | the same, through the pysqlite recipe and `BEGIN IMMEDIATE` |
 | MW-1 inputs (see below) | `db.py` 28 + `env.py` 17 = 45 | `db.py` 107 + `env.py` 22 = 129 |
