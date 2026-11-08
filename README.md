@@ -11,7 +11,7 @@ Small, secure database foundations for SQLite and PostgreSQL in Python.
 
 > **Status: pre-alpha, milestone M1 ("foundation").** The public API is frozen as typed stubs for review (gate
 > G-T1); every function raises `NotImplementedError`. The implementation follows in milestone M2 (Tabrion 0.1).
-> Nothing is published on PyPI yet; install from Git.
+> Tabrion is distributed through Git: consumers pin a full commit SHA. A PyPI publication is not planned for now.
 
 Tabrion makes the safe setting the default and keeps the established tools visible. It is a library that runs in
 your process: no server, no service, no own connection pool. It is not an ORM, not a query language and not a
@@ -40,7 +40,8 @@ What it provides (see the [specification](docs/specification.md)):
 
 ## Installation
 
-Until a release is approved for PyPI, install from Git (Python 3.11 to 3.14):
+Install from Git (Python 3.11 to 3.14); reproducible installs pin a full commit SHA
+([installation](docs/getting-started/installation.md)):
 
 ```bash
 pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion.git"               # core, no dependency

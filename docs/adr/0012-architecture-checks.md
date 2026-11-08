@@ -48,8 +48,9 @@ branch, and a pull request cannot change its own gate. Its own check run is atta
 never to the pull request's head, so it cannot be a required check (G-T1 finding F-06). Decision: after each
 evaluation, `.github/scripts/ci_ok_status.py` posts the verdict as the commit status `ci-ok` on the head SHA
 (`statuses: write`): `success` for OK, `pending` while listed workflows run, `failure` for NOT OK, `error` when no
-report exists. The evaluation runs with `CI_OK_ENFORCE=1`. Branch protection on `master` requires the status `ci-ok`
-(owner action O-1). `ci_ok.py` stays byte-identical to the canonical copy in nodestro-studio; the status script is the
+report exists. The evaluation runs with `CI_OK_ENFORCE=1`. Branch protection on `master` can require the status `ci-ok`
+(owner action O-1, optional repository hardening by the owner decision of 2026-11-08 11:26Z; without it, a green
+`ci-ok` is a merge rule that the person who merges checks). `ci_ok.py` stays byte-identical to the canonical copy in nodestro-studio; the status script is the
 Tabrion addition.
 
 **Workflow-change gate** (Studio CI review F-03). The mandatory jobs run from the pull request's own workflow files,

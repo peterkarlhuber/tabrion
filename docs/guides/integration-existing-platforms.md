@@ -8,8 +8,9 @@ Tabrion is [contract section 8](../api/contract.md#8-compatibility-table-existin
 
 ## Install by Git SHA
 
-Tabrion is not on PyPI and is not planned to be: consumers pin a commit. The rules (one Tabrion version per
-installation, final tags on master, pre-releases only on integration branches) are in
+Tabrion is not on PyPI, and no PyPI publication is planned: consumers pin the full commit SHA of a final version
+(a library through `requirements/tabrion.txt`). The rules (one Tabrion version per installation, only final versions
+on a consumer's master, pre-releases only on integration branches) are in
 [Installation](../getting-started/installation.md) and
 [ADR 0009](../adr/0009-distribution-and-versioning.md).
 

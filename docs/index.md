@@ -11,7 +11,7 @@ inside the application's process: no server, no service, no pool of its own, no 
 
 !!! warning "Pre-release: Tabrion 0.1 in development"
     The 0.1 modules are implemented (milestone M2); the 0.2 names are frozen in the API but raise
-    `NotImplementedError`. Nothing is published: Tabrion is not on PyPI, and consumers pin a Git commit
+    `NotImplementedError`. Nothing is published on PyPI: Tabrion is installed from Git, pinned to a commit SHA
     ([Installation](getting-started/installation.md)).
 
 ## Two layers in one distribution

@@ -4,7 +4,8 @@ This page takes five minutes. It opens a SQLite file the safe way with the drive
 work through `tabrion.Database` (layer B). Every example on this page runs in the test suite
 (`tests/docs/test_guides.py`), so what you see is what Tabrion prints.
 
-Install Tabrion from Git first, pinned to a commit: [Installation](installation.md). Tabrion is not on PyPI.
+Install Tabrion from Git first, pinned to a full commit SHA ([Installation](installation.md)); Tabrion is not on
+PyPI.
 
 ```bash
 pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"
