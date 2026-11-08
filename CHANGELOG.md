@@ -19,9 +19,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   retryable errors with a known outcome) and `savepoint`. Contract implementation notes I-100..I-106, deviations
   D-120 and D-121. Every SQLite statement of a layer-B transaction now runs with Tabrion's progress handler, so a
   cancel cannot be lost (I-102). A PostgreSQL transaction that sent a cancel request never returns its connection to
-  the pool, because a late request would cancel the next user's statement; a `COMMIT` or `ROLLBACK` of the caller
-  inside `query` or `stream` ends the call with `UsageError` instead of letting later statements run outside the
-  transaction (review of #32).
+  the pool, because a late request would cancel the next user's statement; a `COMMIT`, `ROLLBACK` (also
+  `... AND CHAIN`), `END`, `ABORT` or `PREPARE TRANSACTION` of the caller inside `query` or `stream` is refused
+  before it is sent, with `UsageError`, and a statement that still ended the transaction is caught afterwards, so
+  later statements never run outside the transaction (review and re-review of #32).
 
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without

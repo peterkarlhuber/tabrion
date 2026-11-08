@@ -627,8 +627,10 @@ required (owner decision of 2026-11-08 11:26Z).
   `test_b12_documents_the_gap_transaction_control_in_read`. A server cannot refuse transaction control; the hard
   boundary is a role without write rights (or SQLite file permissions).
 - **TAB-033:** `query` and `stream` close the multi-statement and the transaction-control variants for their own
-  calls: the server refuses several commands (I-104), and a `COMMIT` or `ROLLBACK` of the caller ends the call
-  with `UsageError("database.transaction_ended")` and keeps the connection out of the pool (review L-1 of #32).
+  calls: the server refuses several commands (I-104), a transaction-control statement of the caller (`COMMIT`,
+  `ROLLBACK`, also `... AND CHAIN`, `END`, `ABORT`, `PREPARE TRANSACTION`) is refused before it is sent, and one
+  that still ended the transaction ends the call with `UsageError("database.transaction_ended")` and keeps the
+  connection out of the pool (review L-1 and re-review N-1 of #32).
   The gap stays for the 0.1 methods (TB-121) and for lift-write-restore inside one statement's functions.
 - **Next step:** Studio and TAB-032 (runtime-role mode) run untrusted SQL only under such a role. Optional: a
   `checkin` check of `default_transaction_read_only` under `Profile.read_only` that invalidates the connection, and

@@ -33,6 +33,7 @@ psycopg = pytest.importorskip("psycopg")
 
 from tabrion import Profile, Transaction  # noqa: E402
 from tabrion._sa._staged import _StagedDatabase, _StagedTransaction  # noqa: E402
+import tabrion._sa._v02  # noqa: E402
 import tabrion._sa.database  # noqa: E402
 from tabrion._sa.result import Column  # noqa: E402
 from tabrion.errors import (  # noqa: E402
@@ -471,10 +472,12 @@ ESCAPES = [
 
 @pytest.mark.parametrize("text", ESCAPES)
 def test_b39_several_commands_are_refused_by_the_server(
-    db: _StagedDatabase, schema: str, admin: Any, text: str
+    db: _StagedDatabase, schema: str, admin: Any, monkeypatch: pytest.MonkeyPatch, text: str
 ) -> None:
     """The multi-statement escape of the Studio review: psycopg would send it as one simple query, which ends the
-    read-only transaction and writes. ``query`` and ``stream`` prepare the statement, so the server refuses it."""
+    read-only transaction and writes. ``query`` and ``stream`` prepare the statement, so the server refuses it.
+    The refusal of a leading ``COMMIT``/``ROLLBACK`` before sending (N-1) is switched off: this pins the server's."""
+    monkeypatch.setattr(tabrion._sa._v02, "_refuse_transaction_control", lambda transaction, executable: None)
     sql = text.format(schema=schema)
     with pytest.raises(StatementError) as info:
         db.query(sql)
@@ -666,18 +669,29 @@ def test_l3_cancel_sends_only_while_a_statement_runs(db: _StagedDatabase, monkey
     assert 1 <= len(sent) <= 4
 
 
+@pytest.mark.parametrize("first_line", [True, False], ids=["refused-before-sending", "status-check-only"])
 @pytest.mark.parametrize(
     "steps",
     [
         ["COMMIT", "BEGIN READ WRITE", "INSERT INTO {schema}.parts (id) VALUES (670)", "COMMIT"],
         ["ROLLBACK", "BEGIN READ WRITE", "INSERT INTO {schema}.parts (id) VALUES (670)", "COMMIT", "BEGIN READ ONLY"],
+        ["END", "START TRANSACTION READ WRITE", "INSERT INTO {schema}.parts (id) VALUES (670)", "END"],
     ],
 )
 def test_l1_the_callers_sql_cannot_end_the_transaction(
-    open_db: Callable[..., _StagedDatabase], schema: str, admin: Any, steps: list[str]
+    open_db: Callable[..., _StagedDatabase],
+    schema: str,
+    admin: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    steps: list[str],
+    first_line: bool,
 ) -> None:
     """L-1 of the review of #32: one command per call, but ``COMMIT`` alone ends Tabrion's ``read()``. The call
-    raises, every later statement is refused, the block does not end quietly, and the connection leaves the pool."""
+    raises, every later statement is refused, the block does not end quietly, and the connection leaves the pool.
+    ``status-check-only`` switches the refusal before sending off (N-1), so the status check after the statement,
+    the second line, is pinned on its own."""
+    if not first_line:
+        monkeypatch.setattr(tabrion._sa._v02, "_refuse_transaction_control", lambda transaction, executable: None)
     db = open_db(Profile(pool_size=1))
     with pytest.raises(UsageError) as at_end, db.read() as transaction:
         pid = transaction.fetch_scalar("SELECT pg_backend_pid()")
@@ -693,9 +707,58 @@ def test_l1_the_callers_sql_cannot_end_the_transaction(
     assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id = 670").fetchone() == (0,)
     with db.read() as transaction:
         assert transaction.fetch_scalar("SELECT pg_backend_pid()") != pid
-    # stream cannot end it on PostgreSQL: DECLARE takes a query only.
-    with pytest.raises(StatementError), db.read() as transaction:
-        next(staged(transaction).stream("COMMIT"))
+    if first_line:
+        with pytest.raises(UsageError) as info, db.read() as transaction:
+            staged(transaction).stream("COMMIT")
+        assert info.value.code == "database.transaction_ended"
+    else:
+        # stream cannot end it on PostgreSQL: DECLARE takes a query only.
+        with pytest.raises(StatementError), db.read() as transaction:
+            next(staged(transaction).stream("COMMIT"))
+
+
+@pytest.mark.parametrize(
+    ("block", "steps"),
+    [
+        (
+            "read",
+            [
+                "COMMIT AND CHAIN",
+                "SET TRANSACTION READ WRITE",
+                "INSERT ({n})",
+                "COMMIT AND CHAIN",
+                "SET TRANSACTION READ ONLY",
+            ],
+        ),
+        ("read", ["COMMIT AND CHAIN", "SET TRANSACTION READ WRITE", "INSERT ({n})", "COMMIT AND CHAIN"]),
+        ("transaction", ["INSERT ({n})", "ROLLBACK AND CHAIN", "INSERT ({m})"]),
+        ("transaction", ["INSERT ({n})", "COMMIT AND CHAIN", "SELECT 1/0"]),
+    ],
+    ids=["read-chain-read-only", "read-chain", "transaction-rollback-chain", "transaction-commit-chain"],
+)
+def test_n1_and_chain_cannot_end_the_transaction(
+    db: _StagedDatabase, schema: str, admin: Any, block: str, steps: list[str]
+) -> None:
+    """N-1 of the re-review of #32: after ``... AND CHAIN`` PostgreSQL is in a new transaction at once, which the
+    status check cannot tell from Tabrion's. The statement is refused before it is sent, nothing is committed, and
+    the block fails with ``database.transaction_ended``."""
+    texts = [
+        step.replace("INSERT ({n})", f"INSERT INTO {schema}.parts (id) VALUES (681)").replace(
+            "INSERT ({m})", f"INSERT INTO {schema}.parts (id) VALUES (682)"
+        )
+        for step in steps
+    ]
+    ended = next(i for i, text in enumerate(texts) if "AND CHAIN" in text)
+    with pytest.raises(UsageError) as at_end, getattr(db, block)() as transaction:
+        for i, text in enumerate(texts):
+            if i < ended:
+                staged(transaction).query(text)
+                continue
+            with pytest.raises(UsageError) as info:
+                staged(transaction).query(text)
+            assert info.value.code == "database.transaction_ended"
+    assert at_end.value.code == "database.transaction_ended"
+    assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id IN (681, 682)").fetchone() == (0,)
 
 
 def test_info_on_begin_registration_from_many_threads(db: _StagedDatabase) -> None:

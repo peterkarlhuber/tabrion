@@ -31,6 +31,7 @@ pytest.importorskip("psycopg")
 
 from tabrion import Database, Profile, Transaction  # noqa: E402
 from tabrion._sa._staged import _StagedDatabase, _StagedTransaction  # noqa: E402
+import tabrion._sa._v02  # noqa: E402
 from tabrion._sa._v02 import statement_kind  # noqa: E402
 import tabrion._sa.database  # noqa: E402
 from tabrion._sa.result import Column, Result  # noqa: E402
@@ -714,12 +715,13 @@ def test_b39_one_statement_per_query(db: _StagedDatabase) -> None:
     for text in (
         "SELECT 1; DELETE FROM items",
         "SELECT 1; PRAGMA query_only = OFF; DELETE FROM items",
-        "COMMIT; DELETE FROM items",
     ):
         with pytest.raises(UnknownDatabaseError):
             db.query(text)
         with pytest.raises(UnknownDatabaseError), db.read() as transaction:
             next(staged(transaction).stream(text))
+    with pytest.raises(UsageError):  # refused before sending (N-1 of the re-review of #32)
+        db.query("COMMIT; DELETE FROM items")
     assert db.query("SELECT count(*) FROM items").rows == ((25,),)
 
 
@@ -766,6 +768,92 @@ def test_l1_the_callers_sql_cannot_end_the_transaction(db: _StagedDatabase) -> N
     assert db.query("SELECT count(*) FROM items").rows == ((25,),)
     with db.transaction() as transaction:  # the pool hands out a working connection again
         transaction.execute("INSERT INTO items (n) VALUES (1)")
+
+
+REFUSED = [
+    "COMMIT",
+    "commit and chain",
+    "  ;END TRANSACTION",
+    "/* x */ ROLLBACK",
+    "-- x\nABORT",
+    "/* a /* b */ c */ COMMIT",
+    "/* a /* b */ COMMIT",
+    "(COMMIT",
+    "ROLLBACK TO SAVEPOINT s",
+    "PREPARE TRANSACTION 'x'",
+]
+
+
+@pytest.mark.parametrize("method", ["query", "stream"])
+@pytest.mark.parametrize("text", REFUSED)
+def test_n1_transaction_control_is_refused_before_sending(db: _StagedDatabase, text: str, method: str) -> None:
+    """N-1 of the re-review of #32: a statement that would end the transaction is never sent, whatever comes
+    first (whitespace, ``;``, ``(``, comments read nested or not). The write before it is rolled back."""
+    with pytest.raises(UsageError) as at_end, db.transaction() as transaction:
+        transaction.execute("INSERT INTO items (n) VALUES (300)")
+        with pytest.raises(UsageError) as info:
+            getattr(staged(transaction), method)(text)
+        assert info.value.code == "database.transaction_ended"
+        assert transaction._dbapi.in_transaction  # not sent
+        with pytest.raises(UsageError):
+            transaction.execute("INSERT INTO items (n) VALUES (301)")
+    assert at_end.value.code == "database.transaction_ended"
+    assert db.query("SELECT count(*) FROM items WHERE n >= 300").rows == ((0,),)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["SELECT 'commit'", "/* commit */ SELECT 1", "-- rollback\nSELECT 1", "SELECT 1 AS endless", "VALUES (2)"],
+)
+def test_n1_other_statements_pass(db: _StagedDatabase, text: str) -> None:
+    with db.read() as transaction:
+        assert len(staged(transaction).query(text).rows) == 1
+
+
+@pytest.mark.parametrize("method", ["query", "stream"])
+@pytest.mark.parametrize("text", ["COMMIT", "ROLLBACK", "END"])
+def test_n2_status_check_after_the_statement(
+    db: _StagedDatabase, monkeypatch: pytest.MonkeyPatch, text: str, method: str
+) -> None:
+    """N-2 of the re-review of #32: the second line on its own (the refusal before sending switched off). After
+    ``stream("ROLLBACK")`` or ``query("ROLLBACK")`` the next write would autocommit; it is refused instead."""
+    monkeypatch.setattr(tabrion._sa._v02, "_refuse_transaction_control", lambda transaction, executable: None)
+    with pytest.raises(UsageError) as at_end, db.transaction() as transaction:
+        staged(transaction).query("INSERT INTO items (n) VALUES (200)")
+        with pytest.raises(UsageError) as info:
+            if method == "stream":
+                next(staged(transaction).stream(text))
+            else:
+                staged(transaction).query(text)
+        assert info.value.code == "database.transaction_ended"
+        with pytest.raises(UsageError):
+            staged(transaction).query("INSERT INTO items (n) VALUES (201)")
+    assert at_end.value.code == "database.transaction_ended"
+    assert db.query("SELECT count(*) FROM items WHERE n = 201").rows == ((0,),)
+    if text == "ROLLBACK":
+        assert db.query("SELECT count(*) FROM items WHERE n = 200").rows == ((0,),)
+
+
+def test_n3_the_end_of_the_block_waits_for_a_cancel_being_sent(
+    db: _StagedDatabase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-3 of the re-review of #32: the end of the block does not overtake a cancel request that is being sent
+    (the connection could be handed out while the request is still on its way)."""
+    events: list[str] = []
+    original = tabrion._sa.database._send_cancel
+
+    def slow(dialect: str, dbapi: Any) -> None:
+        time.sleep(0.5)
+        events.append("sent")
+        original(dialect, dbapi)
+
+    monkeypatch.setattr(tabrion._sa.database, "_send_cancel", slow)
+    with pytest.raises(Canceled), db.read() as transaction:
+        canceler, _ = cancel_later(transaction, 0.2)
+        staged(transaction).query(COUNT_FOREVER)
+    events.append("block ended")
+    canceler.join()
+    assert events[0] == "sent"
 
 
 def test_l3_cancel_sends_only_while_a_statement_runs(db: _StagedDatabase, monkeypatch: pytest.MonkeyPatch) -> None:

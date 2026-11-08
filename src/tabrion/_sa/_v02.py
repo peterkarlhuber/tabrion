@@ -44,10 +44,11 @@ T = TypeVar("T")
 StatementKind = Literal["select", "dml", "ddl", "other"]
 
 _FIRST_WORD = re.compile(r"[A-Za-z_]+")
-_LEADING = re.compile(r"(?:\s+|\(|--[^\n]*(?:\n|$)|/\*.*?\*/)+", re.DOTALL)
 _SELECT_WORDS = frozenset({"select", "with", "values", "table"})
 _DML_WORDS = frozenset({"insert", "update", "delete", "merge", "upsert", "replace"})
 _DDL_WORDS = frozenset({"create", "alter", "drop", "truncate", "comment", "grant", "revoke", "rename"})
+_ENDING_WORDS = frozenset({"commit", "end", "rollback", "abort"})
+"""First keywords of a statement that ends the transaction, ``AND CHAIN`` included (I-104, re-review N-1 of #32)."""
 
 _MAX_BACKOFF = 2.0
 """``run_transaction``: the longest wait between two attempts, in seconds, unless ``backoff`` is longer (I-105)."""
@@ -85,6 +86,43 @@ def _batch_size(value: object) -> int:
     return value
 
 
+def _skip_leading(text: str, position: int, *, nested: bool) -> int:
+    """The position after whitespace, ``(``, ``;`` and comments. ``nested``: PostgreSQL's nested ``/* */`` comments."""
+    length = len(text)
+    while position < length:
+        char = text[position]
+        if char.isspace() or char in "(;":
+            position += 1
+        elif text.startswith("--", position):
+            newline = text.find("\n", position)
+            position = length if newline < 0 else newline + 1
+        elif text.startswith("/*", position):
+            depth, position = 1, position + 2
+            while depth and position < length:
+                if text.startswith("*/", position):
+                    depth, position = depth - 1, position + 2
+                elif nested and text.startswith("/*", position):
+                    depth, position = depth + 1, position + 2
+                else:
+                    position += 1
+        else:
+            break
+    return position
+
+
+def _keywords(text: str, count: int, *, nested: bool = False) -> list[str]:
+    """The first ``count`` keywords of a SQL text, lower case, after whitespace, ``(``, ``;`` and comments."""
+    words: list[str] = []
+    position = 0
+    while len(words) < count:
+        word = _FIRST_WORD.match(text, _skip_leading(text, position, nested=nested))
+        if word is None:
+            break
+        words.append(word.group(0).lower())
+        position = word.end()
+    return words
+
+
 def statement_kind(executable: sqlalchemy.sql.Executable) -> StatementKind:
     """``Result.statement_kind``: from the statement class, for text from its first keyword (I-100)."""
     if isinstance(executable, Selectable) and not isinstance(executable, TextClause):
@@ -94,10 +132,8 @@ def statement_kind(executable: sqlalchemy.sql.Executable) -> StatementKind:
     if isinstance(executable, ExecutableDDLElement):
         return "ddl"
     if isinstance(executable, TextClause):
-        text = executable.text
-        match = _LEADING.match(text)
-        word = _FIRST_WORD.match(text, match.end() if match else 0)
-        first = word.group(0).lower() if word else ""
+        words = _keywords(executable.text, 1)
+        first = words[0] if words else ""
         if first in _SELECT_WORDS:
             return "select"
         if first in _DML_WORDS:
@@ -125,6 +161,25 @@ def _extended_protocol(transaction: Transaction) -> Iterator[None]:
         yield
     finally:
         dbapi.prepare_threshold = previous
+
+
+def _refuse_transaction_control(transaction: Transaction, executable: sqlalchemy.sql.Executable) -> None:
+    """Before a user statement: a statement that ends the transaction is never sent (I-104, re-review N-1 of #32).
+
+    ``COMMIT``, ``END``, ``ROLLBACK`` and ``ABORT`` (with or without ``AND CHAIN``, ``ROLLBACK TO SAVEPOINT`` too) and
+    ``PREPARE TRANSACTION``. The server allows one command per call, so the first keyword decides (after whitespace,
+    ``(``, ``;`` and comments, read both nested, as PostgreSQL does, and not nested, as SQLite does). ``... AND
+    CHAIN`` opens a new transaction at once, which the status check after the statement cannot tell from the old one.
+    The transaction is marked broken, as by :func:`_still_in_transaction`, which stays as the second line.
+    """
+    if not isinstance(executable, TextClause):
+        return
+    for nested in (False, True):  # both comment rules: a text must not pass by reading its comments the other way
+        words = _keywords(executable.text, 2, nested=nested)
+        if words and (words[0] in _ENDING_WORDS or words == ["prepare", "transaction"]):
+            with transaction._state:
+                transaction._broken = True
+            raise UsageError("database.transaction_ended")
 
 
 def _still_in_transaction(transaction: Transaction, close: Callable[[], None] | None = None) -> None:
@@ -204,6 +259,7 @@ class _TransactionV02:
         values = _db._fetch_params(params)
         limit = _max_rows(max_rows, transaction._max_rows)
         kind = statement_kind(executable)
+        _refuse_transaction_control(transaction, executable)
         connection = transaction._connection
 
         def run() -> tuple[Sequence[Any] | None, list[sqlalchemy.Row[Any]], bool, float]:
@@ -247,6 +303,7 @@ class _TransactionV02:
         values = _db._fetch_params(params)
         size = _batch_size(batch_size)
         _db._optional_seconds(timeout)  # checked now, not at the first batch
+        _refuse_transaction_control(transaction, executable)
         return _stream(transaction, statement, executable, values, size, timeout)
 
     def cancel(self) -> None:
