@@ -778,6 +778,7 @@ REFUSED = [
     "-- x\nABORT",
     "/* a /* b */ c */ COMMIT",
     "/* a /* b */ COMMIT",
+    "-- x\rCOMMIT /*\n...*/",
     "(COMMIT",
     "ROLLBACK TO SAVEPOINT s",
     "PREPARE TRANSACTION 'x'",

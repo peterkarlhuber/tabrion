@@ -761,6 +761,39 @@ def test_n1_and_chain_cannot_end_the_transaction(
     assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id IN (681, 682)").fetchone() == (0,)
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["-- x\rCOMMIT /*\n...*/", "-- x\rCOMMIT AND CHAIN", "/* a /* b */ c */ COMMIT AND CHAIN", " ;COMMIT AND CHAIN"],
+)
+def test_n1_comments_are_read_as_the_server_reads_them(
+    db: _StagedDatabase, schema: str, admin: Any, monkeypatch: pytest.MonkeyPatch, text: str
+) -> None:
+    """The Studio reviewer's bypass: PostgreSQL ends a ``--`` comment at ``\\r`` too and nests ``/* */``. The text
+    is refused before sending; with the refusal off, the server indeed ends the transaction (so the case is real)."""
+    insert = f"INSERT INTO {schema}.parts (id) VALUES (690)"
+    with pytest.raises(UsageError) as at_end, db.transaction() as transaction:
+        staged(transaction).query(insert)
+        with pytest.raises(UsageError) as info:
+            staged(transaction).query(text)
+        assert info.value.code == "database.transaction_ended"
+        assert transaction._dbapi.info.transaction_status == 2  # INTRANS: not sent
+    assert at_end.value.code == "database.transaction_ended"
+    assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id = 690").fetchone() == (0,)
+    monkeypatch.setattr(tabrion._sa._v02, "_refuse_transaction_control", lambda transaction, executable: None)
+    chained = "AND CHAIN" in text
+    with contextlib.ExitStack() as stack:
+        if not chained:  # a plain COMMIT: the status check (second line) catches it afterwards
+            stack.enter_context(pytest.raises(UsageError))
+        transaction = stack.enter_context(db.transaction())
+        staged(transaction).query(insert)
+        before = transaction.fetch_scalar("SELECT txid_current()")
+        staged(transaction).query(text)
+        # AND CHAIN: a new transaction, which only the first line refuses; the block would end quietly
+        assert transaction.fetch_scalar("SELECT txid_current()") != before
+    assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id = 690").fetchone() == (1,)
+    admin.execute(f"DELETE FROM {schema}.parts WHERE id = 690")
+
+
 def test_info_on_begin_registration_from_many_threads(db: _StagedDatabase) -> None:
     """Info I-1 of the review of #32: registrations and unregistrations from many threads lose none."""
     seen: list[int] = []

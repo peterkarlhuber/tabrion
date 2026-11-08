@@ -86,22 +86,27 @@ def _batch_size(value: object) -> int:
     return value
 
 
-def _skip_leading(text: str, position: int, *, nested: bool) -> int:
-    """The position after whitespace, ``(``, ``;`` and comments. ``nested``: PostgreSQL's nested ``/* */`` comments."""
+def _skip_leading(text: str, position: int, *, postgres: bool) -> int:
+    """The position after whitespace, ``(``, ``;`` and comments, as the server's lexer reads them.
+
+    PostgreSQL ends a ``--`` comment at ``\\n`` or ``\\r`` and nests ``/* */`` comments; SQLite ends a ``--`` comment
+    at ``\\n`` only and does not nest.
+    """
     length = len(text)
     while position < length:
         char = text[position]
         if char.isspace() or char in "(;":
             position += 1
         elif text.startswith("--", position):
-            newline = text.find("\n", position)
-            position = length if newline < 0 else newline + 1
+            position += 2
+            while position < length and text[position] != "\n" and not (postgres and text[position] == "\r"):
+                position += 1
         elif text.startswith("/*", position):
             depth, position = 1, position + 2
             while depth and position < length:
                 if text.startswith("*/", position):
                     depth, position = depth - 1, position + 2
-                elif nested and text.startswith("/*", position):
+                elif postgres and text.startswith("/*", position):
                     depth, position = depth + 1, position + 2
                 else:
                     position += 1
@@ -110,12 +115,12 @@ def _skip_leading(text: str, position: int, *, nested: bool) -> int:
     return position
 
 
-def _keywords(text: str, count: int, *, nested: bool = False) -> list[str]:
+def _keywords(text: str, count: int, *, postgres: bool = False) -> list[str]:
     """The first ``count`` keywords of a SQL text, lower case, after whitespace, ``(``, ``;`` and comments."""
     words: list[str] = []
     position = 0
     while len(words) < count:
-        word = _FIRST_WORD.match(text, _skip_leading(text, position, nested=nested))
+        word = _FIRST_WORD.match(text, _skip_leading(text, position, postgres=postgres))
         if word is None:
             break
         words.append(word.group(0).lower())
@@ -168,14 +173,14 @@ def _refuse_transaction_control(transaction: Transaction, executable: sqlalchemy
 
     ``COMMIT``, ``END``, ``ROLLBACK`` and ``ABORT`` (with or without ``AND CHAIN``, ``ROLLBACK TO SAVEPOINT`` too) and
     ``PREPARE TRANSACTION``. The server allows one command per call, so the first keyword decides (after whitespace,
-    ``(``, ``;`` and comments, read both nested, as PostgreSQL does, and not nested, as SQLite does). ``... AND
+    ``(``, ``;`` and comments, read both as PostgreSQL does and as SQLite does; see :func:`_skip_leading`). ``... AND
     CHAIN`` opens a new transaction at once, which the status check after the statement cannot tell from the old one.
     The transaction is marked broken, as by :func:`_still_in_transaction`, which stays as the second line.
     """
     if not isinstance(executable, TextClause):
         return
-    for nested in (False, True):  # both comment rules: a text must not pass by reading its comments the other way
-        words = _keywords(executable.text, 2, nested=nested)
+    for postgres in (False, True):  # both lexers: a text must not pass by reading its comments the other way
+        words = _keywords(executable.text, 2, postgres=postgres)
         if words and (words[0] in _ENDING_WORDS or words == ["prepare", "transaction"]):
             with transaction._state:
                 transaction._broken = True
