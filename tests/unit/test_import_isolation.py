@@ -38,7 +38,7 @@ def test_postgres_module_imports_without_sqlalchemy() -> None:
 def test_layer_b_names_give_the_installation_hint_without_sqlalchemy() -> None:
     code = BLOCK_SOURCE + (
         "import tabrion\n"
-        "for name in ('Database', 'Profile', 'Transaction', 'TLSMode', 'Health', 'Result', 'Column'):\n"
+        "for name in ('Database', 'Profile', 'Transaction', 'TLSMode', 'Health'):\n"
         "    try:\n"
         "        getattr(tabrion, name)\n"
         "    except ImportError as exc:\n"

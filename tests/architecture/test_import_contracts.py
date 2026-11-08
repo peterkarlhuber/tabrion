@@ -73,6 +73,8 @@ NO_LEVUVO = "Tabrion depends on no Levuvo platform"
 CORE = "Driver core is stdlib-only"
 POSTGRES = "PostgreSQL helpers need only psycopg"
 LAYERS = "Layer B builds on layer A, never the reverse"
+LAYER_B = "Layer B needs only SQLAlchemy"
+MIGRATIONS = "Migration helpers never import pytest"
 
 
 @pytest.mark.parametrize(
@@ -91,6 +93,11 @@ LAYERS = "Layer B builds on layer A, never the reverse"
         ("postgres/__init__.py", "import sqlalchemy", POSTGRES),
         ("postgres/locks.py", "import psycopg_pool", POSTGRES),
         ("sqlite.py", "import tabrion._sa.database", LAYERS),
+        ("_sa/profile.py", "import pytest", LAYER_B),
+        ("_sa/database.py", "import alembic", LAYER_B),
+        ("_sa/_check.py", "import psycopg_pool", LAYER_B),
+        ("migrations.py", "import pytest", MIGRATIONS),
+        ("migrations.py", "import tabrion.testing.profiles", MIGRATIONS),
     ],
 )
 def test_mutation_probe_turns_red(tmp_path: Path, module: str, line: str, contract: str) -> None:
@@ -158,6 +165,86 @@ def test_levuvo_contract_names_every_known_platform() -> None:
         "nodestro_sdk",
         "tabrion_studio",
     } <= forbidden
+
+
+def test_layer_b_and_migrations_contracts() -> None:
+    """G-T1 condition C-5 (doc 02 section 2): layer B and the migration helpers have their own denylists."""
+    by_name = {c["name"]: c for c in _contracts()}
+    assert by_name[LAYER_B]["source_modules"] == ["tabrion._sa"]
+    assert {"pytest", "alembic", "psycopg_pool", "tabrion.testing", "tabrion.migrations"} <= set(
+        by_name[LAYER_B]["forbidden_modules"]  # type: ignore[call-overload]
+    )
+    assert by_name[MIGRATIONS]["source_modules"] == ["tabrion.migrations"]
+    assert {"pytest", "tabrion.testing"} <= set(by_name[MIGRATIONS]["forbidden_modules"])  # type: ignore[call-overload]
+
+
+def test_no_contract_ignores_imports() -> None:
+    """C-1 fix B needs no exception: an ``ignore_imports`` entry would hide a real edge from every contract."""
+    assert not [c["name"] for c in _contracts() if c.get("ignore_imports")]
+
+
+CHECK_COLLECTORS = {"psycopg": "tabrion.postgres._check", "tabrion._sa.database": "tabrion._sa._check"}
+
+
+def test_check_imports_only_the_standard_library() -> None:
+    """C-1 fix B: ``tabrion.check`` has no import of ``tabrion.postgres`` or layer B, at any level of nesting.
+
+    Imports under ``if TYPE_CHECKING:`` are allowed (type checkers only). The two collectors are reached through
+    the fixed table ``_COLLECTORS`` and ``importlib.import_module``; the table may name nothing else.
+    """
+    path = SRC / "tabrion" / "check.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    type_checking: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":
+            type_checking.update(id(child) for stmt in node.body for child in ast.walk(stmt))
+    offenders = []
+    for node in ast.walk(tree):
+        if id(node) in type_checking:
+            continue
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""] if node.level == 0 else ["." + (node.module or "")]
+        else:
+            continue
+        offenders += [n for n in names if n.partition(".")[0] not in sys.stdlib_module_names]
+    assert not offenders, f"tabrion.check imports {offenders}"
+    import tabrion.check
+
+    assert tabrion.check._COLLECTORS == CHECK_COLLECTORS
+    for collector in CHECK_COLLECTORS.values():
+        assert (SRC / Path(*collector.split("."))).with_suffix(".py").is_file(), collector
+
+
+def test_check_dispatches_by_the_type_module() -> None:
+    import sqlite3
+
+    import tabrion.check
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        assert tabrion.check._collector(conn) is None
+    finally:
+        conn.close()
+    with pytest.raises(TypeError, match=r"expects a sqlite3\.Connection"):
+        tabrion.check._collector(object())
+    # tabrion.postgres needs psycopg only for type checking (G-7), so this runs without the extra too.
+    fake_psycopg = type("Connection", (), {"__module__": "psycopg.connection"})
+    collector = tabrion.check._collector(fake_psycopg())
+    assert collector is not None
+    assert collector.__name__ == "tabrion.postgres._check"
+
+
+def test_check_dispatches_a_database_to_layer_b() -> None:
+    pytest.importorskip("sqlalchemy")
+    from tabrion._sa.database import Database
+    import tabrion.check
+
+    subclass = type("AppDatabase", (Database,), {"__module__": "app.db"})
+    collector = tabrion.check._collector(subclass())
+    assert collector is not None
+    assert collector.__name__ == "tabrion._sa._check"
 
 
 def _imported_top_levels(path: Path) -> set[str]:

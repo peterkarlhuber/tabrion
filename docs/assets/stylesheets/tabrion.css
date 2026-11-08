@@ -1,0 +1,36 @@
+/* Tabrion colors, sampled from the logo: black #0b0b0b, slate grey #4d4e52, light grey #cbccce.
+   The logo has no hue, so links keep an indigo that reads on both schemes. No CSS filters on the logo. */
+
+:root {
+  --md-primary-fg-color: #1d1e21;
+  --md-primary-fg-color--light: #4d4e52;
+  --md-primary-fg-color--dark: #0b0b0b;
+  --md-accent-fg-color: #3f51b5;
+  --md-accent-fg-color--transparent: rgba(63, 81, 181, 0.1);
+}
+
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: #3949ab;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-typeset-a-color: #9fa8da;
+  --md-accent-fg-color: #9fa8da;
+}
+
+/* The header logo is the symbol for dark surfaces (the header is dark slate in both schemes). */
+.md-header__button.md-logo img {
+  height: 1.6rem;
+}
+
+/* Landing page hero: the lockup; index.md switches between the light and the on-dark variant with Material's
+   #only-light / #only-dark image suffixes. */
+.tabrion-hero {
+  text-align: center;
+  margin: 0 0 1.5rem;
+}
+
+.tabrion-hero img {
+  width: 400px;
+  max-width: 100%;
+}

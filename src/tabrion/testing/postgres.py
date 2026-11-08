@@ -29,6 +29,7 @@ __all__ = [
     "tabrion_postgres_roles",
     "tabrion_postgres_schema",
     "tabrion_postgres_url",
+    "tabrion_role_setup",
     "truncate_tables",
 ]
 
@@ -82,10 +83,26 @@ def tabrion_postgres_schema(tabrion_postgres_url: str) -> Iterator[PostgresSchem
 
 
 @pytest.fixture(scope="session")
-def tabrion_postgres_database(tabrion_postgres_url: str) -> Iterator[PostgresDatabaseHandle]:
+def tabrion_role_setup() -> RoleSetup | None:
+    """The roles of ``tabrion_postgres_database``; override this fixture in ``conftest.py`` to change them (G-10).
+
+    Default ``RoleSetup()``; ``None`` creates no roles (the admin URL owns the database). Example::
+
+        @pytest.fixture(scope="session")
+        def tabrion_role_setup() -> RoleSetup | None:
+            return RoleSetup(app="axentra_app", owner="axentra_owner")
+    """
+    return RoleSetup()
+
+
+@pytest.fixture(scope="session")
+def tabrion_postgres_database(
+    tabrion_postgres_url: str, tabrion_role_setup: RoleSetup | None
+) -> Iterator[PostgresDatabaseHandle]:
     """``CREATE DATABASE t_<hex>`` per session (admin needs CREATEDB), ``DROP DATABASE ... WITH (FORCE)`` at the end.
 
-    The roles follow ``RoleSetup`` (default ``RoleSetup()``).
+    The roles follow the fixture ``tabrion_role_setup`` (doc 04 section 6: "parameter ``roles``"; G-T1 condition
+    C-4).
     """
     raise NotImplementedError("tabrion.testing.tabrion_postgres_database: implemented in TAB-032")
 

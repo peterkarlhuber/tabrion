@@ -17,12 +17,11 @@ from typing import Any
 import pytest
 
 EXPECTED: dict[str, set[str]] = {
+    # Result and Column are 0.2 names: staged in docs/api/surface.json, exported from 0.2 on (G-T1 condition C-6).
     "tabrion": {
-        "Column",
         "Database",
         "Health",
         "Profile",
-        "Result",
         "TLSMode",
         "TabrionError",
         "Transaction",
@@ -136,6 +135,7 @@ EXPECTED: dict[str, set[str]] = {
         "tabrion_postgres_schema",
         "tabrion_postgres_database",
         "tabrion_postgres_roles",
+        "tabrion_role_setup",
         "postgres_server_version",
         "truncate_tables",
         "require_extension",
@@ -144,7 +144,13 @@ EXPECTED: dict[str, set[str]] = {
         "PostgresSchema",
         "PostgresDatabaseHandle",
     },
-    "tabrion.testing.profiles": {"ConnectionFactory", "ProfileCase", "sqlite_profile_cases", "portability_cases"},
+    "tabrion.testing.profiles": {
+        "SQLiteConnect",
+        "ProfileCase",
+        "PortabilityCase",
+        "sqlite_profile_cases",
+        "portability_cases",
+    },
 }
 
 
@@ -161,7 +167,6 @@ def test_layer_b_names_resolve_lazily() -> None:
     import tabrion
     from tabrion._sa.database import Database, Health, Transaction
     from tabrion._sa.profile import Profile, TLSMode
-    from tabrion._sa.result import Column, Result
     from tabrion.config import safe_url
     from tabrion.errors import TabrionError
 
@@ -170,13 +175,47 @@ def test_layer_b_names_resolve_lazily() -> None:
     assert tabrion.Health is Health
     assert tabrion.Profile is Profile
     assert tabrion.TLSMode is TLSMode
-    assert tabrion.Result is Result
-    assert tabrion.Column is Column
     assert tabrion.safe_url is safe_url
     assert tabrion.TabrionError is TabrionError
     assert set(tabrion.__all__) <= set(dir(tabrion))
     with pytest.raises(AttributeError):
         tabrion.does_not_exist  # noqa: B018
+
+
+@pytest.mark.parametrize("name", ["Result", "Column"])
+def test_0_2_names_are_not_exported_yet(name: str) -> None:
+    """G-T1 condition C-6: the 0.1.0 surface exports no 0.2 name (``scripts/api_surface.py`` checks the rest)."""
+    import tabrion
+
+    assert name not in tabrion.__all__
+    with pytest.raises(AttributeError):
+        getattr(tabrion, name)
+
+
+@pytest.mark.parametrize(
+    ("cls", "methods"),
+    [
+        ("Database", ["query", "inspector", "on_begin", "run_transaction"]),
+        ("Transaction", ["query", "stream", "cancel", "savepoint"]),
+    ],
+)
+def test_0_2_methods_are_staged_not_mixed_in(cls: str, methods: list[str]) -> None:
+    from tabrion._sa import _v02, database
+
+    public = getattr(database, cls)
+    staged = getattr(_v02, f"_{cls}V02")
+    for method in methods:
+        assert not hasattr(public, method), f"{cls}.{method} is a 0.2 name"
+        assert callable(getattr(staged, method)), f"{cls}.{method} is not staged"
+    assert staged not in public.__mro__
+
+
+def test_health_has_deep() -> None:
+    """G-T1 condition C-3 (G-9): ``deep=True`` adds the SQLite ``quick_check``; keyword-only, default off."""
+    from tabrion._sa.database import Database
+
+    param = inspect.signature(Database.health).parameters["deep"]
+    assert (param.kind, param.default) == (inspect.Parameter.KEYWORD_ONLY, False)
 
 
 def _public_callables(module: ModuleType) -> list[tuple[str, Callable[..., Any]]]:
@@ -245,7 +284,9 @@ def test_return_dataclasses_are_frozen_and_slotted() -> None:
 
     modules: list[ModuleType] = [errors, sqlite, postgres, check, migrations, testing_postgres, profiles]
     classes = [getattr(m, n) for m in modules for n in m.__all__ if dataclasses.is_dataclass(getattr(m, n))]
-    classes += [tabrion.Profile, tabrion.Health, tabrion.Result, tabrion.Column]
+    from tabrion._sa.result import Column, Result
+
+    classes += [tabrion.Profile, tabrion.Health, Result, Column]
     assert len(classes) >= 20
     for cls in classes:
         params = cls.__dataclass_params__

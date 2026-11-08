@@ -1,9 +1,11 @@
 name: ci-ok
 
-# CI-FAST W1 (v2): one report that says whether every mandatory pull-request check listed in .github/ci-manifest.json
-# ran on the PR head SHA and succeeded. REPORT-ONLY: the job stays green whatever the verdict (also on API errors) and
-# it is not a required check; the verdict is the job summary of the latest completed ci-ok run for that head SHA.
-# Design note (nodestro-studio): docs/architecture/ci-fast/ci-ok.md.
+# CI-FAST W1 (v2) plus the gate step of G-T1 condition C-7 (F-06): one evaluation that says whether every mandatory
+# pull-request check listed in .github/ci-manifest.json ran on the PR head SHA and succeeded, posted as the commit
+# STATUS `ci-ok` on that head SHA. A workflow_run job's own check run belongs to the default branch's commit and can
+# never be a required PR check; the commit status can, and branch protection on master requires it (owner action O-1).
+# ci_ok.py stays byte-identical to the canonical copy (nodestro-studio, design note docs/architecture/ci-fast/ci-ok.md,
+# "What remains before enforcement", step 1); ci_ok_status.py is the Tabrion addition. ADR 0012, section "Merge gate".
 #
 # Why workflow_run and not pull_request: GitHub always runs a workflow_run workflow from the DEFAULT branch, so a pull
 # request cannot change this file, the script or the manifest that judge it (review F1, F2). Each completion of a
@@ -42,6 +44,11 @@ jobs:
       contents: read
       # Reading workflow runs and jobs of the PR head SHA.
       actions: read
+      # Posting the commit status ci-ok on the PR head SHA. No other workflow may hold it
+      # (.github/scripts/test_ci_ok_status.py).
+      statuses: write
+      # Reading the PR's changed files and labels for the workflow-change gate (label workflow-change-reviewed).
+      pull-requests: read
     steps:
       # The default branch's commit that this workflow_run event runs on (github.sha); never the pull request's code.
       - name: Check out the default branch's .github
@@ -51,10 +58,23 @@ jobs:
           sparse-checkout: .github
           persist-credentials: false
       - name: Evaluate the mandatory checks once and report
+        id: evaluate
         env:
           GH_TOKEN: ${{ github.token }}
-          # Report-only: unset. "1" makes a NOT OK verdict fail this job (a later wave, after review).
-          CI_OK_ENFORCE: ""
+          # Enforced: a NOT OK or PENDING verdict fails this job, so the Actions list shows it too. The gate itself is
+          # the commit status of the next step.
+          CI_OK_ENFORCE: "1"
         # The manifest comes from the same checkout; the script also runs --self-check on it and reports any problem
         # as NOT OK (F8).
-        run: python3 -I default/.github/scripts/ci_ok.py --root default
+        run: python3 -I default/.github/scripts/ci_ok.py --root default --json "$RUNNER_TEMP/ci-ok.json"
+      # Always, also after a NOT OK: success only for OK, pending while listed workflows run, failure for NOT OK and
+      # error when the evaluation wrote no report. Evaluations of one head SHA are serialized (concurrency above), so
+      # the status is always the latest verdict. A PR that changes .github/workflows/** or .github/scripts/** is NOT
+      # OK until the owner or an independent reviewer sets the label workflow-change-reviewed; after setting it,
+      # re-run any job of the PR's CI run, because a label does not trigger workflow_run. The post is retried with
+      # backoff, and the step fails when the status could not be posted.
+      - name: Post the verdict as the commit status ci-ok on the PR head SHA
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I default/.github/scripts/ci_ok_status.py --report "$RUNNER_TEMP/ci-ok.json"

@@ -63,7 +63,7 @@ path = "src/tabrion/_version.py"
 packages = ["src/tabrion"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/tabrion", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "mkdocs.yml", "pyproject.toml"]
+include = ["src/tabrion", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "TRADEMARKS.md", "mkdocs.yml", "pyproject.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -124,6 +124,9 @@ root_packages = ["tabrion"]
 include_external_packages = true
 exclude_type_checking_imports = true
 
+# tabrion.check reaches the PostgreSQL and layer-B checks without importing them (G-T1 condition C-1, fix B): the
+# collectors live in tabrion.postgres._check and tabrion._sa._check and are loaded by name from a fixed table
+# (contract section 7, ADR 0012). No ignore_imports entry is needed, and none may be added for tabrion.check.
 [[tool.importlinter.contracts]]
 id = "core-stdlib-only"
 name = "Driver core is stdlib-only"
@@ -156,6 +159,23 @@ forbidden_modules = [
     "tabrion.testing",
     "tabrion.migrations",
 ]
+
+# Doc 02 section 2: layer B needs only SQLAlchemy (and layer A); it never imports pytest, Alembic or the pool
+# (G-T1 condition C-5).
+[[tool.importlinter.contracts]]
+id = "layer-b-sqlalchemy-only"
+name = "Layer B needs only SQLAlchemy"
+type = "forbidden"
+source_modules = ["tabrion._sa"]
+forbidden_modules = ["pytest", "alembic", "psycopg_pool", "tabrion.testing", "tabrion.migrations"]
+
+# Doc 02 section 2: the migration helpers never import pytest (G-T1 condition C-5).
+[[tool.importlinter.contracts]]
+id = "migrations-no-pytest"
+name = "Migration helpers never import pytest"
+type = "forbidden"
+source_modules = ["tabrion.migrations"]
+forbidden_modules = ["pytest", "tabrion.testing"]
 
 [[tool.importlinter.contracts]]
 id = "layers"

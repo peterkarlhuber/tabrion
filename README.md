@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/peterkarlhuber/tabrion/master/assets/branding/tabrion-logo-on-dark.png">
+    <img src="https://raw.githubusercontent.com/peterkarlhuber/tabrion/master/assets/branding/tabrion-logo.png" alt="Tabrion" width="400">
+  </picture>
+</p>
+
 # Tabrion
 
 Small, secure database foundations for SQLite and PostgreSQL in Python.
@@ -81,4 +88,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [SUPPORT.md]
 
 ## License
 
-MIT, see [LICENSE](LICENSE). psycopg (extra `postgres`) is LGPL-3.0 and is installed separately, never bundled.
+MIT, see [LICENSE](LICENSE). The name "Tabrion" and the logos are not covered by the MIT license; see
+[TRADEMARKS.md](TRADEMARKS.md). psycopg (extra `postgres`) is LGPL-3.0 and is installed separately, never bundled.

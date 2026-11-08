@@ -66,7 +66,7 @@ Tabrion itself depends on **no** Levuvo platform (P6). Edges are allowed only to
 
 ```
 tabrion/                     package; layer B in the package root (importable only with the extra [sqlalchemy])
-├── __init__.py              lazy exports (PEP 562): Database, Profile, Transaction, Result, TabrionError ...
+├── __init__.py              lazy exports (PEP 562): Database, Profile, Transaction, TabrionError ... (Result from 0.2)
 ├── _version.py
 ├── errors.py                layer A, stdlib: Kind, Classification, classify, safe_message, DbErrorRedactionFilter, hierarchy
 ├── sql.py                   layer A, stdlib: split_statements
@@ -76,13 +76,16 @@ tabrion/                     package; layer B in the package root (importable on
 ├── postgres/                layer A, extra [postgres] (psycopg)
 │   ├── __init__.py          SessionSettings, configure, ping, diagnose, extension_status
 │   ├── roles.py             RoleInfo, RoleReport, role_info, check_role, inspect_role, grant_runtime_role
-│   └── locks.py             SessionLock, lock_key, advisory helpers
-├── check.py                 Finding, Severity, check(...) (collects SQLite/PostgreSQL diagnoses)
+│   ├── locks.py             SessionLock, lock_key, advisory helpers
+│   └── _check.py            private: the TAB-PG-* checks of tabrion.check
+├── check.py                 Finding, Severity, check(...); SQLite checks itself, loads the collectors by name
 ├── _sa/                     layer B, extra [sqlalchemy]; private, public through tabrion.*
 │   ├── database.py          Database, Transaction, Health
 │   ├── profile.py           Profile, TLS rules
 │   ├── events.py            connect/begin listeners (call tabrion.sqlite/postgres)
-│   └── result.py            Result, Column
+│   ├── result.py            Result, Column (exported from 0.2)
+│   ├── _check.py            the layer-B checks of tabrion.check
+│   └── _v02.py              staged 0.2 methods of Database and Transaction (not mixed in before 0.2)
 ├── migrations.py            layer B, extra [migrations]: status, require_current, SchemaStatus (without env.py)
 └── testing/                 extra [testing] (pytest); pytest plugin only on explicit request (pytest_plugins)
     ├── __init__.py          configure(), fixtures
@@ -335,7 +338,9 @@ Reasons:
 ## 9. Diagnosis (`tabrion.check`) [E]
 
 `tabrion.check.check(target)` takes a `sqlite3.Connection`, a psycopg connection or a `Database` and returns
-`list[Finding]`. `Database.check()` is the same for a `Database`.
+`list[Finding]`. `Database.check()` is the same for a `Database`. `tabrion.check` stays standard-library only: it
+checks SQLite itself and loads the PostgreSQL and layer-B collectors (`tabrion.postgres._check`, `tabrion._sa._check`)
+by name, keyed on the module of the target's type (contract section 7, G-T1 condition C-1).
 
 `Finding` has the fields `code` (stable, for example `TAB-SQ-001`), `severity` (`info|warning|error`), `title`
 (English, short), `detail` (without secrets) and `remedy` (what to do).
@@ -385,8 +390,8 @@ codes.
 
 | Version | Content | Trigger |
 |---|---|---|
-| **0.1.0** | layer A **complete**, including `SessionLock`, the advisory helpers, `grant_runtime_role`, `session_configurator` (Axentra is a required consumer); internal vectors (Levuvo Database Profile, ADR 0011); layer B: `Database`, `Profile`, `Transaction`, `transaction`, `read`, `execute`, `fetch_*`, `health`, `check`, `safe_url`; `tabrion.migrations.status`/`require_current`; `tabrion.testing` (SQLite, PostgreSQL schema per test, database per session, roles without superuser, `truncate_tables`, runtime-role mode, environment configuration); reference applications A and B | G-T2 |
-| **0.2.0** | Studio support: `Database.query` → `Result`, `Transaction.cancel`, `inspector()`; experimental `run_transaction`, `on_begin`, `savepoint` | before the Studio MVP |
+| **0.1.0** | layer A **complete**, including `SessionLock`, the advisory helpers, `grant_runtime_role`, `session_configurator` (Axentra is a required consumer); internal vectors (Levuvo Database Profile, ADR 0011); layer B: `Database`, `Profile`, `Transaction`, `transaction`, `read`, `execute`, `fetch_*`, `health` (with `deep`), `check`, `safe_url`; `tabrion.migrations.status`/`require_current`; `tabrion.testing` (SQLite, PostgreSQL schema per test, database per session, roles without superuser, `truncate_tables`, runtime-role mode, environment configuration); reference applications A and B | G-T2 |
+| **0.2.0** | Studio support: `Database.query` and `Transaction.query` → `Result` (with `Column`), `Transaction.stream`, `Transaction.cancel`, `inspector()`; experimental `run_transaction`, `on_begin`, `savepoint`. These names are frozen in `docs/api/surface.json` with `since: "0.2"` and are not exported before 0.2. 0.2 also adds the CR-DB modules TAB-CR-1/2 (profile file format, schema fingerprint), whose API is frozen with those work packages, not at G-T1 | before the Studio MVP |
 | **0.3.0** (optional) | findings from the migration stages, for example more diagnosis codes | when needed |
 | **1.0.0** | API frozen. Preconditions: Axentra and Nodestro integration complete, Orkexa core switched (E-ORK-CORE = yes), both reference applications four weeks without an API break, six-month review positive, owner approval G-R for this publication | G-R |
 

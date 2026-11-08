@@ -6,6 +6,13 @@
 #   version (00 section 13, E-PyPI; stop criterion ST-6). The PyPI path is work package TAB-043, bound to G-R.
 #   Until then the job "publish" contains no upload step: it stops with an error, and it runs only when the
 #   "publish" input is set AND the protected environment "pypi" (required reviewer: the owner) approves the job.
+# * Least privilege (G-T1 condition C-8, F-07): only the small job "attest" holds `id-token: write`. It runs no
+#   third-party Python code (no pip install); it downloads the built files and attests them. The job "build" runs pip
+#   and the packaging tests with `contents: read` only, so it can never mint an OIDC token.
+# * Repository settings this workflow relies on (owner action O-2; ADR 0009, section "Release environment"):
+#   environment "pypi" with the owner as required reviewer, "prevent self-review" on, deployment branches and tags
+#   restricted to the tag pattern `v*`; the PyPI trusted publisher (TAB-043) names this file and the environment
+#   "pypi", so a token for an upload exists only in an approved job of that environment.
 name: Release
 
 on:
@@ -58,8 +65,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write # build provenance attestations
-      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,16 +92,30 @@ jobs:
           TABRION_DIST: dist
       - name: SHA-256 of the artifacts
         run: sha256sum dist/* | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: "dist/*"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-dist
           path: dist/
 
-  publish:
+  attest:
+    # Build provenance for exactly the files of "build". The only job with an OIDC token; no checkout, no pip.
     needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write # build provenance attestations (Sigstore)
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-dist
+          path: dist/
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "dist/*"
+
+  publish:
+    needs: [build, attest]
     if: inputs.publish
     runs-on: ubuntu-latest
     timeout-minutes: 10
