@@ -511,7 +511,7 @@ def _classify(error: BaseException, *, during_commit: bool, sent: bool) -> Class
     if isinstance(error, TabrionError) and isinstance(error.classification, Classification):
         stored = error.classification
         if during_commit and stored.kind is Kind.CONNECTION and not stored.outcome_unknown:
-            # R-NORETRY over a stored classification (TB-040, contract I-42): a connection lost around a COMMIT
+            # R-NORETRY over a stored classification (TB-040, contract I-43): a connection lost around a COMMIT
             # leaves the outcome unknown, whatever the error said when it was built (a checkout with sent=False).
             return replace(stored, outcome_unknown=True, retryable=False)
         return stored

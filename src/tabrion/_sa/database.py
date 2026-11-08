@@ -1,6 +1,6 @@
 """``Database`` and ``Transaction``: layer B over a SQLAlchemy engine. Private: use ``tabrion.Database``.
 
-Contract: ``docs/api/contract.md`` sections 5.2, 5.3 and 5.5, implementation notes I-36..I-41 (TAB-018). The 0.2
+Contract: ``docs/api/contract.md`` sections 5.2, 5.3 and 5.5, implementation notes I-37..I-44 (TAB-018). The 0.2
 methods (TAB-033) are staged in ``tabrion._sa._v02`` and are not part of these classes before 0.2 (G-T1 condition
 C-6, ``docs/api/surface.json``).
 
@@ -64,7 +64,7 @@ _ISOLATION_LEVELS: dict[str, str] = {
     "serializable": "SERIALIZABLE",
 }
 _RESERVED_OPTIONS = frozenset({"creator", "isolation_level", "pool", "poolclass"})
-"""Engine options Tabrion sets itself (contract I-36): the creator applies layer A, the pool follows the profile."""
+"""Engine options Tabrion sets itself (contract I-37): the creator applies layer A, the pool follows the profile."""
 _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 _MAX_TIMEOUT_MS = 2_147_483_647
 _PG_TIMEOUT_SETTING = re.compile(r"[0-9]{1,10}(?:us|ms|s|min|h|d)?")
@@ -145,9 +145,9 @@ def _statement_text(exc: BaseException, statement: object) -> str | None:
 def _translate(
     exc: BaseException, statement: object = None, *, during_commit: bool = False, sent: bool = True
 ) -> TabrionError:
-    """The ``TabrionError`` for a SQLAlchemy or driver error (contract section 5.3, I-38); raise it ``from None``."""
+    """The ``TabrionError`` for a SQLAlchemy or driver error (contract section 5.3, I-39); raise it ``from None``."""
     if isinstance(exc, sqlalchemy.exc.TimeoutError):
-        # The pool had no connection within pool_timeout: nothing was sent, so it is retryable (I-38).
+        # The pool had no connection within pool_timeout: nothing was sent, so it is retryable (I-39).
         classification = replace(classify(exc, sent=False), kind=Kind.RESOURCE, retryable=True, connection_usable=False)
         return _error_class(Kind.RESOURCE)("database.resource", classification=classification, original=exc)
     if isinstance(exc, sqlalchemy.exc.StatementError) and not isinstance(exc, sqlalchemy.exc.DBAPIError):
@@ -255,14 +255,14 @@ class Transaction:
             if not _is_database_error(exc):
                 raise
             error = _translate(exc, statement)
-        # Raised outside the except block: no __context__ that holds the SQLAlchemy error and its parameters (I-38).
+        # Raised outside the except block: no __context__ that holds the SQLAlchemy error and its parameters (I-39).
         raise error from None
 
     def _pg_statement_timeout(self, seconds: float | None) -> None:
         """``SET LOCAL statement_timeout`` for a statement with a timeout; the previous value back for one without.
 
         ``SET`` takes no snapshot, so the limit covers the statement from its start (as in ``tabrion.postgres.ping``,
-        contract I-14). The value in force before the first ``SET LOCAL`` (``SHOW``) is what comes back (I-39).
+        contract I-14). The value in force before the first ``SET LOCAL`` (``SHOW``) is what comes back (I-40).
         """
         if seconds == self._pg_timeout:
             return
@@ -322,7 +322,7 @@ class _SQLiteDeadline(Exception):
 
 
 def _with_deadline(connection: sqlalchemy.Connection, seconds: float | None, call: Callable[[], _T]) -> _T:
-    """SQLite: run ``call`` under a deadline checked every 1 000 VM steps (``set_progress_handler``, I-39)."""
+    """SQLite: run ``call`` under a deadline checked every 1 000 VM steps (``set_progress_handler``, I-40)."""
     if seconds is None:
         return call()
     dbapi = connection.connection.dbapi_connection
@@ -350,7 +350,7 @@ def _with_deadline(connection: sqlalchemy.Connection, seconds: float | None, cal
 
 
 def _timeout_error(cause: BaseException, statement: object = None) -> StatementTimeout:
-    """The interrupted statement as ``StatementTimeout`` (SQLite reports ``SQLITE_INTERRUPT``, I-39)."""
+    """The interrupted statement as ``StatementTimeout`` (SQLite reports ``SQLITE_INTERRUPT``, I-40)."""
     original = getattr(cause, "orig", None)
     return StatementTimeout(
         "database.timeout",
@@ -394,7 +394,7 @@ def _parse_url(url: object) -> sqlalchemy.URL:
     try:
         return sqlalchemy.make_url(url)
     except Exception:
-        # The message of a parse error can quote the URL, password included: none of it is kept (I-36).
+        # The message of a parse error can quote the URL, password included: none of it is kept (I-37).
         parsed = None
     if parsed is None:
         raise ConfigurationError("config.url")
@@ -447,14 +447,14 @@ def _hosts_are_local(url: sqlalchemy.URL, params: Mapping[str, Any]) -> bool:
     hosts += [_host_part(entry) for entry in _query_values(params.get("host"))]
     addresses = _query_values(params.get("hostaddr"))
     if not hosts and not addresses:
-        # libpq falls back to PGHOST/PGHOSTADDR, then to the Unix socket (I-40).
+        # libpq falls back to PGHOST/PGHOSTADDR, then to the Unix socket (I-41).
         hosts = [_host_part(entry) for entry in _query_values(os.environ.get("PGHOST"))]
         addresses = _query_values(os.environ.get("PGHOSTADDR"))
     return all(_host_is_local(host) for host in hosts + addresses)
 
 
 def _tls(url: sqlalchemy.URL, connect_args: Mapping[str, Any], mode: TLSMode) -> sqlalchemy.URL:
-    """Apply the TLS rules of specification section 5.3 (``ConfigurationError("config.tls")``, I-40)."""
+    """Apply the TLS rules of specification section 5.3 (``ConfigurationError("config.tls")``, I-41)."""
     if mode is TLSMode.INSECURE:
         return url
     params = {**dict(url.query), **dict(connect_args)}
@@ -483,7 +483,7 @@ def _sqlite_engine(url: sqlalchemy.URL, profile: Profile, options: dict[str, Any
     if driver not in ("", "pysqlite"):
         raise ConfigurationError("config.driver")
     if url.query or url.host or url.port or url.username or url.password:
-        # The creator opens the file itself; URL options would be ignored silently (I-36).
+        # The creator opens the file itself; URL options would be ignored silently (I-37).
         raise ConfigurationError("config.url")
     if "connect_args" in options:
         raise ConfigurationError("config.engine_option", details={"option": "connect_args"})
@@ -491,7 +491,7 @@ def _sqlite_engine(url: sqlalchemy.URL, profile: Profile, options: dict[str, Any
     memory = path in (":memory:", "")
     if not memory:
         # check_path and the creation of a new file (file_mode, default 0600) before SQLAlchemy connects: one
-        # connection of layer A, closed again (contract section 5.2, I-36). A missing file for a read-only profile
+        # connection of layer A, closed again (contract section 5.2, I-37). A missing file for a read-only profile
         # raises FileNotFoundError here.
         error: TabrionError | None
         try:
@@ -955,7 +955,7 @@ def _profile(profile: object) -> Profile:
 
 
 def _rollback(connection: sqlalchemy.Connection) -> None:
-    """Roll back; when that fails the connection is invalidated, so the pool never lends it again (I-38)."""
+    """Roll back; when that fails the connection is invalidated, so the pool never lends it again (I-39)."""
     try:
         connection.rollback()
     except Exception:

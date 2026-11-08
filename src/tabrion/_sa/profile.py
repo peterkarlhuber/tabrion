@@ -28,7 +28,7 @@ class TLSMode(enum.StrEnum):
 
 
 def _invalid(field: str) -> ConfigurationError:
-    # The field name only, never the value (contract I-36).
+    # The field name only, never the value (contract I-37).
     return ConfigurationError("config.invalid_profile", details={"field": field})
 
 
@@ -103,7 +103,7 @@ class Profile:
     @classmethod
     def testing(cls) -> Profile:
         """Statement timeout 5 s, lock timeout 2 s, pool size 2."""
-        # SQLite has no statement timeout of its own; its lock wait is the busy timeout (contract I-36).
+        # SQLite has no statement timeout of its own; its lock wait is the busy timeout (contract I-37).
         return cls(
             sqlite=replace(SQLiteProfile(), busy_timeout=2.0),
             postgres=replace(SessionSettings(), statement_timeout_ms=5_000, lock_timeout_ms=2_000),

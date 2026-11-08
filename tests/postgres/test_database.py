@@ -219,7 +219,7 @@ def test_b12_read_only_profile(open_db: Callable[..., Database], db: Database, s
     assert database.fetch_scalar("SHOW default_transaction_read_only") == "on"
     assert database.fetch_scalar(f"SELECT count(*) FROM {schema}.items") == 0
     # In the database, also on a plain connection, and still after a read() (SQLAlchemy's reset of
-    # postgresql_readonly would send BEGIN READ WRITE; contract I-41).
+    # postgresql_readonly would send BEGIN READ WRITE; contract I-42).
     with database.engine.connect() as plain:
         with pytest.raises(sqlalchemy.exc.InternalError) as plain_error:
             plain.exec_driver_sql(f"INSERT INTO {schema}.items (id, n) VALUES (1, 1)")

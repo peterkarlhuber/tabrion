@@ -1,6 +1,6 @@
 """SQLAlchemy ``connect``/``checkout``/``begin`` listeners that apply layer A to the same DBAPI connection.
 
-Private. Specification section 3.1, contract I-37 (TAB-018). There is no second connection, no own pool and no
+Private. Specification section 3.1, contract I-38 (TAB-018). There is no second connection, no own pool and no
 adapter between the layers: each listener calls a layer-A function on the DBAPI connection SQLAlchemy hands it.
 
 - An engine that ``Database.from_url`` creates for SQLite opens every connection through ``tabrion.sqlite.connect``
@@ -70,7 +70,7 @@ def on_begin(connection: sqlalchemy.Connection) -> None:
 
 
 def on_checkin(dbapi_connection: Any, connection_record: Any) -> None:
-    """PostgreSQL: after a Tabrion ``read()``, give psycopg's ``read_only`` back to the server default (I-41).
+    """PostgreSQL: after a Tabrion ``read()``, give psycopg's ``read_only`` back to the server default (I-42).
 
     SQLAlchemy resets ``postgresql_readonly`` by setting ``read_only = False``, which makes psycopg send ``BEGIN READ
     WRITE`` for every later transaction on the connection and so overrides ``default_transaction_read_only`` of a

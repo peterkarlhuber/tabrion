@@ -1,7 +1,7 @@
 """Layer B on SQLite (TAB-018): ``Profile``, ``Database``, ``Transaction``, health (TAB-T-B01..B25).
 
 The PostgreSQL side is ``tests/postgres/test_database.py``. Test numbers follow contract sections 5.2, 5.3 and 5.5;
-B01..B06 and B23..B25 are named in implementation note I-36 (the plan gives only their ranges).
+B01..B06 and B23..B25 are named in implementation note I-37 (the plan gives only their ranges).
 """
 
 from __future__ import annotations
@@ -299,7 +299,7 @@ def test_b02_invalid_session_settings_fail_in_from_url() -> None:
     assert info.value.code == "postgres.invalid_setting"
 
 
-# TAB-T-B03: TLS rules (specification 5.3, contract I-40).
+# TAB-T-B03: TLS rules (specification 5.3, contract I-41).
 
 REMOTE = "postgresql://app:pw@db.example.com/app"
 
@@ -630,7 +630,7 @@ def test_b09_errors_from_the_raw_connection_are_translated(db: Database) -> None
         tx.connection.exec_driver_sql("SELECT * FROM missing_table")
     assert info.value.kind is Kind.UNDEFINED_OBJECT
     # Raised from the context manager's __exit__, so Python sets the caller's error as context; it is suppressed
-    # (raise ... from None) and never shown (contract I-38).
+    # (raise ... from None) and never shown (contract I-39).
     assert info.value.__cause__ is None and info.value.__suppress_context__
     assert checked_out(db) == 0
 

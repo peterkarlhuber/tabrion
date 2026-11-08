@@ -9,7 +9,7 @@
 > **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M2 lane B pull request: TABRION
 > TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`). Lane C entries (TB-032..TB-037)
 > updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged); the TB-031 port
-> (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`; layer B (TB-007, TB-020, TB-040, TB-054)
+> (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`; layer B (TB-007, TB-020, TB-040, TB-056)
 > on branch `claude/project-thread-rdo6g3-layerb` (TABRION TAB-018).
 
 ## Summary
@@ -123,7 +123,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tabrion.testing` 0.1 (TAB-020) with a database per session, roles without superuser, truncate and runtime-role
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
-- **Next step:** TAB-018 is in review (contract section 5.7, I-36..I-43; it decided TB-040, TB-020 and F-14).
+- **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
   TAB-019 and TAB-021 build on it; TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture
   `tabrion_role_setup` (G-10). TAB-017 (`tabrion.check`, which `Database.check()` calls) is a pull request of its own.
 
@@ -241,7 +241,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **What:** both aliases appear in public layer-B signatures and in `tabrion._sa.database.__all__`, but not in
   `tabrion.__all__`, against the G-5 rule.
 - **Next step:** none. TAB-018 keeps them documentation-only aliases and drops them from
-  `tabrion._sa.database.__all__`; `surface.json` is unchanged (contract I-36).
+  `tabrion._sa.database.__all__`; `surface.json` is unchanged (contract I-37).
 
 ### TB-021 · Platform path filters too narrow (G-T1 F-15, CC-3)
 
@@ -391,7 +391,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `classify(err, during_commit=True)`. Nothing builds such errors before layer B.
 - **Next step:** none. TAB-018 applies R-NORETRY on top of a stored classification for `during_commit=True` (kind
   CONNECTION becomes `outcome_unknown`, not retryable); `sent` is not applied, its default cannot tell a deliberate
-  call (contract I-42, `test_tb040_during_commit_overrides_a_stored_classification`, mutation probe).
+  call (contract I-43, `test_tb040_during_commit_overrides_a_stored_classification`, mutation probe).
 
 ### TB-041 · Equivalent mutant of the `msg` replacement (review N-6)
 
@@ -505,9 +505,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Next step:** before TAB-033, move the type aliases to `tabrion._sa._types`, type `run_transaction`'s `fn` against
   a forward reference, and keep `surface.json` unchanged.
 
-### TB-054 · Layer-B waits outside `timeout` (TABRION TAB-018, TAB-041)
+### TB-056 · Layer-B waits outside `timeout` (TABRION TAB-018, TAB-041)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, TAB-041, contract I-39, I-43
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, TAB-041, contract I-40, I-44
 - **What:** a statement `timeout` on SQLite counts VM steps, so a wait for a lock is bounded by the busy timeout, not
   by `timeout`; `Database.health(timeout=...)` waits for a pool connection up to `pool_timeout`, not `timeout`.
 - **Next step:** document both in the layer-B guide (TAB-041); decide for 0.2 whether `health` checks out with

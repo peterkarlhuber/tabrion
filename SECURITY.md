@@ -61,12 +61,12 @@ Accepted residual risks (documented, not vulnerabilities):
 - `TLSMode.INSECURE` is an explicit opt-in for local development. Under `TLSMode.AUTO` a local host (Unix socket,
   `localhost`, loopback) keeps the URL's `sslmode`, whatever it is; a remote one gets at least `require`, which
   encrypts but does not verify the server: use `TLSMode.VERIFY_FULL` where a man in the middle is a concern
-  (contract I-40).
+  (contract I-41).
 - Using `Database.engine` directly bypasses Tabrion's transaction modes (SQLite writes then begin `DEFERRED`). The
   connection profile and `Profile.read_only` still hold there, because the database enforces them.
 - Layer-B timeouts bound the database's work, not every wait: a SQLite lock wait is bounded by the busy timeout, a
   wait for a pool connection by `pool_timeout`, a network that stops answering by the connection's TCP settings
-  (contract I-39, I-43; TODO TB-054).
+  (contract I-40, I-44; TODO TB-056).
 - `TabrionError.original` of a layer-B error is the driver error, with the server's `DETAIL` and, for SQLAlchemy's
   own refusals, the parameters: log the `TabrionError`, not its `original`.
 - `DbErrorRedactionFilter` protects only the records it sees: the application installs it (on its handlers, its
