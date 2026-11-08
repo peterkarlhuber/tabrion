@@ -5,6 +5,8 @@
   - **E-PyPI:** no standing approval; every public release (the first PyPI version and pre-releases included) needs
     G-R; TAB-043 is bound to G-R;
   - **E-Vis:** public repository.
+- **Amended:** 2026-11-08 by the owner decision of 2026-11-08 11:26Z, see
+  [Amendment 2026-11-08](#amendment-2026-11-08-git-pin-distribution).
 - **Plan reference:** TAB-ADR-0009 (planning document 10)
 
 ## Context
@@ -140,6 +142,46 @@ it can never mint an OIDC token, whatever the trusted publisher is bound to.
 - G-R for the first PyPI version (transition from V-B0 to V-B).
 - An external consumer joins.
 - Tabrion 1.0.
+
+## Amendment 2026-11-08: Git-pin distribution
+
+Owner decision of 2026-11-08 11:26Z (plan document 00 section 13). The decision text above stays as it was accepted;
+where it conflicts with this section, this section applies.
+
+- **No PyPI publication for now.** The consumers (Nodestro, Axentra, Orkexa, Tabrion Studio) take Tabrion through
+  reproducible Git SHA pins (`tabrion @ git+https://github.com/peterkarlhuber/tabrion@<full commit sha>`) or
+  internal packages. V-B0 is the operating mode without a planned end date; V-B (PyPI) comes only if a publication
+  is decided later, and then with G-R for every version (E-PyPI unchanged). TAB-043 stays bound to G-R and is not
+  planned. The environment `pypi` ([Release environment](#release-environment-g-t1-condition-c-8)) is needed only
+  then.
+- **Tags are optional labels.** The agent may create an annotated tag `vX.Y.Z` on a master merge commit; a tag is
+  never moved and there is no GitHub release without G-R. Pins always name the full commit SHA, never a tag name, so
+  nothing waits on a tag (the tag `v0.1.0a1` on `a463422` exists in the agent's clone only, because the agent's Git
+  proxy refuses tag pushes).
+- **`v0.1.0` final (TAB-040)** is the merge commit of the version-bump pull request that sets the package version to `0.1.0` (not a
+  pre-release). That one commit is the release commit: TAB-040 records its full SHA in the CHANGELOG section
+  `[0.1.0]`, in the TAB-040 row of `docs/program/STATUS.md` and in `docs/getting-started/installation.md`, as for
+  `0.1.0a1`. The next pull request bumps master to `0.1.1.dev0` (the TB-053 pattern), so no other master commit builds
+  as `0.1.0`. Consumers pin the release commit by its full SHA via `git+https`; a tag `v0.1.0` on it is an optional
+  label. Every later final version follows the same pattern.
+- **RC-8 holds unchanged:** master of a consumer carries only final ranges such as `tabrion>=0.1,<0.2`, plus a SHA pin
+  of a final-version commit (a commit whose package version is a final version). It no longer waits on PyPI.
+  "Final tag" in V-B0, rule 2 and rule 4 of "No conflicting pins" and the cascade reads "final-version commit, named
+  by its full SHA".
+- **pip does not enforce "final" inside the range.** pip rejects a pinned pre-release only when it lies outside the
+  bounds (`0.1.0a1`, `0.2.0a1` against `>=0.1,<0.2`). A direct-URL pin on a commit that builds as `0.1.1.dev0` or
+  `0.1.1rc1` is accepted (review of #20, pip 25.0 and 26.2.2). Only AC-6 (QA-15) enforces RC-8 here: it must read the
+  package version at the pinned SHA and refuse anything that is not a recorded release commit (TODO TB-068).
+- **No PyPI name.** The name `tabrion` stays unclaimed on PyPI, so an install of a library without the SHA pin asks
+  the index for `tabrion` (dependency confusion, R-24). Every consumer install and CI supplies the pin, and the AC-4
+  clean-install matrix (QA-19) gets the negative case "library without the pin fails, never resolves from an index"
+  (TODO TB-067).
+- **CI of consumers** installs Tabrion from the Git SHA pin (the requirements file `requirements/tabrion.txt` with
+  `-r`, or the application's own pin), not from PyPI.
+- **Unchanged:** every public publication (PyPI, npm, GitHub release, announcement) needs G-R per version; the human
+  security review before a public Tabrion Studio release stays; all security, test and quality requirements stay.
+- **Repository hardening** (branch protection, private vulnerability reporting, the social preview) is optional and
+  never a prerequisite for implementation; gate G-T2 no longer requires a trademark register check (ADR 0001).
 
 ## Changes from the plan
 

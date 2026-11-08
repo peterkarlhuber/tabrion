@@ -5,6 +5,11 @@
 - **Date of checks:** 2026-11-08
 - **Excluded:** `peterkarlhuber/tabrion` and `peterkarlhuber/tabrion-studio` (the owner's own repos)
 
+> **Update 2026-11-08 (owner decision of 2026-11-08 11:26Z):** the owner kept the name (GOV-1 "done:
+> conditional") and did not order the manual follow-ups below; they are no prerequisite of gate G-T2. Tabrion is
+> consumed through Git SHA pins without public marketing. A later public marketing under this name needs a new
+> assessment. The report below is unchanged.
+
 ## Summary verdict
 
 **G-0 not reached. HOLD: possible ST-10, needs a human decision.**

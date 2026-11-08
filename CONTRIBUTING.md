@@ -61,6 +61,8 @@ digest.
   criteria with evidence (test ID, CI job, SHA). The template does this.
 - Update `CHANGELOG.md` (`Unreleased`), `docs/program/STATUS.md` and `docs/TODO.md`.
 - Pull requests are merged with **merge commits** (no squash, no rebase), because pins in consuming repositories
-  point at commits. The required check is `ci-ok`.
-- Releases: version bump by pull request, merge, annotated tag `vX.Y.Z` on the merge commit. Tags never move.
-  Publishing anything (PyPI, GitHub release) needs the owner's approval for that version.
+  point at commits. The required check is `ci-ok`: merge only when its commit status is green (branch protection that
+  enforces it is optional repository hardening).
+- Releases: version bump by pull request, merged with a merge commit; consumers pin that commit by its full SHA
+  (`git+https`). An annotated tag `vX.Y.Z` on the merge commit is an optional label; tags never move. Publishing
+  anything (PyPI, npm, GitHub release, announcement) needs the owner's approval G-R for that version.
