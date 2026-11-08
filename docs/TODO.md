@@ -24,7 +24,7 @@ review of #19).
 | P0 Critical | 0 |
 | P1 High | 11 |
 | P2 Medium | 11 |
-| P3 Low | 30 |
+| P3 Low | 31 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -197,9 +197,11 @@ required (owner decision of 2026-11-08 11:26Z).
 
 - **Priority:** P1 High · **Status:** Open · **Refs:** TABRION TAB-040, TAB-023, G-T2, G-T1 F-08
 - **What:** before the tag `v0.1.0`, a check that no name of `docs/api/surface.json` with `since` at or below the
-  package version raises `NotImplementedError` (today every name does, by design). `scripts/api_surface.py` already
-  keeps names with a newer `since` out of the exported surface.
-- **Next step:** with TAB-040, as a mode of `scripts/api_surface.py` run by `release.yml`.
+  package version raises `NotImplementedError`. On master `5a7bc9e` no 0.1 name does any more: only the staged 0.2
+  names in `tabrion._sa._v02` raise, and `scripts/api_surface.py` keeps names with a newer `since` out of the
+  exported surface. The check is still missing as a mode, so a stub cannot come back unnoticed.
+- **Next step:** the mode goes into the TAB-040 version-bump pull request (branch `claude/project-thread-rdo6g3-v010`);
+  `release.yml` runs it with QA-11 (lane J).
 
 ### TB-062 · Checks outside the specification's code table (TAB-017 review Info of #13; 0.2 addendum candidate)
 
@@ -739,6 +741,16 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
   Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
+
+### TB-075 · Core size: the 0.2 layout that brings the stdlib core down (TABRION TAB-040 T-9, deviation D-78)
+
+- **Priority:** P3 Low · **Status:** Open (0.2) · **Refs:** TABRION TAB-040, plan 07 section 5 (T-9), plan 01 ST-7,
+  STATUS D-78, TB-050, TB-051
+- **What:** the stdlib-only core has 2 128 code lines against the guideline of 1 500; D-78 justifies it for 0.1.0.
+  The real reductions: the log redaction of `tabrion.errors` (about 500 code lines) in a module of its own, the
+  SQLSTATE and SQLite code tables as one data table, one path-check helper for `sqlite.connect`, `migrate` and
+  `backup`.
+- **Next step:** with TB-050 and TB-051 in 0.2, without changing a public name or a behavior.
 ## Cross-repository dependencies
 
 | This repo item | Other repo | Other item | Relation |
