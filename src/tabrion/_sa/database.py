@@ -1,29 +1,26 @@
 """``Database`` and ``Transaction``: layer B over a SQLAlchemy engine. Private: use ``tabrion.Database``.
 
 Contract: ``docs/api/contract.md`` sections 5.2, 5.3, 5.5 and 5.6. Stub for the API freeze G-T1; the
-implementation follows in TAB-018 (0.1) and TAB-033 (0.2: ``query``, ``stream``, ``cancel``, ``inspector`` and the
-experimental ``run_transaction``, ``on_begin``, ``savepoint``).
+implementation follows in TAB-018. The 0.2 methods (TAB-033) are staged in ``tabrion._sa._v02`` and are not part
+of these classes before 0.2 (G-T1 condition C-6, ``docs/api/surface.json``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import sqlalchemy
 
 from tabrion._sa.profile import Profile
-from tabrion._sa.result import Result
 from tabrion.errors import Classification
 
 if TYPE_CHECKING:
     from tabrion.check import Finding
 
 __all__ = ["Database", "Health", "Params", "Statement", "Transaction"]
-
-T = TypeVar("T")
 
 Statement: TypeAlias = str | sqlalchemy.sql.Executable
 """A ``str`` becomes ``sqlalchemy.text()`` with named parameters (``:name``)."""
@@ -75,37 +72,6 @@ class Transaction:
     ) -> Any:
         """First column of the only row; 0 rows: ``None``; more than one: ``MultipleRowsError``."""
         raise NotImplementedError("tabrion.Transaction.fetch_scalar: implemented in TAB-018")
-
-    def query(
-        self,
-        statement: Statement,
-        params: Mapping[str, Any] | None = None,
-        *,
-        max_rows: int | None = None,
-        timeout: float | None = None,
-    ) -> Result:
-        """Since 0.2."""
-        raise NotImplementedError("tabrion.Transaction.query: implemented in TAB-033")
-
-    def stream(
-        self,
-        statement: Statement,
-        params: Mapping[str, Any] | None = None,
-        *,
-        batch_size: int = 500,
-        timeout: float | None = None,
-    ) -> Iterator[Sequence[sqlalchemy.Row[Any]]]:
-        """Since 0.2. PostgreSQL: server-side cursor; SQLite: ``fetchmany``."""
-        raise NotImplementedError("tabrion.Transaction.stream: implemented in TAB-033")
-
-    def cancel(self) -> None:
-        """Since 0.2. Callable from another thread."""
-        raise NotImplementedError("tabrion.Transaction.cancel: implemented in TAB-033")
-
-    @contextmanager
-    def savepoint(self) -> Iterator[None]:
-        """Since 0.2, experimental."""
-        raise NotImplementedError("tabrion.Transaction.savepoint: implemented in TAB-033")
 
 
 class Database:
@@ -198,41 +164,10 @@ class Database:
         """In its own ``read()``."""
         raise NotImplementedError("tabrion.Database.fetch_scalar: implemented in TAB-018")
 
-    def query(
-        self,
-        statement: Statement,
-        params: Mapping[str, Any] | None = None,
-        *,
-        max_rows: int | None = None,
-        timeout: float | None = None,
-    ) -> Result:
-        """Since 0.2. In its own ``read()``."""
-        raise NotImplementedError("tabrion.Database.query: implemented in TAB-033")
-
-    def health(self, *, timeout: float = 5.0) -> Health:
-        """Never raises for database errors."""
+    def health(self, *, timeout: float = 5.0, deep: bool = False) -> Health:
+        """Never raises for database errors. ``deep=True`` adds ``PRAGMA quick_check(1)`` on SQLite (G-9)."""
         raise NotImplementedError("tabrion.Database.health: implemented in TAB-018")
 
     def check(self) -> list[Finding]:
         """``tabrion.check.check(self)``."""
         raise NotImplementedError("tabrion.Database.check: implemented in TAB-018")
-
-    @contextmanager
-    def inspector(self) -> Iterator[sqlalchemy.Inspector]:
-        """Since 0.2. On a read-only connection."""
-        raise NotImplementedError("tabrion.Database.inspector: implemented in TAB-033")
-
-    def on_begin(self, callback: Callable[[sqlalchemy.Connection, bool], None]) -> Callable[[], None]:
-        """Since 0.2, experimental. ``bool`` is ``read_only``; returns the function that unregisters it."""
-        raise NotImplementedError("tabrion.Database.on_begin: implemented in TAB-033")
-
-    def run_transaction(
-        self,
-        fn: Callable[[Transaction], T],
-        *,
-        attempts: int = 3,
-        isolation: Isolation | None = None,
-        backoff: float = 0.05,
-    ) -> T:
-        """Since 0.2, experimental. Retries only ``retryable and not outcome_unknown``."""
-        raise NotImplementedError("tabrion.Database.run_transaction: implemented in TAB-033")

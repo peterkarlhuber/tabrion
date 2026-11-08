@@ -3,7 +3,7 @@ name: CI
 # TAB-004 (05 section 2.5, 07 section 4.2). Every job name below is a mandatory check in .github/ci-manifest.json;
 # ci-ok.yml aggregates them. Actions are pinned by commit SHA and images by digest (TAB-T-181,
 # tests/security/test_workflow_pins.py). Jobs whose content arrives with later work packages are added by them:
-# "api surface" (TAB-023), "conformance" (TAB-050), "golden files" (TAB-022) and "examples" (RA-A, RA-B).
+# "conformance" (TAB-050), "golden files" (TAB-022) and "examples" (RA-A, RA-B).
 on:
   push:
     branches: [master]
@@ -36,12 +36,12 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
-      - run: mypy --strict src tests
+      - run: mypy --strict src tests scripts
       # AC-1 (QA-16): the import contracts in pyproject.toml ([tool.importlinter], edge list K-33).
       - run: lint-imports
       # CI-FAST: the manifest, the workflow files and ci-ok.yml agree.
       - run: python3 -I .github/scripts/ci_ok.py --self-check --root .
-      - run: python3 -m unittest discover -s .github/scripts -p "test_ci_ok.py"
+      - run: python3 -m unittest discover -s .github/scripts -p "test_ci_ok*.py"
 
   test:
     name: test (Python ${{ matrix.python-version }}${{ matrix.sqlalchemy && format(', SQLAlchemy {0}', matrix.sqlalchemy) || '' }})
@@ -255,6 +255,23 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: mkdocs build --strict
+
+  api-surface:
+    # TAB-023 (G-T1 condition C-6): every public signature equals docs/api/surface.json, and no name whose `since` is
+    # newer than the package version is exported.
+    name: api surface
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: python scripts/api_surface.py
 
   audit:
     name: dependency audit

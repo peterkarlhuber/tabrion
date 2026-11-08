@@ -3,6 +3,7 @@
   "comment": "Mandatory checks per CI-FAST (TAB-004, 05 section 2.5). A PR is ok only if every listed check ran on the PR head SHA and succeeded. Changing this list needs a reason in the PR.",
   "pull_request": {
     "ci.yml": [
+      "api surface",
       "architecture",
       "build and install (fresh virtual environments)",
       "core without extras",

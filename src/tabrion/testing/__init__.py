@@ -25,6 +25,7 @@ from tabrion.testing.postgres import (
     tabrion_postgres_roles,
     tabrion_postgres_schema,
     tabrion_postgres_url,
+    tabrion_role_setup,
     truncate_tables,
 )
 from tabrion.testing.sqlite import tabrion_sqlite, tabrion_sqlite_path
@@ -42,6 +43,7 @@ __all__ = [
     "tabrion_postgres_roles",
     "tabrion_postgres_schema",
     "tabrion_postgres_url",
+    "tabrion_role_setup",
     "tabrion_sqlite",
     "tabrion_sqlite_path",
     "truncate_tables",

@@ -1,4 +1,7 @@
-"""Materialized query results for tools such as Tabrion Studio (since 0.2). Private: use ``tabrion.Result``.
+"""Materialized query results for tools such as Tabrion Studio (since 0.2). Private.
+
+Exported as ``tabrion.Result`` and ``tabrion.Column`` from 0.2 on; before that they are staged in
+``docs/api/surface.json`` only (G-T1 condition C-6).
 
 Contract: ``docs/api/contract.md`` section 5.4; implemented in TAB-033.
 """

@@ -89,7 +89,7 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 
 | Module | `__all__` |
 |---|---|
-| `tabrion` | `Column`, `Database`, `Health`, `Profile`, `Result`, `TLSMode`, `TabrionError`, `Transaction`, `__version__`, `safe_url` |
+| `tabrion` | `Database`, `Health`, `Profile`, `TLSMode`, `TabrionError`, `Transaction`, `__version__`, `safe_url` (0.2 adds `Column`, `Result`) |
 | `tabrion.errors` | `Kind`, `Classification`, `classify`, `safe_message`, `DbErrorRedactionFilter`, and the 25 error classes of section 1.4 |
 | `tabrion.sql` | `split_statements` |
 | `tabrion.config` | `safe_url`, `url_from_env` |
@@ -97,8 +97,14 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 | `tabrion.postgres` | the names of section 4 (including the role and lock names, re-exported from `tabrion.postgres.roles` and `tabrion.postgres.locks`) |
 | `tabrion.check` | `check`, `Finding`, `Severity` |
 | `tabrion.migrations` | `status`, `require_current`, `SchemaStatus` |
-| `tabrion.testing` | `configure`, `profiles`, the fixtures of section 6, `postgres_server_version`, `truncate_tables`, `require_extension`, `RoleSetup`, `TestRoles`, `PostgresSchema`, `PostgresDatabaseHandle` |
-| `tabrion.testing.profiles` | `ConnectionFactory`, `ProfileCase`, `sqlite_profile_cases`, `portability_cases` |
+| `tabrion.testing` | `configure`, `profiles`, the fixtures of section 6 (including `tabrion_role_setup`), `postgres_server_version`, `truncate_tables`, `require_extension`, `RoleSetup`, `TestRoles`, `PostgresSchema`, `PostgresDatabaseHandle` |
+| `tabrion.testing.profiles` | `SQLiteConnect`, `ProfileCase`, `PortabilityCase`, `sqlite_profile_cases`, `portability_cases` |
+
+**0.2 names are not exported before 0.2** (G-T1 condition C-6). `Result`, `Column` and the 0.2 methods of
+`Database` and `Transaction` are frozen in [`docs/api/surface.json`](surface.json) with `since: "0.2"`, and their stubs
+are staged in a private module until TAB-033 mixes them in. `scripts/api_surface.py` (TAB-023, CI job "api surface")
+compares the code with that file on every pull request: a changed signature fails, and a name whose `since` is newer
+than the package version must not be importable from its public path.
 
 Layer B names are exported lazily (PEP 562). Without SQLAlchemy, `tabrion.Database` raises `ImportError` with the
 hint `pip install "tabrion[sqlalchemy]"`; `tabrion.migrations` without Alembic and `tabrion.testing` without pytest
@@ -1096,7 +1102,7 @@ class Health:
     classification: Classification | None
 
 class Database:
-    def health(self, *, timeout: float = 5.0) -> Health            # never raises for database errors
+    def health(self, *, timeout: float = 5.0, deep: bool = False) -> Health   # never raises for database errors
     def check(self) -> list[Finding]                               # tabrion.check.check(self)
     @contextmanager
     def inspector(self) -> Iterator[sqlalchemy.Inspector]          # 0.2; on a read-only connection
@@ -1118,7 +1124,8 @@ def require_current(database: Database, **kw: Any) -> SchemaStatus            # 
 ```
 
 - **`health`** uses `tabrion.postgres.ping` on a pool connection for PG; for SQLite `SELECT 1` plus
-  `PRAGMA quick_check(1)` only with `deep=True`. There is no second pool.
+  `PRAGMA quick_check(1)` only with `deep=True`. There is no second pool. `deep` is keyword-only and off by default,
+  so a readiness probe stays cheap; on PostgreSQL it changes nothing in 0.1 (G-9).
 - **`tabrion.migrations.status`** runs read-only through `alembic.script.ScriptDirectory(script_location)` and
   `alembic.runtime.migration.MigrationContext.configure(connection, opts={"version_table": ...})` on a `read()`
   connection. **`env.py` is not run**, so no application code and no side effects; Studio needs exactly that. It
@@ -1162,13 +1169,50 @@ Called in `conftest.py` before the fixtures are used. It allows the existing nam
 | `tabrion_sqlite` | function | `sqlite3.Connection` through `tabrion.sqlite.connect` | closed afterwards | - |
 | `tabrion_postgres_url` | session | admin or owner URL from the environment | environment missing: `skip`; require variable `1`: error | all three |
 | `tabrion_postgres_schema` | function | `PostgresSchema(name, owner_url, runtime_url \| None)` | `CREATE SCHEMA t_<hex12>`; URL with `options=-csearch_path=...`; afterwards `DROP SCHEMA ... CASCADE`. In runtime-role mode also a LOGIN role `t_rt_<hex>` (random password, NOSUPERUSER, NOBYPASSRLS) plus `grant_runtime_role`; the role is dropped afterwards | Orkexa `support.py`, Nodestro `postgres_support.py` |
-| `tabrion_postgres_database` | session | `PostgresDatabaseHandle(url, name, owner_url, app_url)` | `CREATE DATABASE t_<hex>` (the admin needs CREATEDB); at the end `DROP DATABASE ... WITH (FORCE)`. Parameter `roles: RoleSetup \| None = RoleSetup()` with `RoleSetup(app: str \| None = None, owner: str \| None = None, split: bool = True)`; roles are `NOSUPERUSER NOBYPASSRLS`, plus `REVOKE CREATE ON SCHEMA public FROM PUBLIC` in the throwaway database. With `split=True`, two LOGIN roles **without superuser**: owner `t_own_<hex>` (database owner, NOSUPERUSER, NOBYPASSRLS, NOCREATEROLE) and app `t_app_<hex>` (CONNECT; rights through `grant_runtime_role` after the consumer's migrations) | Axentra `tests/conftest.py` |
+| `tabrion_role_setup` | session | `RoleSetup \| None`, default `RoleSetup()` | the roles of `tabrion_postgres_database`; a consumer overrides this fixture in its `conftest.py` (G-10) | Axentra `tests/conftest.py` |
+| `tabrion_postgres_database` | session | `PostgresDatabaseHandle(url, name, owner_url, app_url)` | `CREATE DATABASE t_<hex>` (the admin needs CREATEDB); at the end `DROP DATABASE ... WITH (FORCE)`. The roles come from the fixture `tabrion_role_setup` (`RoleSetup \| None`, default `RoleSetup()`), with `RoleSetup(app: str \| None = None, owner: str \| None = None, split: bool = True)`; roles are `NOSUPERUSER NOBYPASSRLS`, plus `REVOKE CREATE ON SCHEMA public FROM PUBLIC` in the throwaway database. With `split=True`, two LOGIN roles **without superuser**: owner `t_own_<hex>` (database owner, NOSUPERUSER, NOBYPASSRLS, NOCREATEROLE) and app `t_app_<hex>` (CONNECT; rights through `grant_runtime_role` after the consumer's migrations) | Axentra `tests/conftest.py` |
 | `tabrion_postgres_roles` | session | `TestRoles(owner, app, owner_url, app_url)` | the same role setup in an existing database | Axentra |
 | `truncate_tables(target, *, schema=None, like=None, exclude=())` | function | `int` (number of tables) | `target` is a connection or URL; `TRUNCATE ... RESTART IDENTITY CASCADE` of every table of the schema (optional name pattern `like`) in **one** statement; `exclude`, for example bookkeeping tables; identifiers quoted | Axentra (truncate between tests) |
 | `require_extension(conn, name)` | function | `ExtensionStatus` | not active: try `CREATE EXTENSION`, otherwise `skip`; `name` in the require variable: error | Orkexa `ORKEXA_REQUIRE_*` |
 | `postgres_server_version` | session | `int` | - | - |
-| `profiles.sqlite_profile_cases()` | function | `list[ProfileCase]` | checks FK, WAL, busy timeout, permissions, symlinks, IMMEDIATE for **any** connection factory | - |
-| `profiles.portability_cases()` | function | `list[ProfileCase]` | data type rules (specification section 6) | - |
+| `profiles.sqlite_profile_cases()` | function | `list[ProfileCase]` | checks FK, WAL, busy timeout, permissions, symlinks, IMMEDIATE for **any** SQLite connect function | - |
+| `profiles.portability_cases()` | function | `list[PortabilityCase]` | data type rules (specification section 6) on SQLite and PostgreSQL | - |
+
+The case types (G-3, revised by G-T1 condition C-2):
+
+```python
+SQLiteConnect = Callable[[Path], sqlite3.Connection]  # the application's connect function for a given path
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileCase:
+    id: str
+    title: str
+    check: Callable[[SQLiteConnect, Path], None]  # (connect, empty directory); the case picks the file path
+
+
+@dataclass(frozen=True, slots=True)
+class PortabilityCase:
+    id: str
+    title: str
+    check: Callable[[Database], None]  # an open Database on an empty schema, either engine
+```
+
+`check` raises `AssertionError` on a violation. A profile case needs the path, because it tests the mode of a *new*
+file and the refusal of symlinks for the main file, `-wal`, `-shm` and `-journal`. A portability case takes a layer-B
+`Database`, because the rules must hold on both engines; `tabrion.testing` is the top layer and may use layer B.
+
+How a consumer passes its roles (G-10, condition C-4):
+
+```python
+# conftest.py
+pytest_plugins = ["tabrion.testing"]
+
+
+@pytest.fixture(scope="session")
+def tabrion_role_setup() -> RoleSetup | None:
+    return RoleSetup(app="axentra_app", owner="axentra_owner")
+```
 
 **Tests:** TAB-T-X01..X18. Tabrion's own suite uses only these fixtures (dogfooding). It also checks that no schemas
 or roles with the prefix `t_` remain after each test.
@@ -1192,6 +1236,15 @@ def check(target: sqlite3.Connection | psycopg.Connection | Database, *,
 
 - The codes are in specification section 9.
 - `expect="owner"` suppresses TAB-PG-003 and TAB-PG-009.
+- **Dispatch (G-T1 condition C-1, fix B; ADR 0012).** `tabrion.check` stays standard-library only and never imports
+  `tabrion.postgres` or layer B, also not inside a function (import-linter records function-level imports, so the
+  lazy import planned in doc 05 section 2.3 would break the core and the layers contract). It checks a
+  `sqlite3.Connection` itself. For any other target it looks up the module of the target's type (or of a base class)
+  in a fixed table: `psycopg` leads to `tabrion.postgres._check`, `tabrion._sa.database` to `tabrion._sa._check`. It
+  loads that collector with `importlib.import_module` and calls `collect(target, expect=expect)`. Any other type
+  raises `TypeError`. The collectors may import `tabrion.check` (for `Finding`); `tabrion._sa._check` may use
+  `tabrion.postgres._check`. A test checks that `tabrion.check` has no such import and that the table names only
+  these two modules.
 - Read-only; never raises for missing rights (gives an `info` finding).
 - Tests TAB-T-K01..K30, a positive and a negative case per code.
 
@@ -1359,16 +1412,18 @@ def verify_manifest() -> None
 ## Open points for G-T1
 
 The M1 stubs had to decide these points, which the plan leaves open or which conflict with typing rules. The G-T1
-review accepts or changes each of them; until then they are proposals (deviation log D-6..D-12 in
-[STATUS.md](../program/STATUS.md#deviation-log)).
+review (2026-11-08, "passed with conditions") decided each of them; G-9 and G-10 come from its conditions C-3 and
+C-4. The deviation log is D-6..D-12 in [STATUS.md](../program/STATUS.md#deviation-log).
 
-| # | Point | M1 proposal |
+| # | Point | Decision |
 |---|---|---|
-| G-1 | Constructor of `TabrionError` (section 1.4 lists only attributes) | `TabrionError(code, /, *, classification=None, original=None, statement=None, details=None)`; `DatabaseError.kind` is a property returning `classification.kind` |
-| G-2 | `SQLiteProfile.allow_shared_file` is mentioned only in prose (section 3.1) | A field `allow_shared_file: bool = False` |
-| G-3 | `tabrion.testing.profiles.ProfileCase` and the connection factory type are not specified (section 6) | `ConnectionFactory = Callable[[], sqlite3.Connection]`; `ProfileCase(id: str, title: str, check: Callable[[ConnectionFactory], None])`, where `check` raises `AssertionError` on a violation |
-| G-4 | `psycopg.Connection` is generic | Signatures use `psycopg.Connection[Any]` (mypy --strict requires the parameter); the meaning is "any row factory" |
-| G-5 | Names in `__all__` beyond section 0 | `tabrion.sqlite.Migration` and `tabrion.testing.profiles.ConnectionFactory` are public, because public signatures use them |
-| G-6 | "`tabrion.check` (re-export)" in section 0 | `tabrion.check` is the module and `tabrion.check.check` the function; `tabrion.check` is not re-exported as a function from the root, because a module and a function cannot share the attribute name |
-| G-7 | `tabrion.postgres` and the extras | psycopg is imported only for type checking in the M1 stubs; implementations import it inside the functions, so `import tabrion.postgres` works without psycopg (layer B imports it for `SessionSettings`) |
-| G-8 | `tabrion.postgres.roles` and `tabrion.postgres.locks` | Submodules with the role and lock names; `tabrion.postgres` re-exports them, so both import paths are public |
+| G-1 | Constructor of `TabrionError` (section 1.4 lists only attributes) | Accepted: `TabrionError(code, /, *, classification=None, original=None, statement=None, details=None)`; `DatabaseError.kind` is a property returning `classification.kind` (implementation notes for TAB-010: `args = (code,)` plus `__reduce__` for pickling; `DatabaseError.kind` must not fail without a classification, F-12) |
+| G-2 | `SQLiteProfile.allow_shared_file` is mentioned only in prose (section 3.1) | Accepted: a field `allow_shared_file: bool = False` |
+| G-3 | `tabrion.testing.profiles.ProfileCase` and the connection factory type are not specified (section 6) | **Revised (C-2).** The M1 proposal (`ConnectionFactory = Callable[[], sqlite3.Connection]`) was rejected: a profile case must choose the path, and portability cases must run on both engines. Now `SQLiteConnect = Callable[[Path], sqlite3.Connection]`, `ProfileCase(id, title, check: Callable[[SQLiteConnect, Path], None])` and `PortabilityCase(id, title, check: Callable[[Database], None])`; `portability_cases()` returns `list[PortabilityCase]` (section 6) |
+| G-4 | `psycopg.Connection` is generic | Accepted: signatures use `psycopg.Connection[Any]` (mypy --strict requires the parameter); the meaning is "any row factory" |
+| G-5 | Names in `__all__` beyond section 0 | Accepted: `tabrion.sqlite.Migration`, `tabrion.testing.profiles.SQLiteConnect` and `PortabilityCase` are public, because public signatures use them (`Statement`, `Params`: see the STATUS.md note on F-11) |
+| G-6 | "`tabrion.check` (re-export)" in section 0 | Accepted: `tabrion.check` is the module and `tabrion.check.check` the function; `tabrion.check` is not re-exported as a function from the root, because a module and a function cannot share the attribute name |
+| G-7 | `tabrion.postgres` and the extras | Accepted: psycopg is imported only for type checking in the M1 stubs; implementations import it inside the functions, so `import tabrion.postgres` works without psycopg (layer B imports it for `SessionSettings`) (TAB-015: a missing psycopg raises `ImportError` with the hint `pip install "tabrion[postgres]"`, tested under the blockade) |
+| G-8 | `tabrion.postgres.roles` and `tabrion.postgres.locks` | Submodules with the role and lock names; `tabrion.postgres` re-exports them, so both import paths are public; `tabrion.postgres` is the canonical path in the docs and in `surface.json` |
+| G-9 | `Database.health`: section 5.5 prose names `deep=True`, the signature has no `deep` (C-3) | `health(self, *, timeout: float = 5.0, deep: bool = False)`: keyword-only and additive, as doc 04 intends (`quick_check` only on request) |
+| G-10 | `tabrion_postgres_database` has a "parameter `roles`", but a session fixture takes no arguments (C-4) | An overridable session fixture `tabrion_role_setup() -> RoleSetup \| None` (default `RoleSetup()`), which `tabrion_postgres_database` requests; one mechanism only, no `configure()` argument |
