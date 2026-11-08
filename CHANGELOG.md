@@ -46,6 +46,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   cannot resolve raises `ConfigurationError("migrations.revisions")` without path or cause chain. Only
   `<script_location>/versions` is read (TODO TB-066).
 
+- The canary suite (QA-2, TAB-T-110..113): a unique value in parameters, rows, passwords and secret files, through
+  every kind of both engines and both layers; no `str`, `repr`, traceback, stderr output, log record or pytest report
+  may hold it (`tests/canary.py`).
+
 ### Changed
 
 - A `read()` refused by the read-back now also invalidates a file-backed SQLite connection, so an attached database
@@ -57,6 +61,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Master builds as `0.1.0a2.dev0` after the `0.1.0a1` commit (TB-053), so later commits never build as the
   internal pre-release. The installation guide pins the a1 commit SHA instead of the tag name and says not to run
   `release.yml` for it (TAB-038 review Info notes).
+
+### Fixed
+
+- `classify` maps a SQLite error whose code the `sqlite3` module does not name (`sqlite_errorname == "unknown"`,
+  for example `SQLITE_CONSTRAINT_DATATYPE` of a STRICT table on Python 3.13) by its number: `DATA` instead of
+  `UNKNOWN` (contract I-75).
+- The PostgreSQL fixtures of `tabrion.testing` no longer print the password when the server is unreachable: pytest
+  showed the conninfo argument of psycopg's frames; the test now fails with the masked URL (contract I-75).
 
 ## [0.1.0a1] - internal pre-release, not published
 

@@ -98,6 +98,26 @@ class _Url(str):
         return repr(safe_url(str(self)))
 
 
+def _connect(url: str) -> psycopg.Connection[Any]:
+    """``psycopg.connect(url, autocommit=True, connect_timeout=10)``; a failure fails the test without the URL.
+
+    pytest's report shows the arguments of every frame of a traceback, and psycopg's own frames hold the conninfo
+    as a plain ``str``: an unreachable server would print the password (QA-2, contract I-75). The message names the
+    masked URL and the safe message of the driver error.
+    """
+    import psycopg
+
+    from tabrion.config import safe_url
+    from tabrion.errors import classify, safe_message
+
+    failure: str | None = None
+    try:
+        return psycopg.connect(url, autocommit=True, connect_timeout=10)
+    except psycopg.Error as exc:
+        failure = safe_message(classify(exc, sent=False))
+    pytest.fail(f"tabrion.testing: cannot connect to {safe_url(str(url))}: {failure}", pytrace=False)
+
+
 def _postgres_url() -> str:
     settings = _config.current
     found = settings.first(settings.postgres_env)
@@ -155,7 +175,7 @@ def _drop_schema(url: str, name: str, *, also: Sequence[str] = ()) -> None:
     import psycopg
     from psycopg import sql
 
-    with psycopg.connect(url, autocommit=True, connect_timeout=10) as conn:
+    with _connect(url) as conn:
         # A connection of the test may still hold locks in the schema (an open transaction of a failed test); it
         # would block the DROP until it closes, after this teardown. End those sessions: only sessions of this
         # URL's role (review L-1; another role's session, a backup for example, is waited for instead), in this
@@ -233,7 +253,6 @@ def tabrion_postgres_schema(tabrion_postgres_url: str) -> Iterator[PostgresSchem
     tables the test creates through ``owner_url`` are usable through ``runtime_url`` (its URL, same ``search_path``).
     Afterwards the schema is dropped, then the role (``DROP OWNED``, ``DROP ROLE``; contract I-60).
     """
-    import psycopg
     from psycopg import sql
 
     settings = _config.current
@@ -242,7 +261,7 @@ def tabrion_postgres_schema(tabrion_postgres_url: str) -> Iterator[PostgresSchem
     roles = _RoleSet(tabrion_postgres_url)
     created = False
     try:
-        with psycopg.connect(tabrion_postgres_url, autocommit=True, connect_timeout=10) as conn:
+        with _connect(tabrion_postgres_url) as conn:
             conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
         created = True
         runtime_url: str | None = None
@@ -250,7 +269,7 @@ def tabrion_postgres_schema(tabrion_postgres_url: str) -> Iterator[PostgresSchem
             from tabrion.postgres import grant_runtime_role
 
             role = roles.create(_new_name("rt_"))
-            with psycopg.connect(tabrion_postgres_url, autocommit=True, connect_timeout=10) as conn:
+            with _connect(tabrion_postgres_url) as conn:
                 grant_runtime_role(conn, role.name, schema=name)
             runtime_url = _search_path_url(role.url(tabrion_postgres_url), name)
         yield PostgresSchema(name=name, owner_url=_search_path_url(tabrion_postgres_url, name), runtime_url=runtime_url)
@@ -293,7 +312,6 @@ def tabrion_postgres_database(
     and, for the roles, ``CREATEROLE``; it becomes a member of the roles it creates, which ends with their ``DROP
     ROLE``.
     """
-    import psycopg
     from psycopg import sql
 
     setup = tabrion_role_setup
@@ -308,7 +326,7 @@ def tabrion_postgres_database(
             owner_name, app_name = _role_names(setup)
             owner = roles.create(owner_name)
             app = owner if app_name == owner_name else roles.create(app_name)
-        with psycopg.connect(tabrion_postgres_url, autocommit=True, connect_timeout=10) as conn:
+        with _connect(tabrion_postgres_url) as conn:
             statement = sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name))
             if owner is not None:
                 statement = sql.SQL("{} OWNER {}").format(statement, sql.Identifier(owner.name))
@@ -319,7 +337,7 @@ def tabrion_postgres_database(
                     sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(name), sql.Identifier(app.name))
                 )
         url = _with_params(tabrion_postgres_url, dbname=name)
-        with psycopg.connect(url, autocommit=True, connect_timeout=10) as conn:
+        with _connect(url) as conn:
             if owner is not None:
                 conn.execute(sql.SQL("ALTER SCHEMA public OWNER TO {}").format(sql.Identifier(owner.name)))
             conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
@@ -329,7 +347,7 @@ def tabrion_postgres_database(
     finally:
         try:
             if created:
-                with psycopg.connect(tabrion_postgres_url, autocommit=True, connect_timeout=10) as conn:
+                with _connect(tabrion_postgres_url) as conn:
                     conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
         finally:
             try:
@@ -385,7 +403,7 @@ class _RoleSet:
         from psycopg import sql
 
         password = secrets.token_urlsafe(24)
-        with psycopg.connect(self._admin_url, autocommit=True, connect_timeout=10) as conn:
+        with _connect(self._admin_url) as conn:
             try:
                 conn.execute(
                     sql.SQL(
@@ -416,13 +434,12 @@ class _RoleSet:
 
     def drop_owned(self, url: str) -> None:
         """``DROP OWNED BY`` the roles in the database of ``url``, after ending their sessions there."""
-        import psycopg
         from psycopg import sql
 
         if not self._roles:
             return
         identifiers = sql.SQL(", ").join(sql.Identifier(name) for name in self.names)
-        with psycopg.connect(url, autocommit=True, connect_timeout=10) as conn:
+        with _connect(url) as conn:
             _terminate(conn, self.names)
             conn.execute("SET lock_timeout = '10s'")  # an error rather than a teardown that never ends
             conn.execute(sql.SQL("DROP OWNED BY {}").format(identifiers))
@@ -436,7 +453,7 @@ class _RoleSet:
         if not self._roles:
             return
         first: psycopg.Error | None = None
-        with psycopg.connect(self._admin_url, autocommit=True, connect_timeout=10) as conn:
+        with _connect(self._admin_url) as conn:
             _terminate(conn, self.names, everywhere=True)
             for role in reversed(self._roles):
                 try:
@@ -472,14 +489,13 @@ def tabrion_postgres_roles(tabrion_postgres_url: str) -> Iterator[TestRoles]:
     in that database (it also revokes the grants) and ``DROP ROLE``. The admin needs ``CREATEROLE`` and the grant
     option on the database (its owner, or a superuser); a grant that did not take effect is an error.
     """
-    import psycopg
     from psycopg import sql
 
     roles = _RoleSet(tabrion_postgres_url)
     try:
         owner = roles.create(_new_name("own_"))
         app = roles.create(_new_name("app_"))
-        with psycopg.connect(tabrion_postgres_url, autocommit=True, connect_timeout=10) as conn:
+        with _connect(tabrion_postgres_url) as conn:
             database = sql.Identifier(str(conn.info.dbname))
             conn.execute(
                 sql.SQL("GRANT CONNECT, CREATE ON DATABASE {} TO {}").format(database, sql.Identifier(owner.name))
@@ -515,9 +531,8 @@ def tabrion_postgres_roles(tabrion_postgres_url: str) -> Iterator[TestRoles]:
 @pytest.fixture(scope="session")
 def postgres_server_version(tabrion_postgres_url: str) -> int:
     """``server_version_num`` of the test server."""
-    import psycopg
 
-    with psycopg.connect(tabrion_postgres_url, autocommit=True, connect_timeout=10) as conn:
+    with _connect(tabrion_postgres_url) as conn:
         return int(conn.info.server_version)
 
 
@@ -541,7 +556,6 @@ def truncate_tables(
     reference a truncated table through a foreign key, an excluded one included; a table in another schema that it
     would reach is a ``ValueError`` before anything is emptied (contract I-60).
     """
-    import psycopg
 
     if isinstance(exclude, str) or not all(isinstance(item, str) for item in exclude):
         raise TypeError("truncate_tables: exclude must be a sequence of table names, not a str")
@@ -550,7 +564,7 @@ def truncate_tables(
     if like is not None and not isinstance(like, str):
         raise TypeError("truncate_tables: like must be a str or None")
     if isinstance(target, str):
-        with psycopg.connect(target, autocommit=True, connect_timeout=10) as conn:
+        with _connect(target) as conn:
             return _truncate(conn, schema, like, exclude)
     return _truncate(target, schema, like, exclude)
 

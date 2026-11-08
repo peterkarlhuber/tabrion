@@ -19,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 10 |
-| P3 Low | 28 |
+| P3 Low | 29 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -144,10 +144,10 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   (TAB-051).
 - **Next step:** TAB-022 after TAB-014, TAB-016 and TAB-030; TAB-050 after TAB-016; TAB-051 after TAB-023.
 
-### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
+### TB-009 · Quality suites and release path in this repository (TABRION QA-4, QA-8, QA-11, QA-22)
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
-- **What:** the canary suite (no values in errors or logs, QA-2); concurrency and stress suite, nightly (QA-4);
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-4, QA-8, QA-11, QA-22
+- **What:** concurrency and stress suite, nightly (QA-4); the canary suite (QA-2) is in review (TB-085 has its open points);
   supply chain with SBOM next to the existing `dependency audit` job (QA-8); the release workflow is in place but
   its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22).
 - **Next step:** QA-8 and QA-11 can start now (they depend on TAB-004 and TAB-005 only).
@@ -539,6 +539,25 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   instead of failing (the review counts it as caught, CI times out). `pytest-timeout` is not a development
   dependency. (I-4: review N-3, the double formatting cost, stays TB-039.)
 - **Next step:** add `pytest-timeout` with QA-4 and mark the backup and migration tests with a timeout.
+
+### TB-085 · Canary suite: what it does not cover (TABRION QA-2)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-2, TAB-T-110..113, contract I-39, I-75
+- **What:** points the canary suite found outside Tabrion's renderings, or covers only partly:
+  1. `Database.engine.url` is SQLAlchemy's `URL`: its `repr` masks the password in the user part only, not a
+     `?password=` query parameter. `repr(Database)` and `Database.safe_url` mask both.
+  2. The caller's own error from `Transaction.connection` stays the suppressed `__context__` of the translated error
+     (I-39); a tool that walks `__context__` despite `__suppress_context__` sees SQLAlchemy's `[parameters: ...]`.
+     The standard traceback, `logging` and the filter do not.
+  3. `tabrion.testing._faults` helpers take a plain conninfo `str`: in a pytest report of a failure inside them, the
+     arguments of their frames can show the password (not a fixture value, so `repr` masking cannot help).
+  4. `SQLITE_NOMEM` (kind `RESOURCE`) and, on layer B, `UNKNOWN`, `CONNECTION` and `RESOURCE` on SQLite are not
+     raised by a real statement: the suite translates real `sqlite3` error objects instead. `DEADLOCK` on layer B and
+     `CORRUPT`, `DISK_FULL`, `RESOURCE` and a server-side `CONNECTION` state on PostgreSQL come from the server
+     through `RAISE ... USING ERRCODE`.
+  5. Paths are logged at DEBUG by `tabrion.sqlite` (by design); the suite checks records at INFO and above for a path
+     canary only.
+- **Next step:** decide 1 and 3 with the 0.2 surface review (TB-033); 2 and 5 are documented behavior.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
