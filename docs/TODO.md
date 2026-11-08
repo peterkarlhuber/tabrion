@@ -16,12 +16,15 @@
 
 ## Summary
 
+The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-08,
+review of #19).
+
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 12 |
-| P2 Medium | 11 |
-| P3 Low | 34 |
+| P1 High | 11 |
+| P2 Medium | 10 |
+| P3 Low | 32 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -736,7 +739,8 @@ required (owner decision of 2026-11-08 11:26Z).
   "$GITHUB_STEP_SUMMARY"` against a PostgreSQL service (not blocking; its result is a release-gate criterion of
   TAB-040). Lane C does not change `.github/`. The script installs each consumer with `uv pip install --override`,
   so HEAD replaces the consumer's Tabrion requirement (a Git commit pin; Tabrion is not published to an index),
-  and checks that it did (review M-1 of #19, fixed). The job needs network access for the clones and installs.
+  and checks that it did (review M-1 of #19, fixed); the override names `tabrion[all]`, so a consumer keeps the
+  extras it asks for (N-1 of the delta re-review, fixed). The job needs network access for the clones and installs.
 - **Next step:** whoever may change `.github/` adds both jobs (with the label `workflow-change-reviewed`) and lists
   them in `.github/ci-manifest.json`; the release gate reads the last nightly result.
 
