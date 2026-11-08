@@ -1,4 +1,4 @@
-"""Mutation probes for TAB-015 and TAB-016 (planning document 07 section 7, with the review fixes), against PostgreSQL.
+"""Mutation probes for TAB-015, TAB-016, TAB-030 and TAB-034 (planning document 07 section 7), against PostgreSQL.
 
 Like ``tests/unit/test_mutation_probes.py``: a copy of the package with one rule broken must turn the named test
 red (exit code 1: a failure, not a skip, since ``TABRION_TEST_POSTGRES`` reaches the subprocess). Each anchor must
@@ -191,6 +191,70 @@ PROBES = [
         "        if connection.info.transaction_status == pq.TransactionStatus.INERROR:\n",
         "        if False:\n",
         "tests/postgres/test_contract_rules.py::test_i1_ping_in_failed_transaction_logs_nothing",
+    ),
+    # Review DL-1: in pipeline mode the caller's pipeline is synced before the savepoint decision.
+    (
+        "postgres/_common.py",
+        "    if connection.pgconn.pipeline_status != pq.PipelineStatus.OFF:\n",
+        "    if False:\n",
+        "tests/postgres/test_contract_rules.py::test_dl1_pipeline_mode_keeps_the_callers_transaction",
+    ),
+    # TAB-030: wait_advisory_lock polls pg_try_advisory_lock; a blocking pg_advisory_lock holds a snapshot that
+    # CREATE INDEX CONCURRENTLY in the holder's session waits for.
+    (
+        "postgres/locks.py",
+        '        cursor.execute("SELECT pg_catalog.pg_try_advisory_lock(%s)", (key,))\n        return bool(',
+        '        cursor.execute("SELECT pg_catalog.pg_advisory_lock(%s), true", (key,))\n        return bool(',
+        "tests/postgres/test_locks.py::test_l13_create_index_concurrently_while_one_holds_and_one_waits",
+    ),
+    # TAB-030: a lost connection clears every count.
+    (
+        "postgres/locks.py",
+        "        connection, self._connection = self._connection, None\n        self._held.clear()\n",
+        "        connection, self._connection = self._connection, None\n",
+        "tests/postgres/test_locks.py::test_l04_connection_loss_clears_every_count",
+    ),
+    # TAB-030: the unlock comes at the last hold, not the first release.
+    (
+        "postgres/locks.py",
+        "            if count > 1:\n",
+        "            if False:\n",
+        "tests/postgres/test_locks.py::test_l02_counting",
+    ),
+    # TAB-030: waiting inside a running transaction is refused (it would hold a snapshot).
+    (
+        "postgres/locks.py",
+        '            raise UsageError("postgres.lock_in_transaction")\n',
+        "            pass\n",
+        "tests/postgres/test_locks.py::test_l15_inside_a_transaction",
+    ),
+    # TAB-030: the lock connection is never pooled or reused: autocommit, a connection of its own.
+    (
+        "postgres/locks.py",
+        '        if "autocommit" in kwargs and kwargs.pop("autocommit") is not True:\n',
+        "        if False:\n",
+        "tests/unit/test_locks_and_faults_unit.py::test_session_lock_arguments",
+    ),
+    # TAB-034: a lost reply is dropped from the moment the statement leaves for the server.
+    (
+        "testing/_faults.py",
+        "                        link.dropping.set()  # before the statement can reach the server\n",
+        "                        pass\n",
+        "tests/postgres/test_faults.py::test_t170_reply_lost_the_statement_ran_once",
+    ),
+    # TAB-034: a request fault never forwards the statement.
+    (
+        "testing/_faults.py",
+        '                    if fault == "request":\n',
+        '                    if fault == "request-disabled":\n',
+        "tests/postgres/test_faults.py::test_t170_request_lost_the_statement_never_ran",
+    ),
+    # TAB-034: the delay mode holds the answer back.
+    (
+        "testing/_faults.py",
+        "                        time.sleep(max(0.0, until - time.monotonic()))\n",
+        "                        pass\n",
+        "tests/postgres/test_faults.py::test_t170_delay_keeps_the_connection",
     ),
 ]
 

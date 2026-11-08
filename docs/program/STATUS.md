@@ -4,7 +4,8 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, fix round of the M2 lane A pull request [#3](https://github.com/peterkarlhuber/tabrion/pull/3) (TAB-010, TAB-011, TAB-012; branch `claude/project-thread-rdo6g3`) after the independent review (not accepted at `9fe568f`),
+> **Last update:** 2026-11-08, second M2 lane C pull request (TAB-030, TAB-034, review DL-1; branch
+> `claude/project-thread-rdo6g3-pg2`) after [#5](https://github.com/peterkarlhuber/tabrion/pull/5) merged (`b34abb2`). Before: fix round of the M2 lane A pull request [#3](https://github.com/peterkarlhuber/tabrion/pull/3) (TAB-010, TAB-011, TAB-012; branch `claude/project-thread-rdo6g3`) after the independent review (not accepted at `9fe568f`),
 > after the G-T1 follow-up pull request [#2](https://github.com/peterkarlhuber/tabrion/pull/2) merged (`c31529d`).
 > Detailed open work for this repository: [docs/TODO.md](../TODO.md). Risks: [risks.md](risks.md).
 
@@ -92,12 +93,12 @@ Planned effort: 60.75 + 21.25 agent days.
 | JQ-4 | Docs, CHANGELOG, export adjustment, pin wave W7 (JQ) | runtime, api, studio | JQ-3 | G-M | 1 + 0.5 | JQ | Not started |  |
 | QA-11 | Release workflow without publishing | tabrion | TAB-005 | - | 1 + 0.25 | QA | Not started |  |
 | TAB-013 | tabrion.sqlite connection and profile | tabrion | TAB-010 | - | 2 + 1 | Core | Not started |  |
-| TAB-015 | tabrion.postgres configure, ping, diagnose, extension_status | tabrion | TAB-010, TAB-012 | - | 2 + 0.5 | Core | In review | `src/tabrion/postgres/__init__.py`, `_common.py`; `tests/postgres/test_session.py` (P01..P05, P16, G03), `tests/postgres/test_health.py` (P06..P15), `tests/postgres/test_contract_rules.py` (G01, G02, `search_path` hijack), `tests/unit/test_postgres_unit.py`, PostgreSQL mutation probes; [M2 lane C evidence](#m2-lane-c-evidence). Independent review required (TB-032) |
+| TAB-015 | tabrion.postgres configure, ping, diagnose, extension_status | tabrion | TAB-010, TAB-012 | - | 2 + 0.5 | Core | Done | `src/tabrion/postgres/__init__.py`, `_common.py`; `tests/postgres/test_session.py` (P01..P05, P16, G03), `tests/postgres/test_health.py` (P06..P15), `tests/postgres/test_contract_rules.py` (G01, G02, `search_path` hijack), `tests/unit/test_postgres_unit.py`, PostgreSQL mutation probes; [M2 lane C evidence](#m2-lane-c-evidence). Independent review required (TB-032) |
 | TAB-038 | Internal pre-release v0.1.0a1 (errors, sql, config) for unmerged integration branches (RC-8) | tabrion | TAB-010, TAB-011, TAB-012, TAB-005 | - | 0.25 + 0.25 | Core | Not started |  |
 | QA-22 | Conventions audit of the new repositories | tabrion, tabrion-studio | TAB-004, STU-018 | - | 0.5 + 0 | QA | Not started |  |
-| TAB-016 | tabrion.postgres reading roles | tabrion | TAB-015 | - | 1.5 + 0.75 | Core | In review | `src/tabrion/postgres/roles.py`; `tests/postgres/test_roles.py` (R01..R10 against the verbatim Axentra and Nodestro queries; R11/R12 roles a session can become), G01/G02; [M2 lane C evidence](#m2-lane-c-evidence). Independent review (TB-032): not accepted at e0060a6 (H-1, M-1, M-2), fixes in the same pull request, delta re-review pending |
-| TAB-030 | SessionLock and advisory lock helpers (0.1) | tabrion | TAB-015 | - | 2 + 1 | Core | Not started |  |
-| TAB-034 | Fault-injection proxy tabrion.testing.faults (includes QA-3) | tabrion | TAB-015 | - | 1.5 + 0.5 | Core | Not started |  |
+| TAB-016 | tabrion.postgres reading roles | tabrion | TAB-015 | - | 1.5 + 0.75 | Core | Done | `src/tabrion/postgres/roles.py`; `tests/postgres/test_roles.py` (R01..R10 against the verbatim Axentra and Nodestro queries; R11/R12 roles a session can become), G01/G02; [M2 lane C evidence](#m2-lane-c-evidence). Independent review (TB-032): accepted after the delta re-review; merged in [#5](https://github.com/peterkarlhuber/tabrion/pull/5) (`b34abb2`); DL-1 fixed in the second lane C pull request |
+| TAB-030 | SessionLock and advisory lock helpers (0.1) | tabrion | TAB-015 | - | 2 + 1 | Core | In review | `src/tabrion/postgres/locks.py`; `tests/postgres/test_locks.py` (L01..L15, G01), `tests/postgres/test_faults.py` (locks under faults), `tests/unit/test_locks_and_faults_unit.py`, mutation probes; contract I-21; [M2 lane C2 evidence](#m2-lane-c2-evidence). Independent review required (TB-032) |
+| TAB-034 | Fault-injection proxy (includes QA-3), internal `tabrion.testing._faults` (TB-033) | tabrion | TAB-015 | - | 1.5 + 0.5 | Core | In review | `src/tabrion/testing/_faults.py`; `tests/postgres/test_faults.py` (TAB-T-170, every fault three times), E14 in `tests/postgres/test_errors_postgres.py` on the proxy; contract I-22; [M2 lane C2 evidence](#m2-lane-c2-evidence) |
 | TAB-014 | tabrion.sqlite transactions, migrate, backup, checks | tabrion | TAB-013 | - | 3 + 1.5 | Core | Not started |  |
 | TAB-020 | tabrion.testing 0.1 | tabrion | TAB-015, TAB-013 | - | 2 + 0.5 | Core | Not started |  |
 | TAB-031 | grant_runtime_role unifying Nodestro and Axentra (0.1) | tabrion | TAB-016 | - | 2 + 1 | Core | Not started |  |
@@ -377,6 +378,35 @@ role in `role_info`, membership of a BYPASSRLS role in `inspect_role` (H-1), `ME
 ping without a savepoint in an aborted transaction (I-1). Each new R11/R12, M-1 and M-2 test was also run against the
 reviewed head e0060a6 and fails there.
 
+## M2 lane C2 evidence
+
+What the second M2 lane C pull request (TABRION TAB-030, TAB-034 with QA-3, review DL-1) delivers against planning
+document 09. Local run on 2026-11-08: Python 3.13, PostgreSQL 16.15, psycopg 3.3; CI runs PostgreSQL 16, 17, 18 and
+pgvector 17. The lock suites run as the superuser and as a LOGIN role without superuser; other processes are real
+subprocesses.
+
+| WP | Acceptance criterion (plan document 09) | Evidence |
+|---|---|---|
+| TAB-030 | TAB-T-L01..L15 against PostgreSQL; polling compatible with `CREATE INDEX CONCURRENTLY`; drop-in for Nodestro and Axentra | `lock_key` fits `bigint` at both ends and the Nodestro/Axentra constants; L01 two processes compete; L02 counting (unlock only at the last release); L03 release and `held_keys`, nothing connects for an unheld key; L04 `pg_terminate_backend` clears every count, also while unlocking; L05 polling with timeout; L06 while `acquire` waits the session is idle without snapshot, with the configured `application_name`; L07 close and context manager; L08 `configure` callback and connect errors passing through; L09 threads; L10 fork (the child does not end the parent's session and opens its own); L11 two processes, one waits (with and without autocommit); L12 idle samples hold no snapshot; L13 `CREATE INDEX CONCURRENTLY` in the holder's session completes while another session waits, and the blocking control fails (D-35); L14 timeout; L15 refused inside a transaction, the helpers end nothing, failed and closed connections; G01 for the helpers (status, autocommit, row factory) and per-database keys. Unit: key, interval and timeout validation before any connection, `repr` without the conninfo, the installation hint without psycopg |
+| TAB-034 / QA-3 | The fault proxy; TAB-T-170 "the statement runs exactly once"; reproducible | `tests/postgres/test_faults.py`, each scenario three times: `reply` (INSERT ran once, `then` sees it committed before the client's error; `classify`: CONNECTION, `outcome_unknown`, not retryable), `reply` on `COMMIT` (`during_commit=True`, committed), `inflight` (count 1 after the backend ended), `request` (count 0, still `outcome_unknown` for the client), `delay` (late answer, usable connection); only the armed connection and statement, once; errors of `then` reach the test. Tabrion under faults: `ping` reports each loss and does not reconnect, ping's delay shows in `latency_ms` and is not bounded by `timeout` (TB-034); `SessionLock` raises, forgets the key and gets the lost session's locks back from the server; `wait_advisory_lock` does not retry. E14 now uses the proxy instead of a timer |
+| DL-1 | Review of #5: the guard in pipeline mode | `test_dl1_pipeline_mode_keeps_the_callers_transaction` (every failing input of M-1 and three readers inside `connection.pipeline()` with queued writes: no `PipelineAborted`, both writes commit) and `test_dl1_pipeline_mode_on_an_idle_connection`; contract I-23. Fails without the fix for the two inputs that raise on the server |
+
+| DoD point (07 section 6) | TAB-030 | TAB-034 |
+|---|---|---|
+| 1. English; acceptance criteria checked one by one with test IDs | Yes (table above) | Yes |
+| 2. Required CI jobs green; no new skip without a reason | CI of this pull request | CI (the proxy skips only for a Unix-socket server) |
+| 3. Public API documented, CHANGELOG; security notes | Contract 4.7, I-21, I-23, CHANGELOG | Internal module, contract I-22, CHANGELOG |
+| 4. No parameter value or secret in new log or error paths | `repr` without conninfo; error codes `postgres.lock_closed`, `postgres.lock_in_transaction` | Test-only |
+| 5. Rollback path | Revert of this pull request (no consumer uses it yet) | Same |
+| 6. STATUS.md and TODO.md updated | Yes | Yes |
+| Review model | **Independent review agent required** (`postgres` locks; TB-032) | Self-review (test infrastructure) |
+
+Mutation probes (`tests/postgres/test_postgres_mutation_probes.py`): 9 new, 33 in all, each turns its test red: the
+pipeline sync of DL-1; a blocking `pg_advisory_lock` in `wait_advisory_lock` (L13), counts kept after a lost
+connection (L04), unlock at the first release (L02), waiting inside a transaction (L15), a non-autocommit lock
+connection (unit); the fault proxy forwarding the reply of a `reply` fault, forwarding a `request` fault, and not
+delaying.
+
 ## G-T1 conditions
 
 The independent G-T1 review (2026-11-08, planning folder `reviews/g-t1-review.md`) passed the API freeze with eight
@@ -477,3 +507,5 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-31 | TAB-015 | Development dependencies of TAB-005 | `psycopg-pool` added to the extra `dev` | P09 and P16 need a real `psycopg_pool.ConnectionPool`; Tabrion itself never imports it (import contract `postgres-psycopg-only`) |
 | D-32 | TAB-016 | Axentra `database.py:359-405`, `roles.py:72-104` and Nodestro `storage_postgres.py:757-768`, `947-984`: `rolsuper`/`rolbypassrls` of `current_user` (or the named role) only | `superuser` and `bypass_rls` also when `current_user` or `session_user` (or the named role) is a member of a role with that attribute; `table_owner` also through `session_user` (contract I-20, review H-1, decided by the owner) | A member can `SET ROLE` to that role (NOINHERIT too), a session can `RESET ROLE` to `session_user`: the references report such roles as safe. Signatures and reason codes unchanged (within the G-T1 freeze); TODO TB-035 carries the fix to Axentra and Nodestro |
 | D-33 | TAB-015, TAB-016 | Contract 4 (T-NOTX): readers run their statements in the caller's transaction | In the caller's running transaction readers and `configure` run under a savepoint (contract I-15, I-16, review M-1) | A failing statement would otherwise abort the caller's transaction and cost it its writes; two more round trips in that state only |
+| D-34 | TAB-034 | Planning documents 07 (K7) and 09: a public `tabrion.testing.faults` | The internal, unstable `tabrion.testing._faults` (contract I-22) | Decision TB-033: the frozen surface is not extended in 0.1; a public module is a 0.2 decision by contract addendum and review |
+| D-35 | TAB-030 | Contract 4.7, L13: `CREATE INDEX CONCURRENTLY` "in a third session" | L13 runs it in the holder's session, the Axentra migration case, with a control: a blocking `pg_advisory_lock` waiter makes the server fail one side (deadlock or timeout) | The holder's own index build is where a blocked waiter's snapshot deadlocks; a third session would complete in either design. L12 accepts the moment between an attempt and its rollback without autocommit (contract I-21) |

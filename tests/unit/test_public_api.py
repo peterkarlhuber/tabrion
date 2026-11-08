@@ -271,6 +271,10 @@ IMPLEMENTED = {
         "role_info",
         "check_role",
         "inspect_role",
+        "lock_key",
+        "try_advisory_lock",
+        "wait_advisory_lock",
+        "advisory_unlock",
     )
 }
 

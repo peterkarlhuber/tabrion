@@ -19,7 +19,16 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import psycopg
 
-__all__ = ["INSTALL_HINT", "guarded", "one_row", "quote_ident", "reading", "require_connection", "require_psycopg"]
+__all__ = [
+    "INSTALL_HINT",
+    "guarded",
+    "one_row",
+    "quote_ident",
+    "reading",
+    "require_connection",
+    "require_psycopg",
+    "settle",
+]
 
 INSTALL_HINT = 'tabrion.postgres needs the extra "postgres": pip install "tabrion[postgres]"'
 
@@ -41,17 +50,34 @@ def require_connection(connection: object, function: str) -> None:
         raise TypeError(f"tabrion.postgres.{function} needs a psycopg.Connection, not {type(connection).__name__}")
 
 
+def settle(connection: psycopg.Connection[Any]) -> None:
+    """In pipeline mode, sync the caller's pipeline first, so that the transaction status is known (review DL-1).
+
+    Inside ``with connection.pipeline():`` the status is ``ACTIVE`` until the queued statements are synced; without
+    the sync no savepoint would be opened and a failing statement of Tabrion's would abort the caller's pipeline and
+    its transaction. ``Pipeline.sync()`` sends what the caller queued (it would be sent with Tabrion's statements
+    anyway) and raises the error of a queued statement that failed: that error is the caller's and propagates.
+    """
+    from psycopg import pq
+
+    if connection.pgconn.pipeline_status != pq.PipelineStatus.OFF:
+        with connection.pipeline() as pipeline:  # the caller's pipeline, one level deeper; ending it sends nothing
+            pipeline.sync()
+
+
 @contextmanager
 def guarded(connection: psycopg.Connection[Any]) -> Iterator[None]:
     """A savepoint while the caller's transaction is running (INTRANS), else nothing (contract T-NOTX, I-16).
 
     A statement of Tabrion's that fails inside the caller's transaction would abort it (INERROR) and cost the caller
     its work; under the savepoint psycopg rolls back to it and the error propagates with the caller's transaction
-    still usable. Success releases the savepoint (two more round trips). An aborted transaction (INERROR) gets no
+    still usable. Success releases the savepoint (two more round trips). In pipeline mode the caller's pipeline is
+    synced first (:func:`settle`), so the guard applies there too. An aborted transaction (INERROR) gets no
     savepoint: the statement fails with ``InFailedSqlTransaction`` as before (I-16).
     """
     from psycopg import pq
 
+    settle(connection)
     if connection.info.transaction_status == pq.TransactionStatus.INTRANS:
         with connection.transaction():
             yield
@@ -74,6 +100,7 @@ def reading(connection: psycopg.Connection[Any], function: str) -> Iterator[psyc
     from psycopg import pq
     from psycopg.rows import tuple_row
 
+    settle(connection)
     own = not connection.autocommit and connection.info.transaction_status == pq.TransactionStatus.IDLE
     try:
         with guarded(connection), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:

@@ -78,4 +78,7 @@ Accepted residual risks (documented, not vulnerabilities):
   can become one with `SET ROLE` (contract I-20). Membership of predefined roles such as `pg_execute_server_program`
   is not reported yet (TODO TB-036). Applications that still use Axentra's or Nodestro's own checks have the older
   gap (TODO TB-035).
+- `tabrion.testing._faults` (internal, for tests only) listens on `127.0.0.1` and relays the PostgreSQL protocol in
+  plain text: its `dsn()` disables TLS and GSS encryption, so the password travels unencrypted over loopback. Never
+  point it at a production server or use it outside a test.
 - Vulnerabilities in SQLite, PostgreSQL, psycopg, SQLAlchemy or Alembic belong to their maintainers.

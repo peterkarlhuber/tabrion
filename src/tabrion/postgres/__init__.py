@@ -27,7 +27,15 @@ import time
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from tabrion.errors import Classification, ConfigurationError, classify
-from tabrion.postgres._common import guarded, one_row, quote_ident, reading, require_connection, require_psycopg
+from tabrion.postgres._common import (
+    guarded,
+    one_row,
+    quote_ident,
+    reading,
+    require_connection,
+    require_psycopg,
+    settle,
+)
 from tabrion.postgres.locks import (
     SessionLock,
     advisory_unlock,
@@ -250,6 +258,7 @@ def _ping_connection(connection: psycopg.Connection[Any], seconds: float) -> Pin
     from psycopg.rows import tuple_row
 
     try:
+        settle(connection)  # pipeline mode: the transaction status is known only after a sync (review DL-1)
         if connection.info.transaction_status == pq.TransactionStatus.INERROR:
             # An aborted transaction takes no savepoint (psycopg would log the failed rollback of it, review I-1):
             # the SELECT fails there like any statement, with InFailedSqlTransaction, and ends nothing.
