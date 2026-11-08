@@ -74,9 +74,10 @@ The portable mappings follow specification section 6 and the cases TAB-T-D01..D0
 
 Every constraint (the primary keys `pk_<table>` included) and index has a name of its own, so both engines carry the
 same names. Decimals and timestamps order and compare alike on both engines: `ORDER BY`, `<` against a bound
-parameter, `min`, `max`, uniqueness, and `sum` of one decimal column. Do other arithmetic on decimals in Python, not
-in SQL (on SQLite a product of two scaled integers carries both scales), compare with bound parameters, not SQL
-literals (`value > :limit`, never `value > 5`), and do not compare timestamps with SQLite's `CURRENT_TIMESTAMP`
+parameter, `min`, `max`, uniqueness, `sum` of one decimal column while the total fits `numeric(p, s)` (otherwise sum
+in Python), and `+`/`-` with a bound `Decimal`. Do other arithmetic on decimals in Python, not in SQL: on SQLite,
+`avg`, multiplying or dividing (also by a constant), `round`, `abs` and `CAST` are silently off by a factor of
+`10**s` or truncated, with no error. Compare with bound parameters, not SQL literals (`value > :limit`, never `value > 5`), and do not compare timestamps with SQLite's `CURRENT_TIMESTAMP`
 (`YYYY-MM-DD HH:MM:SS`).
 
 References that must block a delete use the default `NO ACTION`, not `RESTRICT`: SQLite reports a `RESTRICT`
