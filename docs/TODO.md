@@ -178,7 +178,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
-- **Priority:** P1 High · **Status:** In progress (TAB-040 version bump prepared; release commit `RELEASE-SHA`) · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
+- **Priority:** P1 High · **Status:** Done (`v0.1.0` final: release commit `RELEASE-SHA`) · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
 - **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); `v0.1.0` final and gate G-T2 (TAB-040).
   `v0.1.0` final is the merge commit of the version-bump pull request that sets `0.1.0` (not a pre-release); TAB-040
