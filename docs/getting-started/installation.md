@@ -10,9 +10,17 @@ pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha
 
 ## Final versions
 
-A final version is the master merge commit whose package version is final; `v0.1.0` final (TABRION TAB-040) is the
-merge commit whose version is `0.1.0`. Consumers pin it by its full commit SHA; a tag `v0.1.0` on it is an optional
-label, never what a pin names. A consumer's CI installs Tabrion from that pin (for a library, the requirements file
+A final version is the merge commit of the version-bump pull request that sets a final package version; `v0.1.0`
+final (TABRION TAB-040) is the one that sets `0.1.0`. Its full SHA is recorded here, in the CHANGELOG section of the
+version and in `docs/program/STATUS.md` (TAB-040), and the next pull request bumps master to the next `.dev0`
+version (`0.1.1.dev0`), so no other commit builds as `0.1.0`. Consumers pin that commit by its full SHA; a tag
+`v0.1.0` on it is an optional label, never what a pin names. `0.1.0` is not released yet, so no SHA is recorded.
+
+Pin only a recorded release commit. pip does not check that: it accepts a pin on any master commit whose version is
+inside the range, for example `0.1.1.dev0`; only the architecture check AC-6 (planned, QA-15) refuses it. Always
+supply the pin: Tabrion is not on PyPI, so an install without it would ask the package index for the name `tabrion`.
+
+A consumer's CI installs Tabrion from that pin (for a library, the requirements file
 `requirements/tabrion.txt`, installed with `-r`; ADR 0009), not from PyPI:
 
 ```text
@@ -48,7 +56,9 @@ The rules:
   of a final-version commit).
   The architecture check AC-6 (planned, QA-15) will refuse a pre-release specifier or pin there.
 - A final range rejects the alpha: `tabrion>=0.1,<0.2` does not accept `0.1.0a1` (probe
-  `proben/versionierung/`), so a library on master cannot be installed with the a1 pin by accident. A pre-release
+  `proben/versionierung/`), because `0.1.0a1` is below the lower bound. This protects only against pre-releases of
+  `0.1.0` itself: a pin on a later dev or pre-release commit inside the range (`0.1.1.dev0`, `0.1.1rc1`) is accepted
+  by pip, and only AC-6 refuses it. A pre-release
   range `>=0.1.0a1,<0.2` accepts `0.1.0a1`, later pre-releases and `0.1.0`, but never `0.2.0a1`.
 - One Tabrion version per installation (K-34): every package of an installation pins the same commit.
 - The first merge of a consumer with a Tabrion edge needs `v0.1.0` final (TAB-040, the merge commit whose version

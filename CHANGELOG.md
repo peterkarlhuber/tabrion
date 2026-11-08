@@ -50,8 +50,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
-  final (TAB-040) is the master merge commit whose package version is `0.1.0`, pinned by full SHA; tags are optional
-  labels (ADR 0009, amendment of 2026-11-08). Branch protection, private vulnerability reporting and the social
+  final (TAB-040) is the merge commit of the version-bump pull request that sets `0.1.0`, pinned by full SHA; its
+  SHA will be recorded in the section `[0.1.0]`, and master moves to `0.1.1.dev0` right after. pip does not refuse an
+  in-range dev or pre-release pin; only AC-6 does. Tags are optional labels (ADR 0009, amendment of 2026-11-08). Branch protection, private vulnerability reporting and the social
   preview are optional repository hardening; gate G-T2 no longer requires a trademark register check. Every public
   publication still needs the owner's approval G-R per version.
 - A `read()` refused by the read-back now also invalidates a file-backed SQLite connection, so an attached database

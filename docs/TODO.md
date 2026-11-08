@@ -11,7 +11,7 @@
 > updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged); the TB-031 port
 > (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`; layer B (TB-007, TB-020, TB-040, TB-056, TB-061)
 > on branch `claude/project-thread-rdo6g3-layerb` (TABRION TAB-018). Governance entries (TB-001 closed, TB-003, TB-011,
-> TB-014, TB-016) updated 2026-11-08 on branch `claude/project-thread-rdo6g3` for the owner decision of 2026-11-08
+> TB-014, TB-016, new TB-067, TB-068) updated 2026-11-08 on branch `claude/project-thread-rdo6g3` for the owner decision of 2026-11-08
 > 11:26Z.
 
 ## Summary
@@ -20,7 +20,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 12 |
-| P2 Medium | 9 |
+| P2 Medium | 11 |
 | P3 Low | 29 |
 | P4 Optional | 5 |
 
@@ -49,7 +49,8 @@ its layer-B part (TB-060); the layer-B pull request implements the layer-B core 
 - **P4 Optional**: improvement idea.
 
 Statuses: `Open`, `In progress` (PR linked), `Blocked` (names the blocker), `Needs decision` (owner decision pending),
-`Needs external review`, `Accepted risk` (deliberately not fixed; reason stated).
+`Needs external review`, `Accepted risk` (deliberately not fixed; reason stated), `Optional` (useful, never a
+prerequisite), `Not planned` (starts only after a new decision, for example a G-R).
 
 ## Release blockers and critical items
 
@@ -64,7 +65,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-003 · Optional repository hardening: branch protection, environment `pypi`, private vulnerability reporting
 
-- **Priority:** P4 Optional · **Status:** Open (optional) · **Refs:** TABRION GOV-2, TABRION GOV-3, TABRION TAB-043,
+- **Priority:** P4 Optional · **Status:** Optional · **Refs:** TABRION GOV-2, TABRION GOV-3, TABRION TAB-043,
   G-R, G-T1 C-7, C-8; owner actions O-1, O-2, O-5, O-7, O-9
 - **What:** by the owner decision of 2026-11-08 11:26Z these settings are useful but optional hardening, never a
   prerequisite for implementation, a merge or G-T2; the environment `pypi` is needed only if a PyPI publication is
@@ -172,8 +173,10 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Priority:** P1 High · **Status:** Blocked · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
 - **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); `v0.1.0` final and gate G-T2 (TAB-040).
-  `v0.1.0` final is the master merge commit whose package version is `0.1.0` (not a pre-release); consumers pin it
-  by full commit SHA via `git+https`, and a tag `v0.1.0` is an optional label (ADR 0009, amendment of 2026-11-08).
+  `v0.1.0` final is the merge commit of the version-bump pull request that sets `0.1.0` (not a pre-release); TAB-040
+  records its full SHA in CHANGELOG `[0.1.0]`, STATUS TAB-040 and `installation.md`, and the next pull request bumps
+  master to `0.1.1.dev0` (the TB-053 pattern). Consumers pin it by full commit SHA via `git+https`, and a tag
+  `v0.1.0` is an optional label (ADR 0009, amendment of 2026-11-08).
   No GitHub release and no PyPI upload without G-R.
 - **Next step:** TAB-038 is merged (#9, `a463422`, accepted after independent review). The agent created the
   annotated tag `v0.1.0a1` on that commit in its clone; the agent's Git proxy refuses tag pushes, so it is not on
@@ -276,7 +279,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-016 · PyPI path (TABRION TAB-043), not planned
 
-- **Priority:** P4 Optional · **Status:** Needs decision (only if a publication is decided) · **Refs:** TABRION
+- **Priority:** P4 Optional · **Status:** Not planned (G-R) · **Refs:** TABRION
   TAB-043, E-PyPI, G-R, TB-003
 - **What:** trusted publisher and `0.1.0rc1` on PyPI. Not needed now (owner decision of 2026-11-08 11:26Z): the
   consumers pin Git SHAs or use internal packages, and their CI installs Tabrion from the Git SHA pin. Every public
@@ -285,6 +288,26 @@ required (owner decision of 2026-11-08 11:26Z).
   (TB-003) and, before public marketing under the name, a new name assessment.
 
 ## Tests and quality assurance
+
+### TB-067 · Negative case "library without the Tabrion pin" in the clean-install matrix (TABRION QA-19, R-24)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-19, AC-4, R-24, ADR 0009 amendment of
+  2026-11-08, review M-2 of #20
+- **What:** no PyPI publication is planned, so the name `tabrion` stays unclaimed on PyPI. A library such as axentra
+  or orkexa declares `tabrion[...]>=0.1,<0.2`; installed without `-r requirements/tabrion.txt` or the application's
+  direct-URL pin, pip asks the index for `tabrion`, which a third party could register (dependency confusion).
+- **Next step:** with QA-19, add the negative case "library without the pin fails, never resolves from an index"
+  (an index that offers a fake `tabrion` 0.1.x must not be used), and state in each consumer's README that the pin
+  is always supplied; internal installs use `--no-index` or an internal index.
+
+### TB-068 · AC-6 checks the version at the pinned SHA (TABRION QA-15, RC-8)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-15, AC-6, RC-8, TAB-040, review M-1 of #20
+- **What:** pip accepts a direct-URL pin on a commit that builds as `0.1.1.dev0` or `0.1.1rc1` against
+  `>=0.1,<0.2` (it rejects only versions outside the bounds), so pip alone does not enforce "SHA pin of a
+  final-version commit".
+- **Next step:** with QA-15, AC-6 reads the package version at the pinned SHA and refuses any SHA that is not a
+  recorded release commit (CHANGELOG, STATUS TAB-040); negative tests with a `.dev0` and an `rc` commit.
 
 ### TB-017 · CI jobs that arrive with later work packages
 
@@ -671,6 +694,8 @@ required (owner decision of 2026-11-08 11:26Z).
 | TB-014 | tabrion-studio, nodestro-runtime | TABRION STU-006, NOD-CR-3 | Use the profile format |
 | TB-015 | nodestro-runtime | TABRION NOD-CR-5 | Uses the schema fingerprint |
 | TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need the SHA of the `v0.1.0` final commit (RC-8) |
+| TB-067 | axentra, orkexa, nodestro-runtime, tabrion-studio | TABRION QA-19 (AC-4) | Always supply the Tabrion SHA pin; negative case without it |
+| TB-068 | nodestro-studio | TABRION QA-15 (AC-6) | Check the version at the pinned SHA |
 | TB-008 | nodestro-studio | TABRION QA-20 (AC-5) | Consumer compat gates Tabrion tags |
 | TB-035 | axentra, nodestro-runtime | TABRION MIG-AXE, MIG-NOD | Their role checks miss roles reachable with `SET ROLE` (review H-1), and their grants accept the schema's owner and its members (review M-1 of #8); fix in their MIG waves or earlier |
 | TB-052 | nodestro-runtime | TABRION MIG-NOD | Catch the one-shot `lock_lost` of the scheduler pattern after a lost lock connection |
