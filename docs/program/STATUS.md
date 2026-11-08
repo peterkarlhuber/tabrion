@@ -108,7 +108,7 @@ Planned effort: 60.75 + 21.25 agent days.
 | QA-4 | Concurrency and stress suite | tabrion | TAB-014, TAB-015 | - | 1 + 0.25 | QA | Not started |  |
 | RA-B-1 | Measurements: local capture on SQLite | tabrion (examples/measurements) | TAB-014 | - | 1.5 + 0.5 | Ref-Apps | Not started |  |
 | TAB-017 | tabrion.check and finding codes | tabrion | TAB-014, TAB-016 | - | 1.5 + 0.5 | Core | Not started |  |
-| TAB-018 | Layer B core (Database, Profile, Transaction, fetch_*) | tabrion | TAB-014, TAB-015 | - | 4 + 1 | Core | Not started |  |
+| TAB-018 | Layer B core (Database, Profile, Transaction, fetch_*) | tabrion | TAB-014, TAB-015 | - | 4 + 1 | Core | In review | `src/tabrion/_sa/` (`profile.py`, `database.py`, `events.py`); `tests/unit/test_database.py` (SQLite, URLs, TLS, profiles), `tests/postgres/test_database.py`, `tests/unit/test_mutation_probes_layer_b.py`; contract section 5.7 (I-36..I-43); decides TB-020 (F-11), TB-040 (N-4) and F-14; [M2 lane B2 evidence](#m2-lane-b2-evidence-tab-018). TAB-017 follows in a pull request of its own |
 | TAB-022 | Consumer protection: golden files (blocking) and nightly downstream | tabrion | TAB-014, TAB-016, TAB-030 | - | 3 + 0.75 | Core | Not started |  |
 | TAB-050 | Internal test asset "Levuvo Database Profile" (vectors, no vendoring) | tabrion | TAB-010, TAB-011, TAB-014, TAB-016 | - | 2 + 0.5 | Core | Not started |  |
 | QA-2 | Canary value suite (no values in errors or logs) | tabrion | TAB-010, TAB-018 | - | 1 + 0.5 | QA | Not started |  |
@@ -427,6 +427,21 @@ Review of #6 (0cd79eb, accepted with conditions) and the fix round:
 | I-5 the proxy's framing assumptions | Documented in the `FaultProxy` docstring (connect only through `dsn()`; `reply` also drops earlier unrelayed replies) | |
 | DL-2 of #4: R02/R10 assumed the admin has BYPASSRLS | The oracle comparison takes the reference's `bypass_rls` for superusers; `bypass_rls` asserted as "any role has BYPASSRLS" (I-20) | `test_r02_superuser`, `test_r10_schema_parameter_privileges_and_superuser` |
 
+## M2 lane B2 evidence (TAB-018)
+
+What the layer-B pull request delivers against planning document 09. Local run on 2026-11-08: Python 3.13 with
+SQLAlchemy 2.1.8 and psycopg 3.3.8, Python 3.11 with SQLAlchemy 2.0.30 and psycopg 3.2.2, Python 3.12;
+PostgreSQL 16.15. CI runs the SQLAlchemy 2.0 matrix entry, the lowest versions (SQLAlchemy 2.0.30, psycopg 3.2.0)
+and PostgreSQL 16, 17, 18.
+
+| WP | Acceptance criterion (plan document 09) | Evidence |
+|---|---|---|
+| TAB-018 | TAB-T-B01..B25 on SQLAlchemy 2.0.30 and 2.1.x | B01..B06 creation and lifetime (URLs, PostgreSQL rewrite, TLS matrix, path checks, `from_env`, `from_engine`, `close`), B07 five threads without a lost update on both engines (`BEGIN IMMEDIATE`, `FOR UPDATE`), B08 rollback, B09 translated errors (also at `COMMIT`, and a connection killed before `COMMIT` is `outcome_unknown`), B10 nesting and thread binding, B11/B12 read-only on both engines and `Profile.readonly()`, B13/B14 timeouts (recursive CTE, `pg_sleep`; the profile value comes back), B16 `executemany`, B17 `MultipleRowsError`, B18 `SECRET-4711` in no error, traceback or context, B19 `ResourceWarning`, B20 Core expressions, B21 connections return after errors (pool statistics), B22 `query_only` does not stick, B23..B25 health and `check`. B15 (`cancel`) is a 0.2 method (TAB-033). Green on SQLAlchemy 2.0.30 and 2.1.8 |
+| TAB-018 | No second connection (counting test) | `test_b06_no_second_connection` (SQLite: one `sqlite3` connection for every transaction after `from_url`'s own check) and `test_b02_no_second_connection` (PostgreSQL: one `connect` event and one session in `pg_stat_activity` for reads, writes and `health`) |
+| TAB-018 | `read()` enforces READ ONLY/`query_only` in the database | `test_b11_read_is_enforced_by_sqlite`, `test_b12_read_is_enforced_by_postgres` (SQLSTATE 25006), `test_b11_read_only_profile` and `test_b12_read_only_profile` (also on a plain `engine.connect()`, and after a `read()`: D-50) |
+| TAB-018 | Mutation probes | 11 probes (`BEGIN IMMEDIATE`, `query_only` on and off, untranslated errors, read-only profile, nesting, deadline removal, path checks in `from_url`, two TLS rules, TB-040) |
+| G-T1 | F-11, F-14, review N-4 | F-11 and TB-020: documentation-only aliases; F-14: `TypeError` from `Database()`/`Transaction()`; N-4 and TB-040: R-NORETRY over a stored classification with `during_commit` (contract I-42) |
+
 ## G-T1 conditions
 
 The independent G-T1 review (2026-11-08, planning folder `reviews/g-t1-review.md`) passed the API freeze with eight
@@ -452,10 +467,10 @@ Recorded here as the review asks; none blocks M2. Each is picked up by the work 
 |---|---|---|
 | F-09 | "stdlib-only" is a denylist: any other third-party import (for example `pluggy`, which comes with pytest) passes. An AST test should allow only `sys.stdlib_module_names` and the core modules in `errors`, `sql`, `config`, `sqlite`, `check`. `check.py` already has such a test (C-1) | Fixed in the M2 lane A pull request: `test_core_imports_only_the_standard_library_and_core_modules` with a negative probe (TB-019 closed) |
 | F-10 | The root package `tabrion` is in no contract; `from tabrion import Database` inside a core function goes through `__getattr__` to layer B unseen. Extend the AST test of F-09: no `import tabrion` or `from tabrion import` outside `tabrion/__init__.py` | Fixed with F-09 (the same test rejects `import tabrion` and `from tabrion import` in the core files) |
-| F-11 | `Statement` and `Params` appear in public layer-B signatures but are not exported from `tabrion` (G-5 rule). Decide: export them as `tabrion.Statement`/`tabrion.Params`, or document them as documentation-only aliases and drop them from `_sa.database.__all__` | TAB-018, TB-020 |
+| F-11 | `Statement` and `Params` appear in public layer-B signatures but are not exported from `tabrion` (G-5 rule). Decide: export them as `tabrion.Statement`/`tabrion.Params`, or document them as documentation-only aliases and drop them from `_sa.database.__all__` | Decided in TAB-018: documentation-only aliases, dropped from `_sa.database.__all__`; `surface.json` unchanged (contract I-36, TB-020 closed) |
 | F-12 | `DatabaseError.kind` over `classification: Classification \| None`: make `classification` required for `DatabaseError` or return `Kind.UNKNOWN`; plus `args = (code,)` and `__reduce__` for pickling (G-1 notes) | Fixed in TAB-010: `Kind.UNKNOWN` without a classification, `args == (code,)`, `__reduce__` (E18, E19) |
 | F-13 | Specification section 10 omitted `Transaction.stream` and the CR-DB modules TAB-CR-1/2 in the 0.2 row | Fixed in the follow-up pull request; the TAB-CR-1/2 modules need a place in the layers contract when they arrive (TB-014, TB-015) |
-| F-14 | `Database` has no `__init__`, so `Database()` builds an unusable object | TAB-018: a private keyword-only constructor or an `__init__` that raises `TypeError` pointing to `from_url`/`from_env`/`from_engine` |
+| F-14 | `Database` has no `__init__`, so `Database()` builds an unusable object | Fixed in TAB-018: `Database()` and `Transaction()` raise `TypeError` naming the factories, through `__new__`, so `surface.json` is unchanged (contract I-36; `test_f14_classes_have_no_public_constructor`) |
 | F-15 | macOS and Windows run on pull requests only when `sqlite.py` or `tests/sqlite/**` change; `config.py`, `errors.py`, `testing/sqlite.py` and `pyproject.toml` also matter there | TB-021: add them to `platforms.yml` and the manifest's `path_filters` together (`--self-check` keeps them equal) |
 | F-17 | Planning errata: doc 05 section 2.3 ("lazy import ... `allow_indirect_imports=false` + runtime test") is wrong, because import-linter records function-level imports (C-1 replaces it); doc 02 section 9 still writes `tabrion.check(target)` (G-6: the function is `tabrion.check.check`) | Planning errata, owner (O-8) |
 
@@ -627,6 +642,8 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-43 | TAB-030 | Contract 4.7: after a lost connection "every count is cleared" and the lock is replaced | Also: a key held on the lost connection raises `UsageError("postgres.lock_lost")` in `try_acquire`/`acquire` until `holds` or `release` acknowledges the loss (contract I-32) | Review L-3 of #6: a nested section would otherwise take a fresh hold and its `release` free the lock the outer section relies on. Additive: a new error code, no signature change |
 | D-44 | TAB-010 | Axentra TB-031 F-2: `install_db_error_redaction` replaces `Handler.handleError` process-wide | The filter rewrites a broken call made while a database error is handled; formatter and `emit` failures are a documented residual (SECURITY.md) | Tabrion installs nothing and has no install function; a new public name is a surface change; TB-050 |
 | D-45 | TAB-010 | Axentra TB-031 D-2: a public `redact_db_errors_processor` for native structlog | The processor is internal (`tabrion.errors._redact_db_errors_processor`); the filter's mapping branch covers structlog's stdlib integration | A new public name extends the frozen surface (`surface.json` unchanged); TB-051 |
+| D-49 | TAB-018 | Specification 3.1: the SQLite `connect` event calls `tabrion.sqlite.apply_profile` | An engine from `from_url` opens every connection through `tabrion.sqlite.connect` as its `creator`; `from_engine` applies `apply_profile` on checkout | `connect` also runs the path checks, the `0600` creation, the opened-file check and `mode=ro` for each connection, which a listener on an already opened connection cannot; still one connection, no second pool (contract I-36, I-37) |
+| D-50 | TAB-018 | Specification 3.1: PostgreSQL needs nothing at `reset`/`checkin` ("transaction ended = READ ONLY ended") | A `checkin` listener gives psycopg's `read_only` back to `None` after a Tabrion `read()` | SQLAlchemy resets `postgresql_readonly` to `read_only = False`, so psycopg sends `BEGIN READ WRITE` afterwards and overrides `default_transaction_read_only` of `Profile.readonly()` (contract I-41) |
 
 ## Score review
 

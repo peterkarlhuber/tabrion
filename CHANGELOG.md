@@ -100,6 +100,17 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
   transaction state, and carry 43 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
+- Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
+  `testing()`; `Database.from_url`, `from_env` and `from_engine` for SQLite (`pysqlite`) and PostgreSQL
+  (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode`, the SQLite path checks and `0600`
+  creation before the first connect, `StaticPool` for memory databases, `safe_url`, `close` and a `ResourceWarning`
+  for a forgotten `close`; `transaction()` (SQLite `BEGIN IMMEDIATE`, PostgreSQL isolation levels) and `read()`
+  (`query_only` or `BEGIN READ ONLY`, enforced by the database), nesting refused per thread, per-statement and
+  per-transaction timeouts, `execute` (with `executemany`), `fetch_one`, `fetch_all`, `fetch_scalar` and the
+  short forms on `Database`; driver errors become the `DatabaseError` subclass of their kind without a cause chain,
+  and a lost `COMMIT` is outcome unknown; `health(timeout=..., deep=...)` never raises for database errors; `check()`
+  calls `tabrion.check.check`. The layer-A profile runs on the same DBAPI connection through `tabrion.sqlite.connect`
+  and SQLAlchemy events (no second connection). Tested on SQLAlchemy 2.0.30 and 2.1, with mutation probes.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`
   and `all`; ruff, mypy `--strict` and import-linter contracts (layers, stdlib-only core, no Levuvo platform).
@@ -124,6 +135,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 - Import contracts: `tabrion.errors` is the bottom layer under `tabrion.sql` and `tabrion.config`, because
   `tabrion.config` raises `ConfigurationError`.
+- `classify(error, during_commit=True)` on a `TabrionError` whose stored classification is a connection error now
+  reports the outcome as unknown and not retryable (R-NORETRY, TB-040). `Database()` and `Transaction()` raise
+  `TypeError` instead of building an unusable object (G-T1 F-14).
 
 - G-T1 follow-up: the 0.2 names (`Result`, `Column` and the 0.2 methods of `Database` and `Transaction`) are no
   longer exported before 0.2; `tabrion.testing.profiles.ConnectionFactory` is replaced by `SQLiteConnect`.
