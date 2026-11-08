@@ -439,7 +439,7 @@ def test_r06_noinherit_member_of_the_owner(
     assert inspect_role(owner_conn, member.name).owned_tables == ("parts",)
 
 
-# --- TAB-T-R11, R12: roles a session can become (contract I-20, review finding H-1) --------------------------------
+# --- TAB-T-R19, R20: roles a session can become (contract I-20, review finding H-1) --------------------------------
 
 
 @pytest.fixture
@@ -460,7 +460,7 @@ def group_role(admin: Any) -> Iterator[Callable[[str], str]]:
 
 @pytest.mark.parametrize("inherit", ["INHERIT", "NOINHERIT"])
 @pytest.mark.parametrize(("attribute", "reason"), [("SUPERUSER", "superuser"), ("NOSUPERUSER BYPASSRLS", "bypass_rls")])
-def test_r11_member_of_a_privileged_role(
+def test_r19_member_of_a_privileged_role(
     connect: Callable[..., Any],
     make_role: Callable[..., Role],
     group_role: Callable[[str], str],
@@ -502,7 +502,7 @@ def test_r11_member_of_a_privileged_role(
     )
 
 
-def test_r11_indirect_membership(
+def test_r19_indirect_membership(
     connect: Callable[..., Any],
     make_role: Callable[..., Role],
     group_role: Callable[[str], str],
@@ -520,7 +520,7 @@ def test_r11_indirect_membership(
         check_role(conn)
 
 
-def test_r12_superuser_session_after_set_role(
+def test_r20_superuser_session_after_set_role(
     connect: Callable[..., Any], make_role: Callable[..., Role], schema: str, setup: Any
 ) -> None:
     """A superuser login with ``SET ROLE app``: ``RESET ROLE`` gives the superuser back, so it is one."""
@@ -537,7 +537,7 @@ def test_r12_superuser_session_after_set_role(
     assert inspect_role(conn, runtime.name).restricted
 
 
-def test_r12_login_role_that_can_become_bypassrls_after_set_role(
+def test_r20_login_role_that_can_become_bypassrls_after_set_role(
     connect: Callable[..., Any],
     make_role: Callable[..., Role],
     group_role: Callable[[str], str],
@@ -558,7 +558,7 @@ def test_r12_login_role_that_can_become_bypassrls_after_set_role(
     assert refused.value.details["reasons"] == "bypass_rls"
 
 
-def test_r11_plain_membership_stays_restricted(
+def test_r19_plain_membership_stays_restricted(
     connect: Callable[..., Any],
     make_role: Callable[..., Role],
     group_role: Callable[[str], str],

@@ -95,6 +95,11 @@ Accepted residual risks (documented, not vulnerabilities):
   can become one with `SET ROLE` (contract I-20). Membership of predefined roles such as `pg_execute_server_program`
   is not reported yet (TODO TB-036). Applications that still use Axentra's or Nodestro's own checks have the older
   gap (TODO TB-035).
+- `tabrion.postgres.grant_runtime_role` grants DML only, never `CREATE`, and refuses a runtime role that is or can
+  become the owner, a superuser or a BYPASSRLS role (contract I-35); Axentra's and Nodestro's own grant functions
+  accept such members (TODO TB-035). It runs as the owner role; it never reads a name through the `search_path`. A
+  later run without `protected_tables` gives the runtime role write access to the bookkeeping tables again: pass the
+  same `protected_tables` every time.
 - `tabrion.testing._faults` (internal, for tests only) listens on `127.0.0.1` and relays the PostgreSQL protocol in
   plain text: its `dsn()` disables TLS and GSS encryption, so the password travels unencrypted over loopback. Never
   point it at a production server or use it outside a test.

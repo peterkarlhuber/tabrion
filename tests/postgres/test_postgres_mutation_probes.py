@@ -160,7 +160,7 @@ PROBES = [
         "postgres/roles.py",
         "_ROLE_INFO_SQL = {\n",
         '_ROLE_INFO_HEAD = _ROLE_INFO_HEAD.replace("SESSION_USER", "CURRENT_USER")\n_ROLE_INFO_SQL = {\n',
-        "tests/postgres/test_roles.py::test_r12_superuser_session_after_set_role",
+        "tests/postgres/test_roles.py::test_r20_superuser_session_after_set_role",
     ),
     # Review H-1 / I-20: superuser through membership, not the attribute of current_user alone.
     (
@@ -168,7 +168,7 @@ PROBES = [
         "_ROLE_INFO_SQL = {\n",
         '_ROLE_INFO_HEAD = _ROLE_INFO_HEAD.replace("WHERE r.rolsuper", "WHERE r.rolsuper'
         ' AND r.rolname OPERATOR(pg_catalog.=) CURRENT_USER")\n_ROLE_INFO_SQL = {\n',
-        "tests/postgres/test_roles.py::test_r11_member_of_a_privileged_role",
+        "tests/postgres/test_roles.py::test_r19_member_of_a_privileged_role",
     ),
     # Review H-1: inspect_role judges membership of BYPASSRLS roles too.
     (
@@ -176,7 +176,7 @@ PROBES = [
         '            " EXISTS (SELECT 1 FROM pg_catalog.pg_roles s WHERE s.rolbypassrls"\n',
         '            " EXISTS (SELECT 1 FROM pg_catalog.pg_roles s WHERE s.rolbypassrls'
         ' AND s.oid OPERATOR(pg_catalog.=) r.oid"\n',
-        "tests/postgres/test_roles.py::test_r11_member_of_a_privileged_role",
+        "tests/postgres/test_roles.py::test_r19_member_of_a_privileged_role",
     ),
     # Review L-2: MEMBER, not USAGE (a NOINHERIT member may SET ROLE to the owner).
     (
@@ -327,6 +327,70 @@ PROBES = [
         "    except UnicodeEncodeError:\n",
         "    except LookupError:\n",
         "tests/unit/test_locks_and_faults_unit.py::test_lock_key_unpaired_surrogate",
+    ),
+    # Review DL-1 (#6 delta re-review): release() with a count of 0 acknowledges a loss seen elsewhere.
+    (
+        "postgres/locks.py",
+        "                self._lost.discard(key)  # the release of a hold that a lost connection ended\n",
+        "",
+        "tests/postgres/test_locks.py::test_l04_release_acknowledges_a_loss_seen_elsewhere",
+    ),
+    # Review DL-1 (#6 delta re-review): a forked child does not inherit the parent's lost keys.
+    (
+        "postgres/locks.py",
+        "            self._held.clear()\n            self._lost.clear()\n            self._pid = os.getpid()",
+        "            self._held.clear()\n            self._pid = os.getpid()",
+        "tests/postgres/test_locks.py::test_l10_fork_after_a_loss",
+    ),
+    # TAB-031 / I-35: a role that can become the owner is refused.
+    (
+        "postgres/roles.py",
+        "role == before.owner or bool(row[0]) or bool(before.owned_tables)",
+        "role == before.owner or bool(before.owned_tables)",
+        "tests/postgres/test_grants.py::test_r14_member_of_the_owner_is_refused_in_an_empty_schema",
+    ),
+    # TAB-031: the protected tables lose their write privileges.
+    (
+        "postgres/roles.py",
+        "            if cursor.fetchone() is not None:\n",
+        "            if False:\n",
+        "tests/postgres/test_grants.py::test_r15_protected_tables_in_the_named_schema_only",
+    ),
+    # TAB-031 / T-NOTX: never inside the caller's transaction.
+    (
+        "postgres/roles.py",
+        '        raise UsageError("postgres.nested_transaction")\n',
+        "        pass\n",
+        "tests/postgres/test_grants.py::test_r17_refuses_the_callers_transaction",
+    ),
+    # TAB-031 / I-34: the caller's pipeline is synced before the status is judged.
+    (
+        "postgres/roles.py",
+        "    settle(connection)  # pipeline mode: the status is known only after a sync (contract I-34)\n",
+        "",
+        "tests/postgres/test_grants.py::test_r17_own_transaction_leaves_the_connection_as_it_was",
+    ),
+    # TAB-031: the grants are one transaction.
+    (
+        "postgres/roles.py",
+        "    with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n"
+        "        for statement in _GRANTS:\n",
+        "    with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n        for statement in _GRANTS:\n",
+        "tests/postgres/test_grants.py::test_r17_atomic_when_the_connection_is_lost",
+    ),
+    # TAB-031: an owner without the right to grant CONNECT is not an error.
+    (
+        "postgres/roles.py",
+        "        except psycopg.errors.InsufficientPrivilege:\n",
+        "        except psycopg.errors.UndefinedTable:\n",
+        "tests/postgres/test_grants.py::test_r16_insufficient_privilege_is_ignored",
+    ),
+    # TAB-031: grant_connect=False grants no CONNECT.
+    (
+        "postgres/roles.py",
+        "    if grant_connect and not before.connect:\n",
+        "    if not before.connect:\n",
+        "tests/postgres/test_grants.py::test_r16_database_owner_grants_connect",
     ),
 ]
 
