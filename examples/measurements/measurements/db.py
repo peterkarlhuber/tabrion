@@ -20,13 +20,15 @@ from tabrion import sqlite as tsqlite
 
 
 def _v1(connection: sqlite3.Connection) -> None:
-    # seq: the local insertion order, the high-water mark of the transfer (RA-B-2). The natural key is UNIQUE, so a
+    # seq: the local insertion order, the high-water mark of the transfer (RA-B-2). AUTOINCREMENT keeps the largest seq
+    # ever used in sqlite_sequence, so a seq is never handed out twice, also after purging transferred rows (review
+    # M-1 of #16); a plain INTEGER PRIMARY KEY would reuse max(rowid) + 1. The natural key is UNIQUE, so a
     # reading captured twice is stored once. ts_utc is fixed-width ISO 8601 text in UTC ("...Z"), so text order is
     # time order. value is a finite REAL (no NaN or infinity, specification section 7).
     connection.execute(
         """
         CREATE TABLE measurement (
-            seq INTEGER PRIMARY KEY,
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
             device_id TEXT NOT NULL CHECK (length(device_id) BETWEEN 1 AND 64),
             channel TEXT NOT NULL CHECK (length(channel) BETWEEN 1 AND 64),
             ts_utc TEXT NOT NULL CHECK (length(ts_utc) = 27 AND substr(ts_utc, 27) = 'Z'),

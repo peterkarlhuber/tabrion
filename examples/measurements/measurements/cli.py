@@ -23,12 +23,41 @@ from measurements.db import open_database
 from measurements.store import Measurement, Store, synthetic
 
 
+def _parse(row: list[str]) -> Measurement:
+    """One CSV row; a ``ValueError`` names the field, never the value (metric MW-4, review L-2 of #16)."""
+    if len(row) not in (5, 6):
+        raise ValueError("expected 5 or 6 fields")
+    invalid: str | None = None
+    moment, value, quality = None, 0.0, 0
+    for field in ("ts_utc", "value", "quality"):
+        try:
+            if field == "ts_utc":
+                moment = datetime.fromisoformat(row[2])
+            elif field == "value":
+                value = float(row[3])
+            elif len(row) == 6:
+                quality = int(row[5])
+        except ValueError:
+            invalid = field
+        if invalid is not None:
+            raise ValueError(f"{invalid} is invalid")
+    if moment is None:  # pragma: no cover - fromisoformat returns or raises
+        raise ValueError("ts_utc is invalid")
+    return Measurement(row[0], row[1], moment, value, row[4], quality)
+
+
 def _read_csv(stream: TextIO) -> Iterator[Measurement]:
-    for row in csv.reader(stream):
+    for line, row in enumerate(csv.reader(stream), start=1):
         if not row or row[0].startswith("#"):
             continue
-        quality = int(row[5]) if len(row) > 5 else 0
-        yield Measurement(row[0], row[1], datetime.fromisoformat(row[2]), float(row[3]), row[4], quality)
+        problem = None
+        try:
+            measurement = _parse(row)
+        except ValueError as exc:
+            problem = f"line {line}: {exc}"
+        if problem is not None:
+            raise ValueError(problem)  # outside the except block: no context with the value
+        yield measurement
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -47,7 +76,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         store = Store(connection)
         if args.command == "capture":
-            print(store.capture(_read_csv(sys.stdin)))
+            try:
+                stored = store.capture(_read_csv(sys.stdin))
+            except ValueError as exc:
+                # Tabrion's and this application's own fixed texts: a line or position and a field, never a value.
+                print(f"measurements: {exc}; nothing was stored", file=sys.stderr)
+                return 1
+            print(stored)
         elif args.command == "demo":
             started = time.perf_counter()
             stored = store.capture(synthetic(args.count))

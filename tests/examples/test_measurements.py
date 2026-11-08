@@ -13,6 +13,7 @@ import io
 import math
 import os
 from pathlib import Path
+import selectors
 import signal
 import sqlite3
 import stat
@@ -127,11 +128,16 @@ def test_files_are_owner_only(tmp_path: Path) -> None:
 
 
 KILLED_CHILD = """
-import sys, time
+import os, sys, time
 from measurements import Store, open_database
 from measurements.store import synthetic
 
 connection = open_database(sys.argv[1], backup_dir=sys.argv[2])
+# A page cache of 5 pages: the open transaction's dirty pages spill into the WAL long before the commit, so the kill
+# leaves uncommitted frames on disk, not just in memory (review L-3 of #16).
+connection.execute("PRAGMA cache_size = 5")
+wal = sys.argv[1] + "-wal"
+wal_before = os.path.getsize(wal) if os.path.exists(wal) else 0
 before = connection.total_changes
 calls = 0
 when = sys.argv[3]
@@ -140,9 +146,10 @@ when = sys.argv[3]
 def progress():
     global calls
     calls += 1
-    if when == "during" and calls == 20:
+    if when == "during" and calls == 200:
         # Inside the batch's transaction, with part of it written: report how much, then wait to be killed.
-        print("inside", connection.in_transaction, connection.total_changes - before, flush=True)
+        written = connection.total_changes - before
+        print("inside", connection.in_transaction, written, wal_before, os.path.getsize(wal), flush=True)
         time.sleep(60)
     return 0
 
@@ -152,6 +159,16 @@ stored = Store(connection).capture(synthetic(10_000))
 print("committed", stored, flush=True)
 time.sleep(60)
 """
+
+
+def first_line(child: subprocess.Popen[str], *, timeout: float) -> list[str]:
+    """The child's first line of output, or a clear failure instead of a hang (review L-3 of #16)."""
+    assert child.stdout is not None
+    with selectors.DefaultSelector() as selector:
+        selector.register(child.stdout, selectors.EVENT_READ)
+        if not selector.select(timeout):
+            pytest.fail(f"the child printed nothing within {timeout} s")
+    return child.stdout.readline().split()
 
 
 @POSIX
@@ -169,10 +186,11 @@ def test_kill_during_the_batch_leaves_zero_or_all(tmp_path: Path, when: str) -> 
     )
     try:
         assert child.stdout is not None
-        line = child.stdout.readline().split()
+        line = first_line(child, timeout=60)
         if when == "during":
             assert line[:2] == ["inside", "True"], line
             assert 0 < int(line[2]) < 10_000  # part of the batch was written in the open transaction
+            assert int(line[4]) > int(line[3])  # and uncommitted pages of it are in the WAL file
         else:
             assert line == ["committed", "10000"], line
         child.send_signal(signal.SIGKILL)
@@ -257,3 +275,103 @@ def test_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: py
     assert capsys.readouterr().out == "2\n"
     assert main([*base, "count"]) == 0
     assert capsys.readouterr().out == "102\n"
+
+
+def test_seq_is_never_reused_after_a_purge(tmp_path: Path) -> None:
+    """Review M-1 of #16: the transfer's high-water mark must still see rows captured after a purge."""
+    connection = open_database(tmp_path / "m.db", backup_dir=tmp_path / "backups")
+    try:
+        store = Store(connection)
+        store.capture(synthetic(100))
+        mark = store.after(0, limit=1000)[-1].seq  # transferred up to here
+        with tsqlite.write_transaction(connection):
+            connection.execute("DELETE FROM measurement")  # the edge device purges what was transferred
+        start = datetime(2027, 1, 1, tzinfo=UTC)
+        store.capture(synthetic(3, start=start))
+        fresh = store.after(mark)
+        assert len(fresh) == 3 and all(stored.seq > mark for stored in fresh)
+        with tsqlite.write_transaction(connection):
+            connection.execute("DELETE FROM measurement WHERE seq = ?", (fresh[-1].seq,))  # the newest row
+        store.capture(synthetic(1, start=start + timedelta(days=1)))
+        (newest,) = store.after(fresh[-1].seq)
+        assert newest.seq > fresh[-1].seq
+    finally:
+        connection.close()
+
+
+def test_after_pages_in_capture_order(tmp_path: Path) -> None:
+    """Review L-5 of #16: ``after`` follows ``seq``, not time, and pages with ``limit``."""
+    connection = open_database(tmp_path / "m.db", backup_dir=tmp_path / "backups")
+    try:
+        store = Store(connection)
+        late = datetime(2026, 6, 1, tzinfo=UTC)
+        store.capture(synthetic(2, device_id="a", start=late))  # captured first, latest in time
+        store.capture(synthetic(2, device_id="b", start=late - timedelta(days=30)))
+        store.capture(synthetic(1, device_id="c", start=late - timedelta(days=60)))
+        seen: list[tuple[int, str]] = []
+        mark = 0
+        while page := store.after(mark, limit=2):
+            assert len(page) <= 2
+            seen += [(stored.seq, stored.measurement.device_id) for stored in page]
+            mark = page[-1].seq
+        assert [device for _, device in seen] == ["a", "a", "b", "b", "c"]
+        assert [seq for seq, _ in seen] == sorted(seq for seq, _ in seen)
+    finally:
+        connection.close()
+
+
+def test_the_first_invalid_position_is_reported(tmp_path: Path) -> None:
+    connection = open_database(tmp_path / "m.db", backup_dir=tmp_path / "backups")
+    try:
+        good = list(synthetic(5))
+        bad_value = Measurement("d", "c", good[0].ts_utc, math.nan, "V")
+        bad_unit = Measurement("d", "c", good[0].ts_utc, 1.0, "")
+        with pytest.raises(ValueError, match=r"^measurement 1: value"):
+            Store(connection).capture([good[0], bad_value, good[1], bad_unit])
+        old = Measurement("d", "c", datetime(999, 12, 31, tzinfo=UTC), 1.0, "V")
+        with pytest.raises(ValueError, match=r"^measurement 0: ts_utc must be in the years 1000 to 9999$"):
+            Store(connection).capture([old])
+        assert not connection.in_transaction and Store(connection).count() == 0
+    finally:
+        connection.close()
+
+
+def test_a_constraint_violation_becomes_a_fixed_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A writer that bypasses ``Measurement.row``: the CHECK refuses it, the batch is rolled back, and the error
+    carries no driver text (which may quote a value)."""
+    connection = open_database(tmp_path / "m.db", backup_dir=tmp_path / "backups")
+    try:
+        good = list(synthetic(2))
+        rows = [good[0].row(), ("d", "c", good[1].row()[2], 1.0, "CANARY-unit-too-long", 0)]
+        monkeypatch.setattr(Measurement, "row", lambda self: rows.pop(0))
+        with pytest.raises(ValueError, match="violates a constraint") as info:
+            Store(connection).capture(good)
+        assert "CANARY" not in str(info.value) and info.value.__context__ is None
+        assert not connection.in_transaction
+        monkeypatch.undo()
+        assert Store(connection).count() == 0
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize(
+    ("line", "message"),
+    [
+        ("d,c,NOT-A-DATE-CANARY,1.0,V", "line 2: ts_utc is invalid; nothing was stored"),
+        ("d,c,2026-01-01T00:00:00Z,CANARY,V", "line 2: value is invalid; nothing was stored"),
+        ("d,c,2026-01-01T00:00:00Z,1.0,V,CANARY", "line 2: quality is invalid; nothing was stored"),
+        ("d,c", "line 2: expected 5 or 6 fields; nothing was stored"),
+        ("d,c,2026-01-01T00:00:00,1.0,V", "measurement 1: ts_utc must be timezone-aware; nothing was stored"),
+    ],
+)
+def test_cli_errors_name_no_values(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, line: str, message: str
+) -> None:
+    """Review L-2 of #16: the CLI names the line and the field, never the input."""
+    base = ["--db", str(tmp_path / "m.db"), "--backup-dir", str(tmp_path / "backups")]
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"d,c,2026-01-01T00:00:00Z,1.0,V\n{line}\n"))
+    assert main([*base, "capture"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == f"measurements: {message}\n" and "CANARY" not in captured.err + captured.out
+    assert main([*base, "count"]) == 0
+    assert capsys.readouterr().out == "0\n"

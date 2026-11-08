@@ -19,10 +19,14 @@ Row = tuple[str, str, str, float, str, int]
 
 
 def format_ts(moment: datetime) -> str:
-    """Fixed-width UTC text, ``2026-11-08T12:00:00.000000Z``; a naive ``datetime`` is refused."""
-    if moment.tzinfo is None or moment.utcoffset() is None:
+    """Fixed-width UTC text, ``2026-11-08T12:00:00.000000Z``; a naive ``datetime`` and a year before 1000 (which
+    would not be fixed-width) are refused (review Info 2 of #16)."""
+    if not isinstance(moment, datetime) or moment.tzinfo is None or moment.utcoffset() is None:
         raise ValueError("ts_utc must be timezone-aware")
-    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    utc = moment.astimezone(UTC)
+    if utc.year < 1000:
+        raise ValueError("ts_utc must be in the years 1000 to 9999")
+    return utc.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def parse_ts(text: str) -> datetime:
@@ -77,8 +81,10 @@ class Store:
     def capture(self, batch: Iterable[Measurement]) -> int:
         """Store ``batch`` in one ``BEGIN IMMEDIATE`` transaction: all of it or nothing.
 
-        Every measurement is validated before the transaction starts (``ValueError`` names its position, never its
-        value). A reading whose natural key is already stored is skipped; the result counts the new rows.
+        Every measurement is validated before the transaction starts (``ValueError`` names the position of the first
+        invalid one, never its value). A reading whose natural key is already stored is skipped, also when its value
+        differs (``ON CONFLICT DO NOTHING``); the result counts the new rows. The batch is held in memory, so split
+        very large inputs into several batches.
         """
         rows: list[Row] = []
         invalid: str | None = None
@@ -91,10 +97,19 @@ class Store:
                 raise ValueError(invalid)  # outside the except block: no context
         if not rows:
             return 0
-        with tsqlite.write_transaction(self.connection) as connection:
-            before = connection.total_changes
-            connection.executemany(_INSERT, rows)
-            return connection.total_changes - before
+        stored = 0
+        violated = False
+        try:
+            with tsqlite.write_transaction(self.connection) as connection:
+                before = connection.total_changes
+                connection.executemany(_INSERT, rows)
+                stored = connection.total_changes - before
+        except sqlite3.IntegrityError:
+            violated = True  # rolled back by write_transaction: nothing of the batch is stored
+        if violated:
+            # Only a writer that bypasses Measurement.row gets here; the driver's message may quote a value.
+            raise ValueError("the batch violates a constraint of the measurement table; nothing was stored")
+        return stored
 
     def count(self) -> int:
         with tsqlite.read_transaction(self.connection) as connection:
