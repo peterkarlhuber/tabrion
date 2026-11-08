@@ -49,8 +49,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   workflow runs them on macOS and Windows.
 - Port of Axentra's TB-031 review fixes (`axe-tb031-review.md`) to `DbErrorRedactionFilter`: tracebacks are
   redacted when a non-database exception carries database text in its message, `args` or notes (F-1); a broken log
-  call made while a database error is handled no longer reaches `logging`'s error report on stderr (F-2, the
-  broken-call case); the inline label search is linear (F-3, a log-injection DoS); traceback structure lines end a
+  call no longer reaches `logging`'s error report on stderr when a database error or its text is being handled or
+  is in its template or arguments (F-2 for broken calls; a failing formatter or `emit` is a documented residual); the inline label search is linear (F-3, a log-injection DoS); traceback structure lines end a
   removed part only inside a traceback (F-4, re-review N-1); a mapping message stays a mapping and an `exc_info` in
   it is redacted, so structlog's `ProcessorFormatter` keeps working (F-5, D-1, D-2); removed text is marked
   `[redacted: database server text]` (F-7); guarded attribute access (D-3). `diagnose` also warns when the database
@@ -78,13 +78,27 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   whose `as_dict()` has the keys of both existing formats; `RoleMissing` without the role name. A role counts as
   superuser or BYPASSRLS also when it, or the session's login role, can become one with `SET ROLE` (also as a
   NOINHERIT member), which the Axentra and Nodestro checks miss; a `schema` that does not exist gives an empty report.
+- `tabrion.postgres` advisory locks (TAB-030): `lock_key` (stable int64 from SHA-256), `SessionLock` on an own
+  autocommit connection (lazy, counted holds, liveness probe, counts cleared on a lost connection, thread-safe, safe
+  across `fork`, conninfo never in `repr`), and `try_advisory_lock`, `wait_advisory_lock` (polling, refused inside a
+  transaction, no open snapshot between attempts, compatible with `CREATE INDEX CONCURRENTLY`), `advisory_unlock` on a
+  given connection. Errors are never retried. A key held on a lost connection raises
+  `UsageError("postgres.lock_lost")` until `holds` or `release` acknowledges the loss; a forked child gets a fresh
+  internal lock; `lock_key` raises `ValueError` for a string without a UTF-8 form.
+- In psycopg pipeline mode every `tabrion.postgres` function syncs the caller's pipeline first, so a failing statement
+  no longer aborts the caller's pipeline transaction (review DL-1 of #5); an error of a statement the caller queued
+  propagates from every function, `ping` included, and `wait_advisory_lock` syncs each attempt before it sleeps.
 - Every `tabrion.postgres` function reads through its own `tuple_row` cursor, leaves the transaction state, row
   factory and `autocommit` of a handed-in connection unchanged (T-NOTX), runs under a savepoint inside the caller's
   transaction so that a failing statement does not abort it, and qualifies catalog functions, types and operators
   with `pg_catalog`, so a hostile `search_path` can neither replace them nor run its code as the caller.
+- Tests: an internal fault-injection proxy (`tabrion.testing._faults`, unstable and not public API; TAB-034, QA-3)
+  that cuts a statement's reply, the connection in flight or the request, or delays the answer, placed by the
+  protocol: a lost reply leaves the statement run exactly once and classified as outcome unknown; `ping`,
+  `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 24 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  transaction state, and carry 43 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
   pool tests.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`

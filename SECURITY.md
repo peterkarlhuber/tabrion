@@ -71,8 +71,20 @@ Accepted residual risks (documented, not vulnerabilities):
   - (R-2) values passed through `extra=` are not inspected;
   - when a formatter or a handler's `emit` fails while a database error is being handled, `logging`'s
     `Handler.handleError` prints the failure's chain, with that error's `DETAIL`, to `sys.stderr`; no filter sees
-    that output (Axentra review F-2; the broken-call case is covered by the filter). Set `logging.raiseExceptions =
-    False` in production entry points; a redacting `handleError` needs a public install function (TODO TB-050);
+    that output (Axentra review F-2). A broken call (too few arguments, a missing key, a wrong type) is covered: the
+    filter rewrites it when a database error or its text is being handled, or is in the template or an argument, so
+    `logging` never reports it. Set `logging.raiseExceptions = False` in production entry points; a redacting
+    `handleError` needs a public install function (TODO TB-050);
+  - installed through the log record factory, the filter sets `db_sqlstate` and `db_constraint` before
+    `Logger.makeRecord` applies `extra=`, so these two names are reserved: passing them in `extra=` raises
+    `KeyError` from the logging call. Installed on a handler or logger, the filter overwrites them instead (TODO
+    TB-050 covers a `makeRecord` that accepts them);
+  - `db_sqlstate`/`db_constraint` name the first database error found in the record, also one in a suppressed
+    context (`raise ... from None`); `classify` of the logged exception follows I-13 and may say `UNKNOWN` there;
+  - a mapping-message value whose `repr` is clean but whose `str` embeds a database error is kept, and a renderer
+    that uses `str` (`json.dumps(..., default=str)`) prints it; an argument whose `__str__` returns clean text on
+    the first call and the error text on the second is printed (the filter does not freeze the message). Both need
+    such objects in the application; log database errors as objects;
   - structlog's native processor chain renders `exc_info` itself; the filter covers structlog's stdlib integration
     (`ProcessorFormatter`), not native structlog loggers (TODO TB-051);
   - a value line that is exactly a traceback structure line ends a removed part early, but only inside a formatted
@@ -92,7 +104,9 @@ Accepted residual risks (documented, not vulnerabilities):
 - `tabrion.postgres.ping` bounds the server's work (`SET LOCAL statement_timeout`) and the pool checkout, not a
   network that stops answering in the middle of a statement, nor a connection another thread holds (psycopg's
   connection lock); set TCP keepalives or `tcp_user_timeout` on the connection, or run the check in a thread, when a
-  hard deadline matters (TODO TB-034).
+  hard deadline matters (TODO TB-034). The same holds for `tabrion.postgres.SessionLock`: after a half-open TCP loss
+  the server keeps the old session and its locks until TCP gives up, so pass keepalives (`keepalives_idle`,
+  `keepalives_interval`, `keepalives_count`) or `tcp_user_timeout` in `connect_kwargs`.
 - `tabrion.postgres` qualifies every catalog function, relation, type and operator it uses with `pg_catalog`
   (`::pg_catalog.text`, `OPERATOR(pg_catalog.=)`), so a schema that a caller's `search_path` names *before*
   `pg_catalog` (the CVE-2018-1058 pattern) can neither change its answers nor run its owner's code as the role that
@@ -103,4 +117,7 @@ Accepted residual risks (documented, not vulnerabilities):
   can become one with `SET ROLE` (contract I-20). Membership of predefined roles such as `pg_execute_server_program`
   is not reported yet (TODO TB-036). Applications that still use Axentra's or Nodestro's own checks have the older
   gap (TODO TB-035).
+- `tabrion.testing._faults` (internal, for tests only) listens on `127.0.0.1` and relays the PostgreSQL protocol in
+  plain text: its `dsn()` disables TLS and GSS encryption, so the password travels unencrypted over loopback. Never
+  point it at a production server or use it outside a test.
 - Vulnerabilities in SQLite, PostgreSQL, psycopg, SQLAlchemy or Alembic belong to their maintainers.
