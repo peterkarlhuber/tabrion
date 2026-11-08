@@ -229,6 +229,13 @@ PROBES = [
         "",
         "tests/unit/test_errors.py::test_f2_broken_call_while_a_database_error_is_handled",
     ),
+    # Delta re-review TD-1: server text in the template of a broken call.
+    (
+        "errors.py",
+        "            if not found and not leaky and not _may_hold_server_text(template):\n",
+        "            if not found and not leaky:\n",
+        "tests/unit/test_errors.py::test_td1_broken_call_with_database_text_in_the_template",
+    ),
     # Review T-2: server text in the exception being handled.
     (
         "errors.py",

@@ -6,6 +6,15 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+## [0.1.0a1] - internal pre-release, not published
+
+TABRION TAB-038: the tag `v0.1.0a1` on the merge commit of this version is an internal pre-release for **unmerged**
+integration branches only (RC-8; [installation](docs/getting-started/installation.md#internal-pre-release-v010a1)).
+Its scope is `tabrion.errors`, `tabrion.sql` and `tabrion.config` (TAB-010..TAB-012). The other modules that are
+already in the tree (`tabrion.sqlite`, `tabrion.postgres`) are included as they are, without the a1 promise; layer
+B, `tabrion.check`, `tabrion.migrations` and `tabrion.testing` still raise `NotImplementedError`. No PyPI upload,
+no GitHub release and no announcement (G-R). It satisfies no final range such as `tabrion>=0.1,<0.2`.
+
 ### Added
 
 - `tabrion.errors` (TAB-010): `classify` maps psycopg, sqlite3 and SQLAlchemy errors to a value-free
