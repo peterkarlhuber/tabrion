@@ -55,6 +55,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - `examples/parts` functions (RA-A-2): `parts.catalog` with CRUD, a status life cycle under an optimistic lock,
   exact properties, components, bill of materials and where-used; the same tests on SQLite and PostgreSQL, including
   a lost-update test. Its foreign keys use `NO ACTION` (TODO TB-110).
+- `examples/parts-baseline` (RA-A-3): the parts application with plain SQLAlchemy and Alembic, run by the same
+  shared suite (`tests/examples/parts_suite.py`); its deviations are strict `xfail`s, measurements for RA-EVAL.
 
 ### Changed
 

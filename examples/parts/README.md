@@ -88,7 +88,9 @@ are waited for, not a `database is locked` failure) and Tabrion's errors.
 
 ## Tests
 
-`tests/examples/test_parts.py` runs every test on SQLite and on PostgreSQL. The PostgreSQL case needs
+`tests/examples/test_parts.py` runs every test on SQLite and on PostgreSQL; most of them are the shared suite
+`tests/examples/parts_suite.py`, which also runs against the plain SQLAlchemy baseline `examples/parts-baseline`
+(RA-A-3, with its measured deviations). The PostgreSQL case needs
 `TABRION_TEST_POSTGRES` and runs in a schema of its own from `tabrion.testing`'s `tabrion_postgres_schema`. The tests
 cover:
 

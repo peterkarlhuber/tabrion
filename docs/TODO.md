@@ -160,18 +160,20 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 in review, #22) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
-  RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 in review, #22; RA-A-2 in review,
+  #29; RA-A-3 in review) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
   tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. RA-B-1 is
   `examples/measurements` (local capture, layer A). Its tests live in `tests/examples/` and run inside the normal
   suite: `tests/examples/conftest.py` puts each application on `sys.path`, and `mypy_path` in `pyproject.toml` names
-  it for `mypy --strict src tests scripts`.
+  it for `mypy --strict src tests scripts`. RA-A-3 is `examples/parts-baseline` (package `parts_baseline`, plain
+  SQLAlchemy); `tests/examples/parts_suite.py` is the suite both parts variants run, and a baseline deviation is a
+  strict `xfail` with its reason (one so far: a failing upgrade is not atomic on SQLite).
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-A-1 review fixes (#22), then RA-A-2 (functions, stacked on #22) and RA-A-3 (baseline); RA-B-2..4
-  in `examples/measurements` (lane H).
+- **Next step:** reviews of #22, #29 and RA-A-3 (stacked in that order); RA-B-2..4 in `examples/measurements`
+  (lane H); then RA-EVAL.
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
