@@ -1145,13 +1145,53 @@ def test_b11_attach_of_the_own_file_is_refused_under_read_only(tmp_path: Path) -
     """Re-review N-2: mode=ro covers the main file only; ATTACH would open the same file read-write."""
     path = tmp_path / "ro.db"
     with read_only_db(path) as database:
-        with pytest.raises(TabrionError), database.read() as tx:
+        with pytest.raises(TabrionError) as info, database.read() as tx:
             tx.execute("PRAGMA query_only = OFF")
             tx.execute("ATTACH DATABASE :p AS w", {"p": str(path)})
-            tx.execute("INSERT INTO w.t VALUES (1)")  # pragma: no cover - the ATTACH fails
+            # Unreachable while the limit holds; without it the restore below would satisfy the read-back, so this
+            # test fails when the limit is removed (re-review 2 R-1 of #12).
+            tx.execute("INSERT INTO w.t VALUES (1)")  # pragma: no cover
+            tx.execute("PRAGMA query_only = ON")  # pragma: no cover
+        assert info.value.code != "database.read_only"  # the ATTACH failed, not the read-back
         assert database.fetch_scalar("SELECT count(*) FROM t") == 0
     with Database.from_url(f"sqlite:///{path}") as writable:
         assert writable.fetch_scalar("SELECT count(*) FROM t") == 0
+
+
+@pytest.mark.security
+def test_b11_attach_limit_is_zero_under_read_only(tmp_path: Path) -> None:
+    with read_only_db(tmp_path / "ro.db") as database, database.read() as tx:
+        dbapi: Any = tx.connection.connection.dbapi_connection
+        assert dbapi.getlimit(sqlite3.SQLITE_LIMIT_ATTACHED) == 0
+    with Database.from_url(f"sqlite:///{tmp_path / 'rw.db'}") as writable, writable.read() as tx:
+        dbapi = tx.connection.connection.dbapi_connection
+        assert dbapi.getlimit(sqlite3.SQLITE_LIMIT_ATTACHED) > 0
+
+
+@pytest.mark.security
+def test_b11_refused_read_invalidates_the_sqlite_connection(tmp_path: Path) -> None:
+    """Re-review 2 R-2: an attached database and a raised limit survive a rollback, so the connection is dropped."""
+    path = tmp_path / "ro.db"
+    with read_only_db(path) as database:
+        with pytest.raises(UsageError, match=r"database\.read_only"), database.read() as tx:
+            raw: Any = tx.connection.connection.dbapi_connection
+            raw.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED, 10)  # deliberate code on the raw connection
+            tx.execute("PRAGMA query_only = OFF")
+            tx.execute("ATTACH DATABASE :p AS w", {"p": str(path)})
+        with database.read() as tx:
+            fresh: Any = tx.connection.connection.dbapi_connection
+            assert fresh is not raw
+            assert fresh.getlimit(sqlite3.SQLITE_LIMIT_ATTACHED) == 0
+            assert [row[1] for row in fresh.execute("PRAGMA database_list")] == ["main"]
+
+
+def test_b11_refused_read_keeps_the_in_memory_database(tmp_path: Path) -> None:
+    with Database.from_url("sqlite://") as database:
+        database.execute("CREATE TABLE t (n INTEGER)")
+        database.execute("INSERT INTO t VALUES (1)")
+        with pytest.raises(UsageError, match=r"database\.read_only"), database.read() as tx:
+            tx.execute("PRAGMA query_only = OFF")
+        assert database.fetch_scalar("SELECT count(*) FROM t") == 1  # the shared connection is the database
 
 
 @pytest.mark.security
