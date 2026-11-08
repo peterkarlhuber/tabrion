@@ -38,7 +38,8 @@ Both variants share three pieces of code:
 - **`errors.py`:** copied unchanged.
 - **`catalog.py`:** the same functions with an `Engine` in place of a `Database`. It uses `engine.connect()` in
   place of `read()` and `engine.begin()` in place of `transaction()`. It catches `sqlalchemy.exc.IntegrityError`
-  in place of `IntegrityViolation`.
+  (`DBAPIError`) in place of Tabrion's `DatabaseError`. On PostgreSQL it takes the same advisory transaction lock
+  before the cycle check; on SQLite it adds nothing (see the second deviation).
 
 The plumbing that Tabrion provides in `examples/parts` lives in `parts_baseline/db.py` here:
 
@@ -46,7 +47,8 @@ The plumbing that Tabrion provides in `examples/parts` lives in `parts_baseline/
 |---|---|---|
 | Opening the database | `Database.from_url(url, profile=...)` | `create_engine`: a `connect` listener for `PRAGMA foreign_keys=ON`, `pool_pre_ping`, the psycopg 3 driver name, and `timezone` and `search_path` through `options` |
 | Transactions | `transaction()` (`BEGIN IMMEDIATE` on SQLite) and `read()` (read-only) | `engine.begin()` and `engine.connect()`; pysqlite's default transaction handling |
-| Errors | `IntegrityViolation.kind` | `classify`: SQLSTATE on PostgreSQL, the message text on SQLite |
+| Errors | `DatabaseError.kind` (`UNIQUE`, `FOREIGN_KEY`, `CHECK`, `DATA`) | `classify`: SQLSTATE on PostgreSQL, the message text on SQLite |
+| The advisory lock key of `add_component` on PostgreSQL | `tabrion.postgres.lock_key` | `relations_lock`, a SHA-256 of the name |
 | Start-up gate | `tabrion.migrations.status` / `require_current` | `status` / `require_current` written with Alembic's `MigrationContext` and `ScriptDirectory` |
 
 ## Measurements for RA-EVAL
@@ -63,6 +65,9 @@ The suite covers:
 - a concurrent SQLite writer;
 - decimal and timestamp ordering;
 - CRUD, the life cycle, the relations and the bill of materials;
+- the review cases of #29: concurrent cycle additions, a stored cycle, a 1500-level chain, 22 diamond levels, exact
+  rounding, the shortest depth, `updated_at`, the `NotFound` paths, `InvalidValue`, a concurrent first
+  `set_property`;
 - the lost-update test, and the same test without the version check.
 
 Every test runs on SQLite and PostgreSQL. A test the baseline fails is listed in `BASELINE.deviations` with its
@@ -70,14 +75,15 @@ reason. It runs as a strict `xfail`: the suite stays green, and it turns red if 
 
 | Result | Tabrion | Baseline |
 |---|---|---|
-| Suite, SQLite and PostgreSQL 16 | all pass | all pass but one |
+| Suite, SQLite and PostgreSQL 16 | all pass | all pass but two, both on SQLite |
 | **Deviation:** a failing second revision during `upgrade` from base, on SQLite | nothing is left behind | the tables of `0001` stay, with an empty `alembic_version` table; the next `upgrade` fails because the tables exist. pysqlite opens a transaction only before `INSERT`, `UPDATE` and `DELETE`, so Alembic's DDL runs outside the `engine.begin()` transaction (PostgreSQL is atomic in both variants) |
+| **Deviation:** two concurrent `add_component` calls with disjoint rows (`A → B`, `C → D` while `B → C` and `D → A` exist), on SQLite | the second one is refused (`BEGIN IMMEDIATE` serializes the check) | both succeed and close a cycle: pysqlite runs the check outside a transaction and takes the write lock only with the `INSERT`. PostgreSQL is correct in both variants (the advisory lock) |
 | MW-3, lost update (5 threads, SQLite and PostgreSQL) | 5, no lock error | 5, no lock error: the optimistic lock is in the shared `catalog.py` |
 | `upgrade` while another SQLite writer holds the database | waits (`BEGIN IMMEDIATE`) | waits too: pysqlite reads outside a transaction, so there is no stale snapshot to fail on |
-| MW-1 inputs: code lines of the database plumbing (no blank lines, comments or docstrings) | `db.py` 28 + `env.py` 17 = 45 | `db.py` 85 + `env.py` 22 = 107 |
+| MW-1 inputs: code lines of the database plumbing (no blank lines, comments or docstrings) | `db.py` 28 + `env.py` 17 = 45 | `db.py` 98 + `env.py` 22 = 120 |
 | MW-8, changing the engine | the URL only | the URL only |
 
-The two variants share the error mapping in `catalog.py`: 13 lines in each. The suite does not cover:
+The error mapping in `catalog.py` (`_write` and its table) has the same size in both variants. The suite does not cover:
 - the read-only profile;
 - Tabrion's classified errors for statement and type failures;
 - the PostgreSQL session settings.

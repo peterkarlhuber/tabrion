@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-AXENTRA_COMMIT = "9c4666f"
+AXENTRA_COMMIT = "9c4666fe5a44b158ffa9f0149b7bcd6008b1cd7e"
 
 _DOLLAR_TAG = re.compile(r"\$[A-Za-z_]*\$")
 

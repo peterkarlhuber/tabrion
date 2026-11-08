@@ -2,31 +2,40 @@
 on a SQLAlchemy ``Engine``.
 
 Every function takes the application's engine and runs in one connection (``engine.connect()`` for queries,
-``engine.begin()`` for changes). A database error arrives as SQLAlchemy's ``IntegrityError``; ``db.classify`` tells
-the constraints apart and the error becomes this application's own error.
+``engine.begin()`` for changes). A database error arrives as SQLAlchemy's ``DBAPIError``; ``db.classify`` tells the
+constraints apart and the error becomes this application's own error.
 
 The optimistic lock (``version``): every change of a part names the version the caller read and runs
 ``UPDATE ... WHERE part_number = ? AND version = ?`` with ``version = version + 1``. No row changed means another
 writer was first: ``StaleVersion``, and the caller reads again. Nothing is held between the read and the write, and
 no lost update is possible on either engine.
+
+The cycle check of ``add_component`` reads the relations and then inserts one; two such transactions with
+disjoint rows could each pass the check and together close a cycle. On PostgreSQL ``add_component`` takes the
+transaction-level advisory lock ``RELATIONS_LOCK`` first, as ``examples/parts`` does. On SQLite the baseline adds
+nothing: pysqlite runs the check outside a transaction and takes the write lock only with the ``INSERT``, so the
+race stays (a measured deviation, see the README); ``examples/parts`` gets ``BEGIN IMMEDIATE`` from Tabrion.
 """
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import MAX_EMAX, MAX_PREC, MIN_EMIN, ROUND_HALF_EVEN, Context, Decimal, localcontext
 from typing import Any, TypeVar
 
 import sqlalchemy as sa
 
-from parts_baseline.db import Violation, classify
+from parts_baseline.db import Violation, classify, relations_lock
 from parts_baseline.errors import (
     AlreadyExists,
+    CycleFound,
     CycleRefused,
     InUse,
     InvalidTransition,
+    InvalidValue,
     NotFound,
     PartsError,
     StaleVersion,
@@ -40,6 +49,15 @@ TRANSITIONS: dict[str, frozenset[str]] = {
     "obsolete": frozenset(),
 }
 """The life cycle: a released part can be blocked and released again; obsolete is final."""
+
+RELATIONS_LOCK = relations_lock()
+"""The advisory lock key that serializes ``add_component`` on PostgreSQL (``db.relations_lock``)."""
+
+BOM_SCALE = 6
+"""Decimal places of a ``bill_of_materials`` quantity: computed exactly, then rounded once (half even)."""
+
+_EXACT = Context(prec=MAX_PREC, Emax=MAX_EMAX, Emin=MIN_EMIN)
+"""A context in which ``+`` and ``*`` of finite decimals never round."""
 
 T = TypeVar("T")
 
@@ -71,15 +89,22 @@ def _now() -> datetime:
 Mapping = dict[Violation, tuple[type[PartsError], str]]
 
 
+_INVALID: Mapping = {
+    Violation.CHECK: (InvalidValue, "a value is out of range"),
+    Violation.DATA: (InvalidValue, "a value is out of range"),  # PostgreSQL: a text longer than its varchar(n)
+}
+
+
 def _write(engine: sa.Engine, work: Callable[[sa.Connection], T], mapping: Mapping) -> T:
-    """``work`` in one ``engine.begin()``; a mapped ``IntegrityError`` becomes the application's error, raised
-    outside the ``except`` block (the driver's message may quote a value)."""
+    """``work`` in one ``engine.begin()``; a ``DBAPIError`` whose ``Violation`` is mapped (``CHECK`` and ``DATA``
+    always, to ``InvalidValue``) becomes the application's error, raised outside the ``except`` block (the driver's
+    message may quote a value)."""
     mapped: tuple[type[PartsError], str] | None = None
     try:
         with engine.begin() as connection:
             return work(connection)
-    except sa.exc.IntegrityError as error:
-        mapped = mapping.get(classify(error))
+    except sa.exc.DBAPIError as error:
+        mapped = {**_INVALID, **mapping}.get(classify(error))
         if mapped is None:
             raise
     raise mapped[0](mapped[1])
@@ -104,22 +129,26 @@ def _material_id(connection: sa.Connection, code: str) -> int:
 
 
 def create_part(engine: sa.Engine, part_number: str, name: str, material_code: str) -> Part:
-    """A new part in status ``draft`` with version 1."""
+    """A new part in status ``draft`` with version 1, as the same transaction stored it."""
 
-    def work(connection: sa.Connection) -> None:
+    def work(connection: sa.Connection) -> Part:
         now = _now()
-        connection.execute(
-            sa.insert(part).values(
+        part_id = connection.execute(
+            sa.insert(part)
+            .values(
                 part_number=part_number,
                 name=name,
                 material_id=_material_id(connection, material_code),
                 created_at=now,
                 updated_at=now,
             )
+            .returning(part.c.id)
+        ).scalar_one()
+        return _part(
+            connection.execute(sa.select(*_PART_COLUMNS).join_from(part, material).where(part.c.id == part_id)).one()
         )
 
-    _write(engine, work, {Violation.UNIQUE: (AlreadyExists, "part number taken")})
-    return get_part(engine, part_number)
+    return _write(engine, work, {Violation.UNIQUE: (AlreadyExists, "part number taken")})
 
 
 _PART_COLUMNS = (
@@ -178,7 +207,8 @@ def rename_part(engine: sa.Engine, part_number: str, name: str, *, expected_vers
 
 def change_status(engine: sa.Engine, part_number: str, status: str, *, expected_version: int) -> int:
     """Move the part to ``status`` if the life cycle allows it (``TRANSITIONS``) and nobody changed it since
-    ``expected_version``; the new version."""
+    ``expected_version``; the new version. The version is checked before the transition, so a stale caller gets
+    ``StaleVersion`` (read again) rather than ``InvalidTransition``; ``_versioned_update`` checks it once more."""
     if status not in STATUSES:
         raise ValueError("unknown status")
 
@@ -230,7 +260,8 @@ def _part_id(connection: sa.Connection, part_number: str) -> int:
 
 
 def set_property(engine: sa.Engine, part_number: str, key: str, value: Decimal, unit: str) -> None:
-    """Insert or replace one property (exact ``Decimal``, with its unit)."""
+    """Insert or replace one property (exact ``Decimal``, with its unit). Two concurrent first inserts of one key:
+    the second gets the ``UNIQUE`` violation and runs again, now as an update."""
 
     def work(connection: sa.Connection) -> None:
         part_id = _part_id(connection, part_number)
@@ -242,7 +273,10 @@ def set_property(engine: sa.Engine, part_number: str, key: str, value: Decimal, 
         if not changed:
             connection.execute(sa.insert(property_).values(part_id=part_id, key=key, value=value, unit=unit))
 
-    _write(engine, work, {})
+    try:
+        _write(engine, work, {Violation.UNIQUE: (AlreadyExists, "the property was inserted concurrently")})
+    except AlreadyExists:
+        _write(engine, work, {})
 
 
 def properties(engine: sa.Engine, part_number: str) -> dict[str, tuple[Decimal, str]]:
@@ -274,6 +308,8 @@ def add_component(engine: sa.Engine, assembly: str, component: str, quantity: De
     """``component`` becomes part of ``assembly`` ``quantity`` times; a cycle is refused (``CycleRefused``)."""
 
     def work(connection: sa.Connection) -> None:
+        if connection.dialect.name == "postgresql":
+            connection.execute(sa.select(sa.func.pg_advisory_xact_lock(RELATIONS_LOCK)))
         assembly_id = _part_id(connection, assembly)
         component_id = _part_id(connection, component)
         if component_id == assembly_id or assembly_id in _descendants(connection, component_id):
@@ -298,40 +334,67 @@ def components(engine: sa.Engine, assembly: str) -> list[Component]:
         return [Component(row.part_number, row.quantity) for row in rows]
 
 
-def _edges(connection: sa.Connection) -> dict[int, list[tuple[int, Decimal]]]:
-    edges: dict[int, list[tuple[int, Decimal]]] = {}
-    for row in connection.execute(
-        sa.select(part_relation.c.assembly_id, part_relation.c.component_id, part_relation.c.quantity)
-    ):
-        edges.setdefault(int(row[0]), []).append((int(row[1]), row[2]))
-    return edges
+def _reachable_edges(connection: sa.Connection, root: int) -> list[tuple[int, int, str, Decimal]]:
+    """Every relation below ``root``, as ``(assembly_id, component_id, component part number, quantity)``: one
+    recursive CTE, so one statement and one snapshot. ``UNION`` ends it on a cyclic graph too."""
+    edge = sa.select(part_relation.c.assembly_id, part_relation.c.component_id, part_relation.c.quantity)
+    reach = edge.where(part_relation.c.assembly_id == root).cte("reach", recursive=True)
+    reach = reach.union(edge.join(reach, part_relation.c.assembly_id == reach.c.component_id))
+    rows = connection.execute(
+        sa.select(reach.c.assembly_id, reach.c.component_id, part.c.part_number, reach.c.quantity).join_from(
+            reach, part, reach.c.component_id == part.c.id
+        )
+    )
+    return [(int(row[0]), int(row[1]), str(row[2]), row[3]) for row in rows]
 
 
 def bill_of_materials(engine: sa.Engine, assembly: str) -> list[Component]:
     """Every part below ``assembly`` with its total quantity per assembly (quantities multiplied along each path,
-    summed over paths) and its smallest depth; by part number. The arithmetic is exact ``Decimal`` in Python."""
+    summed over paths) and its smallest depth; by part number.
+
+    The parts are visited in topological order (Kahn's algorithm), so the time is linear in the relations and no
+    depth is too deep. The arithmetic is exact (a ``decimal`` context that never rounds); each total is rounded
+    once, half even, to ``BOM_SCALE`` decimal places. Stored relations with a cycle raise ``CycleFound``."""
     with engine.connect() as connection:
         root = _part_id(connection, assembly)
-        below = _descendants(connection, root)
-        edges = _edges(connection)
-        rows = connection.execute(sa.select(part.c.id, part.c.part_number).where(part.c.id.in_(below | {root})))
-        numbers = {int(row[0]): str(row[1]) for row in rows}
-    totals: dict[int, Decimal] = {}
-    depths: dict[int, int] = {}
-
-    def walk(node: int, factor: Decimal, depth: int) -> None:
-        for child, quantity in edges.get(node, []):
-            totals[child] = totals.get(child, Decimal(0)) + factor * quantity
-            depths[child] = min(depths.get(child, depth), depth)
-            walk(child, factor * quantity, depth + 1)
-
-    walk(root, Decimal(1), 1)
-    return sorted((Component(numbers[i], totals[i], depths[i]) for i in totals), key=lambda c: c.part_number)
+        edges = _reachable_edges(connection, root)
+    children: dict[int, list[tuple[int, Decimal]]] = {}
+    waiting: dict[int, int] = {}
+    numbers: dict[int, str] = {}
+    for parent, child, number, quantity in edges:
+        children.setdefault(parent, []).append((child, quantity))
+        waiting[child] = waiting.get(child, 0) + 1
+        numbers[child] = number
+    if root in waiting:
+        raise CycleFound("the assembly contains itself")
+    totals: dict[int, Decimal] = {root: Decimal(1)}
+    depths: dict[int, int] = {root: 0}
+    ready = deque([root])
+    done = 0
+    with localcontext(_EXACT):
+        while ready:
+            node = ready.popleft()
+            done += 1
+            for child, quantity in children.get(node, []):
+                totals[child] = totals.get(child, Decimal(0)) + totals[node] * quantity
+                depths[child] = min(depths.get(child, depths[node] + 1), depths[node] + 1)
+                waiting[child] -= 1
+                if waiting[child] == 0:
+                    ready.append(child)
+        if done != len(waiting) + 1:
+            raise CycleFound("the assembly contains a cycle")
+        step = Decimal(1).scaleb(-BOM_SCALE)
+        result = [
+            Component(numbers[node], totals[node].quantize(step, rounding=ROUND_HALF_EVEN), depths[node])
+            for node in waiting
+        ]
+    return sorted(result, key=lambda component: component.part_number)
 
 
 def where_used(engine: sa.Engine, component: str) -> list[str]:
     """Every assembly that contains ``component``, directly or further up, by part number."""
     with engine.connect() as connection:
+        connection = connection
         component_id = _part_id(connection, component)
         above = (
             sa.select(part_relation.c.assembly_id.label("id"))

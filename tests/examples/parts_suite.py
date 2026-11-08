@@ -17,10 +17,12 @@ again the day it disappears.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
+import contextlib
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, localcontext
+import itertools
 from pathlib import Path
 import shutil
 import threading
@@ -154,6 +156,40 @@ def _counter_threads(step: Callable[[], None], workers: int = 5) -> None:
     assert not any(thread.is_alive() for thread in threads)
 
 
+def _pause_after_the_cycle_check(app: App, monkeypatch: pytest.MonkeyPatch, parties: int) -> None:
+    """Every ``add_component`` waits (up to 1 s) after its cycle check until ``parties`` of them got there, so
+    without serialization all of them check before any inserts. A serialized one times out and goes on."""
+    barrier = threading.Barrier(parties)
+    descendants = app.catalog._descendants
+
+    def paused(connection: sa.Connection, part_id: int) -> set[int]:
+        found: set[int] = descendants(connection, part_id)
+        with contextlib.suppress(threading.BrokenBarrierError):
+            barrier.wait(timeout=1)
+        return found
+
+    monkeypatch.setattr(app.catalog, "_descendants", paused)
+
+
+def _chain(app: App, db: Any, numbers: list[str], quantity: Decimal) -> None:
+    """Parts ``numbers[0] -> numbers[1] -> ...``, written in one transaction (the test's setup, not the API)."""
+    with app.write(db) as connection:
+        material_id = connection.execute(sa.select(app.schema.material.c.id)).scalar_one()
+        ids = []
+        for number in numbers:
+            ids.append(
+                connection.execute(
+                    sa.insert(app.schema.part)
+                    .values(part_number=number, name=number, material_id=material_id, created_at=NOW, updated_at=NOW)
+                    .returning(app.schema.part.c.id)
+                ).scalar_one()
+            )
+        connection.execute(
+            sa.insert(app.schema.part_relation),
+            [{"assembly_id": a, "component_id": c, "quantity": quantity} for a, c in itertools.pairwise(ids)],
+        )
+
+
 class PartsSuite:
     """The shared tests; a subclass named ``Test...`` provides the ``app`` fixture."""
 
@@ -261,15 +297,18 @@ class PartsSuite:
         finally:
             raw.close()
 
-    def test_upgrade_waits_for_a_concurrent_writer_on_sqlite(self, app: App, tmp_path: Path) -> None:
-        """Review M-2 of #22: ``upgrade`` waits for a writer that holds the SQLite database instead of failing on a
-        stale read snapshot (Tabrion: ``BEGIN IMMEDIATE``; the baseline reads outside a transaction, see its
-        README)."""
+    @pytest.mark.parametrize("operation", ["upgrade", "downgrade", "command line"])
+    def test_migrations_wait_for_a_concurrent_writer_on_sqlite(self, app: App, tmp_path: Path, operation: str) -> None:
+        """Review M-2 and N-3 of #22: ``upgrade``, ``downgrade`` and the ``env.py`` command line branch each wait
+        for a writer that holds the SQLite database instead of failing on a stale read snapshot (Tabrion:
+        ``BEGIN IMMEDIATE``; the baseline reads outside a transaction, see its README)."""
         url = f"sqlite:///{tmp_path / 'busy.db'}"
         other, database = app.open(url, None), app.open(url, None)
         try:
             with app.write(other) as connection:
                 connection.exec_driver_sql("CREATE TABLE t_other (x INTEGER)")
+            if operation == "downgrade":
+                app.db.upgrade(database)
             holding = threading.Event()
 
             def hold() -> None:
@@ -282,10 +321,17 @@ class PartsSuite:
             writer.start()
             try:
                 assert holding.wait(5)
-                app.db.upgrade(database)
+                if operation == "upgrade":
+                    app.db.upgrade(database)
+                elif operation == "downgrade":
+                    app.db.downgrade(database, "base")
+                else:
+                    config = Config(str(app.directory / "alembic.ini"))
+                    config.set_main_option("sqlalchemy.url", url)
+                    command.upgrade(config, "head")
             finally:
                 writer.join()
-            assert app.db.require_current(database).is_current
+            assert app.db.status(database).current == (() if operation == "downgrade" else ("0001",))
         finally:
             app.close(other)
             app.close(database)
@@ -463,3 +509,203 @@ class PartsSuite:
 
         _counter_threads(increment_blindly)
         assert catalog.get_part(db, "P-1").name == "1"
+
+    # --- the review of #29 (RA-A-2) ------------------------------------------------------------------------------
+
+    def test_concurrent_additions_cannot_close_a_cycle(
+        self, app: App, catalog_db: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Review M-1 of #29: with B -> C and D -> A stored, ``A -> B`` and ``C -> D`` at the same time would close the
+        cycle A -> B -> C -> D -> A, each passing its own check. Serialized (``BEGIN IMMEDIATE``, the advisory lock on
+        PostgreSQL), the second one sees the first and is refused."""
+        db = catalog_db
+        for number in ("A", "B", "C", "D"):
+            app.catalog.create_part(db, number, number, "STEEL")
+        app.catalog.add_component(db, "B", "C", Decimal(1))
+        app.catalog.add_component(db, "D", "A", Decimal(1))
+        _pause_after_the_cycle_check(app, monkeypatch, 2)
+        outcomes: list[str] = []
+
+        def add(assembly: str, component: str) -> None:
+            try:
+                app.catalog.add_component(db, assembly, component, Decimal(1))
+                outcomes.append("added")
+            except app.errors.CycleRefused:
+                outcomes.append("refused")
+
+        threads = [threading.Thread(target=add, args=pair) for pair in (("A", "B"), ("C", "D"))]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        assert sorted(outcomes) == ["added", "refused"]
+        assert "A" not in app.catalog.where_used(db, "A")
+
+    def test_a_stored_cycle_is_reported_not_recursed(self, app: App, catalog_db: Any) -> None:
+        """Review M-1 of #29: relations written past ``add_component`` with a cycle give ``app.errors.CycleFound``."""
+        db = catalog_db
+        ids = {number: app.catalog.create_part(db, number, number, "STEEL").id for number in ("A", "B", "C")}
+        with app.write(db) as connection:
+            for assembly, component in (("A", "B"), ("B", "C"), ("C", "B")):
+                connection.execute(
+                    sa.insert(app.schema.part_relation).values(
+                        assembly_id=ids[assembly], component_id=ids[component], quantity=Decimal(1)
+                    )
+                )
+        with pytest.raises(app.errors.CycleFound):
+            app.catalog.bill_of_materials(db, "A")
+        with pytest.raises(app.errors.CycleFound):
+            app.catalog.bill_of_materials(db, "B")  # the root itself is in the cycle
+        assert app.catalog.where_used(db, "C") == ["A", "B", "C"]
+
+    def test_a_deep_chain_and_many_diamonds_are_linear(self, app: App, catalog_db: Any) -> None:
+        """Review L-1 of #29: 1500 levels (beyond Python's recursion limit) and 22 diamond levels (2**22 paths)."""
+        db = catalog_db
+        numbers = [f"L{index:05}" for index in range(1501)]
+        _chain(app, db, numbers, Decimal(1))
+        deep = app.catalog.bill_of_materials(db, numbers[0])
+        assert len(deep) == 1500 and deep[-1] == app.catalog.Component(numbers[-1], Decimal(1), 1500)
+        # Diamonds: level i -> left i, right i (quantity 1 each) -> level i + 1.
+        with app.write(db) as connection:
+            material_id = connection.execute(sa.select(app.schema.material.c.id)).scalar_one()
+            names = ["D0"] + [f"{side}{i}" for i in range(22) for side in ("X", "Y")] + [f"D{i + 1}" for i in range(22)]
+            ids = {
+                name: connection.execute(
+                    sa.insert(app.schema.part)
+                    .values(part_number=name, name=name, material_id=material_id, created_at=NOW, updated_at=NOW)
+                    .returning(app.schema.part.c.id)
+                ).scalar_one()
+                for name in names
+            }
+            rows = []
+            for i in range(22):
+                for side in ("X", "Y"):
+                    rows.append(
+                        {"assembly_id": ids[f"D{i}"], "component_id": ids[f"{side}{i}"], "quantity": Decimal(1)}
+                    )
+                    rows.append(
+                        {"assembly_id": ids[f"{side}{i}"], "component_id": ids[f"D{i + 1}"], "quantity": Decimal(1)}
+                    )
+            connection.execute(sa.insert(app.schema.part_relation), rows)
+        started = time.monotonic()
+        diamonds = {c.part_number: c for c in app.catalog.bill_of_materials(db, "D0")}
+        assert time.monotonic() - started < 5
+        assert diamonds["D22"] == app.catalog.Component("D22", Decimal(2**22), 44)
+
+    def test_bill_of_materials_is_exact_then_rounded_once(self, app: App, catalog_db: Any) -> None:
+        """Review L-3 of #29: the default context (28 digits) would round 999999999.999**4 in its integer part; the
+        catalog computes exactly and rounds once to ``BOM_SCALE`` places."""
+        db = catalog_db
+        quantity = Decimal("999999999.999")
+        _chain(app, db, ["Q0", "Q1", "Q2", "Q3", "Q4"], quantity)
+        with localcontext(prec=100):
+            exact = quantity**4
+            expected = exact.quantize(Decimal(1).scaleb(-app.catalog.BOM_SCALE))
+        assert quantity**4 != exact  # the default context rounds it
+        assert app.catalog.bill_of_materials(db, "Q0")[-1] == app.catalog.Component("Q4", expected, 4)
+        _chain(app, db, [f"R{i}" for i in range(13)], Decimal("1.001"))
+        with localcontext(prec=100):
+            twelve = (Decimal("1.001") ** 12).quantize(Decimal(1).scaleb(-app.catalog.BOM_SCALE))
+        last = {c.part_number: c for c in app.catalog.bill_of_materials(db, "R0")}["R12"]
+        assert (
+            last == app.catalog.Component("R12", twelve, 12)
+            and last.quantity.as_tuple().exponent == -app.catalog.BOM_SCALE
+        )
+
+    def test_the_smallest_depth_wins(self, app: App, catalog_db: Any) -> None:
+        """Review L-5 (M4) of #29: C is reached through A -> C (depth 1) and A -> B -> C (depth 2); the longer path is
+        processed last, so a depth that is overwritten instead of minimized shows."""
+        db = catalog_db
+        for number in ("A", "B", "C"):
+            app.catalog.create_part(db, number, number, "STEEL")
+        app.catalog.add_component(db, "A", "C", Decimal(1))
+        app.catalog.add_component(db, "A", "B", Decimal(1))
+        app.catalog.add_component(db, "B", "C", Decimal(1))
+        assert app.catalog.bill_of_materials(db, "A") == [
+            app.catalog.Component("B", Decimal(1), 1),
+            app.catalog.Component("C", Decimal(2), 1),
+        ]
+
+    def test_changes_move_updated_at(self, app: App, catalog_db: Any) -> None:
+        """Review L-5 (M11) of #29."""
+        db = catalog_db
+        created = app.catalog.create_part(db, "P-1", "Bolt", "STEEL")
+        assert created.updated_at == created.created_at
+        app.catalog.rename_part(db, "P-1", "Screw", expected_version=1)
+        renamed = app.catalog.get_part(db, "P-1")
+        assert renamed.updated_at > created.updated_at and renamed.created_at == created.created_at
+        app.catalog.change_status(db, "P-1", "released", expected_version=2)
+        assert app.catalog.get_part(db, "P-1").updated_at > renamed.updated_at
+
+    def test_not_found_and_invalid_arguments(self, app: App, catalog_db: Any) -> None:
+        """Review L-5 of #29: every function that names a part or material refuses an unknown one."""
+        db = catalog_db
+        app.catalog.create_part(db, "P-1", "Bolt", "STEEL")
+        calls: list[Callable[[], object]] = [
+            lambda: app.catalog.set_property(db, "P-9", "mass", Decimal(1), "kg"),
+            lambda: app.catalog.properties(db, "P-9"),
+            lambda: app.catalog.components(db, "P-9"),
+            lambda: app.catalog.where_used(db, "P-9"),
+            lambda: app.catalog.bill_of_materials(db, "P-9"),
+            lambda: app.catalog.add_component(db, "P-1", "P-9", Decimal(1)),
+            lambda: app.catalog.change_status(db, "P-9", "released", expected_version=1),
+            lambda: app.catalog.delete_part(db, "P-9", expected_version=1),
+            lambda: app.catalog.delete_material(db, "WOOD"),
+        ]
+        for call in calls:
+            with pytest.raises(app.errors.NotFound):
+                call()
+        with pytest.raises(ValueError, match="unknown status"):
+            app.catalog.list_parts(db, status="bogus")
+
+    def test_check_violations_are_application_errors_without_a_chain(self, app: App, catalog_db: Any) -> None:
+        """Review L-4 and L-5 of #29: a ``CHECK`` violation is ``InvalidValue``; no application error chains the
+        driver's error (its message may quote a value)."""
+        db = catalog_db
+        app.catalog.create_part(db, "A", "A", "STEEL")
+        app.catalog.create_part(db, "B", "B", "STEEL")
+        raised: list[BaseException] = []
+        cases: list[tuple[Callable[[], object], type[Exception]]] = [
+            (lambda: app.catalog.create_part(db, "P-2", "", "STEEL"), app.errors.InvalidValue),
+            (lambda: app.catalog.create_part(db, "P" * 41, "x", "STEEL"), app.errors.InvalidValue),
+            (lambda: app.catalog.add_component(db, "A", "B", Decimal(0)), app.errors.InvalidValue),
+            (lambda: app.catalog.set_property(db, "A", "", Decimal(1), "kg"), app.errors.InvalidValue),
+            (lambda: app.catalog.create_material(db, "STEEL", "again"), app.errors.AlreadyExists),
+            (lambda: app.catalog.delete_material(db, "STEEL"), app.errors.InUse),
+        ]
+        for call, error in cases:
+            with pytest.raises(error) as info:
+                call()
+            raised.append(info.value)
+        assert all(e.__cause__ is None and e.__context__ is None for e in raised)
+
+    def test_concurrent_first_set_property(self, app: App, catalog_db: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Review L-4 of #29: two first ``set_property`` calls of one key at once; on PostgreSQL the second insert hits
+        the ``UNIQUE`` constraint and runs again as an update. One value wins, no error."""
+        db = catalog_db
+        app.catalog.create_part(db, "P-1", "Bolt", "STEEL")
+        barrier = threading.Barrier(2)
+        part_id = app.catalog._part_id
+
+        def paused(connection: sa.Connection, part_number: str) -> int:
+            found: int = part_id(connection, part_number)
+            with contextlib.suppress(threading.BrokenBarrierError):
+                barrier.wait(timeout=1)
+            return found
+
+        monkeypatch.setattr(app.catalog, "_part_id", paused)
+        errors: list[BaseException] = []
+
+        def put(value: int) -> None:
+            try:
+                app.catalog.set_property(db, "P-1", "mass", Decimal(value), "kg")
+            except BaseException as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=put, args=(value,)) for value in (1, 2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        assert errors == []
+        assert app.catalog.properties(db, "P-1")["mass"][0] in (Decimal(1), Decimal(2))

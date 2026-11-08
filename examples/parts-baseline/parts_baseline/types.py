@@ -5,8 +5,11 @@ A copy of ``examples/parts/parts/types.py``: Tabrion has no column types, so bot
 SQLite has no time type and turns ``NUMERIC`` into ``float``; these types store fixed-width ISO 8601 text and a scaled
 integer ("cents") there and use ``timestamptz`` and ``numeric(p, s)`` on PostgreSQL, the mappings of TAB-T-D01 and
 D02 (contract I-58). Both representations order and compare like the values they stand for, so ``ORDER BY``, ``<``,
-``min``, ``max`` and uniqueness give the same rows on both engines; ``sum`` of one column is exact too. Other SQL
-arithmetic is not portable (a product of two scaled integers carries both scales); do it in Python on ``Decimal``.
+``min``, ``max`` and uniqueness give the same rows on both engines; ``sum`` of one column is exact too, while the
+total fits ``numeric(p, s)`` (a larger one cannot be read back on either engine). ``+`` and ``-`` with a bound
+``Decimal`` and ``coalesce`` are portable as well. Any other SQL arithmetic is silently wrong on SQLite, by a factor
+of ``10**s`` or truncated, without an error: ``avg``, multiplying or dividing (also by a constant), ``round``, ``abs``
+and ``CAST``. Do it in Python on ``Decimal``.
 """
 
 from __future__ import annotations

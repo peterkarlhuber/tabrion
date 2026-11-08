@@ -33,9 +33,9 @@ $ alembic -c examples/parts/alembic.ini upgrade head
 | Function | What it does |
 |---|---|
 | `create_material`, `delete_material` | a material; deleting one in use raises `InUse` |
-| `create_part`, `get_part`, `list_parts(status=...)` | a part starts as `draft` with version 1 |
+| `create_part`, `get_part`, `list_parts(status=...)` | a part starts as `draft` with version 1; `create_part` returns the row its own transaction stored |
 | `rename_part`, `change_status`, `delete_part` | each needs `expected_version`, the version the caller read |
-| `set_property`, `properties` | exact `Decimal` values with their unit |
+| `set_property`, `properties` | exact `Decimal` values with their unit; two concurrent first inserts of a key end as one insert and one update |
 | `add_component`, `components`, `bill_of_materials`, `where_used` | the relations; a cycle raises `CycleRefused` |
 
 **Optimistic lock.** A change runs `UPDATE part SET ..., version = version + 1 WHERE part_number = ? AND
@@ -44,14 +44,29 @@ retry. Nothing is held between the read and the write, so there is no lost updat
 
 **Life cycle** (`catalog.TRANSITIONS`): `draft` goes to `released` or `obsolete`; `released` to `blocked` or
 `obsolete`; `blocked` back to `released` or to `obsolete`; `obsolete` is final. Any other change raises
-`InvalidTransition`.
+`InvalidTransition`. `change_status` checks the version before the transition, so a stale caller gets
+`StaleVersion` (read again) rather than `InvalidTransition`.
+
+**No cycle, also under concurrency.** `add_component` checks that the component does not contain the assembly, then
+inserts. Two such additions with disjoint rows (`A → B` and `C → D` while `B → C` and `D → A` exist) could each pass
+the check and together close a cycle. SQLite runs one writer at a time (`BEGIN IMMEDIATE`); on PostgreSQL each
+`add_component` first takes the transaction-level advisory lock `catalog.RELATIONS_LOCK`
+(`pg_advisory_xact_lock(tabrion.postgres.lock_key("parts.part_relation"))`), released by the commit or rollback.
+That serializes exactly the relation additions, with no retry loop; `SERIALIZABLE` would be correct as well, but
+the caller would have to retry serialization failures, also ones from unrelated reads. Relations written past
+`add_component` with a cycle make `bill_of_materials` raise `CycleFound`.
 
 **Errors** are the application's own (`parts.errors`), with fixed texts. A Tabrion `IntegrityViolation` becomes one
-of them by its `Kind` (`UNIQUE` → `AlreadyExists`, `FOREIGN_KEY` → `InUse`), raised outside the `except` block, so
-no driver message (which may quote a value) is chained.
+of them by its `Kind` (`UNIQUE` → `AlreadyExists`, `FOREIGN_KEY` → `InUse`, and always `CHECK` and `DATA`, such as an
+empty name, a text longer than its column or a quantity that is not positive, → `InvalidValue`), raised outside the
+`except` block, so no driver message (which may quote a value) is chained.
 
-**Bill of materials.** The recursive queries (`WITH RECURSIVE`) are the same SQL on both engines. The quantities
-are multiplied along each path and summed over the paths in Python, with exact `Decimal`s.
+**Bill of materials.** One recursive query (`WITH RECURSIVE`, the same SQL on both engines, one statement and so one
+snapshot) returns the relations below the assembly with the part numbers. Python then visits the parts in
+topological order (Kahn's algorithm): linear in the relations, with no recursion depth limit, and a cycle found on
+the way raises `CycleFound`. Quantities are multiplied along each path and summed over the paths exactly (a
+`decimal` context that never rounds); each total is then rounded once, half even, to `catalog.BOM_SCALE` (6)
+decimal places. The depth is the shortest path.
 
 ## The schema
 
@@ -74,9 +89,10 @@ The portable mappings follow specification section 6 and the cases TAB-T-D01..D0
 
 Every constraint (the primary keys `pk_<table>` included) and index has a name of its own, so both engines carry the
 same names. Decimals and timestamps order and compare alike on both engines: `ORDER BY`, `<` against a bound
-parameter, `min`, `max`, uniqueness, and `sum` of one decimal column. Do other arithmetic on decimals in Python, not
-in SQL (on SQLite a product of two scaled integers carries both scales), compare with bound parameters, not SQL
-literals (`value > :limit`, never `value > 5`), and do not compare timestamps with SQLite's `CURRENT_TIMESTAMP`
+parameter, `min`, `max`, uniqueness, `sum` of one decimal column while the total fits `numeric(p, s)` (otherwise sum
+in Python), and `+`/`-` with a bound `Decimal`. Do other arithmetic on decimals in Python, not in SQL: on SQLite,
+`avg`, multiplying or dividing (also by a constant), `round`, `abs` and `CAST` are silently off by a factor of
+`10**s` or truncated, with no error. Compare with bound parameters, not SQL literals (`value > :limit`, never `value > 5`), and do not compare timestamps with SQLite's `CURRENT_TIMESTAMP`
 (`YYYY-MM-DD HH:MM:SS`).
 
 References that must block a delete use the default `NO ACTION`, not `RESTRICT`: SQLite reports a `RESTRICT`
@@ -84,7 +100,8 @@ violation as `SQLITE_CONSTRAINT_TRIGGER`, which Tabrion does not classify as a f
 
 `upgrade` and `downgrade` run Alembic inside `database.transaction()`, as does the command line through `env.py`:
 one transaction for all revisions, `BEGIN IMMEDIATE` on SQLite (two instances starting at once, or a running writer,
-are waited for, not a `database is locked` failure) and Tabrion's errors.
+are waited for, not a `database is locked` failure) and Tabrion's errors. A test pins this for `upgrade`,
+`downgrade` and the command line.
 
 ## Tests
 
@@ -108,7 +125,12 @@ cover:
 - RA-A-2: CRUD, the life cycle, stale versions, exact properties, the relations and the bill of materials, and the
   **lost-update test**: five threads read the same version and then write; with the optimistic lock four get
   `StaleVersion` and retry, so the counter ends at 5 (version 6) with no lock error. Without the version check the
-  same five writes end at 1.
+  same five writes end at 1;
+- the review of #29: two concurrent additions cannot close a cycle (a barrier makes both check first; it fails on
+  PostgreSQL without the advisory lock), a stored cycle gives `CycleFound`, a 1500-level chain and 22 diamond
+  levels (2**22 paths) are linear, exact products are rounded once, the shortest depth wins, `updated_at` moves,
+  every unknown part or material is `NotFound`, `CHECK` and length violations are `InvalidValue` without a chained
+  driver error, and two concurrent first `set_property` calls of one key both succeed.
 
 ## Measurement notes for RA-EVAL (planning document 09 section 7)
 

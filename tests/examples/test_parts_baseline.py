@@ -61,6 +61,10 @@ BASELINE = App(
             "pysqlite opens a transaction only before INSERT, UPDATE and DELETE, so engine.begin() does not cover"
             " Alembic's DDL: the tables of 0001 stay behind with an empty version table"
         ),
+        "test_concurrent_additions_cannot_close_a_cycle[sqlite]": (
+            "pysqlite runs the cycle check outside a transaction and takes the write lock only with the INSERT, so"
+            " two disjoint additions both pass their check and close a cycle"
+        ),
     },
 )
 

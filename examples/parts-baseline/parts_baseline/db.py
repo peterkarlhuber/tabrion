@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import hashlib
 from pathlib import Path
 import sqlite3
 from typing import Any
@@ -106,17 +107,30 @@ def require_current(engine: sa.Engine) -> SchemaStatus:
     return found
 
 
+def relations_lock() -> int:
+    """The advisory lock key of ``catalog.add_component``: a stable signed 64-bit number from its name."""
+    return int.from_bytes(hashlib.sha256(b"parts.part_relation").digest()[:8], "big", signed=True)
+
+
 class Violation(Enum):
     UNIQUE = "unique"
     FOREIGN_KEY = "foreign_key"
+    CHECK = "check"
+    DATA = "data"
     OTHER = "other"
 
 
-_SQLSTATES = {"23505": Violation.UNIQUE, "23503": Violation.FOREIGN_KEY, "23001": Violation.FOREIGN_KEY}
+_SQLSTATES = {
+    "23505": Violation.UNIQUE,
+    "23503": Violation.FOREIGN_KEY,
+    "23001": Violation.FOREIGN_KEY,
+    "23514": Violation.CHECK,
+    "22001": Violation.DATA,
+}
 
 
-def classify(error: sa.exc.IntegrityError) -> Violation:
-    """Which constraint an ``IntegrityError`` broke: the SQLSTATE on PostgreSQL, the message on SQLite."""
+def classify(error: sa.exc.DBAPIError) -> Violation:
+    """What a ``DBAPIError`` broke: the SQLSTATE on PostgreSQL, the message on SQLite."""
     original = error.orig
     sqlstate = getattr(original, "sqlstate", None)
     if sqlstate is not None:
@@ -127,4 +141,6 @@ def classify(error: sa.exc.IntegrityError) -> Violation:
             return Violation.UNIQUE
         if message.startswith("FOREIGN KEY constraint failed"):
             return Violation.FOREIGN_KEY
+        if message.startswith("CHECK constraint failed"):
+            return Violation.CHECK
     return Violation.OTHER

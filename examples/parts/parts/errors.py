@@ -29,3 +29,13 @@ class InUse(PartsError):
 
 class CycleRefused(PartsError):
     """The relation would make a part a component of itself, directly or through other assemblies."""
+
+
+class CycleFound(PartsError):
+    """The stored relations already contain a cycle, so there is no bill of materials. ``add_component`` refuses
+    every cycle; this is only for rows written past it."""
+
+
+class InvalidValue(PartsError):
+    """A value the schema's ``CHECK`` constraints refuse: an empty or too long text, a quantity that is not
+    positive."""
