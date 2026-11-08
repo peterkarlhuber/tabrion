@@ -1,4 +1,4 @@
-"""Mutation probes for TAB-015, TAB-016, TAB-030 and TAB-034 (planning document 07 section 7), against PostgreSQL.
+"""Mutation probes for TAB-015, TAB-016, TAB-020, TAB-030 and TAB-034 (planning document 07 section 7), on PostgreSQL.
 
 Like ``tests/unit/test_mutation_probes.py``: a copy of the package with one rule broken must turn the named test
 red (exit code 1: a failure, not a skip, since ``TABRION_TEST_POSTGRES`` reaches the subprocess). Each anchor must
@@ -325,6 +325,57 @@ PROBES = [
         "    except UnicodeEncodeError:\n",
         "    except LookupError:\n",
         "tests/unit/test_locks_and_faults_unit.py::test_lock_key_unpaired_surrogate",
+    ),
+    # Review H-1 (#11): an extension elsewhere is made visible through search_path (a skip would hide this).
+    (
+        "testing/postgres.py",
+        '    if status.state == "other_schema" and status.extension_schema is not None:\n',
+        "    if False:\n",
+        "tests/postgres/test_testing_plugin.py::test_x07_other_schema_is_made_visible_not_moved",
+    ),
+    # Review H-1 (#11): a missing extension is created in public, never in the (test) current schema.
+    (
+        "testing/postgres.py",
+        "                        sql.Identifier(name), sql.Identifier(_EXTENSION_HOME)\n",
+        "                        sql.Identifier(name), sql.Identifier(str(status.schema))\n",
+        "tests/postgres/test_testing_plugin.py::test_h1_teardown_never_reaches_a_shared_extension",
+    ),
+    # Review H-1 (#11): the teardown never cascades into an extension.
+    (
+        "testing/postgres.py",
+        "            if extensions:\n",
+        "            if False:\n",
+        "tests/postgres/test_testing_plugin.py::test_h1_teardown_refuses_a_schema_holding_an_extension",
+    ),
+    # Review L-1 (#11): only sessions of the URL's role are ended.
+    (
+        "testing/postgres.py",
+        '                " AND a.usesysid OPERATOR(pg_catalog.=) (SELECT r.oid FROM pg_catalog.pg_roles r"\n'
+        '                "   WHERE r.rolname OPERATOR(pg_catalog.=) CURRENT_USER)"\n',
+        "",
+        "tests/postgres/test_testing_plugin.py::test_l1_another_roles_session_is_waited_for_not_ended",
+    ),
+    # Review L-2 (#11), mutant 2: only sessions in this database.
+    (
+        "testing/postgres.py",
+        '                " AND l.database OPERATOR(pg_catalog.=) (SELECT d.oid FROM pg_catalog.pg_database d"\n'
+        '                "   WHERE d.datname OPERATOR(pg_catalog.=) pg_catalog.current_database())"\n',
+        "",
+        "tests/postgres/test_testing_plugin.py::test_l2_a_lock_in_another_database_is_left_alone",
+    ),
+    # Review L-2 (#11), mutant 3: only locks on the schema and its relations.
+    (
+        "testing/postgres.py",
+        """                " AND ((l.locktype OPERATOR(pg_catalog.=) 'object'"\n""",
+        """                " AND (true OR (l.locktype OPERATOR(pg_catalog.=) 'object'"\n""",
+        "tests/postgres/test_testing_plugin.py::test_l2_a_lock_in_another_schema_is_left_alone",
+    ),
+    # Review Info (#11): a require value other than empty or 0 counts (never a silent skip).
+    (
+        "testing/_config.py",
+        '        return any(os.environ.get(name, "") not in ("", "0") for name in names)\n',
+        '        return any(os.environ.get(name, "") == "1" for name in names)\n',
+        "tests/unit/test_testing_plugin.py::test_x01_variables_first_flag_and_extension_list",
     ),
 ]
 

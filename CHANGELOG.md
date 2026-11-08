@@ -104,9 +104,12 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   environment variable names (`env_prefix`, or the consumers' own names) and the name prefix; `tabrion_postgres_url`
   skips without a server and fails under the require variable, and masks the password in pytest's reports;
   `tabrion_postgres_schema` gives every test its own schema and drops it afterwards, also after a failure and with a
-  connection still holding locks; `postgres_server_version`; `require_extension` creates or moves an extension or
-  skips (fails when required); `tabrion_sqlite_path` and `tabrion_sqlite`. Tabrion's own PostgreSQL suites run on it
-  and check after each test that nothing they created is left on the server.
+  connection of the same role still holding locks (another role's session is waited for, never ended), but never
+  cascades into an extension; `postgres_server_version`; `require_extension` never moves an extension: it creates a
+  missing one in `public` and makes one in another schema visible through the connection's `search_path`, or skips
+  (fails when required); a require variable counts unless it is empty or `0`; `tabrion_sqlite_path` and
+  `tabrion_sqlite`. Tabrion's own PostgreSQL suites run on it and check after each test that nothing they created is
+  left on the server.
 - In psycopg pipeline mode every `tabrion.postgres` function syncs the caller's pipeline first, so a failing statement
   no longer aborts the caller's pipeline transaction (review DL-1 of #5); an error of a statement the caller queued
   propagates from every function, `ping` included, and `wait_advisory_lock` syncs each attempt before it sleeps.

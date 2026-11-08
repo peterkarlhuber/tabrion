@@ -76,10 +76,12 @@ def test_x01_variables_first_flag_and_extension_list(clean_env: pytest.MonkeyPat
     assert settings.first(settings.postgres_env) == ("B_URL", "dbname=b")
     clean_env.setenv("A_URL", "dbname=a")
     assert settings.first(settings.postgres_env) == ("A_URL", "dbname=a")
-    clean_env.setenv("A_REQ", "true")
-    assert not settings.flag(settings.require_env)  # only "1" counts
-    clean_env.setenv("B_REQ", "1")
-    assert settings.flag(settings.require_env)
+    clean_env.setenv("A_REQ", "0")
+    clean_env.setenv("B_REQ", "")
+    assert not settings.flag(settings.require_env)  # empty and "0" are off
+    for value in ("1", "true", "yes"):  # anything else is on: a typo never skips silently (review Info)
+        clean_env.setenv("B_REQ", value)
+        assert settings.flag(settings.require_env)
     clean_env.setenv("A_X", "vector, pg_trgm")
     clean_env.setenv("B_X", "citext\tvector")
     assert settings.required_extensions() == {"vector", "pg_trgm", "citext"}
@@ -138,7 +140,9 @@ def test_x03_url_fails_when_required(pytester: pytest.Pytester, clean_env: pytes
     pytester.makepyfile(URL_TEST)
     result = pytester.runpytest_subprocess("-p", "no:cacheprovider")
     result.assert_outcomes(errors=1)
-    result.stdout.fnmatch_lines(["*TABRION_REQUIRE_POSTGRES=1 but none of TABRION_TEST_POSTGRES is set*"])
+    result.stdout.fnmatch_lines(
+        ["*TABRION_REQUIRE_POSTGRES requires PostgreSQL but none of TABRION_TEST_POSTGRES is set*"]
+    )
 
 
 def test_x03_url_from_the_consumers_names(pytester: pytest.Pytester, clean_env: pytest.MonkeyPatch) -> None:

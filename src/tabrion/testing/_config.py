@@ -30,8 +30,8 @@ class Settings:
         return None
 
     def flag(self, names: tuple[str, ...]) -> bool:
-        """Whether one of ``names`` is ``1``."""
-        return any(os.environ.get(name, "") == "1" for name in names)
+        """Whether one of ``names`` is set to anything but empty or ``0`` (``true`` counts: never a silent skip)."""
+        return any(os.environ.get(name, "") not in ("", "0") for name in names)
 
     def required_extensions(self) -> frozenset[str]:
         """The extension names of the require variables (comma or white space separated)."""
