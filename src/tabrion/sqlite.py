@@ -1002,25 +1002,40 @@ def _int(value: object) -> int:
     return int(value) if isinstance(value, (int, str)) else 0
 
 
-def _unsafe_directory(path: str) -> bool:
-    """TM-03: the directory of ``path`` is writable by others without the sticky bit (POSIX), so any local user can
-    rename or replace the database and its side files between Tabrion's checks."""
+def _directory_risk(path: str) -> str | None:
+    """TM-03 for the directory of ``path`` (POSIX): ``"replace"`` when others may write it and it has no sticky bit
+    (any local user can rename or replace the database and its side files), ``"create"`` when the group or others
+    may write it otherwise, sticky or not (they can still create the ``-journal``, ``-wal`` and ``-shm`` names that
+    SQLite opens later, #4 re-review DL-1), else ``None``."""
     if not _POSIX:
-        return False
+        return None
     try:
         mode = os.stat(os.path.dirname(os.path.abspath(path))).st_mode
     except OSError:
-        return False
-    return bool(mode & stat.S_IWOTH) and not mode & stat.S_ISVTX
+        return None
+    if mode & stat.S_IWOTH and not mode & stat.S_ISVTX:
+        return "replace"
+    if mode & (stat.S_IWOTH | stat.S_IWGRP):
+        return "create"
+    return None
 
 
 def _warn_about_directory(path: str) -> None:
-    """Review M-2: a warning on the logger ``tabrion.sqlite`` (the frozen ``SQLiteDiagnosis`` has no field for it)."""
-    if _unsafe_directory(path):
-        _log.debug("world-writable directory without the sticky bit: %s", os.path.dirname(os.path.abspath(path)))
+    """Review M-2, DL-1: a warning on the logger ``tabrion.sqlite`` without the path (the path at DEBUG; the frozen
+    ``SQLiteDiagnosis`` has no field for it, TB-043)."""
+    risk = _directory_risk(path)
+    if risk is None:
+        return
+    _log.debug("database directory writable by others (%s): %s", risk, os.path.dirname(os.path.abspath(path)))
+    if risk == "replace":
         _log.warning(
             "the database directory is writable by other users and has no sticky bit (TM-03): another user can "
             "replace the database file; use a directory only the owner can write"
+        )
+    else:
+        _log.warning(
+            "the database directory is writable by the group or other users (TM-03): other users can create files "
+            "next to the database (side files); use a directory only the owner can write"
         )
 
 

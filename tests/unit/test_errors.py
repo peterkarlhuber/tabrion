@@ -19,6 +19,7 @@ from pathlib import Path
 import pickle
 import sqlite3
 import sys
+import time
 import traceback
 from types import SimpleNamespace
 from typing import Any
@@ -1014,9 +1015,10 @@ def test_m2_multi_line_detail_is_removed_completely(capture: Any) -> None:
 
 
 def test_m3_inline_single_line_server_text_is_stripped() -> None:
-    assert errors._strip_server_text(f"dup key DETAIL:  Key (e)=({CANARY})") == "dup key"
-    assert errors._strip_server_text(f"a\nDETAIL:  {CANARY}\nHINT:  {CANARY}") == "a"
-    assert errors._strip_server_text(f"x ('dup\\nDETAIL:  {CANARY}')") == "x ('dup"
+    mark = errors._SERVER_TEXT_MARK
+    assert errors._strip_server_text(f"dup key DETAIL:  Key (e)=({CANARY})") == f"dup key {mark}"
+    assert errors._strip_server_text(f"a\nDETAIL:  {CANARY}\nHINT:  {CANARY}") == f"a\n{mark}"
+    assert errors._strip_server_text(f"x ('dup\\nDETAIL:  {CANARY}')") == f"x ('dup {mark}"
     assert errors._strip_server_text("plain text") == "plain text"
 
 
@@ -1025,6 +1027,14 @@ def test_m3_group_whose_only_database_error_is_a_member(capture: Any) -> None:
     assert group.__context__ is None
     capture.logger.error("batch failed", exc_info=group)
     assert CANARY not in capture.text.getvalue() and "SQLSTATE 23505" in capture.text.getvalue()
+    # Nested deeper than the argument walk reaches (3 levels): only the group-member link of the chain finds the
+    # error, so the record names it (``db_sqlstate``).
+    nested: Exception = _unique_violation()
+    for name in "dcba":
+        nested = ExceptionGroup(name, [nested])
+    capture.logger.error("nested batch failed", exc_info=nested)
+    last = json.loads(capture.json.getvalue().splitlines()[-1])
+    assert last["sqlstate"] == "23505" and CANARY not in capture.json.getvalue()
 
 
 def test_m3_notes_on_a_driver_error_are_dropped(capture: Any) -> None:
@@ -1039,3 +1049,265 @@ def test_m3_mapping_arguments_are_replaced() -> None:
     DbErrorRedactionFilter().filter(record)
     assert isinstance(record.args, Mapping) and isinstance(record.args["e"], str)
     assert record.args["e"].startswith("unique violation (SQLSTATE 23505")
+
+
+# --- Port of Axentra's TB-031 review fixes (axe-tb031-review.md F-1..F-8, D-1..D-3, R2-1) ---------------------------
+
+
+def _out(capture: Any) -> str:
+    return str(capture.text.getvalue() + capture.json.getvalue())
+
+
+def _retry_loop_error() -> RuntimeError:
+    last: Exception | None = None
+    for _ in range(2):
+        try:
+            raise _unique_violation()
+        except PgError as exc:
+            last = exc
+    try:
+        raise RuntimeError(f"gave up: {last}") from None
+    except RuntimeError as exc:
+        return exc
+
+
+class _Holder(Exception):
+    """A wrapper that keeps the error in an attribute and quotes it in ``__str__`` (no ``args``, no chain)."""
+
+    def __init__(self, original: BaseException) -> None:
+        super().__init__()
+        self.original = original
+
+    def __str__(self) -> str:
+        return f"wrap: {self.original}"
+
+
+def _noted() -> RuntimeError:
+    wrapper = RuntimeError("wrap")
+    wrapper.add_note(str(_unique_violation()))
+    return wrapper
+
+
+@pytest.mark.parametrize(
+    ("make", "held"),
+    [
+        (_retry_loop_error, False),
+        (lambda: RuntimeError(_unique_violation()), True),
+        (lambda: RuntimeError("batch failed", [_unique_violation()]), True),
+        (_noted, False),
+        (lambda: _Holder(_unique_violation()), False),
+    ],
+    ids=["retry-loop", "error-as-arg", "error-in-list-arg", "note", "holder"],
+)
+def test_f1_traceback_of_a_non_database_exception_with_database_text(capture: Any, make: Any, held: bool) -> None:
+    """Axentra F-1: the database text is in the exception's message, ``args`` or notes, not in its chain. An error
+    object held in ``args`` is found as such (the record names it); text alone is stripped."""
+    exc = make()
+    capture.logger.error("job failed", exc_info=(type(exc), exc, exc.__traceback__))
+    assert CANARY not in _out(capture)
+    assert json.loads(capture.json.getvalue())["sqlstate"] == ("23505" if held else None)
+    assert "Traceback" in capture.text.getvalue() or type(exc).__name__ in capture.text.getvalue()
+
+
+def test_f2_broken_call_while_a_database_error_is_handled(capture: Any, capsys: pytest.CaptureFixture[str]) -> None:
+    """Axentra F-2: ``logging`` reports a broken call with the formatting error's chain, whose ``__context__`` is the
+    database error being handled; the filter rewrites the call, so nothing reaches ``handleError``."""
+    try:
+        raise _unique_violation()
+    except PgError:
+        capture.logger.error("user %s failed with %s", "bob")
+    assert CANARY not in _out(capture) + capsys.readouterr().err
+    assert "log message could not be formatted" in capture.text.getvalue()
+    assert "SQLSTATE 23505" in capture.text.getvalue()  # the handled error is named by its safe message
+
+
+@pytest.mark.parametrize(
+    ("template", "args"),
+    [
+        ("user %s failed with %s", "text"),
+        ("user %(a)s %(b)s", "mapping"),
+        ("rows: %d", "text"),
+    ],
+    ids=["too-few-arguments", "missing-key", "wrong-type"],
+)
+def test_t1_broken_call_with_database_text_in_an_argument(
+    capture: Any, capsys: pytest.CaptureFixture[str], template: str, args: str
+) -> None:
+    """Review T-1: ``logging``'s error report prints ``Arguments: %r``; server text in an argument is rewritten too,
+    also outside an ``except`` block."""
+    text = str(_unique_violation())
+    if args == "mapping":
+        capture.logger.error(template, {"a": text})
+    else:
+        capture.logger.error(template, text)
+    assert CANARY not in _out(capture) + capsys.readouterr().err
+    assert "log message could not be formatted" in capture.text.getvalue()
+
+
+def test_td1_broken_call_with_database_text_in_the_template(capture: Any, capsys: pytest.CaptureFixture[str]) -> None:
+    """Delta re-review TD-1: the template itself holds the server text (``logging`` prints it as ``Message: %r``)."""
+    capture.logger.error(str(_unique_violation()) + " %s %s", 1)
+    assert CANARY not in _out(capture) + capsys.readouterr().err
+    assert "log message could not be formatted" in capture.text.getvalue()
+
+
+def test_t2_broken_call_while_database_text_is_handled(capture: Any, capsys: pytest.CaptureFixture[str]) -> None:
+    """Review T-2: the handled exception carries only the database text (no error object): still rewritten."""
+    try:
+        raise RuntimeError(f"gave up: {_unique_violation()}")
+    except RuntimeError:
+        capture.logger.error("user %s failed with %s", "bob")
+    assert CANARY not in _out(capture) + capsys.readouterr().err
+    assert "log message could not be formatted" in capture.text.getvalue()
+
+
+def test_f3_long_run_of_blanks_is_linear() -> None:
+    """Axentra F-3: a long run of blanks before an inline label is no longer scanned quadratically."""
+    text = "a" + " " * 50_000 + " DETAIL:"  # one space after the label: no inline match, the worst case
+    started = time.perf_counter()
+    assert errors._strip_server_text(text) == text
+    assert time.perf_counter() - started < 0.5  # quadratic: about 10 s
+    assert errors._strip_server_text("a" + " " * 50_000 + " DETAIL:  x") == "a " + errors._SERVER_TEXT_MARK
+    assert errors._strip_server_text("value \t DETAIL:  secret") == "value " + errors._SERVER_TEXT_MARK
+
+
+@pytest.mark.parametrize("line", ["+------+", "+", "| +---", 'File "a", line 1', "Traceback (most recent call last):"])
+def test_f4_structure_lines_end_a_removal_only_inside_a_traceback(capture: Any, line: str) -> None:
+    """Axentra F-4: in free text a value line that looks like traceback structure no longer ends the removal."""
+    e = pg_error("23514", "check violation", detail=f"Failing row contains (a\n{line}\n{CANARY}).")
+    capture.logger.error("x %s" % e)  # noqa: UP031 - preformatted on purpose
+    capture.logger.error("stored: %s", errors._strip_server_text(str(e)))
+    assert CANARY not in _out(capture)
+
+
+def test_f4_a_traceback_keeps_its_structure_after_a_removed_part(capture: Any) -> None:
+    exc = RuntimeError(f"gave up\nDETAIL:  {CANARY}")
+    try:
+        raise exc
+    except RuntimeError:
+        capture.logger.error("x", exc_info=True)
+    text = capture.text.getvalue()
+    assert CANARY not in text and errors._SERVER_TEXT_MARK in text and 'File "' in text
+
+
+def test_f5_mapping_message_stays_a_mapping(capture: Any) -> None:
+    """Axentra F-5: structlog's ``ProcessorFormatter`` copies a mapping ``msg``; it must stay a mapping."""
+    seen: list[logging.LogRecord] = []
+
+    class Keep(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            seen.append(record)
+
+    capture.logger.addHandler(Keep())
+    e = _unique_violation()
+    capture.logger.error({"event": "failed", "error": e, "text": str(e), "items": [e], "n": 1})
+    msg = seen[-1].msg
+    assert isinstance(msg, dict) and msg["event"] == "failed" and msg["n"] == 1
+    assert msg["error"] == safe_message(e) and CANARY not in str(msg) and CANARY not in _out(capture)
+    assert seen[-1].db_sqlstate == "23505"  # type: ignore[attr-defined]
+    plain = {"event": "fine"}
+    capture.logger.error(plain)
+    assert seen[-1].msg is plain
+
+
+def test_f7_removed_text_is_marked(capture: Any) -> None:
+    """Axentra F-7: a value with a label cuts the rest of the message, visibly."""
+    capture.logger.error("login failed user=%s ip=%s", "mallory  DETAIL:  ", "203.0.113.9")
+    assert capture.text.getvalue().strip() == f"ERROR login failed user=mallory {errors._SERVER_TEXT_MARK}"
+
+
+def test_f8_diag_value_is_replaced_when_the_label_was_rewritten(capture: Any) -> None:
+    """Axentra F-8: the ``DETAIL`` value itself is replaced when only its label survived a rewrite."""
+    e = _unique_violation()
+    capture.logger.error("x %s / %s", e, " ".join(str(e).split()))
+    assert CANARY not in _out(capture) and "[redacted]" in capture.text.getvalue()
+
+
+def test_f8_string_args_of_an_error_are_replaced() -> None:
+    """Axentra F-8: an error whose ``args`` text differs from its ``str``, quoted with its label rewritten."""
+
+    quiet_class = type(
+        PgIntegrityError.__name__, (PgIntegrityError,), {"__str__": lambda self: "quiet", "__module__": "psycopg"}
+    )
+    quiet = quiet_class(f"dup\nDetail -  Key (e)=({CANARY})")
+    quiet.sqlstate = "23505"
+    quiet.diag = SimpleNamespace(message_detail=None, message_hint=None, context=None)
+    scrubbed = errors._scrub(f"held: {quiet.args[0]}", [quiet])
+    assert CANARY not in scrubbed and "SQLSTATE 23505" in scrubbed
+
+
+def test_d1_mapping_message_with_exc_info_is_redacted(capture: Any) -> None:
+    """Axentra D-1: the mapping branch runs after the traceback is redacted."""
+    try:
+        raise _unique_violation()
+    except PgError:
+        capture.logger.error({"event": "failed"}, exc_info=True)
+    try:
+        raise RuntimeError("boom") from _unique_violation()
+    except RuntimeError:
+        capture.logger.exception({"event": "boom", "n": 1})
+    assert CANARY not in _out(capture) and "SQLSTATE 23505" in capture.text.getvalue()
+
+
+def test_d2_exc_info_inside_an_event_dict(capture: Any) -> None:
+    """Axentra D-2: structlog's stdlib integration puts ``exc_info`` into the event dict and renders it itself."""
+    seen: list[logging.LogRecord] = []
+
+    class Keep(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            seen.append(record)
+
+    capture.logger.addHandler(Keep())
+    e = _unique_violation()
+    for value in (RuntimeError(e), (type(e), e, None), e):
+        capture.logger.error({"event": "x", "exc_info": value})
+        msg = seen[-1].msg
+        assert isinstance(msg, dict) and "exc_info" not in msg and CANARY not in msg["exception"]
+    try:
+        raise e
+    except PgError:
+        capture.logger.error({"event": "x", "exc_info": True})
+    assert "exc_info" not in seen[-1].msg and CANARY not in str(seen[-1].msg)
+    capture.logger.error({"event": "x", "exc_info": True})  # nothing handled: left as it is
+    assert seen[-1].msg == {"event": "x", "exc_info": True}
+
+
+def test_d2_processor_redacts_an_event_dict() -> None:
+    e = _unique_violation()
+    try:
+        raise RuntimeError("wrap") from e
+    except RuntimeError:
+        out = errors._redact_db_errors_processor(None, "error", {"event": "boom", "exc_info": True, "err": [e]})
+    assert out["event"] == "boom" and "exc_info" not in out and "SQLSTATE 23505" in out["exception"]
+    assert CANARY not in str(out)
+    for odd in (None, ["a"], "text", 3):
+        assert errors._redact_db_errors_processor(None, "error", odd) is odd
+
+
+def test_r2_1_processor_fallback_keeps_only_the_event() -> None:
+    """Axentra re-review R2-1: when database text survives scrubbing (here in a key), only ``event`` is returned."""
+    e = _unique_violation()
+    out = errors._redact_db_errors_processor(None, "error", {"event": "x", str(e): 1, "other": "kept?"})
+    assert out == {"event": "x"}
+
+    class BadRepr:
+        def __repr__(self) -> str:
+            raise RuntimeError("repr")
+
+    out = errors._redact_db_errors_processor(None, "error", {"event": f"y DETAIL:  {CANARY}", "v": BadRepr()})
+    assert list(out) == ["event"] and CANARY not in str(out)
+
+
+def test_d3_exception_whose_args_raise_keeps_the_message(capture: Any) -> None:
+    """Axentra D-3: attribute access on the exception is guarded, so the message is not replaced."""
+
+    class BadArgs(Exception):
+        @property
+        def args(self) -> Any:  # type: ignore[override]
+            raise RuntimeError("no args")
+
+    try:
+        raise BadArgs()
+    except BadArgs:
+        capture.logger.error("payment %s failed", "ord-1", exc_info=True)
+    assert capture.text.getvalue().startswith("ERROR payment ord-1 failed")

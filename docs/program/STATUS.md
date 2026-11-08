@@ -4,7 +4,9 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, second M2 lane C pull request (TAB-030, TAB-034, reviews DL-1 and of #6; branch
+> **Last update:** 2026-11-08, TAB-038 `v0.1.0a1` preparation (branch `claude/project-thread-rdo6g3-a1`, after #7
+> merged at `c2711b5`). Before: TB-031 port to `tabrion.errors` (branch `claude/project-thread-rdo6g3-errfix`, after
+> #6 merged). Before: second M2 lane C pull request [#6](https://github.com/peterkarlhuber/tabrion/pull/6) (TAB-030, TAB-034, reviews DL-1 and of #6; branch
 > `claude/project-thread-rdo6g3-pg2`) after [#4](https://github.com/peterkarlhuber/tabrion/pull/4) merged (`af0f3dc`). Before: M2 lane B pull request [#4](https://github.com/peterkarlhuber/tabrion/pull/4) (TAB-013, TAB-014; branch `claude/project-thread-rdo6g3`), after
 > the M2 lane A pull request [#3](https://github.com/peterkarlhuber/tabrion/pull/3) (TAB-010..TAB-012) merged (`6b99604`;
 > independent review accepted at `ece7572`).
@@ -95,7 +97,7 @@ Planned effort: 60.75 + 21.25 agent days.
 | QA-11 | Release workflow without publishing | tabrion | TAB-005 | - | 1 + 0.25 | QA | Not started |  |
 | TAB-013 | tabrion.sqlite connection and profile | tabrion | TAB-010 | - | 2 + 1 | Core | In review | `src/tabrion/sqlite.py` (`SQLiteProfile`, `create_private_file`, `connect`, `apply_profile`, `check_path`, `loading_extensions`); `tests/sqlite/test_connect.py` (S01..S12), `tests/sqlite/test_profile.py` (S13..S15), mutation probes in `tests/sqlite/test_mutation_probes_sqlite.py`; contract I-21..I-23; [lane B evidence](#m2-lane-b-evidence-tab-013-tab-014). Independent review pending (TB-044) |
 | TAB-015 | tabrion.postgres configure, ping, diagnose, extension_status | tabrion | TAB-010, TAB-012 | - | 2 + 0.5 | Core | Done | `src/tabrion/postgres/__init__.py`, `_common.py`; `tests/postgres/test_session.py` (P01..P05, P16, G03), `tests/postgres/test_health.py` (P06..P15), `tests/postgres/test_contract_rules.py` (G01, G02, `search_path` hijack), `tests/unit/test_postgres_unit.py`, PostgreSQL mutation probes; [M2 lane C evidence](#m2-lane-c-evidence). Independent review required (TB-032) |
-| TAB-038 | Internal pre-release v0.1.0a1 (errors, sql, config) for unmerged integration branches (RC-8) | tabrion | TAB-010, TAB-011, TAB-012, TAB-005 | - | 0.25 + 0.25 | Core | Not started |  |
+| TAB-038 | Internal pre-release v0.1.0a1 (errors, sql, config) for unmerged integration branches (RC-8) | tabrion | TAB-010, TAB-011, TAB-012, TAB-005 | - | 0.25 + 0.25 | Core | Done (code); tag pending, owner action (TB-011) | `__version__ = "0.1.0a1"` at merge commit `a463422` of [#9](https://github.com/peterkarlhuber/tabrion/pull/9) (independent review accepted), CHANGELOG `[0.1.0a1]`, `docs/getting-started/installation.md` (pin the commit SHA, RC-8). Annotated tag `v0.1.0a1` on `a463422`: owner action (TB-011). No PyPI, no GitHub release, `release.yml` not run. Master moved on to `0.1.0a2.dev0` (TB-053 done) |
 | QA-22 | Conventions audit of the new repositories | tabrion, tabrion-studio | TAB-004, STU-018 | - | 0.5 + 0 | QA | Not started |  |
 | TAB-016 | tabrion.postgres reading roles | tabrion | TAB-015 | - | 1.5 + 0.75 | Core | Done | `src/tabrion/postgres/roles.py`; `tests/postgres/test_roles.py` (R01..R10 against the verbatim Axentra and Nodestro queries; R19/R20 roles a session can become, renumbered from R11/R12 in the third lane C pull request because contract 4.6 assigns R11..R18 to the grant), G01/G02; [M2 lane C evidence](#m2-lane-c-evidence). Independent review (TB-032): accepted after the delta re-review; merged in [#5](https://github.com/peterkarlhuber/tabrion/pull/5) (`b34abb2`); DL-1 fixed in the second lane C pull request |
 | TAB-030 | SessionLock and advisory lock helpers (0.1) | tabrion | TAB-015 | - | 2 + 1 | Core | Done | `src/tabrion/postgres/locks.py`; `tests/postgres/test_locks.py` (L01..L15, G01), `tests/postgres/test_faults.py` (locks under faults), `tests/unit/test_locks_and_faults_unit.py`, mutation probes; contract I-32; [M2 lane C2 evidence](#m2-lane-c2-evidence). Independent review of #6: accepted with conditions at 0cd79eb, fix round in the same pull request, accepted after the delta re-review at ce5ad7d; merged in [#6](https://github.com/peterkarlhuber/tabrion/pull/6) (`b274d89`); DL-1 and the Info items of the delta re-review in the third lane C pull request ([M2 lane C3 evidence](#m2-lane-c3-evidence)) |
@@ -466,7 +468,7 @@ Review of #8 (4402d33, accepted with conditions, planning folder `reviews/tab-03
 | L-2 a 64-byte schema name granted on the 63-byte schema | `ValueError` for a `role`, `schema` or protected table name over 63 bytes in UTF-8, without the name (D-50) | `test_r14_schema_name_over_63_bytes` (64 characters and 64 characters with 65 bytes next to a 63-byte schema: nothing granted; 63 bytes work); probe |
 | L-4 a missing schema surfaced as `InvalidSchemaName` | `UsageError("postgres.schema_missing")` before anything is granted (D-50) | `test_r14_schema_missing`; probe |
 | L-3 mutants 13, 15, 17 | Tests | `test_r15_truncate_granted_before_is_revoked`, `test_r16_connect_through_public_adds_no_acl_entry` (database ACL unchanged), `test_r16_a_failing_connect_step_propagates` (a `lock_timeout` in the CONNECT step propagates, the first transaction's grants stay; a second run completes) and `test_r16_other_errors_of_the_connect_step_propagate` (a cut connection); three probes |
-| I-1 checks before the grant transaction | TODO TB-053 | |
+| I-1 checks before the grant transaction | TODO TB-054 | |
 | I-3 a grantor without grant option gets a WARNING | Documented: check `report.connect` (docstring, I-35, SECURITY.md) | `test_r16_owner_without_the_right_to_grant_connect` |
 | Teardown on a shared server | `make_role` skips a database another run dropped meanwhile | |
 
@@ -585,6 +587,39 @@ the same pull request, after merging `master` with lane C (`b34abb2`):
 Lane C's IDs come first after the merge: lane B's contract notes I-14..I-24 are now I-21..I-31, its deviations
 D-28..D-33 are D-34..D-39 (new: D-40), and its TODO items TB-032..TB-039 are TB-038..TB-045 (new: TB-046..TB-049).
 
+#### Axentra TB-031 review fixes ported to `tabrion.errors` (after #4)
+
+Axentra's TB-031 pull request (#62, merged at `ea7aa9f`) fixed the findings of `reviews/axe-tb031-review.md` in its
+copy of the filter. Each one was first reproduced against Tabrion with a probe (real 23505/23514 from PostgreSQL 16,
+real structlog 25 in a scratch environment) and then ported, or marked as not applicable:
+
+| Finding | Before (probe against `af0f3dc`) | Now | Tests |
+|---|---|---|---|
+| F-1 traceback text without an error object | Leaks: retry loop, `RuntimeError(e)`, `RuntimeError("b", [e])`, a note, a holder with `__str__` | Clean; errors in `args` are found as objects (`db_sqlstate`) | `test_f1_*` (5 shapes); 2 probes |
+| F-2 `handleError` | Leaks: broken call inside `except`, failing formatter | Broken calls clean (rewritten, names the handled error) when a database error or its text is handled, or is in the template or an argument (fix round T-1, T-2); a formatter/`emit` failure is a residual (D-44, TB-050, SECURITY.md) | `test_f2_broken_call_while_a_database_error_is_handled`, `test_t1_*` (3 calls, stderr), `test_t2_*`; 3 probes |
+| F-3 ReDoS | 20,000 blanks: 1.6 s | 1 ms (look-behind) | `test_f3_long_run_of_blanks_is_linear` (50,000 blanks); 1 probe |
+| F-4 boundaries only after a header | Leaks: `+------+`, `File "a", line 1` (a lone `+` and `\| +---` were already clean) | Clean; this also closes re-review N-1 (TODO TB-038 deleted) | `test_f4_*`; 1 probe |
+| F-5 mapping `msg` | Became a `str` (structlog's `ProcessorFormatter` breaks) | Stays a mapping with scrubbed values | `test_f5_mapping_message_stays_a_mapping`; 1 probe |
+| F-6 `extra={"db_sqlstate": ...}` | No `KeyError`: Tabrion sets the fields in the filter, not in a record factory | Not applicable | none |
+| F-7 silent truncation | `login failed user=mallory` | `... user=mallory [redacted: database server text]` | `test_f7_removed_text_is_marked`; 1 probe |
+| F-8 two unpinned branches | n/a | Pinned | `test_f8_*` |
+| AX D-1 mapping `msg` with `exc_info` | Clean (no mapping branch yet) | Clean; the mapping branch runs after the traceback block | `test_d1_*` |
+| AX D-2 structlog `exc_info` | stdlib `ProcessorFormatter` broke (F-5) | stdlib integration clean (`format_exc_info`, `dict_tracebacks`, `ConsoleRenderer`); native structlog clean with the internal processor, which stays internal (D-45, TB-051) | `test_d2_*`; 1 probe |
+| AX D-3 guarded attribute access | Clean (`_attr` was already guarded) | Clean with the new F-1 code | `test_d3_*` |
+| R2-1 processor fallback | n/a | Only `event` is returned | `test_r2_1_*`; 1 probe |
+
+`diagnose` also follows #4 re-review DL-1: a group- or other-writable database directory warns whatever the sticky
+bit ("other users can create files next to the database (side files)"); the non-sticky world-writable case keeps
+"can replace the database file"; no path in either message (`test_m2_world_writable_directory_without_sticky_bit`,
+8 modes; 1 more probe). TODO TB-031 (the cross-repository port) is done and deleted; new items TB-050, TB-051.
+
+Review of the port (`reviews/tab-errfix-review.md`, at `4faa636`, ACCEPTED WITH CONDITIONS), fix round: T-1 fixed (a
+broken call with server text in an argument is rewritten, so `logging`'s "Arguments:" report on stderr never runs:
+`log.error("... %s ... %s", str(e))`, a missing mapping key and `%d` with a `str`; `test_t1_*`, 1 probe); T-2 pinned
+(`test_t2_broken_call_while_database_text_is_handled` kills the `leaky = False` mutant, 1 probe); T-3, T-4 and T-5
+documented in SECURITY.md and contract I-6 (`extra=` with a record-factory install, the two `__str__` residuals, the
+label from a suppressed context). After merging #6 the deviations of this port are D-44 and D-45 (were D-41, D-42).
+
 ## Deviation log
 
 Deviations from the plan, with the reason. A deviation that changes a decision needs an ADR note under "Changes from
@@ -635,11 +670,13 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-41 | TAB-034 | Planning documents 07 (K7) and 09: a public `tabrion.testing.faults` | The internal, unstable `tabrion.testing._faults` (contract I-33) | Decision TB-033: the frozen surface is not extended in 0.1; a public module is a 0.2 decision by contract addendum and review |
 | D-42 | TAB-030 | Contract 4.7, L13: `CREATE INDEX CONCURRENTLY` "in a third session" | L13 runs it in the holder's session, the Axentra migration case, with a control: a blocking `pg_advisory_lock` waiter makes the server fail one side (deadlock or timeout) | The holder's own index build is where a blocked waiter's snapshot deadlocks; a third session would complete in either design. L12 accepts the moment between an attempt and its rollback without autocommit (contract I-32) |
 | D-43 | TAB-030 | Contract 4.7: after a lost connection "every count is cleared" and the lock is replaced | Also: a key held on the lost connection raises `UsageError("postgres.lock_lost")` in `try_acquire`/`acquire` until `holds` or `release` acknowledges the loss (contract I-32) | Review L-3 of #6: a nested section would otherwise take a fresh hold and its `release` free the lock the outer section relies on. Additive: a new error code, no signature change |
+| D-44 | TAB-010 | Axentra TB-031 F-2: `install_db_error_redaction` replaces `Handler.handleError` process-wide | The filter rewrites a broken call made while a database error is handled; formatter and `emit` failures are a documented residual (SECURITY.md) | Tabrion installs nothing and has no install function; a new public name is a surface change; TB-050 |
+| D-45 | TAB-010 | Axentra TB-031 D-2: a public `redact_db_errors_processor` for native structlog | The processor is internal (`tabrion.errors._redact_db_errors_processor`); the filter's mapping branch covers structlog's stdlib integration | A new public name extends the frozen surface (`surface.json` unchanged); TB-051 |
 | D-46 | TAB-031 | Contract 4.6: refuse `role == owner`, superuser, `BYPASSRLS` or `owned_tables` | Also `table_owner` when `role` can become the connecting role (`pg_has_role(role, CURRENT_USER, 'MEMBER')`, NOINHERIT members too; contract I-35) | Such a role owns every table the owner creates later (I-20, review H-1); the references only notice it once the schema has a table. The reason set stays unchanged |
 | D-47 | TAB-031 | Contract 4.6: protected tables "schema-qualified through `to_regclass`"; Nodestro resolves them through the `search_path` | Each name is looked up by its exact text in the target schema in `pg_class`/`pg_namespace` (qualified operators); the `REVOKE` names `schema.table` | `to_regclass` parses its argument as an identifier (case folding, quotes) and an unqualified name resolves through the `search_path`; on the reference fixtures the result is identical (R11, R12) |
+| D-48 | TAB-031 | Test IDs: the H-1 tests of #5 were named TAB-T-R11/R12, which contract 4.6 gives to the grant | Renamed to R19/R20 (`test_roles.py`, probes, STATUS, TODO TB-035); R11..R18 are the grant's | The contract numbering wins; the review references to "R11/R12" of #5 mean R19/R20 |
 | D-49 | TAB-031 | Contract 4.6: refuse `role == owner`, superuser, `BYPASSRLS` or `owned_tables` | Also `table_owner` when `role` is or can become the owner of the target schema (`pg_has_role(role, nspowner, 'MEMBER')`, NOINHERIT members too; contract I-35) | Review M-1 of #8: the schema's owner may drop or alter every object in it, the power `table_owner` exists to catch; the reason set stays unchanged. Axentra and Nodestro share the gap (TODO TB-035) |
 | D-50 | TAB-031 | Contract 4.6 names `RoleMissing` and `RoleUnsafe` only | `UsageError("postgres.schema_missing")` for a schema that does not exist and `ValueError` for a name over 63 bytes, both before anything is granted (contract I-35) | Review L-2/L-4 of #8: a 64-byte name is truncated by the server and granted on another schema; a missing schema surfaced as a raw `InvalidSchemaName`. Additive: a new error code, no signature change |
-| D-48 | TAB-031 | Test IDs: the H-1 tests of #5 were named TAB-T-R11/R12, which contract 4.6 gives to the grant | Renamed to R19/R20 (`test_roles.py`, probes, STATUS, TODO TB-035); R11..R18 are the grant's | The contract numbering wins; the review references to "R11/R12" of #5 mean R19/R20 |
 
 ## Score review
 

@@ -6,6 +6,21 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Changed
+
+- Master builds as `0.1.0a2.dev0` after the `0.1.0a1` commit (TB-053), so later commits never build as the
+  internal pre-release. The installation guide pins the a1 commit SHA instead of the tag name and says not to run
+  `release.yml` for it (TAB-038 review Info notes).
+
+## [0.1.0a1] - internal pre-release, not published
+
+TABRION TAB-038: the tag `v0.1.0a1` on the merge commit of this version is an internal pre-release for **unmerged**
+integration branches only (RC-8; [installation](docs/getting-started/installation.md#internal-pre-release-v010a1)).
+Its scope is `tabrion.errors`, `tabrion.sql` and `tabrion.config` (TAB-010..TAB-012). The other modules that are
+already in the tree (`tabrion.sqlite`, `tabrion.postgres`) are included as they are, without the a1 promise; layer
+B, `tabrion.check`, `tabrion.migrations` and `tabrion.testing` still raise `NotImplementedError`. No PyPI upload,
+no GitHub release and no announcement (G-R). It satisfies no final range such as `tabrion>=0.1,<0.2`.
+
 ### Added
 
 - `tabrion.errors` (TAB-010): `classify` maps psycopg, sqlite3 and SQLAlchemy errors to a value-free
@@ -47,6 +62,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   five-thread lost-update scenario, two processes migrating at once, byte-identical files after failed migrations,
   backups under concurrent writes, damaged files, T-NOTX in every state, and the mutation probes; the platforms
   workflow runs them on macOS and Windows.
+- Port of Axentra's TB-031 review fixes (`axe-tb031-review.md`) to `DbErrorRedactionFilter`: tracebacks are
+  redacted when a non-database exception carries database text in its message, `args` or notes (F-1); a broken log
+  call no longer reaches `logging`'s error report on stderr when a database error or its text is being handled or
+  is in its template or arguments (F-2 for broken calls; a failing formatter or `emit` is a documented residual); the inline label search is linear (F-3, a log-injection DoS); traceback structure lines end a
+  removed part only inside a traceback (F-4, re-review N-1); a mapping message stays a mapping and an `exc_info` in
+  it is redacted, so structlog's `ProcessorFormatter` keeps working (F-5, D-1, D-2); removed text is marked
+  `[redacted: database server text]` (F-7); guarded attribute access (D-3). `diagnose` also warns when the database
+  directory is group- or other-writable with the sticky bit (#4 re-review DL-1).
 - Fixes from the independent review of TAB-013/TAB-014: `connect` refuses an existing file (or side file) owned by
   another user or writable by group or others unless `allow_shared_file` (M-1); `diagnose` warns when the database
   directory is world-writable without the sticky bit (M-2); `backup` checks that SQLite opened the temporary file it
