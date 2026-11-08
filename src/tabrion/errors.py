@@ -17,6 +17,7 @@ Two rules hold for everything here:
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+import contextlib
 from dataclasses import dataclass
 import enum
 import logging
@@ -136,6 +137,7 @@ _PG_STATES: dict[str, tuple[Kind, bool, bool]] = {
     "55P03": (Kind.LOCKED, *_TRANSIENT),  # lock_not_available (lock_timeout, NOWAIT)
     "40P01": (Kind.DEADLOCK, *_TRANSIENT),
     "40001": (Kind.SERIALIZATION, *_TRANSIENT),
+    "40003": (Kind.UNKNOWN, False, False),  # statement_completion_unknown
     "23505": (Kind.UNIQUE, False, True),
     "23503": (Kind.FOREIGN_KEY, False, True),
     "23001": (Kind.FOREIGN_KEY, False, True),  # restrict_violation
@@ -163,6 +165,9 @@ _PG_CLASSES: dict[str, tuple[Kind, bool, bool]] = {
     "54": (Kind.RESOURCE, False, True),
 }
 _ESTABLISHMENT_STATES = frozenset({"53300"})
+_OUTCOME_UNKNOWN_STATES = frozenset({"08007", "40003"})
+"""``transaction_resolution_unknown`` and ``statement_completion_unknown``: the outcome is unknown by definition,
+whatever the caller says (contract I-3)."""
 """Raised only while a connection is being established: nothing was sent, so the outcome is known (``retryable``
 without condition, contract mapping table)."""
 
@@ -276,8 +281,8 @@ def _is_sqlalchemy(exc: BaseException) -> bool:
 def _sqlstate(exc: BaseException) -> str | None:
     """psycopg ``sqlstate``, psycopg2 ``pgcode``; only a well-formed five-character code counts."""
     for name in ("sqlstate", "pgcode"):
-        value = _attr(exc, name)
-        if isinstance(value, str) and _SQLSTATE.fullmatch(value):
+        value = _plain(_attr(exc, name))
+        if value is not None and _SQLSTATE.fullmatch(value):
             return value
     return None
 
@@ -285,16 +290,27 @@ def _sqlstate(exc: BaseException) -> str | None:
 def _sqlite_code(exc: BaseException) -> str | None:
     if not isinstance(exc, sqlite3.Error):
         return None
-    value = _attr(exc, "sqlite_errorname")
-    if isinstance(value, str) and _SQLITE_CODE.fullmatch(value):
+    value = _plain(_attr(exc, "sqlite_errorname"))
+    if value is not None and _SQLITE_CODE.fullmatch(value):
         return value
     return None
 
 
+def _plain(value: object) -> str | None:
+    """``value`` as an exact ``str`` (a subclass could control its own formatting, review I-1), else ``None``."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return str.__str__(value)
+    except Exception:
+        return None
+
+
 def _name(value: object) -> str | None:
     """An object name from ``diag``, kept only when it is a short, printable string."""
-    if isinstance(value, str) and 0 < len(value) <= _MAX_NAME and value.isprintable():
-        return value
+    text = _plain(value)
+    if text is not None and 0 < len(text) <= _MAX_NAME and text.isprintable():
+        return text
     return None
 
 
@@ -306,38 +322,75 @@ def _text(exc: BaseException) -> str:
         return ""
 
 
-def _links(exc: BaseException) -> Iterator[BaseException]:
-    for name in ("orig", "__cause__", "__context__"):
-        linked = _attr(exc, name)
-        if isinstance(linked, BaseException):
-            yield linked
+_CONNECTION_LOSS_STATES = frozenset({"57P01", "57P02", "57P03", "57P04", "57P05"})
 
 
-def _classify_chain(error: BaseException) -> tuple[BaseException, list[BaseException]]:
-    """The exception to classify and every exception visited (breadth first, at most ``_MAX_DEPTH`` links).
+def _is_candidate(exc: BaseException) -> bool:
+    """A driver error, or any exception that carries a SQLSTATE or a SQLite code (duck typing)."""
+    return _is_driver_error(exc) or _sqlstate(exc) is not None or _sqlite_code(exc) is not None
 
-    The first exception with a SQLSTATE or a SQLite code wins; then the first driver error; then ``error`` itself.
-    """
-    visited: list[BaseException] = []
-    seen: set[int] = set()
-    level = [error]
-    for _ in range(_MAX_DEPTH + 1):
-        following: list[BaseException] = []
-        for exc in level:
+
+def _is_connection_loss(exc: BaseException) -> bool:
+    """Class 08, 57P01..57P05, or a psycopg ``OperationalError`` without SQLSTATE (a lost or refused connection)."""
+    sqlstate = _sqlstate(exc)
+    if sqlstate is not None:
+        return sqlstate[:2] == "08" or sqlstate in _CONNECTION_LOSS_STATES
+    if isinstance(exc, sqlite3.Error):
+        return False
+    names = {name for package, name in _mro_names(exc) if package in _DRIVER_PACKAGES}
+    return "OperationalError" in names and "PipelineAborted" not in names
+
+
+def _wrapped(start: BaseException, depth: int, seen: set[int]) -> list[tuple[BaseException, int]]:
+    """``start`` and what it wraps through ``orig`` and ``__cause__`` (breadth first, up to ``_MAX_DEPTH``)."""
+    out: list[tuple[BaseException, int]] = []
+    level = [(start, depth)]
+    while level:
+        following: list[tuple[BaseException, int]] = []
+        for exc, d in level:
             if id(exc) in seen:
                 continue
             seen.add(id(exc))
-            visited.append(exc)
-            following.extend(_links(exc))
+            out.append((exc, d))
+            if d < _MAX_DEPTH:
+                for name in ("orig", "__cause__"):
+                    linked = _attr(exc, name)
+                    if isinstance(linked, BaseException):
+                        following.append((linked, d + 1))
         level = following
-        if not level:
-            break
-    for exc in visited:
-        if _sqlstate(exc) is not None or _sqlite_code(exc) is not None:
-            return exc, visited
-    for exc in visited:
-        if _is_driver_error(exc):
-            return exc, visited
+    return out
+
+
+def _classify_chain(error: BaseException) -> tuple[BaseException, list[BaseException]]:
+    """The exception to classify and every exception visited (at most ``_MAX_DEPTH`` links from ``error``).
+
+    ``orig`` and ``__cause__`` say what an error wraps; ``__context__`` only says what was being handled when it was
+    raised, which may be an older, unrelated error (H-1: a connection lost during COMMIT inside an ``except`` block of
+    a serialization failure). So ``__context__`` is followed only while the exceptions reached so far hold no driver
+    error, and never when ``__suppress_context__`` is set (contract I-13). Among the exceptions reached, the first
+    driver error wins when it reports a lost connection; otherwise the first one with a SQLSTATE or SQLite code, then
+    the first driver error.
+    """
+    seen: set[int] = set()
+    segment = _wrapped(error, 0, seen)
+    visited = [exc for exc, _ in segment]
+    while segment:
+        candidates = [exc for exc, _ in segment if _is_candidate(exc)]
+        if candidates:
+            first = candidates[0]
+            if _is_connection_loss(first):
+                return first, visited
+            coded = next((e for e in candidates if _sqlstate(e) is not None or _sqlite_code(e) is not None), first)
+            return coded, visited
+        following: list[tuple[BaseException, int]] = []
+        for exc, d in segment:
+            if d >= _MAX_DEPTH or _attr(exc, "__suppress_context__") is True:
+                continue
+            context = _attr(exc, "__context__")
+            if isinstance(context, BaseException):
+                following.extend(_wrapped(context, d + 1, seen))
+        segment = following
+        visited.extend(exc for exc, _ in segment)
     return error, visited
 
 
@@ -453,6 +506,8 @@ def classify(error: BaseException, *, during_commit: bool = False, sent: bool = 
 def _classify(error: BaseException, *, during_commit: bool, sent: bool) -> Classification:
     if not isinstance(error, BaseException):
         return _UNKNOWN
+    if isinstance(error, TabrionError) and isinstance(error.classification, Classification):
+        return error.classification
     exc, visited = _classify_chain(error)
     sqlstate = _sqlstate(exc)
     constraint = table = column = sqlite_code = None
@@ -472,7 +527,9 @@ def _classify(error: BaseException, *, during_commit: bool, sent: bool) -> Class
         usable = False
         if kind is Kind.UNKNOWN:
             kind, retryable = Kind.CONNECTION, True
-    outcome_unknown = kind is Kind.CONNECTION and bool(sent or during_commit) and sqlstate not in _ESTABLISHMENT_STATES
+    outcome_unknown = sqlstate in _OUTCOME_UNKNOWN_STATES or (
+        kind is Kind.CONNECTION and bool(sent or during_commit) and sqlstate not in _ESTABLISHMENT_STATES
+    )
     if outcome_unknown:
         retryable = False  # R-NORETRY: never repeat what may have run
     return Classification(
@@ -551,22 +608,57 @@ def safe_message(error: BaseException | Classification) -> str:
 # Log redaction
 # ---------------------------------------------------------------------------------------------------------------------
 
-#: The lines psycopg appends to a server message (``DETAIL:  Key (email)=(...) already exists.``, ``HINT:``,
-#: ``CONTEXT:``, ``QUERY:``/``LINE n:`` with statement text) and SQLAlchemy's ``[parameters: ...]`` line: removed
-#: from every text the filter writes, wherever they come from (a message formatted before logging, a wrapper's text).
-_SERVER_TEXT_LINE = re.compile(r"(?m)^[ \t]*(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):.*(?:\r?\n|$)")
-_SERVER_TEXT_INLINE = re.compile(r"[ \t]*\b(?:DETAIL|HINT|CONTEXT): {2}.*")
-_PARAMETERS_LINE = re.compile(r"(?m)^[ \t]*\[parameters: .*(?:\r?\n|$)")
+#: Where psycopg's server text starts in a message: a ``DETAIL:``/``HINT:``/``CONTEXT:``/``QUERY:``/``LINE n:`` line,
+#: or the same label in the middle of a line (psycopg puts two spaces after the colon). From there the text is
+#: removed up to the next boundary line, because a value may span several lines (review M-2).
+_SERVER_TEXT_START = re.compile(
+    r"^[ \t]*(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):|[ \t]*\b(?:DETAIL|HINT|CONTEXT|QUERY): {2}"
+)
+#: Lines that end a removed part: SQLAlchemy's own lines and the structure of a formatted traceback.
+_BOUNDARIES = (
+    "[SQL: ",
+    "(Background on this error at:",
+    "Traceback (most recent call last):",
+    "The above exception was the direct cause",
+    "During handling of the above exception",
+    'File "',
+    "+-",
+)
+_PARAMETERS_LINE = re.compile(r"^[ \t]*\[parameters: ")
 _PARAMETERS_INLINE = re.compile(r"\[parameters: .*")
-_SUSPICIOUS = ("DETAIL:", "HINT:", "CONTEXT:", "[parameters: ")
+#: The same parts in escaped form, as ``repr()`` prints them (``'...\\nDETAIL:  Key (email)=(...)'``, review H-2):
+#: removed from the escaped newline to the end of the line.
+_ESCAPED_SERVER_TEXT = re.compile(
+    r"(?:\\r)?\\n[ \t]*(?:(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):|\[(?:parameters|SQL): ).*"
+)
+_SUSPICIOUS = ("DETAIL:", "HINT:", "CONTEXT:", "QUERY:", "[parameters: ", "\\n[SQL: ")
 _REDACTED = "[redacted]"
+_MAX_COLLECT_DEPTH = 3
+_MAX_COLLECT_ITEMS = 1_000
 
 
 def _strip_server_text(text: str) -> str:
     if not any(marker in text for marker in _SUSPICIOUS):
         return text
-    text = _PARAMETERS_LINE.sub("", _SERVER_TEXT_LINE.sub("", text))
-    return _PARAMETERS_INLINE.sub("", _SERVER_TEXT_INLINE.sub("", text)).rstrip("\n")
+    text = _ESCAPED_SERVER_TEXT.sub("", text)
+    out: list[str] = []
+    skipping = False
+    for line in text.splitlines(keepends=True):
+        if skipping:
+            if not line.lstrip(" \t").startswith(_BOUNDARIES):
+                continue
+            skipping = False
+        if _PARAMETERS_LINE.match(line):
+            continue
+        start = _SERVER_TEXT_START.search(line)
+        if start is not None:
+            kept = line[: start.start()]
+            if kept.strip():
+                out.append(kept.rstrip(" \t") + ("\n" if line.endswith("\n") else ""))
+            skipping = True
+            continue
+        out.append(_PARAMETERS_INLINE.sub("", line))
+    return "".join(out).rstrip("\n")
 
 
 def _may_hold_server_text(value: object) -> bool:
@@ -606,22 +698,86 @@ def _db_errors_in(exc: BaseException) -> list[BaseException]:
     return [e for e in _chain(exc) if _is_db_error(e)]
 
 
+def _forms(value: str) -> list[str]:
+    """``value`` and its escaped form inside a ``repr`` (``\\n`` for a newline, escaped quotes)."""
+    forms = [value]
+    try:
+        escaped = repr(value)[1:-1]
+    except Exception:
+        return forms
+    if escaped != value:
+        forms.append(escaped)
+    return forms
+
+
+def _safe_text(producer: Any, value: object) -> str | None:
+    try:
+        text = producer(value)
+    except Exception:
+        return None
+    return text if isinstance(text, str) else None
+
+
+def _error_texts(err: BaseException) -> list[str]:
+    """Every text of ``err`` that may appear in a message: ``str``, ``repr``, string ``args``, escaped forms."""
+    texts: list[str] = []
+    args = _attr(err, "args")
+    sources = [_safe_text(str, err), _safe_text(repr, err)]
+    for arg in args if isinstance(args, tuple) else ():
+        if isinstance(arg, str):
+            sources += [arg, _safe_text(repr, arg)]
+    for source in sources:
+        if source is not None:
+            texts.extend(_forms(source))
+    return [t for t in texts if len(t) >= 4]
+
+
 def _scrub(text: str, errors: list[BaseException]) -> str:
-    """``text`` with each database error's text replaced by its safe message, its ``DETAIL``, ``HINT`` and
-    ``CONTEXT`` values replaced by ``[redacted]``, and every server text and ``[parameters:`` line removed."""
+    """``text`` with each database error's text (plain, ``repr`` and escaped) replaced by its safe message, its
+    ``DETAIL``, ``HINT`` and ``CONTEXT`` values replaced by ``[redacted]``, and every server text and
+    ``[parameters:`` part removed."""
+    replacements: list[tuple[str, str]] = []
     for err in errors:
-        whole = _text(err)
-        if whole and whole in text:
-            text = text.replace(whole, safe_message(err))
+        safe = safe_message(err)
+        replacements.extend((t, safe) for t in _error_texts(err))
         for candidate in (err, _attr(err, "orig")):
             diag = _attr(candidate, "diag")
             if diag is None:
                 continue
             for part in ("message_detail", "message_hint", "context"):
                 value = _attr(diag, part)
-                if isinstance(value, str) and value and value in text:
-                    text = text.replace(value, _REDACTED)
+                if isinstance(value, str) and value:
+                    replacements.extend((form, _REDACTED) for form in _forms(value))
+    for old, new in sorted(replacements, key=lambda pair: len(pair[0]), reverse=True):
+        if old in text:
+            text = text.replace(old, new)
     return _strip_server_text(text)
+
+
+def _collect(value: object, found: list[BaseException]) -> None:
+    """Add the database errors held by ``value``: itself, its chain, and inside lists, tuples, sets, dicts and
+    exception ``args`` (at most 3 levels and 1,000 objects, review H-2)."""
+    stack: list[tuple[object, int]] = [(value, 0)]
+    seen: set[int] = set()
+    while stack and len(seen) < _MAX_COLLECT_ITEMS:
+        current, depth = stack.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        children: list[object] = []
+        if isinstance(current, BaseException):
+            found.extend(e for e in _db_errors_in(current) if all(e is not f for f in found))
+            args = _attr(current, "args")
+            if isinstance(args, tuple):
+                children.extend(args)
+        elif isinstance(current, (list, tuple, set, frozenset)):
+            children.extend(current)
+        elif isinstance(current, Mapping):
+            with contextlib.suppress(Exception):
+                children.extend(current.keys())
+                children.extend(current.values())
+        if depth < _MAX_COLLECT_DEPTH:
+            stack.extend((child, depth + 1) for child in children[:_MAX_COLLECT_ITEMS])
 
 
 def _redact_traceback(top: traceback.TracebackException, exc: BaseException, errors: list[BaseException]) -> None:
@@ -728,26 +884,15 @@ class DbErrorRedactionFilter(logging.Filter):
         exc_info = record.exc_info
         exc = exc_info[1] if isinstance(exc_info, tuple) and len(exc_info) == 3 else None
         found: list[BaseException] = _db_errors_in(exc) if isinstance(exc, BaseException) else []
-
-        def note(value: object) -> None:
-            if isinstance(value, BaseException):
-                found.extend(e for e in _db_errors_in(value) if all(e is not f for f in found))
+        _collect(record.args, found)
+        _collect(record.msg, found)
 
         args: Any = record.args
-        suspicious = _may_hold_server_text(record.msg)
         if isinstance(args, tuple):
-            for a in args:
-                note(a)
-                suspicious = suspicious or _may_hold_server_text(a)
             if any(_is_db_exc(a) for a in args):
                 record.args = tuple(safe_message(a) if _is_db_exc(a) else a for a in args)
-        elif isinstance(args, Mapping):
-            for v in args.values():
-                note(v)
-                suspicious = suspicious or _may_hold_server_text(v)
-            if any(_is_db_exc(v) for v in args.values()):
-                record.args = {k: safe_message(v) if _is_db_exc(v) else v for k, v in args.items()}
-        note(record.msg)
+        elif isinstance(args, Mapping) and any(_is_db_exc(v) for v in args.values()):
+            record.args = {k: safe_message(v) if _is_db_exc(v) else v for k, v in args.items()}
         msg: object = record.msg
         if isinstance(msg, BaseException) and _is_db_error(msg):
             record.msg = safe_message(msg)
@@ -758,16 +903,21 @@ class DbErrorRedactionFilter(logging.Filter):
         elif isinstance(record.exc_text, str) and _may_hold_server_text(record.exc_text):
             record.exc_text = _strip_server_text(record.exc_text)
 
-        if found or suspicious:
-            try:
-                message = record.getMessage()
-            except Exception:
-                # A broken call (for example too few arguments): keep the record and say what failed.
-                template = _scrub(str(record.msg), found)
-                summary = "; ".join(safe_message(e) for e in found)
-                record.msg = f"log message could not be formatted: {template!r}" + (f" ({summary})" if summary else "")
-                record.args = None
-            else:
+        # The check runs on the formatted message, so a value in any argument (a repr, a list, e.args) is seen.
+        try:
+            message = record.getMessage()
+        except Exception:
+            template = str(record.msg)
+            if not found and not _may_hold_server_text(template):
+                return  # an ordinary broken call: logging reports it as usual
+            # A broken call (for example too few arguments): keep the record and say what failed.
+            summary = "; ".join(safe_message(e) for e in found)
+            record.msg = f"log message could not be formatted: {_scrub(template, found)!r}" + (
+                f" ({summary})" if summary else ""
+            )
+            record.args = None
+        else:
+            if found or _may_hold_server_text(message):
                 redacted = _scrub(message, found)
                 if redacted != message:
                     record.msg, record.args = redacted, None

@@ -413,3 +413,97 @@ def test_e23_real_sqlalchemy_parameters_are_redacted(conninfo: str, schema: str)
     output = stream.getvalue()
     assert output and CANARY not in output and "[parameters:" not in output
     assert "SQLSTATE 23505" in output
+
+
+# --- Review fixes: H-1 (R-NORETRY with an implicit __context__), H-2 (repr and container leaks) ---------------------
+
+
+def _cut(fileno: int) -> None:
+    """Shut the connection's socket down under the driver, as a lost network would."""
+    sock = socket.socket(fileno=os.dup(fileno))
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    finally:
+        sock.close()
+
+
+def test_h1_commit_lost_while_handling_a_serialization_failure(connect: Callable[..., Any]) -> None:
+    a, b = connect(autocommit=False), connect(autocommit=False)
+    for conn in (a, b):
+        conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
+    a.execute("SELECT n FROM parts WHERE id = 1")
+    b.execute("SELECT n FROM parts WHERE id = 1")
+    a.execute("UPDATE parts SET n = 5 WHERE id = 1")
+    a.commit()
+    lost: BaseException | None = None
+    try:
+        b.execute("UPDATE parts SET n = 6 WHERE id = 1")
+    except psycopg.errors.SerializationFailure:
+        # The retry runs inside the handler; its COMMIT loses the connection.
+        b.rollback()
+        b.execute("UPDATE parts SET n = 7 WHERE id = 1")
+        _cut(b.fileno())
+        try:
+            b.commit()
+        except psycopg.OperationalError as exc:
+            lost = exc
+    assert lost is not None and isinstance(lost.__context__, psycopg.errors.SerializationFailure)
+    assert getattr(lost, "sqlstate", None) is None
+    c = classify(lost, during_commit=True)
+    assert (c.kind, c.outcome_unknown, c.retryable, c.connection_usable) == (Kind.CONNECTION, True, False, False)
+
+
+def test_h1_sqlalchemy_upsert_fallback_loses_the_connection(conninfo: str, schema: str) -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    params = psycopg.conninfo.conninfo_to_dict(conninfo)
+    url = sqlalchemy.engine.URL.create(
+        "postgresql+psycopg",
+        username=params.get("user"),
+        password=params.get("password"),
+        host=params.get("host"),
+        port=int(params["port"]) if params.get("port") else None,
+        database=params.get("dbname"),
+    )
+    engine = sqlalchemy.create_engine(url, poolclass=sqlalchemy.pool.NullPool)
+    lost: BaseException | None = None
+    try:
+        with engine.connect() as conn:
+            try:
+                conn.execute(sqlalchemy.text(f"INSERT INTO {schema}.parts VALUES (1, 'x', 1, NULL)"))
+            except sqlalchemy.exc.IntegrityError:
+                conn.rollback()
+                conn.execute(sqlalchemy.text(f"UPDATE {schema}.parts SET n = 2 WHERE id = 1"))
+                _cut(conn.connection.dbapi_connection.fileno())
+                try:
+                    conn.commit()
+                except sqlalchemy.exc.OperationalError as exc:
+                    lost = exc
+    finally:
+        engine.dispose()
+    assert lost is not None
+    contexts: list[BaseException] = []
+    current: BaseException | None = lost
+    while current is not None and len(contexts) < 5:
+        contexts.append(current)
+        current = current.__context__
+    assert any(isinstance(e, sqlalchemy.exc.IntegrityError) for e in contexts), contexts  # the older 23505
+    c = classify(lost, during_commit=True)
+    assert (c.kind, c.outcome_unknown, c.retryable, c.connection_usable) == (Kind.CONNECTION, True, False, False)
+    assert c.constraint is None
+
+
+def test_h2_real_unique_violation_in_repr_and_containers(connect: Callable[..., Any]) -> None:
+    conn = connect()
+    exc = _error(conn, "INSERT INTO parts VALUES (7, %s, 1, NULL)", (f"{CANARY}@example.com",))
+    assert CANARY in repr(exc)  # the leak the filter has to close
+    stream = io.StringIO()
+    logger = _log_to(stream)
+    logger.error(f"x {exc!r}")
+    logger.error("x %s", repr(exc))
+    logger.error("x %r", str(exc))
+    logger.error("x %s", [exc])
+    logger.error("x %s", (exc,))
+    logger.error("x %s", exc.args)
+    logger.error({"err": exc})
+    output = stream.getvalue()
+    assert output.count("\n") == 7 and CANARY not in output, output

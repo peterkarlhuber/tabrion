@@ -4,7 +4,7 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, M2 lane A pull request [#3](https://github.com/peterkarlhuber/tabrion/pull/3) (TAB-010, TAB-011, TAB-012; branch `claude/project-thread-rdo6g3`),
+> **Last update:** 2026-11-08, fix round of the M2 lane A pull request [#3](https://github.com/peterkarlhuber/tabrion/pull/3) (TAB-010, TAB-011, TAB-012; branch `claude/project-thread-rdo6g3`) after the independent review (not accepted at `9fe568f`),
 > after the G-T1 follow-up pull request [#2](https://github.com/peterkarlhuber/tabrion/pull/2) merged (`c31529d`).
 > Detailed open work for this repository: [docs/TODO.md](../TODO.md). Risks: [risks.md](risks.md).
 
@@ -84,9 +84,9 @@ Planned effort: 60.75 + 21.25 agent days.
 | JQ-2 | Impact analysis including the export | nodestro-runtime, nodestro-api | JQ-1 | G-M | 1 + 0.5 | JQ | Not started |  |
 | JQ-3 | Fix option A and allowlist guard | nodestro-runtime | JQ-2 | G-M | 1.5 + 1 | JQ | Not started |  |
 | MIG-AXE-0 | Local B-06-1 fix in Axentra right after G-A, independent of Tabrion (replaced later by MIG-AXE-3) | axentra | G-A | G-M | 1 + 0.5 | JQ | Not started |  |
-| TAB-010 | tabrion.errors | tabrion | TAB-002 | - | 2 + 1 | Core | In review | `src/tabrion/errors.py`; `tests/unit/test_errors.py` (E01..E13, E15..E24), `tests/postgres/test_errors_postgres.py` (server errors, E12, E14 fault proxy, E15, E21, E23), mutation probes in `tests/unit/test_mutation_probes.py`; [M2 evidence](#m2-evidence). Independent review required (plan document 07 section 6), not yet done |
+| TAB-010 | tabrion.errors | tabrion | TAB-002 | - | 2 + 1 | Core | In review | `src/tabrion/errors.py`; `tests/unit/test_errors.py` (E01..E13, E15..E24), `tests/postgres/test_errors_postgres.py` (server errors, E12, E14 fault proxy, E15, E21, E23), H-1/H-2/M-2/M-3 regression tests (`test_h1_*`, `test_h2_*`, `test_m2_*`, `test_m3_*`, unit and PostgreSQL), mutation probes in `tests/unit/test_mutation_probes.py`; [M2 evidence](#m2-evidence). Independent review: not accepted at `9fe568f` (H-1, H-2), fixed in this pull request, delta re-review pending (TB-026) |
 | TAB-011 | tabrion.sql split_statements | tabrion | TAB-002 | - | 1 + 0.25 | Core | In review | `src/tabrion/sql.py`; `tests/unit/test_sql.py` (Q01..Q10), golden file `tests/golden/axentra_splitter.json` (all 17 SQL files of Axentra 9c4666f byte-identical); [M2 evidence](#m2-evidence) |
-| TAB-012 | tabrion.config safe_url/url_from_env | tabrion | TAB-002 | - | 0.5 + 0 | Core | In review | `src/tabrion/config.py`; `tests/unit/test_config.py` (C01..C08); [M2 evidence](#m2-evidence) |
+| TAB-012 | tabrion.config safe_url/url_from_env | tabrion | TAB-002 | - | 0.5 + 0 | Core | In review | `src/tabrion/config.py`; `tests/unit/test_config.py` (C01..C08, review M-1, L-1, L-3, L-6); [M2 evidence](#m2-evidence) |
 | QA-8 | Supply chain (pip-audit, npm audit, SBOM) | tabrion, tabrion-studio | TAB-004 | - | 1 + 0.25 | QA | Not started |  |
 | TAB-051 | API stability policy and deprecation helper | tabrion | TAB-023 | - | 1 + 0.25 | Core | Not started |  |
 | JQ-4 | Docs, CHANGELOG, export adjustment, pin wave W7 (JQ) | runtime, api, studio | JQ-3 | G-M | 1 + 0.5 | JQ | Not started |  |
@@ -313,12 +313,29 @@ of Done (planning document 07 section 6). Local run on 2026-11-08: Python 3.13, 
 | 4. No parameter value or secret in new log or error paths | E10, E12, E17, E21..E24 | No error path | C06..C08 |
 | 5. Rollback path | Revert of this pull request (no consumer uses it yet; TAB-038 not tagged) | Same | Same |
 | 6. STATUS.md and TODO.md updated | Yes | Yes | Yes |
-| Review model | **Independent review agent required** (TAB package in `errors`); open, TODO TB-026 | Self-review | Self-review |
+| Review model | **Independent review agent required** (TAB package in `errors`); not accepted at `9fe568f`, fix round below, delta re-review pending (TODO TB-026) | Self-review | Self-review |
 
-Mutation probes (`tests/unit/test_mutation_probes.py`): each of 13 safety rules broken in a copy of the package turns
+Fix round after the independent review (`reviews/tab-010-012-review.md`, not accepted at `9fe568f`):
+
+| Finding | Fix | Evidence |
+|---|---|---|
+| H-1 (R-NORETRY via `__context__`) | `.orig` and `__cause__` first, `__context__` only as a fallback and never under `__suppress_context__`; an outer connection loss wins (contract I-13, D-26) | Unit: `test_h1_connection_lost_during_commit_inside_a_handler` (40001, 40P01, 55P03, 23505), `test_h1_sqlalchemy_upsert_fallback_loses_the_connection`, `test_h1_outermost_connection_loss_wins_over_a_cause`, `test_h1_context_is_a_fallback_only`, `test_h1_an_older_handled_error_never_classifies_a_driver_error`; PostgreSQL: `test_h1_commit_lost_while_handling_a_serialization_failure`, `test_h1_sqlalchemy_upsert_fallback_loses_the_connection` (real socket cut during COMMIT); two mutation probes |
+| H-2 (`DETAIL` via `repr`, containers, `e.args`, dict `msg`, escaped `\n`) | Errors are collected from `args`, `msg`, lists, tuples, sets, dicts and exception `args`; the formatted message is always checked; escaped `\nDETAIL:` forms and `repr` forms are scrubbed (contract I-6) | `test_h2_repr_and_container_arguments` (every probe of the review table), `test_h2_found_errors_inside_containers_set_the_record_attributes`, PostgreSQL `test_h2_real_unique_violation_in_repr_and_containers`; probes for collection and the escaped pattern |
+| M-1 (`safe_url` userinfo end) | User information ends at the last `@` before the first `/` (libpq) or before the query when later (contract I-10) | `test_config.py` cases `u:a?b=c@h`, `u:a?password=x@h`, `u:a&b@h`, `u:SEC?RET-4711@h/db`; probe |
+| M-2 (multi-line `DETAIL`) | Server text is removed from its marker line to the next boundary line | `test_m2_multi_line_detail_is_removed_completely`; probe |
+| M-3 (7 surviving mutants) | A test per mutant, including leak paths 10 and 18 | `test_m3_*` (inline server text, group members, notes, mapping arguments, 57P04/57P05, invalidated connection, wrapper around a lost connection); 12 new probes |
+| L-1 (fd leak, directory code) | `os.open` with `O_NONBLOCK`, `fstat` before reading, `close` in `finally`; a directory gives `config.not_regular_file` | `test_c08_no_file_descriptor_leaks`, directory test |
+| L-2 (outcome unknown by definition) | 08007 and 40003 always `outcome_unknown`, never retryable | `test_l2_outcome_unknown_by_definition`, E13 property; probe |
+| L-3 (file bytes in `__context__`) | Errors raised outside the `except` block | `test_c08_errors_carry_no_context` |
+| L-6 (no size limit) | At most 64 KiB, then `config.too_large` (D-27) | `test_c08_large_file_is_refused`; probe |
+| I-1, I-2, I-5 (part), I-6 | `str.__str__` normalization; "never raises" documented for `Exception`; a `TabrionError` is classified by its `classification`; `$é$` listed in I-9 | `test_i1_string_subclasses_cannot_steer_the_message`, `test_h1_tabrion_error_keeps_its_classification` |
+| L-4, L-5, I-3, I-4, I-5 (rest), I-7 | Not in this pull request | TODO TB-028..TB-030, SECURITY.md residual risks, cross-repository TB-031 |
+
+Mutation probes (`tests/unit/test_mutation_probes.py`): 25 probes. Each of 13 safety rules broken in a copy of the package turns
 its test red (R-NORETRY, `outcome_unknown` after COMMIT, statement timeout, depth 5, server-text stripping, clearing
 `exc_info`, scrubbing wrappers, nested comments, `E'...'` escapes, comment-only statements, conninfo masking, raw `@`
-in a URL password, the regular-file rule); a positive control passes on the unchanged copy. Three new import-linter
+in a URL password, the regular-file rule); a positive control passes on the unchanged copy; the fix round adds 12 probes for the review findings (H-1, H-2,
+M-1, M-2, M-3, L-2, L-6). Three new import-linter
 probes for the new bottom layer `tabrion.errors` (contract I-12).
 
 ## G-T1 conditions
@@ -413,6 +430,8 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-23 | TAB-010 | Tests TAB-T-E01..E20 | E17..E20 assigned to the hierarchy (contract I-8) | Plan document 04 defines only E01..E16 and E21..E24 |
 | D-24 | TAB-011 | Differences from Axentra only for `E'...\'...'` and nested comments | Also dollar tags with digits, `$` inside identifiers, `--` ending at a carriage return, block-comment-only statements (contract I-9) | Each is an input Axentra splits wrongly by PostgreSQL's rules; no Axentra SQL file contains one (golden file) |
 | D-25 | TAB-010 | `outcome_unknown` whenever `kind == CONNECTION` and (`sent` or `during_commit`) | Not for SQLSTATE 53300 | The mapping table makes 53300 retryable without condition; it occurs only while connecting (contract I-2) |
+| D-26 | TAB-010 | Contract 1.3 "Chains": the first error with a SQLSTATE along `.orig`, `__cause__` and `__context__` | `.orig` and `__cause__` first; `__context__` only as a fallback and not under `__suppress_context__`; an outer connection loss wins (contract I-13) | Review H-1: `__context__` is the error being handled, so a COMMIT lost inside an `except` block for 40001 was classified as retryable, which breaks R-NORETRY |
+| D-27 | TAB-012 | Codes of `url_from_env` (D-22) | Also `config.too_large` for a file over 64 KiB (contract I-11) | Review L-6: a huge file or a procfs file was read completely and returned as the URL |
 
 ## Score review
 

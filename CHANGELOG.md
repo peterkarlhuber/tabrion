@@ -21,6 +21,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - `tabrion.config` (TAB-012): `safe_url` masks passwords in URLs, keyword conninfo and `password` query parameters;
   `url_from_env` reads `NAME` or the regular file `NAME_FILE` (codes `config.ambiguous`, `config.missing`,
   `config.unreadable`, `config.not_regular_file`; no value in any message).
+- Fixes from the independent review of TAB-010..TAB-012, before any release: `classify` follows `__context__` only
+  as a fallback and lets an outer connection loss win, so a COMMIT lost while handling a serialization failure is
+  never retryable (R-NORETRY, H-1); SQLSTATEs 08007 and 40003 are always `outcome_unknown`; `DbErrorRedactionFilter`
+  also finds database errors in `repr` form and inside list, tuple, set and dict arguments and exception `args`, and
+  removes multi-line `DETAIL` text (H-2, M-2); `safe_url` ends the user information where libpq does (M-1);
+  `url_from_env` no longer leaks a file descriptor for a directory, keeps no file bytes in `__context__` and refuses
+  files over 64 KiB (`config.too_large`).
 - Tests: the mapping table against PostgreSQL and SQLite, a fault-injection proxy for `outcome_unknown`, canary values,
   Hypothesis properties, mutation probes for the safety rules, and an allowlist check that the core imports only the
   standard library (G-T1 F-09, F-10).

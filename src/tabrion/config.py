@@ -26,18 +26,23 @@ _QUERY_PARAMETER = re.compile(r"(?i)([?&](?:ssl)?password=)[^&#]*")
 
 def _mask_url(url: str, scheme_end: int) -> str | None:
     rest = url[scheme_end:]
+    # libpq ends the user information at the last "@" before the first "/" (review M-1: a raw "?" or "&" in a
+    # password); a raw "/" in a password is covered by also taking the last "@" before the query. The later of the two
+    # wins, so more is hidden rather than less.
+    slash = rest.find("/")
     query = rest.find("?")
+    libpq_head = rest if slash < 0 else rest[:slash]
     head = rest if query < 0 else rest[:query]
-    at = head.rfind("@")
+    at = max(libpq_head.rfind("@"), head.rfind("@"))
     if at < 0 and query >= 0:
-        # No user information before the query. An "@" later that is not inside a parameter value (no "=" before it)
-        # means a password with a raw "?" in it: refuse rather than guess.
+        # No user information found. An "@" later that is not inside a parameter value (no "=" before it) and a ":"
+        # before the query mean a password with raw "/" and "?" in it: refuse rather than guess.
         tail = rest[query + 1 :]
         later = tail.find("@")
         if later >= 0 and "=" not in tail[:later] and ":" in head:
             return None
     if at >= 0:
-        userinfo = head[:at]
+        userinfo = rest[:at]
         colon = userinfo.find(":")
         if colon >= 0:
             rest = userinfo[: colon + 1] + _MASK + rest[at:]
@@ -99,24 +104,49 @@ def safe_url(url: str) -> str:
         return _UNPARSEABLE
 
 
-def _read_file(variable: str, path: str) -> str:
-    """The content of the regular file ``path`` without its trailing newline (symbolic links are followed)."""
+_MAX_FILE_BYTES = 64 * 1024
+"""A connection string is short; a larger file (or a procfs file) is refused, not read (review L-6)."""
+
+
+def _read_regular_file(path: str) -> tuple[bytes | None, str | None]:
+    """``(content, None)`` or ``(None, error code)``; the file descriptor is always closed (review L-1)."""
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     try:
         fd = os.open(path, flags)
     except (OSError, ValueError):
-        raise ConfigurationError("config.unreadable", details={"name": variable}) from None
+        return None, "config.unreadable"
     try:
-        with os.fdopen(fd, "rb") as handle:
-            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                raise ConfigurationError("config.not_regular_file", details={"name": variable})
-            data = handle.read()
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None, "config.not_regular_file"
+        chunks: list[bytes] = []
+        size = 0
+        while chunk := os.read(fd, 16 * 1024):
+            size += len(chunk)
+            if size > _MAX_FILE_BYTES:
+                return None, "config.too_large"
+            chunks.append(chunk)
+        return b"".join(chunks), None
     except OSError:
-        raise ConfigurationError("config.unreadable", details={"name": variable}) from None
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        raise ConfigurationError("config.unreadable", details={"name": variable}) from None
+        return None, "config.unreadable"
+    finally:
+        os.close(fd)
+
+
+def _read_file(variable: str, path: str) -> str:
+    """The content of the regular file ``path`` without its trailing newline (symbolic links are followed).
+
+    Every error is raised outside an ``except`` block, so it carries no ``__context__`` with the path or the file's
+    bytes (review L-3).
+    """
+    data, code = _read_regular_file(path)
+    text: str | None = None
+    if data is not None:
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            code = "config.unreadable"
+    if text is None:
+        raise ConfigurationError(code or "config.unreadable", details={"name": variable})
     if text.endswith("\n"):
         text = text[:-1]
         if text.endswith("\r"):
@@ -133,7 +163,8 @@ def url_from_env(name: str, *, environ: Mapping[str, str] | None = None, require
 
     An empty variable counts as not set, and so does an empty file. A file that cannot be read or is not valid UTF-8
     raises ``ConfigurationError("config.unreadable")``, one that is not a regular file (a directory, a FIFO, a
-    device) ``ConfigurationError("config.not_regular_file")``. The details name the variable, never its value.
+    device) ``ConfigurationError("config.not_regular_file")``, one larger than 64 KiB
+    ``ConfigurationError("config.too_large")``. The details name the variable, never its value or the path.
     """
     env = os.environ if environ is None else environ
     file_variable = name + "_FILE"

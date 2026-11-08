@@ -5,6 +5,7 @@ Acceptance (plan document 09): the password never appears in ``safe_url``, in ``
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 import sys
@@ -38,6 +39,12 @@ SECRET = "SECRET-4711"
         ("postgresql://u:a:SECRET-4711@h/db", "postgresql://u:***@h/db"),
         ("postgresql://u:SECRET%404711@h/db", "postgresql://u:***@h/db"),
         ("postgresql://u:@h/db", "postgresql://u:***@h/db"),
+        # Review M-1: libpq ends the user information at the last "@" before the first "/".
+        ("postgresql://u:a?b=c@h/db", "postgresql://u:***@h/db"),
+        ("postgresql://u:a?password=x@h/db", "postgresql://u:***@h/db"),
+        ("postgresql://u:a&b@h/db", "postgresql://u:***@h/db"),
+        ("postgresql://u:SEC?RET-4711@h/db", "postgresql://u:***@h/db"),
+        ("postgresql://u:SEC?RET-4711@h", "postgresql://u:***@h"),
         # Nothing to hide.
         ("postgresql://u@h/db", "postgresql://u@h/db"),
         ("postgresql://h/db", "postgresql://h/db"),
@@ -107,7 +114,7 @@ def test_c03_password_query_parameter_is_masked(url: str, expected: str) -> None
         "host=h password='SECRET-4711",  # unterminated quote
         "host=h =SECRET-4711",
         "u:SECRET-4711@h/db",  # no scheme, no keyword list
-        "postgresql://u:SEC?RET-4711@h/db",  # a raw "?" in the password: refused rather than guessed
+        "postgresql://u:SEC/R?ET-4711@h/db",  # raw "/" and "?" in the password: refused rather than guessed
     ],
 )
 def test_c04_unparseable_input(value: str) -> None:
@@ -226,7 +233,46 @@ def test_c08_missing_file_is_unreadable(tmp_path: Path) -> None:
 def test_c08_directory_is_not_a_regular_file(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError) as info:
         url_from_env(NAME, environ={NAME + "_FILE": str(tmp_path)})
-    assert info.value.code in ("config.not_regular_file", "config.unreadable")  # Windows cannot open a directory
+    # Windows cannot open a directory at all; everywhere else it is opened and refused by fstat (review L-1).
+    expected = "config.unreadable" if sys.platform == "win32" else "config.not_regular_file"
+    assert info.value.code == expected
+
+
+def _open_fds() -> int | None:
+    for directory in ("/proc/self/fd", "/dev/fd"):
+        if os.path.isdir(directory):
+            return len(os.listdir(directory))
+    return None
+
+
+@pytest.mark.skipif(_open_fds() is None, reason="no file descriptor listing on this platform")
+def test_c08_no_file_descriptor_leaks(tmp_path: Path) -> None:
+    regular = tmp_path / "url"
+    regular.write_text("postgresql://h/db", encoding="utf-8")
+    before = _open_fds()
+    for target in (tmp_path, regular, tmp_path / "missing"):
+        for _ in range(20):
+            with contextlib.suppress(ConfigurationError):
+                url_from_env(NAME, environ={NAME + "_FILE": str(target)})
+    assert _open_fds() == before
+
+
+def test_c08_large_file_is_refused(tmp_path: Path) -> None:
+    big = tmp_path / "big"
+    big.write_bytes(b"x" * (64 * 1024 + 1))
+    with pytest.raises(ConfigurationError) as info:
+        url_from_env(NAME, environ={NAME + "_FILE": str(big)})
+    assert info.value.code == "config.too_large"
+    exact = tmp_path / "exact"
+    exact.write_bytes(b"x" * (64 * 1024))
+    assert url_from_env(NAME, environ={NAME + "_FILE": str(exact)}) == "x" * (64 * 1024)
+
+
+def test_c08_errors_carry_no_context(tmp_path: Path) -> None:
+    for target in (tmp_path / "missing", tmp_path):
+        with pytest.raises(ConfigurationError) as info:
+            url_from_env(NAME, environ={NAME + "_FILE": str(target)})
+        assert info.value.__context__ is None and info.value.__cause__ is None
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
@@ -245,7 +291,8 @@ def test_c08_invalid_utf8_is_unreadable(tmp_path: Path) -> None:
         url_from_env(NAME, environ={NAME + "_FILE": str(secret)})
     assert info.value.code == "config.unreadable"
     _assert_no_value(info.value, SECRET, str(secret))
-    assert info.value.__cause__ is None and info.value.__suppress_context__
+    # L-3: no __context__ that still holds the file's bytes (UnicodeDecodeError.object) or the path.
+    assert info.value.__cause__ is None and info.value.__context__ is None
 
 
 def _assert_no_value(error: ConfigurationError, *values: str) -> None:

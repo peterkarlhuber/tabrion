@@ -10,6 +10,7 @@ E16 (no driver import), E17..E20 (exception hierarchy, assigned in TAB-010), E21
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import copy
 import io
 import json
@@ -385,8 +386,8 @@ def test_chains_cause_and_context_up_to_depth_five() -> None:
     for link in ("__cause__", "__context__", "orig"):
         assert classify(wrap(5, link)).kind is Kind.SERIALIZATION, link
         assert classify(wrap(6, link)).kind is Kind.UNKNOWN, link
-    # The first error with a code wins over an outer driver error without one.
-    outer = pg_error(None, "outer", base=PgOperationalError)
+    # The first error with a code wins over an outer driver error without one that is no connection loss.
+    outer = pg_error(None, "outer", base=PgProgrammingError)
     outer.__cause__ = inner
     assert classify(outer).kind is Kind.SERIALIZATION
 
@@ -499,7 +500,10 @@ def test_e13_classify_never_raises(exc: BaseException, sent: bool, during_commit
     c = classify(exc, sent=sent, during_commit=during_commit)
     assert isinstance(c, Classification) and isinstance(c.kind, Kind)
     assert not (c.retryable and c.outcome_unknown), "R-NORETRY"
-    assert c.outcome_unknown is (c.kind is Kind.CONNECTION and (sent or during_commit) and c.sqlstate != "53300")
+    expected = c.sqlstate in ("08007", "40003") or (
+        c.kind is Kind.CONNECTION and (sent or during_commit) and c.sqlstate != "53300"
+    )
+    assert c.outcome_unknown is expected
     assert isinstance(safe_message(exc), str)
 
 
@@ -805,3 +809,188 @@ def test_fallback_keeps_the_record_without_values(monkeypatch: pytest.MonkeyPatc
     assert DbErrorRedactionFilter().filter(record) is True
     rendered = logging.Formatter().format(record)
     assert CANARY not in rendered and "SQLSTATE 23505" in rendered and record.exc_info is None
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Review fixes (planning folder reviews/tab-010-012-review.md)
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def _raised_in_handler(handled: BaseException, raised: BaseException) -> BaseException:
+    """``raised``, raised inside ``except`` for ``handled``: Python sets ``raised.__context__ = handled``."""
+    try:
+        try:
+            raise handled
+        except BaseException:
+            raise raised  # noqa: B904 - the implicit context is the point
+    except BaseException as exc:
+        return exc
+
+
+@pytest.mark.parametrize("handled_state", ["40001", "40P01", "55P03", "23505"])
+def test_h1_connection_lost_during_commit_inside_a_handler(handled_state: str) -> None:
+    """H-1: the retry (or upsert fallback) runs inside ``except``; the COMMIT then loses the connection."""
+    lost = _raised_in_handler(pg_error(handled_state), pg_error(None, "server closed", base=PgOperationalError))
+    assert lost.__context__ is not None
+    c = classify(lost, during_commit=True)
+    assert (c.kind, c.outcome_unknown, c.retryable, c.connection_usable) == (Kind.CONNECTION, True, False, False)
+    assert c.sqlstate is None
+    assert safe_message(lost) == "connection error (outcome unknown)"
+
+
+def test_h1_sqlalchemy_upsert_fallback_loses_the_connection() -> None:
+    integrity = sa_error(pg_error("23505", constraint="up_pkey", base=PgIntegrityError))
+    sa_operational = type("OperationalError", (SADBAPIError,), {"__module__": "sqlalchemy.exc"})
+    lost = _raised_in_handler(
+        integrity, sa_error(pg_error(None, "SSL SYSCALL error: EOF", base=PgOperationalError), cls=sa_operational)
+    )
+    c = classify(lost, during_commit=True)
+    assert (c.kind, c.outcome_unknown, c.retryable, c.connection_usable) == (Kind.CONNECTION, True, False, False)
+    assert c.constraint is None
+
+
+def test_h1_an_older_handled_error_never_classifies_a_driver_error() -> None:
+    """A driver error raised while handling a 40001 is classified by itself, not by the 40001."""
+    later = _raised_in_handler(pg_error("40001"), pg_error(None, "2 placeholders", base=PgProgrammingError))
+    c = classify(later)
+    assert (c.kind, c.sqlstate, c.retryable) == (Kind.UNKNOWN, None, False)
+
+
+def test_h1_outermost_connection_loss_wins_over_a_cause() -> None:
+    outer = pg_error(None, "server closed", base=PgOperationalError)
+    outer.__cause__ = pg_error("40001")
+    assert classify(outer).kind is Kind.CONNECTION
+    terminated = pg_error("57P01")
+    terminated.__cause__ = pg_error("23505")
+    assert classify(terminated).kind is Kind.CONNECTION
+
+
+def test_h1_context_is_a_fallback_only() -> None:
+    # A plain wrapper raised in a handler: the context is the only database error, so it is used.
+    wrapped = _raised_in_handler(pg_error("23505", constraint="c"), RuntimeError("save failed"))
+    assert classify(wrapped).kind is Kind.UNIQUE
+    # ``raise ... from None`` suppresses the context: nothing is followed.
+    suppressed = RuntimeError("save failed")
+    suppressed.__context__ = pg_error("23505")
+    suppressed.__suppress_context__ = True
+    assert classify(suppressed).kind is Kind.UNKNOWN
+    # A driver error reached through the context brings its own cause along.
+    inner = pg_error(None, "x", base=PgProgrammingError)
+    inner.__cause__ = pg_error("40P01")
+    assert classify(_raised_in_handler(inner, RuntimeError("wrap"))).kind is Kind.DEADLOCK
+
+
+def test_h1_tabrion_error_keeps_its_classification() -> None:
+    c = classify(pg_error("40001"))
+    err = errors.TransientError("db.serialization", classification=c, original=pg_error("40001"))
+    assert classify(err) == c
+
+
+@pytest.mark.parametrize("sqlstate", ["08007", "40003"])
+@pytest.mark.parametrize("sent", [True, False])
+def test_l2_outcome_unknown_by_definition(sqlstate: str, sent: bool) -> None:
+    c = classify(pg_error(sqlstate), sent=sent, during_commit=False)
+    assert c.outcome_unknown and not c.retryable
+
+
+@pytest.mark.parametrize(("sqlstate", "kind"), [("57P04", Kind.CONNECTION), ("57P05", Kind.CONNECTION)])
+def test_m3_more_connection_rows(sqlstate: str, kind: Kind) -> None:
+    c = classify(pg_error(sqlstate), sent=False)
+    assert c.kind is kind and not c.connection_usable
+    assert c.retryable is (sqlstate == "57P05")  # a dropped database is not worth a retry
+
+
+def test_m3_wrapper_around_a_lost_connection_is_connection() -> None:
+    c = classify(sa_error(pg_error(None, "server closed", base=PgOperationalError), cls=SADBAPIError), sent=False)
+    assert (c.kind, c.connection_usable, c.retryable) == (Kind.CONNECTION, False, True)
+
+
+def test_m3_invalidated_connection_is_not_usable_whatever_the_kind() -> None:
+    c = classify(sa_error(pg_error("23505", base=PgIntegrityError), invalidated=True))
+    assert c.kind is Kind.UNIQUE and not c.connection_usable
+
+
+def test_i1_string_subclasses_cannot_steer_the_message() -> None:
+    class Sneaky(str):
+        def __format__(self, spec: str) -> str:
+            return CANARY
+
+        def __str__(self) -> str:
+            return CANARY
+
+    exc = pg_error("23505")
+    exc.sqlstate = Sneaky("23505")  # type: ignore[attr-defined]
+    exc.diag.constraint_name = Sneaky("c")  # type: ignore[attr-defined]
+    assert CANARY not in safe_message(exc)
+    assert safe_message(exc) == "unique violation (SQLSTATE 23505, constraint c)"
+
+
+def _h2_calls(e: Exception, sa: Exception) -> list[tuple[str, tuple[Any, ...]]]:
+    return [
+        (f"x {e!r}", ()),
+        ("x %s", (repr(e),)),
+        ("x %r", (str(e),)),
+        ("x %s", ([e],)),
+        ("x %s", ((e,),)),
+        ("x %s", (e.args,)),
+        ("x %s", ({"k": [e]},)),
+        ("x %s", (RuntimeError(e),)),
+        ("x %s", ([sa],)),
+        (f"x {sa!r}", ()),
+    ]
+
+
+def test_h2_repr_and_container_arguments(capture: Any) -> None:
+    e, sa = _unique_violation(), sa_error(_unique_violation())
+    for msg, args in _h2_calls(e, sa):
+        capture.logger.error(msg, *args)
+    capture.logger.error({"err": e})
+    text, js = capture.text.getvalue(), capture.json.getvalue()
+    assert CANARY not in text and CANARY not in js, text
+    assert "[parameters:" not in text
+    lines = [line for line in text.splitlines() if line.startswith("ERROR")]
+    assert len(lines) == 11
+
+
+def test_h2_found_errors_inside_containers_set_the_record_attributes() -> None:
+    record = logging.LogRecord("x", logging.ERROR, __file__, 1, "x %s", ([_unique_violation()],), None)
+    DbErrorRedactionFilter().filter(record)
+    assert record.db_sqlstate == "23505"  # type: ignore[attr-defined]
+    assert "SQLSTATE 23505" in record.getMessage() and CANARY not in record.getMessage()
+
+
+def test_m2_multi_line_detail_is_removed_completely(capture: Any) -> None:
+    e = pg_error("23505", "duplicate key", detail=f"Key (email)=(l1\n{CANARY}-line2\n{CANARY}-3) already exists.")
+    capture.logger.error("x %s" % e)  # noqa: UP031 - preformatted on purpose
+    capture.logger.error("wrapped: %s", str(e))
+    capture.logger.error("again", exc_info=_raised_in_handler(e, RuntimeError(f"quoting {e}")))
+    assert CANARY not in capture.text.getvalue() and CANARY not in capture.json.getvalue()
+    assert "Traceback (most recent call last)" in capture.text.getvalue()
+
+
+def test_m3_inline_single_line_server_text_is_stripped() -> None:
+    assert errors._strip_server_text(f"dup key DETAIL:  Key (e)=({CANARY})") == "dup key"
+    assert errors._strip_server_text(f"a\nDETAIL:  {CANARY}\nHINT:  {CANARY}") == "a"
+    assert errors._strip_server_text(f"x ('dup\\nDETAIL:  {CANARY}')") == "x ('dup"
+    assert errors._strip_server_text("plain text") == "plain text"
+
+
+def test_m3_group_whose_only_database_error_is_a_member(capture: Any) -> None:
+    group = ExceptionGroup("batch", [ValueError("other"), _unique_violation()])
+    assert group.__context__ is None
+    capture.logger.error("batch failed", exc_info=group)
+    assert CANARY not in capture.text.getvalue() and "SQLSTATE 23505" in capture.text.getvalue()
+
+
+def test_m3_notes_on_a_driver_error_are_dropped(capture: Any) -> None:
+    e = _unique_violation()
+    e.add_note(f"params={CANARY}")
+    capture.logger.error("failed", exc_info=e)
+    assert CANARY not in capture.text.getvalue()
+
+
+def test_m3_mapping_arguments_are_replaced() -> None:
+    record = logging.LogRecord("x", logging.ERROR, __file__, 1, "%(e)s", ({"e": _unique_violation()},), None)
+    DbErrorRedactionFilter().filter(record)
+    assert isinstance(record.args, Mapping) and isinstance(record.args["e"], str)
+    assert record.args["e"].startswith("unique violation (SQLSTATE 23505")

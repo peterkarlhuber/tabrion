@@ -67,6 +67,75 @@ PROBES = [
         "            pass\n",
         "tests/unit/test_errors.py::test_e22_chained_exception",
     ),
+    # H-1: __context__ is a fallback only; an outer connection loss is not overridden by an older handled error.
+    (
+        "errors.py",
+        '                for name in ("orig", "__cause__"):\n',
+        '                for name in ("orig", "__cause__", "__context__"):\n',
+        "tests/unit/test_errors.py::test_h1_an_older_handled_error_never_classifies_a_driver_error",
+    ),
+    (
+        "errors.py",
+        "            if _is_connection_loss(first):\n",
+        "            if False:\n",
+        "tests/unit/test_errors.py::test_h1_outermost_connection_loss_wins_over_a_cause",
+    ),
+    # H-2: database errors inside containers and exception args.
+    (
+        "errors.py",
+        "        if depth < _MAX_COLLECT_DEPTH:\n",
+        "        if False:\n",
+        "tests/unit/test_errors.py::test_h2_found_errors_inside_containers_set_the_record_attributes",
+    ),
+    # H-2: the escaped (repr) form of DETAIL.
+    (
+        "errors.py",
+        '    text = _ESCAPED_SERVER_TEXT.sub("", text)\n',
+        "",
+        "tests/unit/test_errors.py::test_m3_inline_single_line_server_text_is_stripped",
+    ),
+    # M-2: continuation lines of a multi-line DETAIL.
+    (
+        "errors.py",
+        "            skipping = True\n",
+        "",
+        "tests/unit/test_errors.py::test_m2_multi_line_detail_is_removed_completely",
+    ),
+    # Review M-3 mutant 10: notes on a driver error.
+    (
+        "errors.py",
+        "            te.__notes__ = None\n",
+        "            pass\n",
+        "tests/unit/test_errors.py::test_m3_notes_on_a_driver_error_are_dropped",
+    ),
+    # Review M-3 mutant 18: exception group members.
+    (
+        "errors.py",
+        "        if isinstance(members, (tuple, list)):\n            linked.extend(members)\n",
+        "",
+        "tests/unit/test_errors.py::test_m3_group_whose_only_database_error_is_a_member",
+    ),
+    # Review M-3 mutant 9: mapping arguments.
+    (
+        "errors.py",
+        "            record.args = {k: safe_message(v) if _is_db_exc(v) else v for k, v in args.items()}\n",
+        "            pass\n",
+        "tests/unit/test_errors.py::test_m3_mapping_arguments_are_replaced",
+    ),
+    # Review M-3 mutant 11: an invalidated connection is never usable.
+    (
+        "errors.py",
+        "        usable = False\n        if kind is Kind.UNKNOWN:\n",
+        "        if kind is Kind.UNKNOWN:\n",
+        "tests/unit/test_errors.py::test_m3_invalidated_connection_is_not_usable_whatever_the_kind",
+    ),
+    # Review L-2: outcome unknown by definition.
+    (
+        "errors.py",
+        "    outcome_unknown = sqlstate in _OUTCOME_UNKNOWN_STATES or (\n",
+        "    outcome_unknown = False or (\n",
+        "tests/unit/test_errors.py::test_l2_outcome_unknown_by_definition",
+    ),
     # Nested block comments.
     (
         "sql.py",
@@ -98,15 +167,29 @@ PROBES = [
     # A raw "@" in a URL password: everything up to the last "@" is user information.
     (
         "config.py",
-        '    at = head.rfind("@")\n',
-        '    at = head.find("@")\n',
+        '    at = max(libpq_head.rfind("@"), head.rfind("@"))\n',
+        '    at = max(libpq_head.find("@"), head.find("@"))\n',
         "tests/unit/test_config.py::test_c01_url_password_is_masked",
+    ),
+    # Review M-1: libpq's end of the user information.
+    (
+        "config.py",
+        '    at = max(libpq_head.rfind("@"), head.rfind("@"))\n',
+        '    at = head.rfind("@")\n',
+        "tests/unit/test_config.py::test_c01_url_password_is_masked",
+    ),
+    # Review L-6: size limit.
+    (
+        "config.py",
+        "            if size > _MAX_FILE_BYTES:\n",
+        "            if False:\n",
+        "tests/unit/test_config.py::test_c08_large_file_is_refused",
     ),
     # The secret file must be a regular file.
     (
         "config.py",
-        "            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):\n",
-        "            if False:\n",
+        "        if not stat.S_ISREG(os.fstat(fd).st_mode):\n",
+        "        if False:\n",
         "tests/unit/test_config.py::test_c08_fifo_is_rejected_without_blocking"
         if hasattr(os, "mkfifo")
         else "tests/unit/test_config.py::test_c08_directory_is_not_a_regular_file",

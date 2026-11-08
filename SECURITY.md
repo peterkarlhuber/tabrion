@@ -47,6 +47,21 @@ Accepted residual risks (documented, not vulnerabilities):
 - `DbErrorRedactionFilter` protects only the records it sees: the application installs it (on its handlers, its
   loggers or through the log record factory); Tabrion installs it nowhere. A value the application logs on its own
   (for example `exc.diag.message_detail` as a plain string) is not recognized.
-- `safe_url` cannot tell where a password with a raw, not percent-encoded `?` ends; such a URL gives
+- Text-only residuals of `DbErrorRedactionFilter`, inherited from Axentra's MIG-AXE-0 review (R-1, R-2):
+  - (R-1) values in the *primary* message of pre-formatted text, for example 22P02
+    `invalid input syntax for type integer: "..."`, also through a wrapper that quotes `repr(e)` or the first line
+    of the error text, are not removed: the filter removes only `DETAIL`, `HINT`, `CONTEXT`, `QUERY`, `LINE n` and
+    SQLAlchemy `[parameters]`, or replaces a database error it finds as an object;
+  - (R-2) values passed through `extra=` are not inspected;
+  - a wrapper that quotes `TabrionError.original` without chaining it is not recognized (TODO TB-030).
+
+  Log database errors as objects (`logger.exception(...)`, `%s` with the exception as an argument), never as text
+  built with `str(exc)` or f-strings; enforce this with a lint rule against formatted logging messages (ruff `G001`
+  to `G004`) and review `str(exc)` arguments.
+- A pickled `TabrionError` contains its `original`, including the server's `DETAIL` values: do not persist or send
+  pickled errors.
+- `classify` "never raises" covers `Exception`; a `SystemExit` or `KeyboardInterrupt` raised by a hostile `__str__`
+  or property propagates.
+- `safe_url` cannot tell where a password with both a raw `/` and a raw `?` ends; such a URL gives
   `"<unparseable url>"`. Percent-encode special characters in URL passwords.
 - Vulnerabilities in SQLite, PostgreSQL, psycopg, SQLAlchemy or Alembic belong to their maintainers.

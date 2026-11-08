@@ -14,9 +14,9 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 1 |
-| P1 High | 10 |
+| P1 High | 11 |
 | P2 Medium | 6 |
-| P3 Low | 7 |
+| P3 Low | 10 |
 | P4 Optional | 0 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -247,12 +247,14 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-026 · Independent review of TAB-010 (planning document 07 section 6)
 
-- **Priority:** P1 High · **Status:** Needs external review · **Refs:** TABRION TAB-010, TAB-011, TAB-012, B-06-1
-- **What:** the review model requires an independent review agent for every TAB package in `errors`. Focus: the
-  redaction filter against the MIG-AXE-0 review findings (M-1..M-3 are Axentra's install points; L-1..L-5 are covered
-  by E22, E23 and the fallback test), the chain depth, `outcome_unknown` and the 53300 exception (contract I-2), and
-  the two new configuration codes (contract I-11).
-- **Next step:** review on the pull request head; findings back into this pull request or new TODO items.
+- **Priority:** P1 High · **Status:** Needs external review (delta re-review) · **Refs:** TABRION TAB-010, TAB-011,
+  TAB-012, B-06-1, review `tab-010-012-review.md`
+- **What:** the review model requires an independent review agent for every TAB package in `errors`. The review of
+  pull request #3 at `9fe568f` was **not accepted** (H-1 R-NORETRY through `__context__`, H-2 `DETAIL` in `repr` and
+  container arguments). The fix round in the same pull request fixes H-1, H-2, M-1..M-3, L-1..L-3, L-6, I-1, I-2,
+  I-6 and part of I-5 ([M2 evidence](program/STATUS.md#m2-evidence), D-26, D-27); L-4, L-5, I-3, I-4, the rest of
+  I-5 and I-7 are TB-028..TB-030 and SECURITY.md.
+- **Next step:** delta re-review on the new pull request head.
 
 ### TB-027 · Statement splitter limitations (TABRION TAB-011)
 
@@ -262,6 +264,46 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   Byte identity with Axentra rules out changing it in 0.1; no Axentra migration uses these forms.
 - **Reason for accepting:** such statements can be written with a dollar-quoted body or run on their own. Revisit
   for the Studio editor (TAB-033) if it needs them.
+
+### TB-028 · Splitter: `E'...'` after a dollar quote or in a string continuation (review L-4)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-011, TAB-T-Q04, contract I-9, review L-4
+- **What:** `$$a$$E'\'; DROP TABLE x; --'` is one statement for PostgreSQL but three for `split_statements`: the
+  look-behind for the `E` prefix sees the closing `$` of the dollar quote as an identifier character. In
+  `E'a'\n'b\'; x'` PostgreSQL continues the escape mode into the second segment and Tabrion does not. Axentra's
+  splitter is equally wrong and none of its SQL uses either form, so byte identity is not at stake.
+- **Next step:** decide the `E` prefix in the identifier branch (a word that is exactly `E` or `e` followed by `'`),
+  carry the escape mode across `'...'<newline>'...'` continuations, add both to Q04 and to contract I-9.
+
+### TB-029 · `safe_url`: percent-encoded `password` key, non-ASCII white space in conninfo (review L-5)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-012, contract I-10, review L-5
+- **What:** `postgresql://h/db?pass%77ord=secret` is not masked although libpq percent-decodes query keys; in
+  keyword conninfo `password=se\u00a0x=y` gives `password=*** x=y` because `str.isspace` treats NBSP as a separator
+  and libpq does not.
+- **Next step:** percent-decode query keys before comparing them; use ASCII white space (`" \t\n\r\f\v"`) in
+  `_mask_conninfo`; add both to C02/C03 and the "password never survives" property.
+
+### TB-030 · `tabrion.errors` follow-ups from the review Info items (I-3, I-5)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-010, review I-3, I-5
+- **What:** (I-3) `tabrion.errors` imports `sqlite3` at module level, so a Python build without `_sqlite3` cannot
+  import it, even for PostgreSQL-only consumers; a guarded import would help. (I-5, rest) the redaction chain walk
+  does not follow `TabrionError.original`, so a wrapper that quotes `err.original` (for example after unpickling) is
+  not scrubbed. `classify` already returns a `TabrionError`'s own classification (fix round).
+- **Next step:** guard the import (`sqlite3 = None` and skip SQLite recognition) with an isolation test; follow
+  `original` in the filter's chain walk with a canary test.
+
+### TB-031 · Port the H-2 redaction fix to Axentra's filter (and check the H-1 analog) (MIG-AXE-3)
+
+- **Priority:** P1 High · **Status:** Open (scheduled after this pull request is accepted) · **Refs:** TABRION
+  MIG-AXE-0, MIG-AXE-3, review H-1, H-2, B-06-1
+- **What:** Tabrion's filter follows Axentra's reviewed MIG-AXE-0 filter, which has the identical H-2 gap: a
+  `DETAIL` value survives in `repr`/`%r` form (escaped `\nDETAIL:`), inside list, tuple, set or dict arguments, in
+  `e.args`, in a dict `msg`, and as a SQLAlchemy error inside a list. Axentra's error handling may also have the H-1
+  analog (a lost COMMIT classified by the `__context__` error being handled) and must be checked.
+- **Next step:** an Axentra pull request ports the collection and escaped-form scrubbing of contract I-6 and the
+  H-2 tests, checks its chain rule against I-13, or replaces the filter by `tabrion.errors` with MIG-AXE-3.
 
 ### TB-024 · Circular import of the staged 0.2 mixins (G-T1 condition check CC-2)
 
@@ -280,6 +322,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 | TB-015 | nodestro-runtime | TABRION NOD-CR-5 | Uses the schema fingerprint |
 | TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need `v0.1.0` final (RC-8) |
 | TB-008 | nodestro-studio | TABRION QA-20 (AC-5) | Consumer compat gates Tabrion tags |
+| TB-031 | axentra | TABRION MIG-AXE-3 | Axentra's redaction filter has the identical H-2 gap (and possibly the H-1 analog); port the fix of this pull request |
 | TB-006 | axentra | TABRION MIG-AXE-2, MIG-AXE-3 | Re-export `split_statements` and use `tabrion.errors`; the splitter differences of contract I-9 go into Axentra's CHANGELOG as a fix |
 
 ## Maintaining this file
