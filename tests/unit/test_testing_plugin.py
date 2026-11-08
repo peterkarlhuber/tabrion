@@ -2,7 +2,8 @@
 
 TAB-T-X01 configuration and the consumers' variable names, X02 validation, X03 ``tabrion_postgres_url`` (skip,
 require, value, never the URL in a message), X08 the SQLite fixtures, X09 the plugin is explicit (no ``pytest11``
-entry point; its fixtures exist only with ``pytest_plugins``). Inner pytest runs use ``pytester`` in a subprocess.
+entry point; its fixtures exist only with ``pytest_plugins``), and from TAB-032 X12 the validation of ``RoleSetup``.
+Inner pytest runs use ``pytester`` in a subprocess.
 """
 
 from __future__ import annotations
@@ -14,7 +15,8 @@ import tomllib
 
 import pytest
 
-from tabrion.testing import _config, configure
+from tabrion.testing import RoleSetup, _config, configure
+from tabrion.testing.postgres import _role_names
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = 'pytest_plugins = ["tabrion.testing"]\n'
@@ -228,3 +230,34 @@ def test_x09_fixtures_only_with_pytest_plugins(pytester: pytest.Pytester) -> Non
     result.stdout.fnmatch_lines(["*fixture 'tabrion_sqlite_path' not found*"])
     pytester.makeconftest(PLUGIN)
     pytester.runpytest_subprocess("-p", "no:cacheprovider").assert_outcomes(passed=1)
+
+
+# --- TAB-T-X12 (TAB-032): RoleSetup ---------------------------------------------------------------------------------
+
+
+def test_x12_role_names(restore_config: None) -> None:
+    configure(schema_prefix="t_unit_")
+    owner, app = _role_names(RoleSetup())
+    assert owner.startswith("t_unit_own_") and app.startswith("t_unit_app_") and owner != app
+    assert _role_names(RoleSetup(owner="ax_owner", app="ax_app")) == ("ax_owner", "ax_app")
+    assert _role_names(RoleSetup(owner="ax_owner"))[0] == "ax_owner"
+    one = _role_names(RoleSetup(split=False))
+    assert one[0] == one[1] and one[0].startswith("t_unit_own_")
+    assert _role_names(RoleSetup(app="ax", split=False)) == ("ax", "ax")
+    assert _role_names(RoleSetup(owner="ax", app="ax", split=False)) == ("ax", "ax")
+
+
+@pytest.mark.parametrize(
+    ("setup", "error", "match"),
+    [
+        (RoleSetup(owner="same", app="same"), ValueError, "two different roles"),
+        (RoleSetup(owner="a", app="b", split=False), ValueError, "one role"),
+        (RoleSetup(owner="x" * 64), ValueError, "longer than 63 bytes"),
+        (RoleSetup(app="\u00e4" * 32), ValueError, "longer than 63 bytes"),  # 64 bytes in UTF-8
+        (RoleSetup(owner=""), TypeError, "non-empty str"),
+        (RoleSetup(app=1), TypeError, "non-empty str"),  # type: ignore[arg-type]
+    ],
+)
+def test_x12_role_setup_validation(setup: RoleSetup, error: type[Exception], match: str) -> None:
+    with pytest.raises(error, match=match):
+        _role_names(setup)

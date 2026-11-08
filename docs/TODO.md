@@ -121,8 +121,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tabrion.testing` 0.1 (TAB-020) with a database per session, roles without superuser, truncate and runtime-role
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
-- **Status note:** TAB-020 is in the fourth lane C pull request (contract I-36); TAB-032 follows there once the grant
-  of TAB-031 (#8) is merged.
+- **Status note:** TAB-020 and TAB-032 are in the fourth lane C pull request (#11; contract I-36, I-60), after #8
+  (TAB-031) merged.
 - **Next step:** after TAB-014 and TAB-015. TAB-018 first decides TB-040 (review N-4), also settles F-11 (TB-020) and
   F-14 (`Database()` without a
   factory raises `TypeError`); TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture `tabrion_role_setup`
@@ -536,8 +536,10 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-020, TAB-032, contract section 6, I-36, D-51
 - **What:** the PostgreSQL suites use the plugin's URL and schema fixtures; `make_role` and `scratch_database` in
   `tests/postgres/conftest.py` stay local, and the SQLite suites use `tmp_path` instead of `tabrion_sqlite_path`.
-- **Next step:** with TAB-032, move the role and database helpers onto `tabrion_postgres_roles` and
-  `tabrion_postgres_database` where the cases allow it; the SQLite suites follow when lane B next touches them.
+- **Next step:** the fixtures exist now (TAB-032, #11); move `make_role` and `scratch_database` onto
+  `tabrion_postgres_roles` and `tabrion_postgres_database` where the cases allow it (most role cases need several
+  roles per test with chosen attributes, which the session fixtures do not give); the SQLite suites follow when
+  lane B next touches them.
 
 ## Cross-repository dependencies
 
