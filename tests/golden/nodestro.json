@@ -1,0 +1,338 @@
+{
+ "about": "Behavior of nodestro at the commit below for contract section 8.2 (TAB-022a), recorded by scripts/record_golden.py with tests/golden/consumers/record_nodestro.py. Do not edit by hand: change the commit in scripts/record_golden.py and record again.",
+ "commit": "463e0d99ca66cfdf61f9581e271fc5e0361e0970",
+ "consumer": "nodestro",
+ "recorded_with": {
+  "postgres": "160015",
+  "python": "3.13.18",
+  "sqlite": "3.53.1"
+ },
+ "records": {
+  "configure.schema=None": {
+   "changed": {
+    "idle_in_transaction_session_timeout": "5min",
+    "statement_timeout": "30s"
+   },
+   "status_after": "IDLE"
+  },
+  "configure.schema=nodestro": {
+   "changed": {
+    "idle_in_transaction_session_timeout": "5min",
+    "search_path": "\"nodestro\"",
+    "statement_timeout": "30s"
+   },
+   "status_after": "IDLE"
+  },
+  "inspect_role": {
+   "bypassrls": {
+    "bypass_rls": true,
+    "can_create": false,
+    "connect": true,
+    "database": "<database>",
+    "owned_tables": [],
+    "owner": "<owner>",
+    "restricted": false,
+    "role": "<bypassrls>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "can_create": {
+    "bypass_rls": false,
+    "can_create": true,
+    "connect": true,
+    "database": "<database>",
+    "owned_tables": [],
+    "owner": "<owner>",
+    "restricted": true,
+    "role": "<can_create>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "no_connect": {
+    "bypass_rls": false,
+    "can_create": false,
+    "connect": false,
+    "database": "<database>",
+    "owned_tables": [],
+    "owner": "<owner>",
+    "restricted": true,
+    "role": "<no_connect>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "owner": {
+    "bypass_rls": false,
+    "can_create": true,
+    "connect": true,
+    "database": "<database>",
+    "owned_tables": [
+     "alpha",
+     "beta"
+    ],
+    "owner": "<owner>",
+    "restricted": false,
+    "role": "<owner>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "owns_one": {
+    "bypass_rls": false,
+    "can_create": false,
+    "connect": true,
+    "database": "<database>",
+    "owned_tables": [
+     "delta"
+    ],
+    "owner": "<owner>",
+    "restricted": false,
+    "role": "<owns_one>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   },
+   "runtime": {
+    "bypass_rls": false,
+    "can_create": false,
+    "connect": true,
+    "database": "<database>",
+    "owned_tables": [],
+    "owner": "<owner>",
+    "restricted": true,
+    "role": "<runtime>",
+    "schema": "app",
+    "superuser": false,
+    "tables": 3
+   }
+  },
+  "pgvector_status": {
+   "not_installed": {
+    "command": null,
+    "extension_schema": null,
+    "state": "unavailable"
+   },
+   "server_has_vector": false
+  },
+  "role_info": {
+   "bypassrls": {
+    "info": {
+     "bypass_rls": true,
+     "role": "<bypassrls>",
+     "superuser": false,
+     "table_owner": false
+    }
+   },
+   "member_of_rls_owner": {
+    "info": {
+     "bypass_rls": false,
+     "role": "<member_of_rls_owner>",
+     "superuser": false,
+     "table_owner": true
+    }
+   },
+   "plain": {
+    "info": {
+     "bypass_rls": false,
+     "role": "<plain>",
+     "superuser": false,
+     "table_owner": false
+    }
+   },
+   "plain_table_owner": {
+    "info": {
+     "bypass_rls": false,
+     "role": "<plain_table_owner>",
+     "superuser": false,
+     "table_owner": true
+    }
+   },
+   "rls_table_owner": {
+    "info": {
+     "bypass_rls": false,
+     "role": "<rls_table_owner>",
+     "superuser": false,
+     "table_owner": true
+    }
+   },
+   "superuser": {
+    "info": {
+     "bypass_rls": true,
+     "role": "<admin>",
+     "superuser": true,
+     "table_owner": true
+    }
+   }
+  },
+  "session_lock": [
+   [
+    "a.try",
+    true
+   ],
+   [
+    "b.try",
+    false
+   ],
+   [
+    "a.try again (count 2)",
+    true
+   ],
+   [
+    "b.try after one release",
+    false
+   ],
+   [
+    "a.holds",
+    true
+   ],
+   [
+    "a.holds after the second release",
+    false
+   ],
+   [
+    "b.try after the last release",
+    true
+   ],
+   [
+    "a.try",
+    true
+   ],
+   [
+    "a's connection ended",
+    1
+   ],
+   [
+    "a.holds after the loss",
+    false
+   ],
+   [
+    "a.try after the loss",
+    true
+   ],
+   [
+    "b.try",
+    false
+   ]
+  ],
+  "sqlite.migrate": {
+   "backup_fails": {
+    "backup_calls": [
+     [
+      0,
+      2
+     ]
+    ],
+    "error": "backup_failed",
+    "half_table": false,
+    "user_version": 0
+   },
+   "data_no_backup": {
+    "backup_calls": [],
+    "error": "backup_required",
+    "half_table": false,
+    "user_version": 0
+   },
+   "data_with_backup": {
+    "backup_calls": [
+     [
+      0,
+      2
+     ]
+    ],
+    "half_table": false,
+    "returned": 0,
+    "user_version": 2
+   },
+   "fresh_no_backup": {
+    "backup_calls": [],
+    "half_table": false,
+    "returned": 0,
+    "user_version": 2
+   },
+   "missing_step": {
+    "backup_calls": [],
+    "error": "migration_missing",
+    "half_table": false,
+    "user_version": 0
+   },
+   "same_version": {
+    "backup_calls": [],
+    "half_table": false,
+    "returned": 0,
+    "user_version": 0
+   },
+   "step_fails": {
+    "backup_calls": [
+     [
+      0,
+      2
+     ]
+    ],
+    "error": "migration_failed",
+    "half_table": false,
+    "user_version": 0
+   },
+   "too_new": {
+    "backup_calls": [],
+    "error": "schema_too_new",
+    "half_table": false,
+    "user_version": 3
+   }
+  },
+  "sqlite.open": {
+   "busy_timeout": 30000,
+   "file_mode": "0o644",
+   "foreign_keys": 0,
+   "isolation_level": null,
+   "journal_mode": "wal",
+   "secure_delete": 0,
+   "synchronous": 2,
+   "trusted_schema": 1
+  },
+  "sqlite.snapshot": {
+   "existing_target": {
+    "rows": 2,
+    "stale_table_kept": false
+   },
+   "new_target": {
+    "rows": 2,
+    "stale_table_kept": false
+   }
+  },
+  "sqlite.symlink": {
+   "database_is_link": "opened",
+   "target_unchanged": false,
+   "wal_is_link": "refused"
+  },
+  "sqlite.transaction": {
+   "committed": true,
+   "in_transaction_after": false,
+   "other_writer_blocked_before_any_write": true,
+   "rolled_back_on_error": true
+  },
+  "testing.environment": {
+   "flag_equal_1": [
+    "NODESTRO_REQUIRE_PGVECTOR",
+    "NODESTRO_REQUIRE_POSTGRES",
+    "NODESTRO_TEST_RUNTIME_ROLE"
+   ],
+   "read": [
+    "NODESTRO_REQUIRE_PGVECTOR",
+    "NODESTRO_REQUIRE_POSTGRES",
+    "NODESTRO_TEST_POSTGRES",
+    "NODESTRO_TEST_RUNTIME_ROLE"
+   ]
+  },
+  "url_from_env": {
+   "both": "error",
+   "direct": "postgresql://u:pw@h/db",
+   "empty_file": "error",
+   "file": "postgresql://u:pw@h/db",
+   "neither": "error",
+   "unreadable_file": "error"
+  }
+ },
+ "repository": "https://github.com/peterkarlhuber/nodestro-runtime"
+}
