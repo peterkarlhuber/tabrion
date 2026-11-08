@@ -58,8 +58,31 @@ Accepted residual risks (documented, not vulnerabilities):
     existing world-readable file passes on; `connect` never changes the mode of an existing file (MIG-NOD-9 does
     that for Nodestro);
   - the files are not protected against the owning user or root, and they are not encrypted at rest.
-- `TLSMode.INSECURE` is an explicit opt-in for local development.
-- Using `Database.engine` directly bypasses Tabrion's transaction modes.
+- `TLSMode.INSECURE` is an explicit opt-in for local development. Under `TLSMode.AUTO` a local host (Unix socket,
+  `localhost`, loopback) keeps the URL's `sslmode`, whatever it is; a remote one gets at least `require`, which
+  encrypts but does not verify the server: use `TLSMode.VERIFY_FULL` where a man in the middle is a concern
+  (contract I-41).
+- Using `Database.engine` directly bypasses Tabrion's transaction modes (SQLite writes then begin `DEFERRED`). The
+  connection profile and `Profile.read_only` apply there as the connection was set up, but SQL can change them:
+  `Database.engine` is not read-only once a session default was switched off (contract I-56).
+- `read()` and `Profile.read_only` are a best-effort guard against accidents, not a security boundary (contract
+  I-56). The caller's SQL can end read-only. Tabrion reads the state once more before the `COMMIT` of a `read()`
+  and rolls back when `SET TRANSACTION READ WRITE`, `SET transaction_read_only`, `SET
+  default_transaction_read_only` or SQLite's `PRAGMA query_only = OFF` is still in force at the end, but SQL that
+  lifts read-only, writes and restores it before the end, or that ends the transaction and commits its own
+  (`ROLLBACK; BEGIN READ WRITE; ...; COMMIT`), writes (TODO TB-061). SQLite's `mode=ro` covers the main file
+  only; `Profile.read_only` therefore forbids `ATTACH`, which would open the same file read-write. The only hard
+  boundary is a PostgreSQL role without write rights, or on SQLite file permissions that do not let the process
+  write the file: give untrusted SQL such a role or file (SR-03).
+- A `SET` without `LOCAL` inside a Tabrion transaction stays on the pooled connection for every later checkout
+  (TM-08); Tabrion runs no `RESET` or `DISCARD`. Use `SET LOCAL` or `set_config(..., true)` (contract I-56).
+- `Database.from_engine` with listeners changes the session settings of every connection of the foreign engine,
+  the host's own included, and `close()` does not undo them; a read-only profile is refused there (contract I-37).
+- Layer-B timeouts bound the database's work, not every wait: a SQLite lock wait is bounded by the busy timeout, a
+  wait for a pool connection by `pool_timeout`, a network that stops answering by the connection's TCP settings
+  (contract I-40, I-44; TODO TB-056).
+- `TabrionError.original` of a layer-B error is the driver error, with the server's `DETAIL` and, for SQLAlchemy's
+  own refusals, the parameters: log the `TabrionError`, not its `original`.
 - `DbErrorRedactionFilter` protects only the records it sees: the application installs it (on its handlers, its
   loggers or through the log record factory); Tabrion installs it nowhere. A value the application logs on its own
   (for example `exc.diag.message_detail` as a plain string) is not recognized.

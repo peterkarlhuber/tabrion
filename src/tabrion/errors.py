@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import enum
 import itertools
 import logging
@@ -509,7 +509,12 @@ def _classify(error: BaseException, *, during_commit: bool, sent: bool) -> Class
     if not isinstance(error, BaseException):
         return _UNKNOWN
     if isinstance(error, TabrionError) and isinstance(error.classification, Classification):
-        return error.classification
+        stored = error.classification
+        if during_commit and stored.kind is Kind.CONNECTION and not stored.outcome_unknown:
+            # R-NORETRY over a stored classification (TB-040, contract I-43): a connection lost around a COMMIT
+            # leaves the outcome unknown, whatever the error said when it was built (a checkout with sent=False).
+            return replace(stored, outcome_unknown=True, retryable=False)
+        return stored
     exc, visited = _classify_chain(error)
     sqlstate = _sqlstate(exc)
     constraint = table = column = sqlite_code = None

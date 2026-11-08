@@ -245,7 +245,8 @@ def test_check_dispatches_a_database_to_layer_b() -> None:
     import tabrion.check
 
     subclass = type("AppDatabase", (Database,), {"__module__": "app.db"})
-    collector = tabrion.check._collector(subclass())
+    # Database() raises TypeError (G-T1 F-14); the dispatch looks only at the type.
+    collector = tabrion.check._collector(object.__new__(subclass))
     assert collector is not None
     assert collector.__name__ == "tabrion._sa._check"
 
