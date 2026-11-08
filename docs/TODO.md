@@ -17,7 +17,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 9 |
-| P3 Low | 19 |
+| P3 Low | 20 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -119,6 +119,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `tabrion.testing` 0.1 (TAB-020) with a database per session, roles without superuser, truncate and runtime-role
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
+- **Status note:** TAB-020 is in the fourth lane C pull request (contract I-36); TAB-032 follows there once the grant
+  of TAB-031 (#8) is merged.
 - **Next step:** after TAB-014 and TAB-015. TAB-018 first decides TB-040 (review N-4), also settles F-11 (TB-020) and
   F-14 (`Database()` without a
   factory raises `TypeError`); TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture `tabrion_role_setup`
@@ -493,6 +495,14 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   TAB-033 lets `Database` and `Transaction` inherit from the `_v02` mixins, the two modules import each other.
 - **Next step:** before TAB-033, move the type aliases to `tabrion._sa._types`, type `run_transaction`'s `fn` against
   a forward reference, and keep `surface.json` unchanged.
+
+### TB-054 · Complete the dogfooding of `tabrion.testing` (TABRION TAB-020, TAB-032)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-020, TAB-032, contract section 6, I-36, D-51
+- **What:** the PostgreSQL suites use the plugin's URL and schema fixtures; `make_role` and `scratch_database` in
+  `tests/postgres/conftest.py` stay local, and the SQLite suites use `tmp_path` instead of `tabrion_sqlite_path`.
+- **Next step:** with TAB-032, move the role and database helpers onto `tabrion_postgres_roles` and
+  `tabrion_postgres_database` where the cases allow it; the SQLite suites follow when lane B next touches them.
 
 ## Cross-repository dependencies
 

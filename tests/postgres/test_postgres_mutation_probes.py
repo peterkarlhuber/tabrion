@@ -13,8 +13,6 @@ import pytest
 
 from tests.unit.test_mutation_probes import _copy, _run
 
-from .conftest import admin_conninfo
-
 pytestmark = [pytest.mark.postgres, pytest.mark.slow]
 
 READERS = "tests/postgres/test_contract_rules.py::test_g01_g02_readers"
@@ -332,8 +330,8 @@ PROBES = [
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _needs_postgres() -> None:
-    admin_conninfo()
+def _needs_postgres(tabrion_postgres_url: str) -> None:
+    """Skips (or fails under ``TABRION_REQUIRE_POSTGRES=1``) without a server, through the plugin."""
 
 
 def test_unmutated_copy_passes(tmp_path: Path) -> None:

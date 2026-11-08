@@ -77,6 +77,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   given connection. Errors are never retried. A key held on a lost connection raises
   `UsageError("postgres.lock_lost")` until `holds` or `release` acknowledges the loss; a forked child gets a fresh
   internal lock; `lock_key` raises `ValueError` for a string without a UTF-8 form.
+- `tabrion.testing` (TAB-020), activated with `pytest_plugins = ["tabrion.testing"]`: `configure` chooses the
+  environment variable names (`env_prefix`, or the consumers' own names) and the name prefix; `tabrion_postgres_url`
+  skips without a server and fails under the require variable, and masks the password in pytest's reports;
+  `tabrion_postgres_schema` gives every test its own schema and drops it afterwards, also after a failure and with a
+  connection still holding locks; `postgres_server_version`; `require_extension` creates or moves an extension or
+  skips (fails when required); `tabrion_sqlite_path` and `tabrion_sqlite`. Tabrion's own PostgreSQL suites run on it
+  and check after each test that nothing they created is left on the server.
 - In psycopg pipeline mode every `tabrion.postgres` function syncs the caller's pipeline first, so a failing statement
   no longer aborts the caller's pipeline transaction (review DL-1 of #5); an error of a statement the caller queued
   propagates from every function, `ping` included, and `wait_advisory_lock` syncs each attempt before it sleeps.

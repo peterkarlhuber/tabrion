@@ -1,10 +1,13 @@
-"""Fixtures of the PostgreSQL suites of TAB-015 and TAB-016 (``tabrion.testing`` arrives with TAB-020/TAB-032).
+"""Fixtures of the PostgreSQL suites, built on the ``tabrion.testing`` plugin (dogfooding, contract section 6).
 
-``TABRION_TEST_POSTGRES`` is a superuser conninfo (the CI jobs "pg (...)" and the local server). The suites also run
-as roles **without** superuser: ``make_role`` creates LOGIN roles ``t_<hex>`` (NOSUPERUSER NOBYPASSRLS, a random
-password) and drops them afterwards; ``scratch_database`` is a throwaway database for tests that change
-database-wide state (extensions, revoked catalog privileges). Every schema, role and database starts with ``t_`` and
-is removed afterwards.
+``TABRION_TEST_POSTGRES`` is a superuser conninfo (the CI jobs "pg (...)" and the local server), read by the plugin's
+``tabrion_postgres_url``; ``TABRION_REQUIRE_POSTGRES=1`` turns a missing server into a failure. The suites also run
+as roles **without** superuser: ``make_role`` creates LOGIN roles (NOSUPERUSER NOBYPASSRLS, a random password) and
+drops them afterwards; ``scratch_database`` is a throwaway database for tests that change database-wide state.
+
+The server may be shared (reviewers, other runs). Every schema, role and database this run creates starts with
+``PREFIX`` (``t_<hex6>_``, new for each run and configured as the plugin's ``schema_prefix``); nothing else is ever
+dropped. After each test, ``_no_leaks`` checks that none with the prefix is left (TAB-T-X10).
 """
 
 # The SQL is built from names this file generates (uuid hex) and fixed text, never from outside input.
@@ -13,23 +16,19 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-import os
 import secrets
 from typing import Any
 import uuid
 
 import pytest
 
+from tabrion.testing import PostgresSchema, configure
+
 psycopg = pytest.importorskip("psycopg")
 
-
-def admin_conninfo() -> str:
-    conninfo = os.environ.get("TABRION_TEST_POSTGRES")
-    if not conninfo:
-        if os.environ.get("TABRION_REQUIRE_POSTGRES") == "1":
-            pytest.fail("TABRION_REQUIRE_POSTGRES=1 but TABRION_TEST_POSTGRES is not set")
-        pytest.skip("TABRION_TEST_POSTGRES is not set")
-    return conninfo
+PREFIX = f"t_{secrets.token_hex(3)}_"
+"""The prefix of everything this run creates on the server."""
+configure(schema_prefix=PREFIX)
 
 
 def with_params(conninfo: str, **changes: Any) -> str:
@@ -38,13 +37,36 @@ def with_params(conninfo: str, **changes: Any) -> str:
     return str(psycopg.conninfo.make_conninfo(**params))
 
 
-def new_name(prefix: str = "t_") -> str:
-    return f"{prefix}{uuid.uuid4().hex[:12]}"
+def new_name(prefix: str = "") -> str:
+    return f"{PREFIX}{prefix}{uuid.uuid4().hex[:12]}"
+
+
+def leaked(conn: Any, prefix: str = PREFIX) -> list[str]:
+    """Schemas (in the database of ``conn``), roles and databases whose name starts with ``prefix``."""
+    rows = conn.execute(
+        "SELECT 'schema ' || nspname FROM pg_namespace WHERE starts_with(nspname, %(p)s)"
+        " UNION ALL SELECT 'role ' || rolname FROM pg_roles WHERE starts_with(rolname, %(p)s)"
+        " UNION ALL SELECT 'database ' || datname FROM pg_database WHERE starts_with(datname, %(p)s)",
+        {"p": prefix},
+    ).fetchall()
+    return sorted(str(row[0]) for row in rows)
+
+
+@pytest.fixture(autouse=True)
+def _no_leaks(request: pytest.FixtureRequest) -> Iterator[None]:
+    """TAB-T-X10: after a test that used the server, nothing with ``PREFIX`` is left (runs after every teardown)."""
+    yield
+    if "tabrion_postgres_url" not in request.fixturenames:
+        return
+    url = request.getfixturevalue("tabrion_postgres_url")
+    with psycopg.connect(url, autocommit=True, connect_timeout=10) as conn:
+        left = leaked(conn)
+    assert not left, f"left on the server after {request.node.nodeid}: {left}"
 
 
 @pytest.fixture(scope="session")
-def admin_url() -> str:
-    return admin_conninfo()
+def admin_url(tabrion_postgres_url: str) -> str:
+    return tabrion_postgres_url
 
 
 @pytest.fixture
@@ -54,24 +76,12 @@ def admin(admin_url: str) -> Iterator[Any]:
 
 
 @pytest.fixture
-def schema(admin_url: str) -> Iterator[str]:
-    """A fresh schema with one plain table, owned by the admin; dropped afterwards."""
-    name = new_name()
+def schema(admin_url: str, tabrion_postgres_schema: PostgresSchema) -> str:
+    """A fresh schema (the plugin's ``tabrion_postgres_schema``) with one plain table; dropped by the plugin."""
+    name = tabrion_postgres_schema.name
     with psycopg.connect(admin_url, autocommit=True) as conn:
-        conn.execute(f"CREATE SCHEMA {name}")
         conn.execute(f"CREATE TABLE {name}.parts (id int PRIMARY KEY, label text)")
-    try:
-        yield name
-    finally:
-        with psycopg.connect(admin_url, autocommit=True) as conn:
-            # A failed test may leave a connection of its own in a transaction that locks a table here; the
-            # connections close only after this teardown, so end those sessions instead of waiting for them.
-            conn.execute(
-                "SELECT pg_terminate_backend(l.pid) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation"
-                " JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %s AND l.pid <> pg_backend_pid()",
-                (name,),
-            )
-            conn.execute(f"DROP SCHEMA {name} CASCADE")
+    return name
 
 
 @dataclass(frozen=True)
@@ -110,7 +120,7 @@ def make_role(admin_url: str) -> Iterator[Callable[..., Role]]:
         for name in created:
             # Privileges the role holds in other databases block DROP ROLE; drop them where they can be.
             for database in databases:
-                if database == conn.info.dbname or database.startswith("t_"):
+                if database == conn.info.dbname or database.startswith(PREFIX):
                     with psycopg.connect(with_params(admin_url, dbname=database), autocommit=True) as other:
                         other.execute(f'DROP OWNED BY "{name}"')
             conn.execute(f'DROP ROLE IF EXISTS "{name}"')
