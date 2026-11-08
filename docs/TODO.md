@@ -16,9 +16,9 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 1 |
-| P1 High | 12 |
+| P1 High | 13 |
 | P2 Medium | 10 |
-| P3 Low | 22 |
+| P3 Low | 23 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -29,8 +29,8 @@ the documentation and the program files ([STATUS.md](program/STATUS.md#g-t1-cond
 `tabrion.errors`, `tabrion.sql` and `tabrion.config` are merged (TABRION TAB-010..TAB-012, pull request #3); the M2
 lane B pull request implements `tabrion.sqlite` (TABRION TAB-013, TAB-014,
 [M2 lane B evidence](program/STATUS.md#m2-lane-b-evidence-tab-013-tab-014)); `tabrion.postgres` is merged up to
-TAB-030 and completed by TAB-031 in the third lane C pull request; the functions of `tabrion.check`, layer B and
-`tabrion.testing` still raise `NotImplementedError`.
+TAB-030 and completed by TAB-031 in the third lane C pull request; layer B and `tabrion.testing` still raise
+`NotImplementedError`; `tabrion.check` (TAB-017) is in review, without its layer-B part (TB-060).
 
 ## Priorities and statuses
 
@@ -111,7 +111,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   independent review TB-032 accepted); TAB-030 is merged (#6, I-32, I-34); TAB-031 is in review (I-35,
   [M2 lane C3 evidence](program/STATUS.md#m2-lane-c3-evidence)) and completes `tabrion.postgres`, which has left
   `STUB_MODULES` in `tests/unit/test_public_api.py`. Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
-  `sent=False` for checkout errors.
+  `sent=False` for checkout errors. TAB-017 is in review on branch `claude/project-thread-rdo6g3-check`
+  (`tabrion.check` with TAB-SQ-* and TAB-PG-*, contract I-50..I-55; `tabrion.check` left the stub list); its
+  layer-B part is TB-060.
 
 ### TB-007 · Layer B, migrations, testing (TABRION TAB-018..TAB-021, TAB-032, TAB-034)
 
@@ -173,6 +175,38 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   package version raises `NotImplementedError` (today every name does, by design). `scripts/api_surface.py` already
   keeps names with a newer `since` out of the exported surface.
 - **Next step:** with TAB-040, as a mode of `scripts/api_surface.py` run by `release.yml`.
+
+### TB-062 · Checks outside the specification's code table (TAB-017 review Info of #13; 0.2 addendum candidate)
+
+- **Priority:** P3 Low · **Status:** Needs decision (contract addendum) · **Refs:** TABRION TAB-017, specification
+  section 9, planning document 02 line 281, TB-036, contract I-50..I-55
+- **What:** `tabrion.check` reports nothing for: row-level security disabled, or enabled but not forced, on tables in
+  scope (an owner with `expect="owner"` bypasses it, and nothing reports it); `SECURITY DEFINER` functions without a
+  fixed `search_path` (the CVE-2018-1058 pattern); extensions installed in `public` or in a schema the runtime role
+  can create in; TAB-PG-022 ("a role with `pg_read_all_data` exists"), which planning document 02 names in the
+  backup section (TAB-PG-020..022) but not in the code table.
+- **Next step:** a 0.2 contract and specification addendum with codes and severities (owner decision), or align the
+  specification by removing TAB-PG-022; do not implement before.
+
+### TB-063 · Remaining file and host gaps of `tabrion.check` (TAB-017 review L-2, L-4 of #13)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-017, TAB-015, contract I-17, I-52, I-54
+- **What:** TAB-SQ-003 does not report a database file owned by another user (a plain `sqlite3` connection may open
+  one; `tabrion.sqlite.connect` refuses it). `tabrion.postgres.diagnose().host_is_local` (TAB-015, I-17) still looks
+  at `info.host` only; `tabrion.check` uses `info.hostaddr` itself.
+- **Next step:** an owner rule for TAB-SQ-003 (or a new code, by addendum); `diagnose` to prefer `info.hostaddr`
+  when set (lane C, a note in I-17).
+
+### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
+
+- **Priority:** P1 High · **Status:** Open (after the layer-B core merges) · **Refs:** TABRION TAB-017, TAB-018,
+  TAB-019, contract section 7, I-55, deviation D-60, TAB-T-K21, K25, K26
+- **What:** `tabrion._sa._check.collect` is still a stub, so `check(database)` raises `NotImplementedError`. It must
+  run the SQLite or PostgreSQL checks on a raw driver connection of the `Database` (read only, T-NOTX) and add
+  TAB-B-001 (pool without `pre_ping`), TAB-B-002 (Alembic schema not current, through `tabrion.migrations`) and
+  TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` must call it.
+- **Next step:** after the layer-B core (TAB-018) merges, on a new branch: the collector, K21/K25/K26 and the
+  layer-B part of K27..K30; TAB-B-002 needs TAB-019 (`status`/`require_current`), until then an `info` "not checked".
 
 ## M3, M5 and M8: work in this repository
 
@@ -365,7 +399,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   `pg_read_all_data` and `pg_write_all_data` do not bypass row-level security. A new reason code would extend the
   frozen reason set (a contract addendum); a finding of `tabrion.check` (TAB-017) would not.
 - **Next step:** decide with TAB-017: a `tabrion.check` finding for these memberships (preferred, no API change), or a
-  reason code in 0.2 by contract addendum.
+  reason code in 0.2 by contract addendum. TAB-017 implements only the codes of specification section 9: a new
+  code is a specification and contract addendum (owner decision); until then TAB-PG-001 covers only roles with
+  `rolsuper` (I-20, I-53).
 
 ### TB-037 · Review follow-ups L-1 and I-3 of TAB-015/TAB-016
 
@@ -425,7 +461,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   next to TAB-SQ-003/004 needs a contract addendum); 0.2 may add a `directory_unsafe` field to `SQLiteDiagnosis`
   by contract addendum. Since #4 re-review DL-1 the warning also covers a group- or other-writable directory with
   the sticky bit ("other users can create files next to the database"): in `/tmp` another user can plant the
-  `-journal` that SQLite then writes page data into; the finding must cover both cases.
+  `-journal` that SQLite then writes page data into; the finding must cover both cases. TAB-017 implements only
+  the codes of specification section 9 (side files: TAB-SQ-003 and -004, contract I-52); the directory finding
+  still needs the addendum for its code.
 
 ### TB-044 · Independent review of TAB-013 and TAB-014 (planning document 07 section 6)
 
@@ -452,7 +490,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **What:** `ATTACH 'other.db'` on a `connect(read_only=True)` connection creates an empty file at the attached
   path. `query_only` blocks writes into it, and the main file stays byte-identical, but the file appears.
 - **Next step:** set `SQLITE_LIMIT_ATTACHED` to 0 for read-only connections (`Connection.setlimit`, Python 3.11+), or
-  document it in I-22; decide with TAB-017.
+  document it in I-22; decide with TAB-017. TAB-017 has no code for it (the specification lists none), so the fix
+  stays in `tabrion.sqlite.connect`.
 
 ### TB-047 · Windows: file modes are cosmetic, the `CREATE_NEW` race remains (review I-2)
 
