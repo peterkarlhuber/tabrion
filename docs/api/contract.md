@@ -1,0 +1,1374 @@
+# API contract
+
+The binding public API of Tabrion 0.1 and 0.2: every public name, its signature, semantics, errors and test IDs.
+This is the English version of planning document 04 (revision 3) and the subject of the API freeze **G-T1**
+(TAB-002). Implementation follows in TAB-010..TAB-033.
+
+!!! note "M1 status"
+    In M1 every name below exists as a typed stub in `src/tabrion/` with the listed signature and `__all__`; each
+    function raises `NotImplementedError` naming its work package. `tests/unit/test_public_api.py` freezes the
+    `__all__` list of every module against section 0. Points where the stubs had to decide something the plan leaves
+    open are listed under [Open points for G-T1](#open-points-for-g-t1).
+
+## Conventions
+
+- Python 3.11 or later and `from __future__ import annotations`. Every returned dataclass is
+  `@dataclass(frozen=True, slots=True)`.
+- Keyword-only parameters follow `*`.
+- Times are passed **in seconds as `float`** (layer B, the Python convention). The exception is `SessionSettings`
+  with millisecond `int` values, because PostgreSQL GUCs count in milliseconds and existing code uses milliseconds
+  (Axentra `statement_timeout_ms`).
+- Tests carry IDs `TAB-T-<area><number>`. Stability: **S** = stable, **X** = experimental.
+- Error notation: "maps to `Kind.X`" is a classification; the driver exception stays unchanged (layer A). "raises E"
+  means Tabrion raises E.
+
+### Contract rule for connections handed to Tabrion (T-NOTX)
+
+This applies to every layer A function that takes a connection
+([ADR 0011](../adr/0011-ldp-internal-and-t-notx.md)).
+
+- Tabrion **never ends a transaction it did not open itself**: no `commit()`/`rollback()` of an open caller
+  transaction, no switching of `autocommit`, no change of the row factory, no `SET`/`set_config` except in
+  `configure` (and the `session_configurator` built from it).
+- If the connection was IDLE at the call (no open transaction), Tabrion may open a short transaction **of its own**
+  and ends it itself (read: rollback, write: commit). The status is IDLE again afterwards.
+- If a transaction is already running, Tabrion's statements run inside it. The exception are functions that **need**
+  a transaction of their own: `grant_runtime_role`, `sqlite.write_transaction`/`read_transaction`/`migrate`. They raise
+  `UsageError("...nested_transaction")` instead of changing the foreign transaction.
+- The purpose of the context managers `sqlite.write_transaction`/`read_transaction` is explicitly transaction control;
+  they count as "opened by Tabrion".
+- **Checked against the consumers:**
+  - Axentra `ping`/`role_info` (`database.py:348-382`) take a fresh pool connection, read, and roll back only their
+    own implicit transaction. That follows the rule and is taken over one to one.
+  - Axentra `joined()` and the savepoint join stay Axentra code. Tabrion functions called inside them run in the host
+    transaction and do not end it. Functions that need their own transaction (`grant_runtime_role`) raise
+    `UsageError` instead of opening `connection.transaction()` as a savepoint in the foreign transaction.
+  - Nodestro `_transaction` (`storage_postgres.py:360-383`) calls Tabrion only inside its own transaction; no Tabrion
+    function commits there.
+  - Test TAB-T-G01 checks `connection.info.transaction_status` before and after every layer A function in three
+    states: IDLE with autocommit, IDLE without autocommit, INTRANS. INTRANS stays INTRANS, IDLE stays IDLE. The only
+    documented exception: `configure` on IDLE without autocommit leaves INTRANS (section 4.1, no commit).
+
+### RLS safety (R-SET)
+
+- Tabrion sets **only** session GUCs from a fixed allowlist: `statement_timeout`, `lock_timeout`,
+  `idle_in_transaction_session_timeout`, `transaction_timeout`, `application_name`, `search_path`, `TimeZone`.
+- It never sets `role`/`session_authorization`, `row_security`, `app.*` or other custom prefixes. Security contexts
+  such as Axentra's `DbScope` with `set_config(..., true)` stay transaction-local and Axentra code.
+- The allowlist is fixed in code; other names cannot be configured (`ConfigurationError("postgres.setting_not_allowed")`).
+- Tabrion never calls `RESET ALL` or `DISCARD`; that would destroy host settings in shared pools (M10).
+- Test TAB-T-G02: after every Tabrion function on a pool connection, `current_setting('app.tenant_id', true)` and
+  `current_user` are unchanged. Test TAB-T-G03 checks the allowlist.
+
+## 0. Overview of the public names
+
+| Module | Names | Since | Stab. | Main users |
+|---|---|---|---|---|
+| `tabrion.errors` | `Kind`, `Classification`, `classify`, `safe_message`, `DbErrorRedactionFilter`, `TabrionError` and subclasses (section 1.4) | 0.1 | S | **AX**, **N**, **O**, apps |
+| `tabrion.sql` | `split_statements` | 0.1 | S | **AX** (runner `no-transaction`), Studio, apps |
+| `tabrion.config` | `safe_url` (also as `tabrion.safe_url`), `url_from_env` | 0.1 | S | **N**, Studio, apps |
+| `tabrion.sqlite` | `SQLiteProfile` (with `SQLiteProfile.orkexa()`, `.nodestro()`), `JournalMode`, `Synchronous`, `connect`, `apply_profile`, `check_path`, `UnsafePath`, `create_private_file`, `loading_extensions`, `write_transaction`, `read_transaction`, `migrate`, `MigrationResult`, `backup`, `BackupResult`, `integrity_check`, `quick_check`, `IntegrityReport`, `foreign_key_check`, `ForeignKeyViolation`, `diagnose`, `SQLiteDiagnosis` | 0.1 | S | **N** (core `SQLiteStore`, K-32), **O** (E-ORK-CORE = yes), apps, Studio |
+| `tabrion.postgres` | `SessionSettings`, `configure`, `session_configurator`, `ping`, `PingResult`, `diagnose`, `PostgresDiagnosis`, `extension_status`, `ExtensionStatus` | 0.1 | S | **AX**, **N**, **O**, layer B, Studio |
+| `tabrion.postgres` | `RoleInfo`, `RoleReport`, `role_info`, `check_role`, `inspect_role`, `grant_runtime_role` | 0.1 | S | **AX**, **N**, apps, Studio |
+| `tabrion.postgres` | `SessionLock`, `lock_key`, `try_advisory_lock`, `wait_advisory_lock`, `advisory_unlock` | 0.1 | S | **AX** (runner, worker), **N**, apps |
+| `tabrion.check` | `check`, `Finding`, `Severity` | 0.1 | S | Studio, apps |
+| `tabrion` (layer B) | `Database`, `Profile`, `TLSMode`, `Transaction`, `Health` | 0.1 | S | apps, Studio |
+| `tabrion.migrations` (extra `migrations`) | `status`, `require_current`, `SchemaStatus` | 0.1 | S | apps, Studio |
+| `tabrion` (layer B) | `Result`, `Column`, `Database.query`, `Transaction.query`, `Transaction.stream`, `Transaction.cancel`, `Database.inspector` | 0.2 | S | Studio |
+| `tabrion` (layer B) | `Database.run_transaction`, `Database.on_begin`, `Transaction.savepoint` | 0.2 | X | apps |
+| `tabrion.testing` | `configure`, fixtures (section 6) including a database per session, `RoleSetup`, `truncate_tables`, roles without superuser, `require_extension`, `profiles.*` | 0.1 | S | **AX**, **N**, **O** (dev extra), apps |
+| *(internal)* | Vectors `conformance/` and the loader `tests/support/conformance.py` (sections 10, 11) | - | internal | Tabrion's own tests **only** (K-35) |
+
+Legend: **AX** = Axentra (required dependency `tabrion[postgres]`, K-30); **N** = Nodestro (core and server
+profile, K-32); **O** = Orkexa (`orkexa[postgres]` to `tabrion[postgres]`, K-31; core per E-ORK-CORE).
+
+`grant_runtime_role`, `SessionLock` and the advisory helpers ship in **0.1** already, because Axentra needs them as a
+required consumer (plan document 06).
+
+The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
+
+| Module | `__all__` |
+|---|---|
+| `tabrion` | `Column`, `Database`, `Health`, `Profile`, `Result`, `TLSMode`, `TabrionError`, `Transaction`, `__version__`, `safe_url` |
+| `tabrion.errors` | `Kind`, `Classification`, `classify`, `safe_message`, `DbErrorRedactionFilter`, and the 25 error classes of section 1.4 |
+| `tabrion.sql` | `split_statements` |
+| `tabrion.config` | `safe_url`, `url_from_env` |
+| `tabrion.sqlite` | the names of section 3, plus `Migration` |
+| `tabrion.postgres` | the names of section 4 (including the role and lock names, re-exported from `tabrion.postgres.roles` and `tabrion.postgres.locks`) |
+| `tabrion.check` | `check`, `Finding`, `Severity` |
+| `tabrion.migrations` | `status`, `require_current`, `SchemaStatus` |
+| `tabrion.testing` | `configure`, `profiles`, the fixtures of section 6, `postgres_server_version`, `truncate_tables`, `require_extension`, `RoleSetup`, `TestRoles`, `PostgresSchema`, `PostgresDatabaseHandle` |
+| `tabrion.testing.profiles` | `ConnectionFactory`, `ProfileCase`, `sqlite_profile_cases`, `portability_cases` |
+
+Layer B names are exported lazily (PEP 562). Without SQLAlchemy, `tabrion.Database` raises `ImportError` with the
+hint `pip install "tabrion[sqlalchemy]"`; `tabrion.migrations` without Alembic and `tabrion.testing` without pytest
+behave the same way with their extras.
+
+## 1. `tabrion.errors` (standard library)
+
+### 1.1 `Kind`
+
+```python
+class Kind(enum.StrEnum):
+    CONNECTION = "connection"  # connection gone or refused, server shutdown
+    TIMEOUT = "timeout"  # statement_timeout, idle-in-transaction timeout, Tabrion deadline
+    CANCELED = "canceled"  # explicit cancel
+    LOCKED = "locked"  # SQLite BUSY/LOCKED, PG lock_not_available (lock_timeout)
+    DEADLOCK = "deadlock"
+    SERIALIZATION = "serialization"
+    UNIQUE = "unique"
+    FOREIGN_KEY = "foreign_key"
+    NOT_NULL = "not_null"
+    CHECK = "check"
+    EXCLUSION = "exclusion"
+    DATA = "data"  # invalid value, overflow, type
+    UNDEFINED_OBJECT = "undefined_object"  # table, column or function missing
+    SYNTAX = "syntax"
+    PERMISSION = "permission"
+    READ_ONLY = "read_only"  # write attempt in a read-only transaction or file
+    CORRUPT = "corrupt"
+    DISK_FULL = "disk_full"
+    RESOURCE = "resource"  # memory, too many connections
+    UNKNOWN = "unknown"
+```
+
+### 1.2 `Classification`
+
+```python
+@dataclass(frozen=True, slots=True)
+class Classification:
+    kind: Kind
+    retryable: bool  # the WHOLE transaction may be retried
+    outcome_unknown: bool  # statement or COMMIT may have run (connection lost during execution)
+    connection_usable: bool  # the connection can still be used after the error
+    driver: Literal["sqlite3", "psycopg", "other"]
+    sqlstate: str | None  # PG SQLSTATE (5 characters)
+    sqlite_code: str | None  # e.g. "SQLITE_BUSY" (sqlite3.Error.sqlite_errorname)
+    constraint: str | None  # PG diag.constraint_name; SQLite: "<table>.<column>[,...]" from the message
+    table: str | None
+    column: str | None
+```
+
+The fields are explicitly **without values**: `DETAIL`, `HINT` and `str(exc)` are not taken over.
+
+### 1.3 Functions
+
+```python
+def classify(error: BaseException, *, during_commit: bool = False, sent: bool = True) -> Classification
+def safe_message(error: BaseException | Classification) -> str
+```
+
+- **`classify`** recognizes errors by duck typing.
+  - psycopg errors: `sqlstate`/`diag`; a broken connection: `psycopg.OperationalError` with `conn.broken`.
+  - `sqlite3.Error`: `sqlite_errorname`, with a fallback to text recognition like Orkexa's `is_corruption`
+    (`_storage.py:118-126`).
+  - SQLAlchemy: `DBAPIError.orig` is unwrapped without importing SQLAlchemy.
+  - Anything unknown gives `Kind.UNKNOWN`, `retryable=False`.
+  - `outcome_unknown=True` when `kind == CONNECTION` and (`sent` or `during_commit`). Callers that know nothing was
+    sent (checkout errors) pass `sent=False`.
+  - **Chains:** `classify` looks for the driver error along `.orig` (SQLAlchemy), `__cause__` and `__context__` up to
+    depth 5. It takes the first error with a `sqlstate` or `sqlite_errorname`; if there is none, it classifies the
+    outermost object.
+  - It never raises.
+- **`safe_message`**: an English text of the form `"<Kind text> (SQLSTATE 23505, constraint parts_pkey)"`, built only
+  from `Classification` fields, never from `str(exc)`. So psycopg's `DETAIL` (which holds key values such as email
+  addresses, B-06-1), `HINT`, `CONTEXT`, parameters, paths and passwords are absent. Chains are resolved as in
+  `classify`.
+
+**Mapping table** (to be implemented completely, TAB-T-E01..E09):
+
+| Source | Kind | retryable | connection_usable |
+|---|---|---|---|
+| PG `08000`, `08003`, `08006`, `08001`, `08004`; psycopg `OperationalError` with `broken` | CONNECTION | yes, if `not outcome_unknown` | no |
+| PG `57P01` admin_shutdown, `57P02`, `57P03` cannot_connect_now | CONNECTION | yes, if `not outcome_unknown` | no |
+| PG `53300` too_many_connections | CONNECTION | yes | no |
+| PG `57014` query_canceled with text "statement timeout" / Tabrion's own timeout | TIMEOUT | no | yes |
+| PG `57014` otherwise | CANCELED | no | yes |
+| PG `25P03` idle_in_transaction_session_timeout | TIMEOUT | no | no |
+| PG `55P03` lock_not_available | LOCKED | yes | yes |
+| PG `40P01` | DEADLOCK | yes | yes |
+| PG `40001` | SERIALIZATION | yes | yes |
+| PG `23505` / `23503` / `23502` / `23514` / `23P01` | UNIQUE / FOREIGN_KEY / NOT_NULL / CHECK / EXCLUSION | no | yes |
+| PG class `22` | DATA | no | yes |
+| PG `42P01`, `42703`, `42883`, `42704`, `3F000` | UNDEFINED_OBJECT | no | yes |
+| PG `42601` | SYNTAX | no | yes |
+| PG `42501` | PERMISSION | no | yes |
+| PG `25006` | READ_ONLY | no | yes |
+| PG `XX001`, `XX002` | CORRUPT | no | yes |
+| PG `53100` | DISK_FULL | no | yes |
+| PG `53200`, class `54000` | RESOURCE | no | yes |
+| SQLite `SQLITE_BUSY*`, `SQLITE_LOCKED*` | LOCKED | yes | yes |
+| SQLite `SQLITE_CONSTRAINT_UNIQUE`, `_PRIMARYKEY` | UNIQUE | no | yes |
+| SQLite `SQLITE_CONSTRAINT_FOREIGNKEY` / `_NOTNULL` / `_CHECK` | FOREIGN_KEY / NOT_NULL / CHECK | no | yes |
+| SQLite `SQLITE_READONLY*` | READ_ONLY | no | yes |
+| SQLite `SQLITE_CORRUPT*`, `SQLITE_NOTADB` | CORRUPT | no | no |
+| SQLite `SQLITE_FULL` | DISK_FULL | no | yes |
+| SQLite `SQLITE_INTERRUPT` | CANCELED (TIMEOUT for a Tabrion deadline) | no | yes |
+| SQLite `SQLITE_AUTH` | PERMISSION | no | yes |
+| SQLite `SQLITE_ERROR` with "no such table/column" | UNDEFINED_OBJECT | no | yes |
+| SQLite `SQLITE_ERROR` with "syntax error" | SYNTAX | no | yes |
+| SQLite `SQLITE_CANTOPEN`, `SQLITE_IOERR*` | CONNECTION | no | no |
+
+```python
+class DbErrorRedactionFilter(logging.Filter):
+    def __init__(self, name: str = "") -> None
+    def filter(self, record: logging.LogRecord) -> bool   # always returns True
+```
+
+- A **`logging.Filter`** for the consumers' handlers or loggers (Axentra AX-8, Nodestro, Orkexa OR-3). It suppresses
+  nothing; it **sanitizes**: if `record.exc_info` has a database exception in its chain (`__cause__`/`__context__`,
+  psycopg, sqlite3, SQLAlchemy `DBAPIError`), the formatted traceback is replaced by a version in which every
+  exception line carries `safe_message(exc)` (no `DETAIL`/`HINT`/`CONTEXT` value, no `[parameters]`). `record.args`
+  that are database exceptions themselves are replaced by `safe_message`. The SQLSTATE and the constraint name stay,
+  also as the attributes `record.db_sqlstate`/`record.db_constraint` for JSON formatters.
+- The filter changes only the record (the preformatted `record.exc_text`), never the exception; stack trace lines
+  (files, line numbers) stay.
+- The consumer installs it; Tabrion installs it nowhere globally.
+- Tests: TAB-T-E21 (a unique violation with an email in `DETAIL`: the value is missing in text and JSON output,
+  `sqlstate=23505` and the constraint are present), E22 (chained exception), E23 (SQLAlchemy `[parameters]`), E24
+  (a non-database exception is unchanged).
+
+**Coverage of the Axentra patterns** (grep of `axentra/src`, master 40c0f2c; 16 typed and 4 generic places):
+
+| Axentra today | Places | Tabrion |
+|---|---|---|
+| `except pg_errors.UniqueViolation` | 9: tenancy 212/734, notify 331/767/1203, usage 275, access/roles 144, billing 356/578/1048 | `classify(e).kind is Kind.UNIQUE`; `constraint` tells several unique indexes apart |
+| `except pg_errors.ForeignKeyViolation` | 4: tenancy 214, usage 371, billing 451 | `Kind.FOREIGN_KEY` |
+| `except pg_errors.CheckViolation` | 1: access/roles 142 | `Kind.CHECK` |
+| `except psycopg.errors.QueryCanceled` | 1: search/adapters 297 | `Kind.TIMEOUT`/`CANCELED` |
+| `except psycopg.errors.InsufficientPrivilege` | 1: data/roles 182 | `Kind.PERMISSION` (handled inside `grant_runtime_role`) |
+| `except psycopg.Error` (generic) | 4: search/adapters 123, events/worker 358, events/schedules 90/95 | `classify(e)` gives `connection_usable` and `retryable` for worker decisions |
+| Serialization, deadlock, lock timeout | **not** caught today | `Kind.SERIALIZATION`, `Kind.DEADLOCK`, `Kind.LOCKED` (55P03) ready once Axentra sets `lock_timeout` |
+
+Rule for Axentra: typed `except` branches with their own value-free answers (`Conflict(...) from None`) may stay;
+psycopg classes are stable. `classify`/`safe_message` replace the generic paths and every place where error text is
+logged or returned. That fixes B-06-1 (no `DETAIL` with values).
+
+### 1.4 Error hierarchy (raised by Tabrion)
+
+```python
+class TabrionError(Exception):
+    code: str                      # stable code, e.g. "sqlite.schema_too_new"
+    classification: Classification | None
+    original: BaseException | None # NEVER chained as __cause__ (raise ... from None)
+    statement: str | None          # at most 200 characters, without parameters; layer B only
+    details: Mapping[str, str | int | None]   # e.g. {"found": 5, "supported": 4}; never data values
+    def __str__(self) -> str: ...  # the safe message
+    def __repr__(self) -> str: ... # class and code, no text from original
+
+class UsageError(TabrionError)              # misuse: nested transaction, closed database ...
+class ConfigurationError(TabrionError)      # invalid profile, TLS rule violated, environment missing
+class DatabaseError(TabrionError)           # layer B: translated driver errors; .kind == classification.kind
+    class ConnectionFailed(DatabaseError)        # CONNECTION, RESOURCE (53300)
+    class StatementTimeout(DatabaseError)        # TIMEOUT
+    class Canceled(DatabaseError)                # CANCELED
+    class TransientError(DatabaseError)          # LOCKED, DEADLOCK, SERIALIZATION
+    class IntegrityViolation(DatabaseError)      # UNIQUE, FOREIGN_KEY, NOT_NULL, CHECK, EXCLUSION
+    class PermissionDenied(DatabaseError)        # PERMISSION
+    class ReadOnlyViolation(DatabaseError)       # READ_ONLY
+    class StatementError(DatabaseError)          # SYNTAX, UNDEFINED_OBJECT, DATA
+    class StorageCorrupt(DatabaseError)          # CORRUPT, DISK_FULL
+    class UnknownDatabaseError(DatabaseError)
+class MultipleRowsError(TabrionError)       # fetch_one/fetch_scalar with more than one row
+class MigrationError(TabrionError)          # tabrion.sqlite.migrate
+    class SchemaTooNew(MigrationError)           # code "sqlite.schema_too_new", details found/supported
+    class MigrationMissing(MigrationError)       # "sqlite.migration_missing", details found/supported/missing
+    class BackupRequired(MigrationError)         # "sqlite.backup_required"
+    class BackupFailed(MigrationError)           # "sqlite.backup_failed" (original set)
+    class MigrationFailed(MigrationError)        # "sqlite.migration_failed", details step
+class SchemaNotCurrent(TabrionError)        # layer B Alembic gate, details current/head
+class RoleMissing(TabrionError)             # "postgres.role_missing"
+class RoleUnsafe(TabrionError)              # "postgres.role_unsafe", details reasons (comma list)
+class UnsafePath(TabrionError)              # "sqlite.symlink" / "sqlite.unsafe_path"
+```
+
+**Drop-in rule:** the codes equal the Nodestro codes without the prefix `storage.`. Nodestro maps
+`TabrionError.code` by table to `NodestroError("storage.<suffix>")` (plan document 06, MIG-NOD).
+
+**Tests:**
+
+- TAB-T-E01..E09: mapping per table row, with real errors from SQLite and PostgreSQL 16, 17 and 18.
+- TAB-T-E10: `str`, `repr` and `safe_message` never contain the parameter value `"SECRET-4711"`; checked over every
+  kind and for a PG `DETAIL` with a unique violation.
+- TAB-T-E11: no `__cause__` chain.
+- TAB-T-E12: the conninfo password appears in no error (connecting to a wrong host).
+- TAB-T-E13: `classify` never raises, tested with 1 000 random exceptions (Hypothesis).
+- TAB-T-E14: `outcome_unknown` checked by proxy fault injection (reusing the probe `jobqueue_retry_probe.py`).
+- TAB-T-E15: with `lc_messages=de_DE`, 57014 is classified as CANCELED without a crash (R-T02).
+- TAB-T-E16: `import tabrion.errors` loads neither psycopg nor SQLAlchemy.
+
+## 2. `tabrion.sql` and `tabrion.config` (standard library)
+
+### 2.1 `split_statements`
+
+```python
+def split_statements(sql: str) -> list[str]
+```
+
+**Purpose:** split SQL at top-level semicolons (migrations without a transaction, the Studio editor).
+
+**Behavior:**
+
+- Recognizes `'...'` with doubled quotes, `E'...'` with backslash escapes, `"..."` identifiers, `$tag$...$tag$`, `--`
+  comments and **nested** `/* /* */ */` (PostgreSQL semantics).
+- Empty statements and statements that are only comments are dropped. Comments inside a statement stay.
+- The result is `strip()`-ped.
+
+**Errors:** none. An unterminated quote or comment yields the rest as the last statement, as in Axentra
+`migrations.py:125-171`.
+
+**Identity with the Axentra splitter** (required; Axentra is a consumer, and `migrations.py:125-171` is replaced by a
+re-export):
+
+- For every input that Axentra's splitter splits correctly, the output is **byte-identical**. It is checked against
+  golden files: the Axentra test vectors and the splitter output of every shipped Axentra migration file (TAB-022a,
+  TAB-T-Q01, Q02).
+- Differences exist only for inputs that Axentra splits wrongly today: `E'...\'...'` and nested `/* /* */ */`. They
+  are documented in the Axentra CHANGELOG as a fix.
+- Before the switch, MIG-AXE proves that no shipped or registered Axentra migration contains such constructs.
+  Checksums depend on the file text anyway, not on the splitter.
+- SQLite note: SQLite has no dollar quotes; this is harmless (TAB-T-Q09). The function is pure and thread-safe.
+
+**Tests:** TAB-T-Q01..Q10 (Axentra vectors, named dollar tags, `E'\''`, nested comments, a semicolon in a comment, a
+`CREATE FUNCTION` body, empty input).
+
+### 2.2 No shared checksum function
+
+Nodestro (`storage_postgres.py:155-158`) and Axentra (`migrations.py:85-86`) use the same one-liner
+`hashlib.sha256(sql.encode("utf-8")).hexdigest()`. A public Tabrion function would add coupling without benefit, so
+there is none. The one-liner stays in both platforms.
+
+### 2.3 `safe_url`, `url_from_env`
+
+```python
+def safe_url(url: str) -> str
+def url_from_env(name: str, *, environ: Mapping[str, str] | None = None, required: bool = True) -> str | None
+```
+
+- **`safe_url`** masks the password in URL form (`postgresql://u:***@h/db`, also `postgresql+psycopg://`) and in
+  keyword conninfo (`password=***`). A query parameter `password` is masked too. Unparseable input returns
+  `"<unparseable url>"`. It never raises.
+- **`url_from_env`** reads `name` or `name + "_FILE"`. For a file, the content without the trailing newline counts;
+  the file must be a regular file, symlinks are allowed. If both are set, it raises
+  `ConfigurationError("config.ambiguous")`, as in Nodestro `server_settings.py:115-141`. If neither is set and
+  `required=True`, it raises `ConfigurationError("config.missing")`. No message contains a value.
+- **Tests:** TAB-T-C01..C08.
+
+## 3. `tabrion.sqlite` (standard library)
+
+### 3.1 Types
+
+```python
+class JournalMode(enum.StrEnum): WAL = "wal"; DELETE = "delete"; TRUNCATE = "truncate"
+class Synchronous(enum.StrEnum): OFF = "off"; NORMAL = "normal"; FULL = "full"; EXTRA = "extra"
+
+@dataclass(frozen=True, slots=True)
+class SQLiteProfile:
+    journal_mode: JournalMode = JournalMode.WAL
+    synchronous: Synchronous = Synchronous.FULL
+    foreign_keys: bool = True
+    busy_timeout: float = 30.0          # seconds
+    secure_delete: bool = True
+    trusted_schema: bool = False
+    file_mode: int = 0o600
+    allow_shared_file: bool = False     # M1 proposal, see open points
+
+    @classmethod
+    def orkexa(cls) -> SQLiteProfile    # WAL, FULL, busy 30 s, secure_delete=True  (ORK/_storage.py:144-166)
+    @classmethod
+    def nodestro(cls) -> SQLiteProfile  # WAL, FULL, busy 30 s, secure_delete=False (RT/storage.py:280-282)
+
+Migration = Callable[[sqlite3.Connection], None]
+
+def create_private_file(path: str | os.PathLike[str]) -> None
+    # O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW, 0600; an existing file stays unchanged; ":memory:" is ignored
+```
+
+The default `SQLiteProfile()` is called `default` in plan document 06. Both existing profiles set
+`foreign_keys=True` (plan document 07 DI-01); that is the only deliberate change from today's behavior and is secured
+at adoption with `foreign_key_check` on the existing files. `create_private_file` equals Orkexa
+`_storage.py:80-93` plus `O_NOFOLLOW`.
+
+`__post_init__` validates `busy_timeout >= 0` and `file_mode & 0o077 == 0`. Other modes are possible only with
+`allow_shared_file=True` (not recommended). Errors: `ConfigurationError`.
+
+### 3.2 `connect`
+
+```python
+def connect(
+    path: str | os.PathLike[str],
+    *,
+    profile: SQLiteProfile = SQLiteProfile(),
+    read_only: bool = False,
+    create: bool = True,
+    check_same_thread: bool = False,
+) -> sqlite3.Connection
+```
+
+**Steps:**
+
+1. `":memory:"` skips every file step.
+2. `check_path(path)`.
+3. If `create` holds, the file is missing and `read_only` is not set: create the file with
+   `os.open(O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW, file_mode)`.
+4. `sqlite3.connect(path, isolation_level=None, timeout=profile.busy_timeout, check_same_thread=...)`; with
+   `read_only` as the URI `file:<quoted>?mode=ro`.
+5. `apply_profile`.
+6. On an error the connection is closed and the error passed on.
+
+**Errors:** `UnsafePath` (symlink); `FileNotFoundError` when `create=False` or `read_only` is set and the file is
+missing; `sqlite3.DatabaseError` (maps to `CORRUPT`) when the file is not a database (passed through unchanged).
+
+**Side effects:** creates a file; sets `journal_mode=WAL` permanently in the file.
+
+**Thread safety:** the connection has no internal lock (the caller serializes, specification section 3.3).
+
+**Compared with existing code:** Orkexa `connect_private_database` (`_storage.py:146-166`) is covered, plus
+`foreign_keys`, `trusted_schema` and `synchronous`. Nodestro `SQLiteStore.__init__` (`storage.py:271-286`) is
+covered, plus permissions, the symlink check and foreign keys; Nodestro passes `SQLiteProfile(secure_delete=False)`
+to keep today's behavior.
+
+**Tests:** TAB-T-S01 file 0600 despite umask 022; S02 an existing file keeps its mode; S03-S06 symlink rejection for
+the main, `-wal`, `-shm` and `-journal` files; S07 race (a symlink between the check and `open`) fails on
+`O_NOFOLLOW`/`O_EXCL`; S08 `read_only` does not write, `INSERT` gives READ_ONLY; S09 `:memory:`; S10 the pragma
+values after `connect`; S11 a broken file gives CORRUPT; S12 Windows: no `O_NOFOLLOW`, only the symlink check there
+(documented).
+
+### 3.3 `apply_profile`, `check_path`, `loading_extensions`
+
+```python
+def apply_profile(connection: sqlite3.Connection, profile: SQLiteProfile = SQLiteProfile(), *,
+                  file_backed: bool | None = None) -> None
+def check_path(path: str | os.PathLike[str]) -> None           # raises UnsafePath
+@contextmanager
+def loading_extensions(connection: sqlite3.Connection) -> Iterator[None]
+```
+
+- **`apply_profile`** sets `busy_timeout`, `foreign_keys`, `synchronous`, `secure_delete`, `trusted_schema` and
+  `journal_mode` (file-backed only; `file_backed=None` detects it through `PRAGMA database_list`). It is idempotent.
+  It raises `UsageError` while a transaction is open, because `foreign_keys` has no effect there. Layer B calls it in
+  the `connect` event.
+- **`loading_extensions`** enables `enable_load_extension(True)` and disables it in `finally`. Without that function in
+  the Python build it raises `UsageError("sqlite.extensions_unavailable")`. Pattern: Orkexa `index.py:176-194`.
+- **Tests:** TAB-T-S13..S15.
+
+### 3.4 `write_transaction`, `read_transaction`
+
+```python
+@contextmanager
+def write_transaction(connection: sqlite3.Connection) -> Iterator[sqlite3.Connection]
+@contextmanager
+def read_transaction(connection: sqlite3.Connection, *, enforce: bool = True) -> Iterator[sqlite3.Connection]
+```
+
+- **`write_transaction`**: `BEGIN IMMEDIATE`; commit at the normal end; `ROLLBACK` on `BaseException`, suppressing
+  rollback errors when `connection.in_transaction` is already false. `UsageError("sqlite.nested_transaction")` when
+  `connection.in_transaction` already holds. `isolation_level` must be `None`, otherwise `UsageError`.
+- **`read_transaction`**: `BEGIN` (deferred, a consistent snapshot). With `enforce=True` also `PRAGMA query_only=ON`
+  before `BEGIN` and `OFF` afterwards. A write attempt classifies as READ_ONLY
+  (`sqlite3.OperationalError: attempt to write a readonly database`).
+- **Semantics:** like Nodestro `_transaction` (`storage.py:313-332`) but **without** reentrancy and without a lock.
+  Nodestro keeps its counter and RLock and calls `write_transaction` only at the outermost level.
+- **Thread safety:** the caller serializes.
+- **Tests:** TAB-T-S16 lost-update scenario from q.py, 5 threads with their own connections, result 5, 0 errors;
+  S17 an exception gives a rollback; S18 nesting gives UsageError; S19 `read_transaction` blocks writes; S20
+  `query_only` is OFF again after the end and after an exception; S21 `KeyboardInterrupt` in the block gives a
+  rollback.
+
+### 3.5 `migrate`
+
+```python
+@dataclass(frozen=True, slots=True)
+class MigrationResult:
+    previous: int
+    current: int
+    backed_up: bool
+
+def migrate(
+    connection: sqlite3.Connection,
+    migrations: Mapping[int, Migration],
+    *,
+    target: int,
+    backup: Callable[[int, int], None] | None,
+    is_fresh: Callable[[sqlite3.Connection], bool] | None = None,
+) -> MigrationResult
+```
+
+**Semantics** (one to one with Nodestro `storage.py:563-637`):
+
+1. An open transaction raises `UsageError`.
+2. `current = PRAGMA user_version`.
+3. `current == target` returns `MigrationResult(current, current, False)` and writes nothing.
+4. `current > target` raises `SchemaTooNew` and writes nothing.
+5. Missing steps in `current+1..target` raise `MigrationMissing`.
+6. `is_fresh` (hook: is the database new and empty) defaults to true when no table other than `sqlite_%` exists. If
+   the database is not empty and `backup is None`, it raises `BackupRequired`.
+7. If the database is not empty, `backup(current, target)` runs. Any exception from it raises `BackupFailed` with
+   `original` set and **without** `{exc}` in the text (fixing the side finding of the consolidation report).
+8. All steps and `PRAGMA user_version = target` run in **one** `write_transaction`. An exception raises
+   `MigrationFailed(details={"step": n})`, and the database stays unchanged.
+
+| Class | `code` | `details` | `original` |
+|---|---|---|---|
+| SchemaTooNew | `sqlite.schema_too_new` | `found`, `supported` | - |
+| MigrationMissing | `sqlite.migration_missing` | `found`, `supported`, `missing` | - |
+| BackupRequired | `sqlite.backup_required` | `found`, `supported` | - |
+| BackupFailed | `sqlite.backup_failed` | `found`, `supported` | the backup exception |
+| MigrationFailed | `sqlite.migration_failed` | `found`, `supported`, `step` | the step exception |
+
+**Note:** DDL in SQLite is transactional. `PRAGMA foreign_keys` inside a step has no effect; this is documented.
+Steps that rebuild tables use the twelve-step pattern of the SQLite documentation.
+
+**Tests:** TAB-T-S22..S30. Every path checks that the file is unchanged after the error (byte comparison); the backup
+order is checked; parallel calls from two processes are tested (the second sees the new version and does nothing).
+
+### 3.6 `backup`
+
+```python
+@dataclass(frozen=True, slots=True)
+class BackupResult:
+    path: Path
+    pages: int
+    bytes: int
+    quick_check: str        # "ok" or the first message
+
+def backup(
+    connection: sqlite3.Connection,
+    target: str | os.PathLike[str],
+    *,
+    overwrite: bool = False,
+    pages_per_step: int = -1,
+    verify: bool = True,
+) -> BackupResult
+```
+
+**Steps:**
+
+1. `check_path(target)`. If the target exists and `overwrite=False`, raise `FileExistsError`.
+2. Create a temporary file `target.<rand>.tmp` with 0600 in the same directory.
+3. `connection.backup(dest, pages=pages_per_step)`.
+4. Close the target. With `verify`, run `quick_check` on a separate read-only connection to the temporary file; if
+   the result is not `ok`, delete it and raise `TabrionError("sqlite.backup_corrupt")`.
+5. `fsync`, then `os.replace`.
+6. The temporary file is deleted on every error.
+
+**Semantics:** a consistent online snapshot. Other connections may keep reading and writing (SQLite restarts on
+writes; with `pages=-1` the copy is one step). The connection must not have an open write transaction of the same
+caller, otherwise `UsageError`.
+
+**Existing code:** Nodestro `snapshot` (`storage.py:649-658`) is covered, plus permissions, atomic replacement and
+the check. Nodestro `workspace.py:221-235` (the pre-migration copy) will use `backup`.
+
+**Tests:** TAB-T-S31..S34 (permissions, atomicity on abort, check, parallel writes).
+
+### 3.7 `integrity_check`, `quick_check`, `foreign_key_check`
+
+```python
+@dataclass(frozen=True, slots=True)
+class IntegrityReport:
+    ok: bool
+    messages: tuple[str, ...]     # SQLite messages (page and table names, no row data)
+    truncated: bool
+
+@dataclass(frozen=True, slots=True)
+class ForeignKeyViolation:
+    table: str
+    rowid: int | None
+    parent: str
+    fk_index: int
+
+def integrity_check(connection: sqlite3.Connection, *, max_errors: int = 100) -> IntegrityReport
+def quick_check(connection: sqlite3.Connection, *, max_errors: int = 100) -> IntegrityReport
+def foreign_key_check(connection: sqlite3.Connection, *, table: str | None = None,
+                      limit: int = 1000) -> list[ForeignKeyViolation]
+```
+
+Read-only; outside a transaction the checks run in a `read_transaction`. A CORRUPT file gives `ok=False`, not an
+exception, as long as it opens at all. `table` is quoted. Tests TAB-T-S35..S38, including a deliberately damaged
+file.
+
+### 3.8 `diagnose`
+
+```python
+@dataclass(frozen=True, slots=True)
+class SQLiteDiagnosis:
+    sqlite_version: str
+    path: str | None               # None for :memory:
+    file_mode: int | None
+    is_symlink: bool
+    journal_mode: str
+    synchronous: str
+    foreign_keys: bool
+    busy_timeout_ms: int
+    secure_delete: bool
+    trusted_schema: bool
+    query_only: bool
+    user_version: int
+    page_size: int
+    page_count: int
+    freelist_count: int
+    wal_bytes: int | None
+    compile_options: tuple[str, ...]   # filtered to ENABLE_FTS5, ENABLE_JSON1, THREADSAFE ...
+    quick_check: str | None            # only when run_quick_check=True
+
+def diagnose(connection: sqlite3.Connection, *, run_quick_check: bool = False) -> SQLiteDiagnosis
+```
+
+Read-only, no side effects. The basis for `tabrion.check` (TAB-SQ-*) and for nodestro-api `diagnostics.py:110-133`
+(MIG-NOD). Tests TAB-T-S39..S41.
+
+## 4. `tabrion.postgres` (extra `postgres`, psycopg 3.2 or later)
+
+Unless stated otherwise, every function takes a **`psycopg.Connection`**, with or without `autocommit` and with any
+row factory. The functions read through their own cursor with `tuple_row`, as in Axentra `roles.py:74`. Read-only
+functions leave the transaction status unchanged:
+
+- If the connection ran without autocommit and no transaction was open, a `rollback()` follows, as in Axentra
+  `database.py:353-356`.
+- If a transaction was running, the functions run inside it, without commit or rollback.
+
+### 4.1 `SessionSettings`, `configure`, `session_configurator`
+
+```python
+@dataclass(frozen=True, slots=True)
+class SessionSettings:
+    statement_timeout_ms: int | None = 30_000
+    lock_timeout_ms: int | None = 10_000
+    idle_in_transaction_timeout_ms: int | None = 300_000
+    transaction_timeout_ms: int | None = None   # PG 17 or later only; skipped on older servers, diagnose reports it
+    application_name: str | None = "tabrion"
+    search_path: str | None = None          # one schema name, quoted as an identifier
+    timezone: str | None = "UTC"
+
+    @classmethod
+    def unchanged(cls) -> SessionSettings   # all None: the existing code configures itself
+
+def configure(connection: psycopg.Connection, settings: SessionSettings = SessionSettings()) -> None
+def session_configurator(settings: SessionSettings) -> Callable[[psycopg.Connection], None]
+```
+
+- **`session_configurator`** returns a function usable directly as `psycopg_pool.ConnectionPool(configure=...)`. It
+  calls `configure(conn, settings)`. The settings are validated **when it is created**, not per connection.
+
+**Rules for pools of other owners (M10):**
+
+1. Only the **pool owner** configures sessions. Axentra uses `session_configurator` for its **own** pool
+   (`database.py:237-247`, today `_configure`). For `Database.on_pool(pool)` (a borrowed Nodestro pool) Axentra calls
+   **nothing**; that is today's behavior (`database.py:249-268`: "Axentra sets nothing at session level") and stays.
+2. Nodestro uses `session_configurator` for its own pool (`storage_postgres.py:255-264`) with exactly today's GUCs,
+   so Axentra sees the same values on the shared pool as today.
+3. Session settings are never security-relevant (R-SET); a wrong configuration cannot weaken RLS.
+4. Test TAB-T-P16: a pool with `session_configurator` is used by two consumers (M10 simulation). The GUCs are
+   identical, and a transaction-local `set_config('app.tenant_id', ..., true)` is empty after the connection is
+   returned.
+
+- **`configure`:** one round trip `SELECT set_config(%s, %s, false), ...`, only for fields that are not `None`.
+  **`configure` never commits** (plan document 06 section 11). With autocommit the setting is permanent at once.
+  Without autocommit the `SELECT` opens an implicit transaction; the caller commits it (as Axentra's `_configure`
+  calls `conn.commit()` itself today), otherwise the setting is lost on a later rollback. The same applies inside a
+  running transaction.
+- **`session_configurator`** calls `commit()` after `configure` exactly when the connection was IDLE without
+  autocommit before: the transaction was then opened by `configure` itself (contract rule), and `psycopg_pool`
+  requires an IDLE connection after the callback. The callback runs only on the pool owner's connections (M10 rule 1);
+  Axentra never calls it for `on_pool`.
+- **`transaction_timeout_ms`:** set only when `connection.info.server_version >= 170000`. Older servers skip it
+  without an error; `tabrion.check` then reports TAB-PG-012 (info).
+- **Validation:** timeouts at least 0; `search_path` by the regex `[A-Za-z_][A-Za-z0-9_$]{0,62}`;
+  `application_name` at most 63 ASCII characters. Otherwise `ConfigurationError`.
+- **Errors:** driver errors pass through (layer A).
+- **Existing code:** Nodestro `_configure` (`storage_postgres.py:275-286`) gives identical GUCs with
+  `SessionSettings(statement_timeout_ms=..., idle_in_transaction_timeout_ms=..., lock_timeout_ms=None,
+  application_name=None, timezone=None, search_path=schema)`. Axentra `_configure` (`database.py:273-275`) equals
+  `SessionSettings(statement_timeout_ms=t, lock_timeout_ms=None, idle_in_transaction_timeout_ms=None,
+  application_name=None, timezone=None)`.
+- **Tests:** TAB-T-P01 (values through `SHOW`), P02 (no commit by `configure` without autocommit: status INTRANS,
+  value gone after a rollback; `session_configurator` commits and leaves IDLE), P03 (inside an open transaction: no
+  commit, setting active), P04 (validation), P05 (one round trip, counted through a psycopg tracer).
+
+### 4.2 `ping`
+
+```python
+@dataclass(frozen=True, slots=True)
+class PingResult:
+    ok: bool
+    latency_ms: float | None
+    server_version: int | None        # server_version_num
+    in_recovery: bool | None
+    classification: Classification | None   # when ok=False
+
+class _PoolLike(Protocol):
+    def connection(self, timeout: float | None = ...) -> AbstractContextManager[psycopg.Connection]: ...
+
+def ping(source: psycopg.Connection | _PoolLike, *, timeout: float = 5.0) -> PingResult
+```
+
+- **Steps:** `SELECT current_setting('server_version_num')::int, pg_is_in_recovery()` with
+  `SET LOCAL statement_timeout` = `timeout` in a short transaction of its own. A pool source lends the connection
+  with `timeout`.
+- **Errors:** **never** raises for database errors (gives `ok=False` with a classification), only for programming
+  errors (`TypeError`).
+- **Existing code:** Axentra `ping` (`database.py:348-357`) returns only `bool`; Tabrion adds latency and version.
+  Nodestro `DatabaseHealth` (`nodestro-api server_app.py:400-455`) stays as a wrapper (thread, one check at a time)
+  and will call `ping`.
+- **Tests:** TAB-T-P06..P09 (ok, server stopped, timeout with `pg_sleep`, pool source).
+
+### 4.3 `diagnose`
+
+```python
+@dataclass(frozen=True, slots=True)
+class PostgresDiagnosis:
+    server_version: int
+    server_version_text: str
+    database: str
+    user: str
+    schema: str | None
+    search_path: str
+    in_recovery: bool
+    ssl: bool | None                  # pg_stat_ssl for the own backend PID; None without the right
+    application_name: str
+    statement_timeout_ms: int
+    lock_timeout_ms: int
+    idle_in_transaction_timeout_ms: int
+    archive_mode: str | None          # None without the right
+    wal_level: str | None
+    role: RoleInfo
+    host_is_local: bool               # from connection.info.host
+
+def diagnose(connection: psycopg.Connection) -> PostgresDiagnosis
+```
+
+Read-only; fields without read rights are `None`. The basis for the TAB-PG-* findings. Tests TAB-T-P10..P12.
+
+### 4.4 `extension_status`
+
+```python
+@dataclass(frozen=True, slots=True)
+class ExtensionStatus:
+    name: str
+    state: Literal["active", "other_schema", "installable", "unavailable"]
+    installed_version: str | None
+    available_version: str | None
+    extension_schema: str | None
+    schema: str | None                # current_schema()
+    command: str | None               # SQL that fixes the state (superuser or owner); None if nothing to do
+
+def extension_status(connection: psycopg.Connection, name: str, *, probe_type: str | None = None) -> ExtensionStatus
+```
+
+- **States:**
+  - `active`: installed and `extnamespace` is in `current_schemas(true)`. With `probe_type` set (for example
+    `"vector"`), `to_regtype(probe_type) IS NOT NULL` must also hold; exactly the Nodestro semantics.
+  - `other_schema`: installed, schema not visible; `command = ALTER EXTENSION ... SET SCHEMA "<schema>";`.
+  - `installable`: in `pg_available_extensions`; `command = CREATE EXTENSION ... SCHEMA "<schema>";`.
+  - `unavailable`: neither installed nor available.
+- **Validation:** `name` by the regex `[a-z_][a-z0-9_]*`; identifiers are quoted.
+- **Compared with Nodestro `pgvector_status` (`storage_postgres.py:907-968`):** the same four states. Nodestro calls
+  `extension_status(conn, "vector", probe_type="vector")` and gets the same check as `to_regtype('vector')`
+  (TAB-T-P15 proves equality for all four states). **The message texts stay product text in Nodestro.**
+- **Tests:** TAB-T-P13..P15 against the images `pgvector/pgvector:pg17` and `postgres:17`.
+
+### 4.5 `RoleInfo`, `role_info`, `check_role`
+
+```python
+@dataclass(frozen=True, slots=True)
+class RoleInfo:
+    role: str
+    superuser: bool
+    bypass_rls: bool
+    table_owner: bool
+
+    @property
+    def restricted(self) -> bool: ...   # not (superuser or bypass_rls or table_owner)
+
+def role_info(connection: psycopg.Connection, *,
+              owner_scope: Literal["schema", "rls"] = "schema") -> RoleInfo
+
+def check_role(connection: psycopg.Connection, *, allow_superuser: bool = False, allow_table_owner: bool = False,
+               owner_scope: Literal["schema", "rls"] = "schema") -> RoleInfo      # raises RoleUnsafe
+```
+
+- **Semantics:**
+  - `table_owner` holds when the role owns a table (`relkind in ('r','p')`) in scope, by
+    `pg_has_role(current_user, relowner, 'MEMBER')`.
+  - `owner_scope="schema"`: every table in `current_schema()`; equals Nodestro (`storage_postgres.py:679-689`).
+  - `owner_scope="rls"`: only tables with `relrowsecurity` in `current_schemas(false)`; equals Axentra
+    (`database.py:359-382`). **Axentra is a consumer** and uses `owner_scope="rls"` in `Axentra.start()`.
+- **`check_role`:** the error logic follows Axentra `database.py:384-405`, with `allow_superuser` and
+  `allow_table_owner` (allowing superuser implies allowing table ownership). `RoleUnsafe.details["reasons"]` takes
+  the values `superuser`, `bypass_rls`, `table_owner`. The message is English and neutral; Axentra maps it to its
+  `ConfigurationError` texts (plan document 06).
+- **Tests:** TAB-T-R01..R08 (per flag, both `owner_scope` values, a table with and without `relrowsecurity`).
+
+### 4.6 `RoleReport`, `inspect_role`, `grant_runtime_role`
+
+```python
+@dataclass(frozen=True, slots=True)
+class RoleReport:
+    role: str
+    owner: str                     # current_user of the owner connection
+    schema: str
+    database: str
+    tables: int
+    connect: bool
+    superuser: bool
+    bypass_rls: bool
+    owned_tables: tuple[str, ...]
+    can_create: bool
+    @property
+    def restricted(self) -> bool: ...
+    def as_dict(self) -> dict[str, object]: ...   # keys = Nodestro dict united with Axentra as_dict
+
+def inspect_role(connection: psycopg.Connection, role: str, *, schema: str | None = None) -> RoleReport
+    # raises RoleMissing
+
+def grant_runtime_role(connection: psycopg.Connection, role: str, *, schema: str | None = None,
+                       protected_tables: Sequence[str] = (), grant_connect: bool = True) -> RoleReport
+    # raises RoleMissing, RoleUnsafe
+```
+
+- **`inspect_role`** unites Nodestro `inspect_role` (`storage_postgres.py:867-904`, with `database`) and Axentra
+  `inspect_role` (`roles.py:72-104`, with the `schema` parameter); both are consumers. `as_dict()` returns every key
+  of both formats: `role, owner, schema, database, tables, superuser, bypass_rls, owned_tables (list), connect,
+  can_create, restricted`. Read-only.
+- **`grant_runtime_role`:**
+  - Pre-check by `inspect_role`. `role == owner`, superuser, `BYPASSRLS` or `owned_tables` raise `RoleUnsafe`, and
+    nothing is granted.
+  - In **one** transaction (`connection.transaction()`, works with and without autocommit):
+    1. `GRANT USAGE ON SCHEMA`
+    2. `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES`
+    3. `GRANT USAGE, SELECT ON ALL SEQUENCES`
+    4. `GRANT EXECUTE ON ALL FUNCTIONS`
+    5. `ALTER DEFAULT PRIVILEGES` for tables, sequences and functions
+    6. For every existing table in `protected_tables` (schema-qualified through `to_regclass`):
+       `REVOKE INSERT, UPDATE, DELETE, TRUNCATE`.
+  - Then, when `grant_connect` holds and `connect=False`: `GRANT CONNECT ON DATABASE` in a transaction of its own.
+    `InsufficientPrivilege` is ignored there; the result then reports `connect=False`.
+  - Returns a fresh `inspect_role`. The function is idempotent.
+- **Drop-in:** Nodestro `grant_runtime_role(owner, role)` (`storage_postgres.py:808-864`) becomes
+  `protected_tables=("nodestro_schema_migrations", "axentra_schema_migrations")`. Axentra
+  `grant_runtime_role(url_or_conn, role, schema=)` (`roles.py:107-190`) becomes
+  `protected_tables=("axentra_schema_migrations",)`; the URL variant stays a thin Axentra wrapper, as does the mapping
+  of `RoleUnsafe`/`RoleMissing` to `ConfigurationError` with today's texts.
+- **Tests:** TAB-T-R09..R10 (inspect); TAB-T-R11..R18 (grant): the catalog snapshot (`pg_namespace.nspacl`,
+  `information_schema.role_table_grants`, `pg_default_acl`, `role_routine_grants`, `has_database_privilege`) equals
+  the checked-in golden files of the Nodestro and Axentra behavior (TAB-022) on a fresh schema; idempotency; refusal
+  cases; rights on the bookkeeping tables revoked; an owner role without the right to grant CONNECT.
+
+### 4.7 `SessionLock`, `lock_key`, advisory helpers (from 0.1)
+
+```python
+def lock_key(name: str) -> int    # stable int64 from SHA-256(name)[:8], signed big-endian
+
+class SessionLock:
+    def __init__(self, conninfo: str, *, connect_kwargs: Mapping[str, Any] | None = None,
+                 configure: Callable[[psycopg.Connection], None] | None = None) -> None
+    def try_acquire(self, key: int) -> bool
+    def acquire(self, key: int, *, timeout: float | None = None, poll_interval: float = 0.2) -> bool
+    def holds(self, key: int) -> bool
+    def release(self, key: int) -> None
+    def held_keys(self) -> frozenset[int]
+    def close(self) -> None
+    def __enter__(self) -> SessionLock
+    def __exit__(self, *exc: object) -> None
+```
+
+**Semantics** (unites Nodestro `storage_postgres.py:418-481` and Axentra `_wait_for_lock` `migrations.py:309-318`;
+both are consumers):
+
+- An own, **unpooled** connection: `psycopg.connect(conninfo, autocommit=True, connect_timeout=10, **connect_kwargs)`,
+  opened lazily. Then `configure(conn)`; by default
+  `tabrion.postgres.configure(conn, SessionSettings(application_name="tabrion-lock"))`. Nodestro passes its own
+  `_configure` (drop-in for `storage_postgres.py:418-440`).
+- Holding a key several times is counted; `pg_advisory_unlock` follows only at the last release.
+- Before every operation, `SELECT 1` probes liveness. If the connection is dead, it is replaced and **every count is
+  cleared**: the locks are gone and `holds()` returns `False`.
+- `acquire` polls `pg_try_advisory_lock` instead of waiting blocked. Reason as in Axentra: no open statement and no
+  snapshot while waiting, compatible with `CREATE INDEX CONCURRENTLY`. After `timeout` it returns `False`.
+- Database errors while connecting pass through (psycopg). After `close()` every operation raises
+  `UsageError("postgres.lock_closed")`.
+- Thread-safe through an internal `threading.Lock`. **Not** fork-safe: after `os.fork()` the child opens its own
+  connection, detected by comparing the PID.
+- Keys are int64; the existing constants (Nodestro `0x6E6F646573747230`, `0x6E6F64657374726F`; Axentra
+  `0x617865_6E747261`) stay valid.
+
+**Advisory locks on a given connection** (Axentra runner `migrations.py:309-318`, Axentra worker). The Nodestro
+migration keeps using `pg_advisory_xact_lock` in its own transaction.
+
+```python
+def try_advisory_lock(connection: psycopg.Connection, key: int) -> bool
+def wait_advisory_lock(connection: psycopg.Connection, key: int, *, poll_interval: float = 0.2,
+                       timeout: float | None = None) -> bool
+def advisory_unlock(connection: psycopg.Connection, key: int) -> bool
+```
+
+- Session-level locks on the **given** connection; Tabrion neither opens nor closes it.
+- **Polling semantics (exactly as Axentra):** `SELECT pg_try_advisory_lock(%s)`; on `False`,
+  `time.sleep(poll_interval)` and again. Between attempts **no statement is active and no snapshot is open**. Reason
+  from the Axentra docstring: a blocking `pg_advisory_lock` holds a statement and a snapshot, and
+  `CREATE INDEX CONCURRENTLY` in another session waits for every open snapshot. That would deadlock two migration
+  processes.
+- If the connection is not in autocommit and IDLE, its own implicit transaction is rolled back after every attempt.
+  While a transaction runs, it raises `UsageError("postgres.lock_in_transaction")`, because the snapshot would
+  otherwise be held.
+- `timeout=None` waits without limit (as Axentra today). With `timeout`, it returns `False` when it expires.
+  `advisory_unlock` returns the result of `pg_advisory_unlock`.
+- Tests: TAB-T-L11 two processes, one waits; L12 while waiting, `pg_stat_activity` shows the waiting connection with
+  `state='idle'` and `backend_xmin IS NULL`; L13 `CREATE INDEX CONCURRENTLY` in a third session completes while one
+  session holds and one waits (the Axentra case); L14 timeout; L15 a call inside an open transaction raises
+  `UsageError`.
+
+**Tests:** TAB-T-L01..L10 (two competing processes, counting, release, connection loss through
+`pg_terminate_backend` gives `holds()=False`, polling timeout, no active statement while waiting per
+`pg_stat_activity`, close, fork).
+
+## 5. Layer B (`tabrion`, extra `sqlalchemy`)
+
+### 5.1 `Profile`, `TLSMode`
+
+```python
+class TLSMode(enum.StrEnum): AUTO = "auto"; VERIFY_FULL = "verify-full"; REQUIRE = "require"; INSECURE = "insecure"
+
+@dataclass(frozen=True, slots=True)
+class Profile:
+    sqlite: SQLiteProfile = SQLiteProfile()
+    postgres: SessionSettings = SessionSettings()
+    application_name: str = "tabrion"
+    pool_size: int = 5
+    max_overflow: int = 0
+    pool_timeout: float = 10.0
+    pool_pre_ping: bool = True
+    pool_recycle: float = 1800.0
+    connect_timeout: float = 10.0
+    tls: TLSMode = TLSMode.AUTO
+    max_rows: int = 10_000
+    read_only: bool = False      # SQLite: open with mode=ro + query_only; PG: session
+                                 # default_transaction_read_only=on, transaction() raises UsageError
+
+    @classmethod
+    def default(cls) -> Profile
+    @classmethod
+    def readonly(cls) -> Profile    # read_only=True; the Studio default
+    @classmethod
+    def edge(cls) -> Profile        # SQLite synchronous=NORMAL, secure_delete=False
+    @classmethod
+    def testing(cls) -> Profile     # statement 5 s, lock 2 s, pool 2
+```
+
+Studio mapping (checked against plan document 03): the Studio profile "sqlite_readonly" is `Profile.readonly()` with
+a SQLite URL; the Studio profile "postgres" is `Profile.default()`, in read-only mode `Profile.readonly()`. Enforcement
+happens **in the database** (`mode=ro`, or `default_transaction_read_only` plus `BEGIN READ ONLY`), not through SQL
+text filters.
+
+Stable (S). TLS rules per specification section 5.3; violations raise `ConfigurationError("config.tls")` in
+`from_url`.
+
+### 5.2 `Database`: creation and lifetime
+
+```python
+class Database:
+    @classmethod
+    def from_url(cls, url: str | sqlalchemy.URL, *, profile: Profile | None = None,
+                 engine_options: Mapping[str, Any] | None = None) -> Database
+    @classmethod
+    def from_env(cls, name: str = "DATABASE_URL", *, profile: Profile | None = None,
+                 engine_options: Mapping[str, Any] | None = None) -> Database
+    @classmethod
+    def from_engine(cls, engine: sqlalchemy.Engine, *, profile: Profile | None = None,
+                    install_listeners: bool = True) -> Database
+    dialect: Literal["sqlite", "postgresql"]      # property
+    engine: sqlalchemy.Engine                      # property, controlled access (specification section 3.1)
+    safe_url: str                                  # property
+    closed: bool                                   # property
+    def close(self) -> None                        # engine.dispose(); idempotent
+    def __enter__(self) -> Database
+    def __exit__(self, *exc: object) -> None
+```
+
+- **Supported URLs:** `sqlite:///path` or `sqlite+pysqlite:///`, `sqlite://` for memory; `postgresql://...`,
+  `postgresql+psycopg://...` (`postgresql://` is rewritten to `+psycopg`). `postgresql+psycopg2` and other drivers
+  raise `ConfigurationError("config.driver")`.
+- **SQLite path:** `check_path` and the 0600 creation run in `from_url` (before the first connect). `sqlite://`
+  (memory) uses `StaticPool` so every thread sees the same database; documented.
+- **`from_env`:** through `tabrion.config.url_from_env` (supports `*_FILE`).
+- **`from_engine`:** a foreign engine; the listeners are added. `close()` does **not** dispose it; the engine belongs
+  to the caller.
+- **Errors:** `ConfigurationError` (URL, TLS, driver); `UnsafePath`; after `close()` every operation raises
+  `UsageError("database.closed")`.
+- **Thread safety:** yes.
+- **Tests:** TAB-T-B01..B06.
+
+### 5.3 Transactions
+
+```python
+Statement = str | sqlalchemy.sql.Executable
+Params = Mapping[str, Any] | Sequence[Mapping[str, Any]] | None   # a sequence means executemany
+
+class Database:
+    @contextmanager
+    def transaction(self, *, timeout: float | None = None,
+                    isolation: Literal["read_committed", "repeatable_read", "serializable"] | None = None
+                    ) -> Iterator[Transaction]
+    @contextmanager
+    def read(self, *, timeout: float | None = None) -> Iterator[Transaction]
+
+class Transaction:
+    read_only: bool
+    connection: sqlalchemy.Connection            # controlled access
+    def execute(self, statement: Statement, params: Params = None, *, timeout: float | None = None) -> int
+    def fetch_one(self, statement: Statement, params: Mapping[str, Any] | None = None, *,
+                  timeout: float | None = None) -> sqlalchemy.Row[Any] | None
+    def fetch_all(self, statement: Statement, params: Mapping[str, Any] | None = None, *,
+                  timeout: float | None = None) -> list[sqlalchemy.Row[Any]]
+    def fetch_scalar(self, statement: Statement, params: Mapping[str, Any] | None = None, *,
+                     timeout: float | None = None) -> Any
+    def query(self, statement: Statement, params: Mapping[str, Any] | None = None, *,
+              max_rows: int | None = None, timeout: float | None = None) -> Result          # 0.2
+    def stream(self, statement: Statement, params: Mapping[str, Any] | None = None, *,
+               batch_size: int = 500, timeout: float | None = None
+               ) -> Iterator[Sequence[sqlalchemy.Row[Any]]]   # 0.2; PG: server cursor, SQLite: fetchmany
+    def cancel(self) -> None                     # 0.2, from another thread; Studio "ExecutionHandle.cancel()"
+    @contextmanager
+    def savepoint(self) -> Iterator[None]        # 0.2, X
+```
+
+| Method | SQLite | PostgreSQL |
+|---|---|---|
+| `transaction()` | `BEGIN IMMEDIATE` through the `begin` event; commit on success, rollback on an exception | `BEGIN [ISOLATION LEVEL ...]` (SQLAlchemy `isolation_level` option) |
+| `read()` | `PRAGMA query_only=ON` plus `BEGIN`; OFF afterwards | SQLAlchemy `execution_options(postgresql_readonly=True)` gives `BEGIN READ ONLY` |
+| `timeout` | Deadline through `set_progress_handler` (every 1 000 VM steps); expiry raises `StatementTimeout` | `SET LOCAL statement_timeout = <ms>` before the statement; it lasts for the rest of the transaction, so the profile value is restored before the next statement without a timeout |
+| `execute` | `rowcount` (-1 becomes 0 for DDL); sequence parameters give `executemany` | same |
+| `fetch_one` | 0 rows give `None`; more than 1 raises `MultipleRowsError` | same |
+| `fetch_scalar` | first column of the only row; 0 rows give `None`; more than 1 raises `MultipleRowsError` | same |
+| Write in `read()` | `ReadOnlyViolation` | `ReadOnlyViolation` (25006) |
+| `cancel()` | `sqlite3.Connection.interrupt()` | `psycopg.Connection.cancel_safe()` (psycopg 3.2 or later) |
+
+**Further rules:**
+
+- **Text statements:** a `str` becomes `sqlalchemy.text()` with named parameters `:name`.
+- **Nesting:** a `transaction()`/`read()` in the same thread inside an open Tabrion transaction of the same
+  `Database` raises `UsageError("database.nested_transaction")`. The database keeps a thread-local marker for this.
+- **Errors:** driver errors raise the matching `DatabaseError` subclass (section 1.4), `raise ... from None`, with
+  `original` and the shortened `statement`. An exception ends the transaction with a rollback. A commit error uses
+  `during_commit=True`, so `outcome_unknown` for CONNECTION.
+- **Autonomous short forms on `Database`:** `execute`, `fetch_one`, `fetch_all`, `fetch_scalar` and `query` with the
+  same signatures. `execute` runs in `transaction()`, the others in `read()`.
+
+**Tests:** TAB-T-B07 lost update in layer B, 5 threads, result 5 on SQLite, and 5 on PG with `SELECT ... FOR UPDATE`;
+B08..B10 rollback, exceptions, nesting; B11..B12 read-only on both engines; B13..B14 timeout on both engines with
+`pg_sleep` or a recursive CTE; B15 `cancel` from a second thread; B16 `executemany`; B17 `MultipleRowsError`; B18
+parameter leak (the value `SECRET-4711` in no error); B19 `ResourceWarning` on a forgotten `close`; B20 SQLAlchemy Core
+expressions (`select(table)`); B21 connection return after an exception (pool statistics); B22 `query_only` does not
+stick after an error (connection reused, writing possible).
+
+### 5.4 `Result`, `Column` (from 0.2)
+
+```python
+@dataclass(frozen=True, slots=True)
+class Column:
+    name: str
+    type_name: str | None  # PG: type name through an OID lookup; SQLite: declared type or None
+    nullable: bool | None
+
+
+@dataclass(frozen=True, slots=True)
+class Result:
+    columns: tuple[Column, ...]
+    rows: tuple[tuple[Any, ...], ...]
+    row_count: int  # rows delivered
+    truncated: bool  # more rows exist than max_rows
+    elapsed_ms: float
+    statement_kind: Literal["select", "dml", "ddl", "other"]
+```
+
+`max_rows` defaults to `Profile.max_rows`. It reads with `fetchmany(max_rows + 1)` and cuts, without a server cursor;
+a named cursor for PG is possible from 1.x. Values stay Python values; Studio serializes. Tests TAB-T-B26..B30.
+
+### 5.5 Health, diagnosis, inspection, schema gate
+
+```python
+@dataclass(frozen=True, slots=True)
+class Health:
+    ok: bool
+    dialect: str
+    latency_ms: float | None
+    server_version: str | None
+    pool: Mapping[str, int] | None   # checked_out, size, overflow (SQLAlchemy pool.status)
+    classification: Classification | None
+
+class Database:
+    def health(self, *, timeout: float = 5.0) -> Health            # never raises for database errors
+    def check(self) -> list[Finding]                               # tabrion.check.check(self)
+    @contextmanager
+    def inspector(self) -> Iterator[sqlalchemy.Inspector]          # 0.2; on a read-only connection
+    def on_begin(self, callback: Callable[[sqlalchemy.Connection, bool], None]) -> Callable[[], None]
+        # 0.2, X; bool = read_only; returns an unregister function
+
+@dataclass(frozen=True, slots=True)
+class SchemaStatus:
+    current: tuple[str, ...]      # revisions in the database (alembic_version); empty = unversioned
+    heads: tuple[str, ...]        # target heads of the script directory
+    pending: tuple[str, ...]      # revisions to apply, in order
+    is_current: bool
+    unknown: tuple[str, ...]      # database revisions the script directory does not know (newer version)
+
+# module tabrion.migrations (extra migrations)
+def status(database: Database, *, script_location: str | os.PathLike[str],
+           version_table: str = "alembic_version", version_table_schema: str | None = None) -> SchemaStatus
+def require_current(database: Database, **kw: Any) -> SchemaStatus            # raises SchemaNotCurrent
+```
+
+- **`health`** uses `tabrion.postgres.ping` on a pool connection for PG; for SQLite `SELECT 1` plus
+  `PRAGMA quick_check(1)` only with `deep=True`. There is no second pool.
+- **`tabrion.migrations.status`** runs read-only through `alembic.script.ScriptDirectory(script_location)` and
+  `alembic.runtime.migration.MigrationContext.configure(connection, opts={"version_table": ...})` on a `read()`
+  connection. **`env.py` is not run**, so no application code and no side effects; Studio needs exactly that. It
+  never migrates; migrating stays `alembic upgrade`.
+- **Tests:** TAB-T-B23..B25, TAB-T-M01..M08 (fresh, current, pending, unknown newer revision, several heads, missing
+  Alembic gives the ImportError hint).
+
+### 5.6 Experimental: `run_transaction`
+
+```python
+def run_transaction(self, fn: Callable[[Transaction], T], *, attempts: int = 3,
+                    isolation: Literal["read_committed", "repeatable_read", "serializable"] | None = None,
+                    backoff: float = 0.05) -> T
+```
+
+Retries only when `classification.retryable and not classification.outcome_unknown`, with exponential backoff and
+jitter. Tests TAB-T-B31..B33, among them: a commit abort through the proxy is **not** retried.
+
+## 6. `tabrion.testing` (extra `testing`)
+
+Activation is explicit: `pytest_plugins = ["tabrion.testing"]` in `conftest.py`. There is no `pytest11` autoload, so
+the fixtures do not appear unasked in other test runs.
+
+```python
+def configure(*, env_prefix: str = "TABRION",
+              postgres_env: Sequence[str] | None = None,    # default: (f"{env_prefix}_TEST_POSTGRES",)
+              require_env: Sequence[str] | None = None,     # default: (f"{env_prefix}_REQUIRE_POSTGRES",)
+              runtime_role_env: Sequence[str] | None = None, # default: (f"{env_prefix}_TEST_RUNTIME_ROLE",)
+              require_extensions_env: Sequence[str] | None = None,  # default: (f"{env_prefix}_REQUIRE_EXTENSIONS",)
+              schema_prefix: str = "t_") -> None
+```
+
+Called in `conftest.py` before the fixtures are used. It allows the existing names, so CI workflows stay unchanged:
+`configure(env_prefix="NODESTRO")` gives `NODESTRO_TEST_POSTGRES`/`NODESTRO_REQUIRE_POSTGRES`;
+`configure(env_prefix="ORKEXA")` gives `ORKEXA_TEST_POSTGRES`/`ORKEXA_REQUIRE_*`; Axentra uses
+`configure(postgres_env=("AXENTRA_TEST_DATABASE_URL",), require_env=("AXENTRA_REQUIRE_POSTGRES",))`.
+
+| Fixture / function | Scope | Returns | Behavior | Model |
+|---|---|---|---|---|
+| `tabrion_sqlite_path` | function | `Path` (not created) in `tmp_path` | - | Nodestro (about 29 files inline) |
+| `tabrion_sqlite` | function | `sqlite3.Connection` through `tabrion.sqlite.connect` | closed afterwards | - |
+| `tabrion_postgres_url` | session | admin or owner URL from the environment | environment missing: `skip`; require variable `1`: error | all three |
+| `tabrion_postgres_schema` | function | `PostgresSchema(name, owner_url, runtime_url \| None)` | `CREATE SCHEMA t_<hex12>`; URL with `options=-csearch_path=...`; afterwards `DROP SCHEMA ... CASCADE`. In runtime-role mode also a LOGIN role `t_rt_<hex>` (random password, NOSUPERUSER, NOBYPASSRLS) plus `grant_runtime_role`; the role is dropped afterwards | Orkexa `support.py`, Nodestro `postgres_support.py` |
+| `tabrion_postgres_database` | session | `PostgresDatabaseHandle(url, name, owner_url, app_url)` | `CREATE DATABASE t_<hex>` (the admin needs CREATEDB); at the end `DROP DATABASE ... WITH (FORCE)`. Parameter `roles: RoleSetup \| None = RoleSetup()` with `RoleSetup(app: str \| None = None, owner: str \| None = None, split: bool = True)`; roles are `NOSUPERUSER NOBYPASSRLS`, plus `REVOKE CREATE ON SCHEMA public FROM PUBLIC` in the throwaway database. With `split=True`, two LOGIN roles **without superuser**: owner `t_own_<hex>` (database owner, NOSUPERUSER, NOBYPASSRLS, NOCREATEROLE) and app `t_app_<hex>` (CONNECT; rights through `grant_runtime_role` after the consumer's migrations) | Axentra `tests/conftest.py` |
+| `tabrion_postgres_roles` | session | `TestRoles(owner, app, owner_url, app_url)` | the same role setup in an existing database | Axentra |
+| `truncate_tables(target, *, schema=None, like=None, exclude=())` | function | `int` (number of tables) | `target` is a connection or URL; `TRUNCATE ... RESTART IDENTITY CASCADE` of every table of the schema (optional name pattern `like`) in **one** statement; `exclude`, for example bookkeeping tables; identifiers quoted | Axentra (truncate between tests) |
+| `require_extension(conn, name)` | function | `ExtensionStatus` | not active: try `CREATE EXTENSION`, otherwise `skip`; `name` in the require variable: error | Orkexa `ORKEXA_REQUIRE_*` |
+| `postgres_server_version` | session | `int` | - | - |
+| `profiles.sqlite_profile_cases()` | function | `list[ProfileCase]` | checks FK, WAL, busy timeout, permissions, symlinks, IMMEDIATE for **any** connection factory | - |
+| `profiles.portability_cases()` | function | `list[ProfileCase]` | data type rules (specification section 6) | - |
+
+**Tests:** TAB-T-X01..X18. Tabrion's own suite uses only these fixtures (dogfooding). It also checks that no schemas
+or roles with the prefix `t_` remain after each test.
+
+## 7. `tabrion.check`
+
+```python
+class Severity(enum.StrEnum): INFO = "info"; WARNING = "warning"; ERROR = "error"
+
+@dataclass(frozen=True, slots=True)
+class Finding:
+    code: str
+    severity: Severity
+    title: str
+    detail: str
+    remedy: str
+
+def check(target: sqlite3.Connection | psycopg.Connection | Database, *,
+          expect: Literal["runtime", "owner", "any"] = "runtime") -> list[Finding]
+```
+
+- The codes are in specification section 9.
+- `expect="owner"` suppresses TAB-PG-003 and TAB-PG-009.
+- Read-only; never raises for missing rights (gives an `info` finding).
+- Tests TAB-T-K01..K30, a positive and a negative case per code.
+
+## 8. Compatibility table: existing code to Tabrion
+
+Every row is a consumer (K-30..K-32). Categories as in plan document 06: **A** = moves to Tabrion (the existing code
+becomes a re-export or wrapper); **B** = stays and uses Tabrion inside; **C** = stays without Tabrion.
+
+### 8.1 Axentra (required consumer `tabrion[postgres]`, K-30)
+
+| Existing (place) | Cat. | Tabrion API | Differences / adjustment in Axentra |
+|---|---|---|---|
+| `Database._configure` (`database.py:273-275`) | B | `session_configurator(SessionSettings(statement_timeout_ms=t, lock_timeout_ms=None, idle_in_transaction_timeout_ms=None, application_name=None, timezone=None))` | identical including `commit()`; own pool only, never for `on_pool` (M10) |
+| `Database.ping` (`database.py:348-357`) | B | `ping(self.pool, timeout=5).ok` | logging and the `bool` return stay |
+| `Database.role_info`/`check_role` (`database.py:359-405`) | B | `role_info`/`check_role(owner_scope="rls")` | `RoleUnsafe` maps to `ConfigurationError` with today's texts |
+| `roles.inspect_role`, `RoleReport` (`roles.py:30-104`) | A | `inspect_role`, `RoleReport` | re-export; `as_dict()` is a superset (plus `database`); API snapshot test in Axentra |
+| `roles.grant_runtime_role` (`roles.py:107-190`) | A | `grant_runtime_role(conn, role, schema=..., protected_tables=("axentra_schema_migrations",))` | the URL variant stays a wrapper; catalog snapshot identical (TAB-T-R11) |
+| `migrations.split_statements` (`migrations.py:125-171`) | A | `tabrion.sql.split_statements` | byte-identical (section 2.1) |
+| `migrations._wait_for_lock` (`migrations.py:309-318`) | A | `wait_advisory_lock(conn, MIGRATION_LOCK)`, `advisory_unlock` | same polling semantics; the runner stays Axentra (C, G-EM = no) |
+| Worker lock (own connection, `events/worker.py`) | B | `SessionLock` or `try_advisory_lock` | only if measurably less code (plan document 06) |
+| 16 typed and 4 generic `except psycopg...` | B | `classify`, `safe_message` | table in section 1.3; B-06-1 |
+| `tests/conftest.py` (throwaway database, roles without superuser, truncate) | A | `tabrion_postgres_database`, `tabrion_postgres_roles`, `truncate_tables` | same test count and skip list |
+| `config/secrets.py:32-55` | C | - | own reference scheme, no gain |
+| `DbScope`, `set_config(..., true)`, `joined`, `on_pool`, records, RLS, pool ownership | C | - | stays Axentra (K-30, R-SET) |
+
+### 8.2 Nodestro (core and server profile, K-32)
+
+| Existing (place) | Cat. | Tabrion API | Differences / adjustment in Nodestro |
+|---|---|---|---|
+| `SQLiteStore.__init__` (`storage.py:271-286`) | B | `connect(path, profile=SQLiteProfile(secure_delete=False))` | new: 0600 for new files, symlink rejection, `foreign_keys=ON` (neutral, F-01), `trusted_schema=OFF`; upgrade tests U1-U8 |
+| `SQLiteStore._transaction` (`storage.py:313-332`) | B | `write_transaction` (outermost level) | reentrancy and RLock stay |
+| `SQLiteStore.migrate` (`storage.py:563-637`) | B | `tabrion.sqlite.migrate(..., is_fresh=self._is_empty)` | `code` becomes `storage.<code>`; message without `{exc}` |
+| `SQLiteStore.snapshot` (`storage.py:649-658`) | B | `tabrion.sqlite.backup(overwrite=True)` | 0600 (B-06-3), atomic, `quick_check` |
+| nodestro-api `diagnostics.py:110-133` | B | `tabrion.sqlite.diagnose(run_quick_check=True)` | the FTS5 check stays |
+| `PostgresDatabase._configure` (`storage_postgres.py:275-286`) | B | `session_configurator(SessionSettings(statement_timeout_ms=..., idle_in_transaction_timeout_ms=..., lock_timeout_ms=None, application_name=None, timezone=None, search_path=schema))` | identical GUCs; M10 unchanged |
+| `try_/holds_/release_session_lock` (`:418-481`) | B | `SessionLock(conninfo, connect_kwargs=..., configure=...)` | the public methods stay wrappers |
+| `role_info`, `inspect_role`, `grant_runtime_role` (`:679-689`, `:808-904`) | A | same names, `owner_scope="schema"`, `protected_tables=SCHEMA_VERSION_TABLES` | errors map to `storage.role_*`; dict wrappers |
+| `pgvector_status` (`:907-968`) | B | `extension_status(conn, "vector", probe_type="vector")` | the message texts stay |
+| `server_settings.py:115-141` (`*_FILE`) | B | `url_from_env` | identical rule |
+| `tests/postgres_support.py` and 13 local fixtures | A | `tabrion.testing` (`configure(env_prefix="NODESTRO")`) | same test count and skip lists |
+| `migration_checksum`, runner M9, `SharedPool`, job queue, ADR-0010 checker | C | - | stay (K-32) |
+
+### 8.3 Orkexa (K-31)
+
+| Existing (place) | Cat. | Tabrion API | Condition |
+|---|---|---|---|
+| `backends/postgres/connection.py` `PsycopgSource` (no timeouts, no ping) | B | `configure`, `ping`, `classify`/`safe_message` | `orkexa[postgres]` to `tabrion[postgres]` |
+| `tests/backends/postgres/support.py` | A | `tabrion.testing` (`configure(env_prefix="ORKEXA")`) | dev extra; the DDL event trigger stays Orkexa |
+| `_storage.py:80-166` | B | `tabrion.sqlite.connect`, `check_path`, `classify` | E-ORK-CORE = yes (MIG-ORK-3) |
+| SQLite transactions x3 (`files.py:85-94`, `memory.py:84-92`, `index.py:473-500`) | B | `write_transaction`/`read_transaction` | E-ORK-CORE = yes (MIG-ORK-3) |
+| Statement catalog, executor, partition guard, `sqlcheck`, schema mechanics | C | - | stay Orkexa |
+
+**Golden files:** for every row of category A or B, the recorded behavior of the existing code lives in
+`tests/golden/` of this repository: role catalog snapshots, splitter output, GUC values, error codes. Every file
+names the SHA of the existing code (TAB-022a).
+
+## 9. Example (layer B, use case A)
+
+```python
+from tabrion import Database, Profile
+from tabrion.migrations import require_current
+
+with Database.from_env("PARTS_DATABASE_URL", profile=Profile.default()) as db:
+    require_current(db, script_location="migrations")  # SchemaNotCurrent if the Alembic state is missing
+    with db.transaction() as tx:
+        tx.execute("INSERT INTO parts (id, material) VALUES (:id, :material)", {"id": 1001, "material": "Aluminium"})
+    parts = db.fetch_all("SELECT id, material FROM parts ORDER BY id")
+```
+
+The same example under SQLite (`sqlite:///parts.db`) and PostgreSQL is the acceptance test RA-A-3 (plan document 07).
+
+## 10. Vector file format (internal test asset, K-35)
+
+The vectors are **internal** Tabrion regression and behavior contracts. Other repositories do **not** vendor or load
+them; integration runs through the package dependency (K-30..K-32). The field `vendored` and `vendor_check.py` are
+dropped. The directory `conformance/` arrives with TAB-050.
+
+### 10.1 JSON Schema (`conformance/schema/vector-file.schema.json`, draft 2020-12)
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterkarlhuber/tabrion/conformance/schema/vector-file.schema.json",
+  "type": "object",
+  "required": ["format", "standard_version", "area", "vectors"],
+  "additionalProperties": false,
+  "properties": {
+    "format": {"const": "ldp-vectors/1"},
+    "standard_version": {"type": "string", "pattern": "^LDP-\\d+\\.\\d+\\.\\d+$"},
+    "area": {"enum": ["sqlite-profile", "sqlite-transactions", "sqlite-migrate", "postgres-session",
+                      "postgres-roles", "postgres-locks", "postgres-extensions", "errors-classification",
+                      "errors-redaction", "sql-split"]},
+    "vectors": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "level", "rule", "engine", "action", "expect"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^LDP-[A-Z]{2,4}-\\d{3}$"},
+          "level": {"enum": ["MUST", "SHOULD", "INFO"]},
+          "rule": {"type": "string", "description": "Reference to a section of SPEC.md, e.g. 'SQ-2.1'"},
+          "engine": {"enum": ["sqlite", "postgres", "any"]},
+          "min_server_version": {"type": "integer"},
+          "since": {"type": "string"},
+          "setup": {"type": "array", "items": {"type": "string"}, "description": "SQL statements or file state instructions"},
+          "action": {
+            "type": "object", "required": ["name"],
+            "properties": {
+              "name": {"enum": ["open_new_file", "open_existing", "inspect_pragmas", "concurrent_read_modify_write",
+                                "write_in_read_transaction", "migrate", "session_settings", "role_report",
+                                "grant_runtime_role", "lock_acquire", "lock_connection_lost", "extension_status",
+                                "classify_error", "redact_error", "split_sql"]},
+              "args": {"type": "object"}
+            }
+          },
+          "expect": {"type": "object", "description": "action-specific; e.g. {'file_mode': '0600'}, {'kind': 'unique', 'retryable': false}, {'statements': [...]}"},
+          "provenance": {"type": "string", "description": "Where the reference behavior lives, e.g. 'nodestro-runtime@816b3bc storage_postgres.py:808-864'"},
+          "note": {"type": "string"}
+        }
+      }
+    }
+  }
+}
+```
+
+### 10.2 Rules
+
+- **Actions:** the action list is closed; a new action needs at least an LDP minor. `expect` per action is defined in
+  a table in `SPEC.md` appendix A ("Action reference"), for example `classify_error`:
+  `{"input": {"driver": "psycopg", "sqlstate": "23505"}, "expect": {"kind": "unique", "retryable": false,
+  "outcome_unknown": false}}`.
+- **No secrets:** vectors never contain real credentials. Redaction vectors use the marker `SECRET-4711` and expect
+  it to be absent.
+- **Checksum:** `conformance/MANIFEST.json` lists the SHA-256 per file. The CI job `conformance` checks it, so
+  expectations change only on purpose and with a CHANGELOG entry.
+
+## 11. Vector loader (internal, `tests/support/conformance.py`)
+
+**Not public**, not in the wheel. Only Tabrion's own tests use it (K-35). Consumers test their integration with their
+own tests against the Tabrion API.
+
+```python
+@dataclass(frozen=True, slots=True)
+class Vector:   # id, level, rule, engine, action, args, expect, setup, min_server_version, provenance
+    ...
+def load(area: str) -> tuple[Vector, ...]
+def verify_manifest() -> None
+```
+
+- It validates required fields, the ID pattern and unique IDs. The CI job `conformance` checks the full JSON Schema
+  (dev dependency `jsonschema`).
+- An error aborts the test and names the file and the ID, without content.
+- Tests TAB-T-V01..V05: all files load, the manifest matches, a damaged file, a duplicate ID, Tabrion passes 100 % of
+  the MUST and SHOULD vectors.
+
+## Risks and decisions
+
+| ID | Kind | Content | Proposal |
+|---|---|---|---|
+| R-T05 | Risk | The unified `grant_runtime_role` differs in edge cases (for example a schema with capital letters, partitioned tables) | Golden catalog snapshots of both existing functions (TAB-022a), TAB-031 |
+| R-T06 | Risk | `SET LOCAL statement_timeout` for a single timeout stays active until the end of the transaction | Reset before every following statement (TAB-T-B14) |
+| R-T07 | Risk | `cancel_safe` exists only from psycopg 3.2; the lower bound `>=3.2` covers it | Lowest-versions CI with psycopg 3.2.0 |
+| E-T03 | Decision (product) | `fetch_one` raises on more than one row (instead of "first row") | Taken: raise (safer, catches missing WHERE clauses) |
+
+## Open points for G-T1
+
+The M1 stubs had to decide these points, which the plan leaves open or which conflict with typing rules. The G-T1
+review accepts or changes each of them; until then they are proposals (deviation log D-6..D-12 in
+[STATUS.md](../program/STATUS.md#deviation-log)).
+
+| # | Point | M1 proposal |
+|---|---|---|
+| G-1 | Constructor of `TabrionError` (section 1.4 lists only attributes) | `TabrionError(code, /, *, classification=None, original=None, statement=None, details=None)`; `DatabaseError.kind` is a property returning `classification.kind` |
+| G-2 | `SQLiteProfile.allow_shared_file` is mentioned only in prose (section 3.1) | A field `allow_shared_file: bool = False` |
+| G-3 | `tabrion.testing.profiles.ProfileCase` and the connection factory type are not specified (section 6) | `ConnectionFactory = Callable[[], sqlite3.Connection]`; `ProfileCase(id: str, title: str, check: Callable[[ConnectionFactory], None])`, where `check` raises `AssertionError` on a violation |
+| G-4 | `psycopg.Connection` is generic | Signatures use `psycopg.Connection[Any]` (mypy --strict requires the parameter); the meaning is "any row factory" |
+| G-5 | Names in `__all__` beyond section 0 | `tabrion.sqlite.Migration` and `tabrion.testing.profiles.ConnectionFactory` are public, because public signatures use them |
+| G-6 | "`tabrion.check` (re-export)" in section 0 | `tabrion.check` is the module and `tabrion.check.check` the function; `tabrion.check` is not re-exported as a function from the root, because a module and a function cannot share the attribute name |
+| G-7 | `tabrion.postgres` and the extras | psycopg is imported only for type checking in the M1 stubs; implementations import it inside the functions, so `import tabrion.postgres` works without psycopg (layer B imports it for `SessionSettings`) |
+| G-8 | `tabrion.postgres.roles` and `tabrion.postgres.locks` | Submodules with the role and lock names; `tabrion.postgres` re-exports them, so both import paths are public |
