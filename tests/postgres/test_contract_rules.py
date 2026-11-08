@@ -33,6 +33,8 @@ from tabrion.postgres import (
     ping,
     role_info,
     session_configurator,
+    try_advisory_lock,
+    wait_advisory_lock,
 )
 
 from .conftest import Role
@@ -333,3 +335,66 @@ def test_i1_ping_in_failed_transaction_logs_nothing(
     assert [r.getMessage() for r in caplog.records if r.name.startswith("psycopg")] == []
     assert conn.info.transaction_status == pq.TransactionStatus.INERROR
     conn.rollback()
+
+
+@pytest.mark.parametrize("name", [*FAILING, "ping", "role_info", "diagnose"])
+def test_dl1_pipeline_mode_keeps_the_callers_transaction(
+    connect: Callable[..., Any], admin: Any, schema: str, name: str
+) -> None:
+    """Review DL-1: inside ``connection.pipeline()`` the status is ACTIVE until a sync; the caller's pipeline is synced
+    first, so the savepoint applies and a failing statement does not abort the caller's pipeline transaction."""
+    function = FAILING.get(name) or READERS[name]
+    conn = connect()
+    with conn.pipeline():
+        conn.execute(f"INSERT INTO {schema}.parts VALUES (7, 'queued before')")  # queued, not yet synced
+        assert conn.info.transaction_status == pq.TransactionStatus.ACTIVE
+        try:
+            function(conn)
+        except (ValueError, psycopg.Error, tabrion.errors.TabrionError) as exc:
+            assert not isinstance(exc, psycopg.errors.PipelineAborted), name
+        conn.execute(f"INSERT INTO {schema}.parts VALUES (8, 'queued after')")
+    assert conn.info.transaction_status == INTRANS, name
+    conn.commit()
+    assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id IN (7, 8)").fetchone() == (2,)
+
+
+@pytest.mark.parametrize("autocommit", [False, True])
+def test_dl1_pipeline_mode_on_an_idle_connection(connect: Callable[..., Any], autocommit: bool) -> None:
+    """A reader in a pipeline that holds nothing leaves the connection as it found it (its own transaction is rolled
+    back after the sync)."""
+    conn = connect(autocommit=autocommit)
+    with conn.pipeline():
+        assert role_info(conn).superuser
+        assert ping(conn).ok
+        with pytest.raises(ValueError, match="probe_type"):
+            extension_status(conn, "plpgsql", probe_type="int[")
+    assert conn.info.transaction_status == IDLE
+
+
+@pytest.mark.parametrize("autocommit", [False, True])
+@pytest.mark.parametrize("name", ["ping", "role_info", "try_advisory_lock", "wait_advisory_lock"])
+def test_m1_6_pipeline_error_of_the_caller_propagates(
+    connect: Callable[..., Any], admin: Any, schema: str, name: str, autocommit: bool
+) -> None:
+    """Review M-1 (#6): a statement the caller queued in its pipeline fails; the function raises that error (it is
+    the caller's). ``ping`` used to report it as a failed ping, so psycopg did not raise it again and the caller's
+    COMMIT silently ended its aborted transaction."""
+    admin.execute(f"INSERT INTO {schema}.parts VALUES (1, 'there')")
+    calls: dict[str, Callable[[Any], object]] = {
+        "ping": ping,
+        "role_info": role_info,
+        "try_advisory_lock": lambda c: try_advisory_lock(c, 4711),
+        "wait_advisory_lock": lambda c: wait_advisory_lock(c, 4712, timeout=0),
+    }
+    conn = connect(autocommit=autocommit)
+    with conn.pipeline():
+        conn.execute(f"INSERT INTO {schema}.parts VALUES (2, 'lost')")
+        conn.execute(f"INSERT INTO {schema}.parts VALUES (1, 'duplicate')")  # fails on the server
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            calls[name](conn)
+    if not autocommit:
+        assert conn.info.transaction_status == pq.TransactionStatus.INERROR
+        conn.rollback()
+    # The queued statements up to the sync form one implicit transaction, also with autocommit: both are gone, and
+    # the caller was told so by the error.
+    assert admin.execute(f"SELECT id FROM {schema}.parts ORDER BY id").fetchall() == [(1,)]

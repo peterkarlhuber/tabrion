@@ -10,7 +10,6 @@ Needs ``TABRION_TEST_POSTGRES`` (a superuser conninfo, as in the CI jobs "pg (..
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-import contextlib
 import io
 import logging
 import os
@@ -23,6 +22,7 @@ import uuid
 import pytest
 
 from tabrion.errors import DbErrorRedactionFilter, Kind, classify, safe_message
+from tabrion.testing._faults import FaultProxy
 
 psycopg = pytest.importorskip("psycopg")
 
@@ -272,70 +272,25 @@ def test_e15_localized_messages(connect: Callable[..., Any]) -> None:
 # --- TAB-T-E14: outcome_unknown by fault injection -------------------------------------------------------------------
 
 
-class CuttingProxy:
-    """A TCP proxy that forwards a statement containing ``trigger`` and cuts both sockets before the reply arrives.
-
-    Adapted from the planning probe ``proben/jobqueue_retry_probe.py``; TAB-034 brings the full fault proxy.
-    """
-
-    def __init__(self, host: str, port: int) -> None:
-        self.target = (host, port)
-        self.trigger: bytes | None = None
-        self.fired = 0
-        self.listener = socket.create_server(("127.0.0.1", 0))
-        self.port = self.listener.getsockname()[1]
-        threading.Thread(target=self._accept, daemon=True).start()
-
-    def _accept(self) -> None:
-        with contextlib.suppress(OSError):
-            while True:
-                client, _ = self.listener.accept()
-                server = socket.create_connection(self.target)
-                state = {"cut": False}
-                threading.Thread(target=self._pipe, args=(client, server, True, state), daemon=True).start()
-                threading.Thread(target=self._pipe, args=(server, client, False, state), daemon=True).start()
-
-    def _pipe(self, src: socket.socket, dst: socket.socket, upstream: bool, state: dict[str, bool]) -> None:
-        with contextlib.suppress(OSError):
-            while data := src.recv(65536):
-                if state["cut"]:
-                    return
-                hit = upstream and self.trigger is not None and self.trigger in data
-                dst.sendall(data)
-                if hit:
-                    state["cut"] = True
-                    self.trigger = None
-                    self.fired += 1
-                    time.sleep(0.5)  # the server runs (and commits) the statement
-                    for s in (src, dst):
-                        with contextlib.suppress(OSError):
-                            s.shutdown(socket.SHUT_RDWR)
-                        s.close()
-                    return
-
-    def close(self) -> None:
-        self.listener.close()
-
-
 @pytest.fixture
-def proxy(conninfo: str) -> Iterator[CuttingProxy]:
+def proxy(conninfo: str) -> Iterator[FaultProxy]:
+    """The fault proxy of TAB-034 (``tabrion.testing._faults``): the cut follows the protocol, never a timer."""
     params = psycopg.conninfo.conninfo_to_dict(conninfo)
-    host = str(params.get("host") or "127.0.0.1")
-    if host.startswith("/"):
+    if str(params.get("host") or "").startswith("/"):
         pytest.skip("the fault proxy needs a TCP server address")
-    cutter = CuttingProxy(host, int(params.get("port") or 5432))
-    yield cutter
-    cutter.close()
+    with FaultProxy.in_front_of(conninfo) as faults:
+        yield faults
+    faults.check()
 
 
-def test_e14_reply_lost_after_sending(conninfo: str, schema: str, proxy: CuttingProxy) -> None:
-    through = _with(conninfo, host="127.0.0.1", port=str(proxy.port), sslmode="disable", gssencmode="disable")
+def test_e14_reply_lost_after_sending(conninfo: str, schema: str, proxy: FaultProxy) -> None:
+    through = proxy.dsn(conninfo)
     marker = f"tabrion-e14-{uuid.uuid4().hex[:8]}"
     with psycopg.connect(through, autocommit=True, connect_timeout=10) as conn:
-        proxy.trigger = marker.encode()
+        proxy.arm(marker.encode(), fault="reply")
         with pytest.raises(psycopg.OperationalError) as info:
             conn.execute(f"INSERT INTO {schema}.parts VALUES (100, '{marker}', 1, NULL)")
-    assert proxy.fired == 1
+    assert (proxy.fired, proxy.replies_lost) == (1, 1)  # the server ended the statement before the cut
     c = classify(info.value)
     assert (c.kind, c.outcome_unknown, c.retryable, c.connection_usable) == (Kind.CONNECTION, True, False, False)
     # The statement did run: retrying it would have written twice (R-NORETRY).
@@ -343,12 +298,12 @@ def test_e14_reply_lost_after_sending(conninfo: str, schema: str, proxy: Cutting
         assert check.execute(f"SELECT count(*) FROM {schema}.parts WHERE email = %s", (marker,)).fetchone() == (1,)
 
 
-def test_e14_reply_lost_during_commit(conninfo: str, schema: str, proxy: CuttingProxy) -> None:
-    through = _with(conninfo, host="127.0.0.1", port=str(proxy.port), sslmode="disable", gssencmode="disable")
+def test_e14_reply_lost_during_commit(conninfo: str, schema: str, proxy: FaultProxy) -> None:
+    through = proxy.dsn(conninfo)
     marker = f"tabrion-e14c-{uuid.uuid4().hex[:8]}"
     with psycopg.connect(through, connect_timeout=10) as conn:
         conn.execute(f"INSERT INTO {schema}.parts VALUES (101, '{marker}', 1, NULL)")
-        proxy.trigger = b"COMMIT"
+        proxy.arm(b"COMMIT", fault="reply")
         with pytest.raises(psycopg.OperationalError) as info:
             conn.commit()
     assert proxy.fired == 1

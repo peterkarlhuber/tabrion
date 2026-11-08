@@ -7,7 +7,8 @@
 > that backlog.
 >
 > **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M2 lane B pull request: TABRION
-> TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`)
+> TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`). Lane C entries (TB-032..TB-037)
+> updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged).
 
 ## Summary
 
@@ -15,8 +16,8 @@
 |---|---|
 | P0 Critical | 1 |
 | P1 High | 13 |
-| P2 Medium | 10 |
-| P3 Low | 18 |
+| P2 Medium | 9 |
+| P3 Low | 19 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -92,8 +93,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-006 · Layer A implementation (TABRION TAB-010..TAB-017, TAB-030, TAB-031)
 
-- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-012, TAB-015 and TAB-016 merged; TAB-013 and
-  TAB-014 in the M2 lane B pull request) · **Refs:**
+- **Priority:** P1 High · **Status:** In progress (TAB-010..TAB-016 merged; TAB-030 in the second lane C pull
+  request) · **Refs:**
   TABRION TAB-010, TAB-011, TAB-012, TAB-013, TAB-014, TAB-015, TAB-016, TAB-017, TAB-030, TAB-031
 - **What:** replace the stubs in order of the critical path: `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011),
   `tabrion.config` (TAB-012), `tabrion.sqlite` connection and profile (TAB-013) then transactions, `migrate`,
@@ -104,20 +105,20 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   review (independent review TB-044). `test_stubs_raise_not_implemented` shrinks module by module as stubs are
   replaced (`errors`, `sql`, `config`, `sqlite` have left it); every change to a signature also runs
   `scripts/api_surface.py --write` and updates the contract. TAB-017 follows the dispatch of C-1 (contract section
-  7). TAB-015 and TAB-016 are merged (#5; contract I-14..I-19, [M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence),
-  independent review TB-032); `IMPLEMENTED` in `tests/unit/test_public_api.py` lists the functions of the partly
-  implemented `tabrion.postgres`. TAB-030 (locks) follows in the next lane C pull request, then TAB-031 on
-  `role_info`/`inspect_role`. Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
+  7). TAB-015 and TAB-016 are merged (contract I-14..I-20, [M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence),
+  independent review TB-032 accepted); TAB-030 is in review (I-32, I-34); `IMPLEMENTED` in
+  `tests/unit/test_public_api.py` lists the functions of the partly implemented `tabrion.postgres` (only
+  `grant_runtime_role` is left). Then TAB-031 on `role_info`/`inspect_role`. Layer B (TAB-018) raises its `DatabaseError` subclass through `tabrion.errors._error_class(kind)` and passes
   `sent=False` for checkout errors.
 
 ### TB-007 · Layer B, migrations, testing (TABRION TAB-018..TAB-021, TAB-032, TAB-034)
 
-- **Priority:** P1 High · **Status:** Blocked (TAB-014, TAB-015) · **Refs:** TABRION TAB-018, TAB-019, TAB-020,
+- **Priority:** P1 High · **Status:** Blocked (TAB-014) · **Refs:** TABRION TAB-018, TAB-019, TAB-020,
   TAB-021, TAB-032, TAB-034
 - **What:** layer B core (`Database`, `Profile`, `Transaction`, `fetch_*`, TAB-018), `tabrion.migrations` (TAB-019),
   `tabrion.testing` 0.1 (TAB-020) with a database per session, roles without superuser, truncate and runtime-role
-  mode (TAB-032), profile and portability cases (TAB-021), the fault-injection proxy `tabrion.testing.faults`
-  (TAB-034, includes QA-3).
+  mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
+  the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
 - **Next step:** after TAB-014 and TAB-015. TAB-018 first decides TB-040 (review N-4), also settles F-11 (TB-020) and
   F-14 (`Database()` without a
   factory raises `TypeError`); TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture `tabrion_role_setup`
@@ -303,8 +304,7 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-032 · Independent review of TAB-015 and TAB-016 (planning document 07 section 6)
 
-- **Priority:** P1 High · **Status:** In progress (not accepted at e0060a6; fixes in the pull request, delta
-  re-review pending) · **Refs:** TABRION TAB-015, TAB-016, T-NOTX, R-SET, TM-07, TM-08, SR-02, SR-10, planning folder
+- **Priority:** P1 High · **Status:** Done (accepted after the delta re-review of 4be19b2; merged as b34abb2) · **Refs:** TABRION TAB-015, TAB-016, T-NOTX, R-SET, TM-07, TM-08, SR-02, SR-10, planning folder
   `reviews/tab-015-016-review.md`
 - **What:** the review model requires an independent review agent for TAB packages in `postgres` (roles, locks);
   `configure` and `session_configurator` sit next to R-SET (settings on shared pools, M10). The M2 lane C pull request
@@ -314,19 +314,24 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   same pull request implements H-1 as decided by the owner (contract I-20, D-32), M-1 with a savepoint (I-15, I-16,
   D-33), M-2 by qualifying every type and operator, L-2 (NOINHERIT member test) and I-1 (ping without a savepoint in
   an aborted transaction); L-1 is documented in I-14 and I-16; I-2..I-4 are in TB-034, TB-036 and TB-037.
-- **Next step:** delta re-review on the new head.
+- **Delta re-review:** accepted; one new Low, DL-1 (in psycopg pipeline mode no savepoint was opened, so a failing
+  reader aborted the caller's pipeline transaction). Fixed in the second lane C pull request (contract I-34, test
+  `test_dl1_*`, a mutation probe).
+- **TAB-030/TAB-034:** the independent review of #6 at 0cd79eb was "accepted with conditions" (M-1: `ping` in
+  pipeline mode swallowed the caller's queued error; L-1..L-4, Info I-1..I-5); all fixed or documented in the same
+  pull request ([M2 lane C2 evidence](program/STATUS.md#m2-lane-c2-evidence)), together with DL-2 of #4.
+- **Next step:** confirmation of the fix round by the reviewer.
 
-### TB-033 · `tabrion.testing.faults` is not in the frozen API surface (TABRION TAB-034)
+### TB-033 · Public `tabrion.testing.faults`: a 0.2 surface decision (TABRION TAB-034)
 
-- **Priority:** P2 Medium · **Status:** Needs decision · **Refs:** TABRION TAB-034, QA-3, RA-B-3, MIG-T-AXE-8,
-  `docs/api/surface.json`
-- **What:** planning documents 07 (K7: `tabrion.testing.faults.DropReplyProxy`) and 09 (TAB-034) make the
-  fault-injection proxy a public module, and RA-B-3 and the Axentra test MIG-T-AXE-8 would use it; planning document 04
-  and the frozen contract place it in `tests/support/` and `surface.json` has no `tabrion.testing.faults`. A new public
-  module is an API addition after G-T1.
-- **Next step:** owner decides before TAB-034: (a) a contract addendum with `surface.json` entries (`since: "0.1"`,
-  stability X) and a short G-T1 style review, or (b) an internal helper under `tests/support/` and a public module
-  later.
+- **Priority:** P3 Low · **Status:** Decided for 0.1 (internal module); open for 0.2 · **Refs:** TABRION TAB-034,
+  QA-3, RA-B-3, MIG-T-AXE-8, `docs/api/surface.json`, contract I-33
+- **What:** planning documents 07 (K7: `tabrion.testing.faults.DropReplyProxy`) and 09 (TAB-034) made the
+  fault-injection proxy a public module, while the frozen contract has no `tabrion.testing.faults`. Decision
+  (coordinator, 2026-11-08): do not extend the frozen surface now. TAB-034 ships the proxy as the internal, unstable
+  `tabrion.testing._faults` (not in `surface.json`, not exported), used by Tabrion's own tests.
+- **Next step:** making it public (for RA-B-3 and Axentra's MIG-T-AXE-8) is a 0.2 surface decision: a contract
+  addendum with `surface.json` entries and a review.
 
 ### TB-034 · `ping` has no client-side deadline (TABRION TAB-015)
 

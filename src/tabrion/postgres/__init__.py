@@ -27,7 +27,15 @@ import time
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from tabrion.errors import Classification, ConfigurationError, classify
-from tabrion.postgres._common import guarded, one_row, quote_ident, reading, require_connection, require_psycopg
+from tabrion.postgres._common import (
+    guarded,
+    one_row,
+    quote_ident,
+    reading,
+    require_connection,
+    require_psycopg,
+    settle,
+)
 from tabrion.postgres.locks import (
     SessionLock,
     advisory_unlock,
@@ -249,6 +257,10 @@ def _ping_connection(connection: psycopg.Connection[Any], seconds: float) -> Pin
     from psycopg import pq, sql
     from psycopg.rows import tuple_row
 
+    # Pipeline mode: the transaction status is known only after a sync (review DL-1). Outside the try: an error of a
+    # statement the caller queued is the caller's and propagates; reported as a failed ping, psycopg would not raise
+    # it again and the caller's COMMIT would end its aborted transaction silently (review M-1 of #6).
+    settle(connection)
     try:
         if connection.info.transaction_status == pq.TransactionStatus.INERROR:
             # An aborted transaction takes no savepoint (psycopg would log the failed rollback of it, review I-1):
@@ -280,7 +292,8 @@ def ping(source: psycopg.Connection[Any] | _PoolLike, *, timeout: float = 5.0) -
     ``SELECT current_setting('server_version_num')::int, pg_is_in_recovery()`` under ``SET LOCAL
     statement_timeout`` = ``timeout``, in a transaction of its own that is rolled back (a savepoint when the caller's
     transaction is running). A pool lends its connection with ``timeout``; a failed checkout is classified with
-    ``sent=False``. ``latency_ms`` is the round trip of that ``SELECT``.
+    ``sent=False``. ``latency_ms`` is the round trip of that ``SELECT``. In pipeline mode the caller's pipeline is
+    synced first, and an error of a statement the caller queued propagates: it is not the ping's (contract I-34).
     """
     require_psycopg()
     import psycopg
