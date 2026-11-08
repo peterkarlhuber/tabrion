@@ -4,7 +4,7 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-08, M1 pull request (branch `claude/project-thread-rdo6g3`).
+> **Last update:** 2026-11-08, M1 pull request [#1](https://github.com/peterkarlhuber/tabrion/pull/1) (branch `claude/project-thread-rdo6g3`).
 > Detailed open work for this repository: [docs/TODO.md](../TODO.md). Risks: [risks.md](risks.md).
 
 ## Status values
