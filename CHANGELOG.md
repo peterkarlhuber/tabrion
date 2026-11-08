@@ -8,6 +8,20 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
+  `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
+  (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`
+  creation before the first connect, `StaticPool` for memory databases, `safe_url`, `close` and a `ResourceWarning`
+  for a forgotten `close`; `transaction()` (SQLite `BEGIN IMMEDIATE`, PostgreSQL isolation levels) and `read()`
+  (`query_only` or `BEGIN READ ONLY` in the database; a best-effort guard against accidents, not a security boundary: SQL that
+  lifts it inside `read()` is rolled back before the `COMMIT`, and the hard boundary is a role without write rights,
+  contract I-56), nesting refused per thread, per-statement and
+  per-transaction timeouts, `execute` (with `executemany`), `fetch_one`, `fetch_all`, `fetch_scalar` and the
+  short forms on `Database`; driver errors become the `DatabaseError` subclass of their kind without a cause chain,
+  and a lost `COMMIT` is outcome unknown; `health(timeout=..., deep=...)` never raises for database errors; `check()`
+  calls `tabrion.check.check`. The layer-A profile runs on the same DBAPI connection through `tabrion.sqlite.connect`
+  and SQLAlchemy events (no second connection). Tested on SQLAlchemy 2.0.30 and 2.1, with mutation probes.
+
 - `tabrion.check.check` (TAB-017) for `sqlite3` and psycopg connections, read only and without changing the
   connection's transaction or row factory: the finding codes TAB-SQ-001..009 and TAB-PG-001..011, 020, 021 and 030
   of specification section 9. `expect="owner"` suppresses TAB-PG-003 and TAB-PG-009, `expect="any"` reports them
@@ -16,6 +30,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- `classify(error, during_commit=True)` on a `TabrionError` whose stored classification is a connection error now
+  reports the outcome as unknown and not retryable (R-NORETRY, TB-040). `Database()` and `Transaction()` raise
+  `TypeError` instead of building an unusable object (G-T1 F-14).
 - Master builds as `0.1.0a2.dev0` after the `0.1.0a1` commit (TB-053), so later commits never build as the
   internal pre-release. The installation guide pins the a1 commit SHA instead of the tag name and says not to run
   `release.yml` for it (TAB-038 review Info notes).

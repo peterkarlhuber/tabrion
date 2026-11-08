@@ -9,7 +9,8 @@
 > **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (M2 lane B pull request: TABRION
 > TAB-013, TAB-014, review fix round, after the M2 lane C pull request #5 merged at `b34abb2`). Lane C entries (TB-032..TB-037)
 > updated 2026-11-08 on branch `claude/project-thread-rdo6g3-pg2` (TAB-030, TAB-034, after #4 merged); the TB-031 port
-> (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`.
+> (TB-050, TB-051) on branch `claude/project-thread-rdo6g3-errfix`; layer B (TB-007, TB-020, TB-040, TB-056, TB-061)
+> on branch `claude/project-thread-rdo6g3-layerb` (TABRION TAB-018).
 
 ## Summary
 
@@ -18,7 +19,7 @@
 | P0 Critical | 1 |
 | P1 High | 13 |
 | P2 Medium | 10 |
-| P3 Low | 23 |
+| P3 Low | 25 |
 | P4 Optional | 3 |
 
 **Release blockers:** TB-001 (manual trademark register check before G-T2). Nothing is released from this repository
@@ -29,8 +30,10 @@ the documentation and the program files ([STATUS.md](program/STATUS.md#g-t1-cond
 `tabrion.errors`, `tabrion.sql` and `tabrion.config` are merged (TABRION TAB-010..TAB-012, pull request #3); the M2
 lane B pull request implements `tabrion.sqlite` (TABRION TAB-013, TAB-014,
 [M2 lane B evidence](program/STATUS.md#m2-lane-b-evidence-tab-013-tab-014)); `tabrion.postgres` is merged up to
-TAB-030 and completed by TAB-031 in the third lane C pull request; layer B and `tabrion.testing` still raise
-`NotImplementedError`; `tabrion.check` (TAB-017) is in review, without its layer-B part (TB-060).
+TAB-030 and completed by TAB-031 in the third lane C pull request; `tabrion.check` (TAB-017) is merged, without
+its layer-B part (TB-060); the layer-B pull request implements the layer-B core (TABRION TAB-018,
+[M2 lane B2 evidence](program/STATUS.md#m2-lane-b2-evidence-tab-018)); `tabrion.migrations` and
+`tabrion.testing` still raise `NotImplementedError`.
 
 ## Priorities and statuses
 
@@ -117,8 +120,8 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-007 · Layer B, migrations, testing (TABRION TAB-018..TAB-021, TAB-032, TAB-034)
 
-- **Priority:** P1 High · **Status:** Blocked (TAB-014) · **Refs:** TABRION TAB-018, TAB-019, TAB-020,
-  TAB-021, TAB-032, TAB-034
+- **Priority:** P1 High · **Status:** In progress (TAB-018 in review in the layer-B pull request) · **Refs:**
+  TABRION TAB-018, TAB-019, TAB-020, TAB-021, TAB-032, TAB-034
 - **What:** layer B core (`Database`, `Profile`, `Transaction`, `fetch_*`, TAB-018), `tabrion.migrations` (TAB-019),
   `tabrion.testing` 0.1 (TAB-020) with a database per session, roles without superuser, truncate and runtime-role
   mode (TAB-032), profile and portability cases (TAB-021). The fault-injection proxy of TAB-034 (includes QA-3) is in
@@ -126,10 +129,9 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 - **Status note:** TAB-020 and TAB-032 are in the fourth lane C pull request (#11; contract I-36, I-60), after #8
   (TAB-031) merged. Re-review at `5110c8f`: TAB-020 accepted, TAB-032 accepted with conditions; M-1 (the condition),
   DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73).
-- **Next step:** after TAB-014 and TAB-015. TAB-018 first decides TB-040 (review N-4), also settles F-11 (TB-020) and
-  F-14 (`Database()` without a
-  factory raises `TypeError`); TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture `tabrion_role_setup`
-  (G-10).
+- **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
+  TAB-019 and TAB-021 build on it; TAB-021 uses the case types of G-3 (revised), TAB-032 the fixture
+  `tabrion_role_setup` (G-10). TAB-017 (`tabrion.check`, which `Database.check()` calls) is a pull request of its own.
 
 ### TB-008 · Consumer protection, conformance, stability policy (TABRION TAB-022, TAB-050, TAB-051)
 
@@ -273,10 +275,11 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-020 · Export `Statement` and `Params`, or make them documentation-only (G-T1 F-11)
 
-- **Priority:** P3 Low · **Status:** Needs decision · **Refs:** G-T1 F-11, G-5, TABRION TAB-018
+- **Priority:** P3 Low · **Status:** Done (decided in TABRION TAB-018) · **Refs:** G-T1 F-11, G-5, TABRION TAB-018
 - **What:** both aliases appear in public layer-B signatures and in `tabrion._sa.database.__all__`, but not in
   `tabrion.__all__`, against the G-5 rule.
-- **Next step:** decide in TAB-018; update the contract and `surface.json` together.
+- **Next step:** none. TAB-018 keeps them documentation-only aliases and drops them from
+  `tabrion._sa.database.__all__`; `surface.json` is unchanged (contract I-37).
 
 ### TB-021 · Platform path filters too narrow (G-T1 F-15, CC-3)
 
@@ -425,14 +428,14 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
 
 ### TB-040 · `classify(tabrion_error, during_commit=True)` ignores the flags (review N-4; before TAB-018)
 
-- **Priority:** P2 Medium · **Status:** Open (prerequisite of TABRION TAB-018) · **Refs:** TABRION TAB-010, TAB-018,
+- **Priority:** P2 Medium · **Status:** Done (TABRION TAB-018) · **Refs:** TABRION TAB-010, TAB-018,
   R-NORETRY, contract I-1, I-13, review N-4
 - **What:** `classify` returns a `TabrionError`'s stored classification unchanged, ignoring `sent` and
   `during_commit`: a `ConnectionFailed` classified at checkout (`sent=False`, retryable) stays retryable for
   `classify(err, during_commit=True)`. Nothing builds such errors before layer B.
-- **Next step:** decide in TAB-018 before its retry and translation code: apply R-NORETRY on top of the stored
-  classification (CONNECTION with `during_commit` or a later `sent` forces `outcome_unknown` and not retryable), or
-  document in I-1/I-13 that the flags are ignored and add a TAB-018 test.
+- **Next step:** none. TAB-018 applies R-NORETRY on top of a stored classification for `during_commit=True` (kind
+  CONNECTION becomes `outcome_unknown`, not retryable); `sent` is not applied, its default cannot tell a deliberate
+  call (contract I-43, `test_tb040_during_commit_overrides_a_stored_classification`, mutation probe).
 
 ### TB-041 · Equivalent mutant of the `msg` replacement (review N-6)
 
@@ -491,7 +494,10 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   path. `query_only` blocks writes into it, and the main file stays byte-identical, but the file appears.
 - **Next step:** set `SQLITE_LIMIT_ATTACHED` to 0 for read-only connections (`Connection.setlimit`, Python 3.11+), or
   document it in I-22; decide with TAB-017. TAB-017 has no code for it (the specification lists none), so the fix
-  stays in `tabrion.sqlite.connect`.
+  stays in `tabrion.sqlite.connect`. Layer B has the same gap inside `read()` (contract I-56, TAB-018 review
+  L-1: the file gets the process umask, not `0600`); the same limit would close both. Since the second TAB-018 fix
+  round the layer-B creator sets `SQLITE_LIMIT_ATTACHED` to 0 under `Profile.read_only` (I-56, re-review N-2);
+  `tabrion.sqlite.connect(read_only=True)` itself still allows `ATTACH`.
 
 ### TB-047 · Windows: file modes are cosmetic, the `CREATE_NEW` race remains (review I-2)
 
@@ -548,6 +554,32 @@ Things only the owner can do; the agent lacks the rights or must not do them. Mi
   TAB-033 lets `Database` and `Transaction` inherit from the `_v02` mixins, the two modules import each other.
 - **Next step:** before TAB-033, move the type aliases to `tabrion._sa._types`, type `run_transaction`'s `fn` against
   a forward reference, and keep `surface.json` unchanged.
+
+### TB-061 · Read-only is a guard, not a boundary: optional hardening (TABRION TAB-018 review H-1)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, contract I-56, SECURITY.md, plan 03:245-247,
+  07 SQ-05, SR-03
+- **What:** the read-back before `COMMIT` (I-56) sees the state at the end of a `read()` only. SQL inside `read()`
+  that lifts read-only, writes and restores it (`SET TRANSACTION READ WRITE; INSERT ...; SET transaction_read_only =
+  on`, `set_config(..., true)`, `SET LOCAL default_transaction_read_only = on`, SQLite `PRAGMA query_only = OFF;
+  ...; PRAGMA query_only = ON` under a writable profile), or that ends the transaction and commits its own
+  (`ROLLBACK; BEGIN READ WRITE; ...; COMMIT`), writes, on both profiles, and can leave
+  `default_transaction_read_only = off` on a pooled connection until the next `read()` invalidates it. Pinned by
+  `test_b11_documents_the_gap_lift_write_restore`, `test_b12_documents_the_gap_lift_write_restore`,
+  `test_b12_documents_the_gap_session_default_restored_locally` and
+  `test_b12_documents_the_gap_transaction_control_in_read`. A server cannot refuse transaction control; the hard
+  boundary is a role without write rights (or SQLite file permissions).
+- **Next step:** Studio and TAB-032 (runtime-role mode) run untrusted SQL only under such a role. Optional: a
+  `checkin` check of `default_transaction_read_only` under `Profile.read_only` that invalidates the connection, and
+  a snapshot-taking statement after `BEGIN READ ONLY` (review H-1); decide with TAB-041.
+
+### TB-056 · Layer-B waits outside `timeout` (TABRION TAB-018, TAB-041)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, TAB-041, contract I-40, I-44
+- **What:** a statement `timeout` on SQLite counts VM steps, so a wait for a lock is bounded by the busy timeout, not
+  by `timeout`; `Database.health(timeout=...)` waits for a pool connection up to `pool_timeout`, not `timeout`.
+- **Next step:** document both in the layer-B guide (TAB-041); decide for 0.2 whether `health` checks out with
+  `min(timeout, pool_timeout)` (needs no API change).
 
 ### TB-052 · MIG-NOD note: one `lock_lost` in the scheduler pattern after a loss (delta re-review of #6)
 
