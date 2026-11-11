@@ -2,21 +2,23 @@
 
 ``upstream_url`` runs a test twice: against an upstream SQLite file and, with ``TABRION_TEST_POSTGRES``, against a
 PostgreSQL schema of its own (``tabrion_postgres_schema``, marker ``postgres``), with the same code (metric MW-8).
-A test module takes them over by assignment (``upstream_url = support.upstream_url``).
+Each fixture works for both variants of the application (``app``, ``measurements_variants.py``). A test module takes
+them over by assignment (``upstream_url = support.upstream_url``).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import UTC
 from pathlib import Path
+from typing import Any
 
-from measurements import Store, open_database
-from measurements.upstream import create_upstream, open_upstream
 import pytest
 import sqlalchemy as sa
 
-from tabrion import Database
 from tabrion.testing import PostgresSchema
+
+from .measurements_variants import Upstream, Variant
 
 ENGINES = ["sqlite", pytest.param("postgresql", marks=pytest.mark.postgres)]
 
@@ -45,29 +47,52 @@ def postgres_url(conninfo: str) -> sa.URL:
 
 
 @pytest.fixture(params=ENGINES)
-def upstream_url(request: pytest.FixtureRequest, tmp_path: Path) -> sa.URL:
+def upstream_url(app: Variant, request: pytest.FixtureRequest, tmp_path: Path) -> sa.URL:
     """An empty upstream with the measurement table: a PostgreSQL schema of its own, or a SQLite file."""
     if request.param == "postgresql":
         schema: PostgresSchema = request.getfixturevalue("tabrion_postgres_schema")
         url = postgres_url(schema.owner_url)
     else:
         url = sa.make_url(f"sqlite:///{tmp_path / 'upstream.db'}")
-    with open_upstream(url) as database:
-        create_upstream(database)
-        create_upstream(database)  # idempotent
+    with app.upstream(url) as upstream:
+        app.create_upstream(upstream.handle)
+        app.create_upstream(upstream.handle)  # idempotent
     return url
 
 
 @pytest.fixture
-def upstream(upstream_url: sa.URL) -> Iterator[Database]:
-    with open_upstream(upstream_url) as database:
-        yield database
+def upstream(app: Variant, upstream_url: sa.URL) -> Iterator[Upstream]:
+    with app.upstream(upstream_url) as opened:
+        yield opened
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> Iterator[Store]:
-    connection = open_database(tmp_path / "local.db", backup_dir=tmp_path / "backups")
+def store(app: Variant, tmp_path: Path) -> Iterator[Any]:
+    local = app.open(tmp_path / "local.db")
     try:
-        yield Store(connection)
+        yield local.store
     finally:
-        connection.close()
+        local.close()
+
+
+def count(upstream: Upstream) -> int:
+    return int(upstream.scalar(sa.select(sa.func.count()).select_from(table(upstream))))
+
+
+def table(upstream: Upstream) -> sa.Table:
+    table: sa.Table = upstream.variant.UPSTREAM
+    return table
+
+
+def snapshot(upstream: Upstream) -> list[tuple[Any, ...]]:
+    """Every upstream row, in key order, ``ts_utc`` as UTC (SQLite returns it naive)."""
+    rows = upstream.rows(sa.select(table(upstream)).order_by(*table(upstream).primary_key.columns))
+    return [
+        (r.device_id, r.channel, r.ts_utc.replace(tzinfo=UTC) if r.ts_utc.tzinfo is None else r.ts_utc, *r[3:])
+        for r in rows
+    ]
+
+
+def keys(upstream: Upstream) -> list[tuple[str, str, Any]]:
+    """The natural keys of every upstream row (with repetitions, if there were any)."""
+    return [(row[0], row[1], row[2]) for row in snapshot(upstream)]

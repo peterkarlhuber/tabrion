@@ -74,7 +74,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   NOTHING` on the natural key, the mark moved only after the upstream commit, `transfer --from-start` after
   switching the upstream), tested on SQLite and PostgreSQL. RA-B-3 adds its offline and failure tests: network
   faults through the internal fault proxy, process kills and 24 hours offline simulated, each with 0 losses and 0
-  duplicates.
+  duplicates. RA-B-4 adds the plain SQLAlchemy baseline `examples/measurements-baseline` for RA-EVAL; the same test
+  suite runs against both variants.
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
   `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`

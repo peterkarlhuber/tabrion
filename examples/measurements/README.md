@@ -14,7 +14,7 @@ From a checkout with Tabrion installed (`pip install -e .`):
 $ cd examples/measurements
 $ python -m measurements --db data.db --backup-dir backups init
 $ python -m measurements --db data.db --backup-dir backups demo 10000
-10000 stored in 0.041 s
+10000 stored in 0.041 s       # example output of one run, not a measurement
 $ printf 'd2,rh,2026-01-01T00:00:00Z,41.5,%%\n' | python -m measurements --db data.db --backup-dir backups capture
 1
 $ python -m measurements --db data.db --backup-dir backups count
@@ -84,11 +84,12 @@ can afford that.
 
 ## Tests
 
-`tests/examples/test_measurements.py` and `tests/examples/test_measurements_transfer.py` run inside the normal suite
-(`pytest`). The transfer tests run against an upstream SQLite file and, with `TABRION_TEST_POSTGRES` set, against a
-PostgreSQL schema of their own (marker `postgres`, fixture `tabrion_postgres_schema`). They cover the RA-B-2
-acceptance criteria: every row once in batches; a repeated transfer (lost mark, a second device file with the same
-readings) changes nothing; at the moment the mark moves, another connection already sees the batch upstream; a
+`tests/examples/test_measurements.py`, `test_measurements_transfer.py` and `test_measurements_faults.py` run inside
+the normal suite (`pytest`), each test against this application and against the plain SQLAlchemy baseline of
+RA-B-4 ([`examples/measurements-baseline`](../measurements-baseline/README.md), fixture `app`). The transfer tests
+run against an upstream SQLite file and, with `TABRION_TEST_POSTGRES` set, against a PostgreSQL schema of their own
+(marker `postgres`, fixture `tabrion_postgres_schema`). They cover the RA-B-2 acceptance criteria: every row once in
+batches; a repeated transfer (lost mark, a second device file with the same readings) changes nothing; at the moment the mark moves, another connection already sees the batch upstream; a
 failed batch keeps the mark and is sent again; a crash between the commit and the mark sends the batch again
 without duplicates.
 
@@ -126,9 +127,9 @@ The file-mode and kill tests are POSIX only.
   tests (the fixtures `store`, `upstream_url` and `upstream`).
 - **MW-4** (values in errors): `test_invalid_measurement_writes_nothing` checks that a canary value does not
   appear in the message and that the error has no `__context__`.
-- **MW-7** (runtime overhead): `python -m measurements ... demo N` prints the time of one batch of `N` rows.
-  Compare it with the baseline of RA-B-4 on the same machine.
+- **MW-7** (runtime overhead): not measured by a single `demo N` run, whose time includes setup and varies a lot
+  from run to run; RA-EVAL needs the interleaved harness described in the baseline's README.
 - **MW-8** (engine switch): the transfer tests run the same code against SQLite and PostgreSQL; only the URL differs.
 - **MW-6** (fault injection, losses/duplicates): `tests/examples/test_measurements_faults.py`, see the table above;
-  every case asserts `tally(...) == (0, 0)`. Run the same tests against the baseline of RA-B-4.
+  every case asserts `tally(...) == (0, 0)`; the baseline of RA-B-4 runs the same tests.
 - **MW-2** comes with RA-EVAL. MW-3 belongs to the parts application. MW-5 is measured from this README.

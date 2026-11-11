@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
-APPLICATIONS = ("measurements", "parts", "parts-baseline")
+APPLICATIONS = ("measurements", "measurements-baseline", "parts", "parts-baseline")
 
 collect_ignore: list[str] = []
 collect_ignore_glob: list[str] = []

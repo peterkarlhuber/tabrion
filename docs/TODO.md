@@ -174,8 +174,8 @@ required (owner decision of 2026-11-08 11:26Z).
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
 - **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 merged in #22; RA-B-2 merged in
-  #23; RA-A-2 in review, #29; RA-A-3 in review, #35; RA-B-3 in review, #26) · **Refs:** TABRION RA-A-1, RA-A-2,
-  RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
+  #23; RA-A-2 in review, #29; RA-A-3 in review, #35; RA-B-3 and RA-B-4 in review, #26 and #28) · **Refs:** TABRION
+  RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
   tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. RA-B-1 is
@@ -201,10 +201,15 @@ required (owner decision of 2026-11-08 11:26Z).
   through the fault proxy against one `Database` and add a server restart (`pg_terminate_backend`) between two
   batches. L-5, no server-side fault yet: a lock wait past `lock_timeout` (a second connection holding `SELECT ...
   FOR UPDATE`) and a serialization failure or deadlock, each with an unchanged mark, a classified error and 0/0.
+  RA-B-4 adds `examples/measurements-baseline` (package `measurements_baseline`, plain SQLAlchemy, same layout and
+  features); the fixture `app` of `tests/examples/measurements_variants.py` runs the whole measurements suite
+  against both variants, and the baseline's probe hits (`DEVIATIONS`: file modes, error classification, capture
+  without SQLAlchemy) are strict `xfail`, the input of RA-EVAL.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-A-2 (#29) and RA-A-3 (#35, stacked on #29); RA-B-4 (plain SQLAlchemy baseline, #28) after
-  RA-B-3 (lane H); then RA-EVAL.
+- **Next step:** RA-A-2 (#29) and RA-A-3 (#35, stacked on #29); RA-EVAL after RA-A-3 (the measurement report from
+  both baselines). The dedicated `examples` job should also run the measurements suite against PostgreSQL 16, 17 and
+  18 for both variants (today the `pg (...)` jobs do).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
