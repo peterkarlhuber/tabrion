@@ -163,7 +163,11 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-4, QA-8, QA-11, QA-22
 - **What:** concurrency and stress suite, nightly (QA-4); the canary suite (QA-2) is in review (TB-085 has its open points);
   supply chain with SBOM next to the existing `dependency audit` job (QA-8); the release workflow is in place but
-  its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22).
+  its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
+  `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`).
+- **QA-22 follow-up (F-1, Low):** tabrion has no `.gitattributes` and no `.editorconfig` (orkexa has both). Nothing
+  breaks today (golden files are compared as JSON, the Windows job reads them); add both when a byte-compared
+  fixture arrives, with `-text` for it.
 - **Next step:** QA-8 and QA-11 can start now (they depend on TAB-004 and TAB-005 only).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
@@ -373,24 +377,6 @@ required (owner decision of 2026-11-08 11:26Z).
   `tabrion.__all__`, against the G-5 rule.
 - **Next step:** none. TAB-018 keeps them documentation-only aliases and drops them from
   `tabrion._sa.database.__all__`; `surface.json` is unchanged (contract I-37).
-
-### TB-135 · Windows: `safe_url` test and a skipped mutation probe in the platforms job (PR #25, #31)
-
-- **Priority:** P3 Low · **Status:** Done · **Refs:** contract I-37, TAB-018, platforms jobs 130762928488 (#25) and
-  130764624073 (#31), TB-021
-- **What:** two Windows failures of `sqlite (windows-latest)`, latent on master (no platforms run there since
-  TAB-018; the same three failures on the TB-045 branch, which is master plus its own change):
-  - `test_b01_sqlite_file_urls` expected the input string, `sqlite+pysqlite:///C:\Users\...`. `safe_url` is
-    SQLAlchemy's rendering (I-37), and SQLAlchemy 2.1 percent-encodes the database part (`C%3A%5CUsers...`; 2.0
-    renders it raw). The code is right: the encoded form is what SQLAlchemy shows for `engine.url` and parses back
-    to the same path, while a raw `?` or `#` in a path would be ambiguous. The test now compares with
-    `URL.create(...).render_as_string()`, checks that `make_url` gives the path back, and adds file names with `#`
-    (all platforms) and `C:\x\...` (POSIX) so Linux CI sees the encoding too.
-  - The probe "check_path and the file creation run in from_url" named
-    `test_b04_sqlite_path_checks_run_in_from_url`, which skips itself outside POSIX: the skip passed for the missed
-    mutation. That probe now skips outside POSIX, and a second probe of the same mutation names the portable
-    `test_b04_read_only_profile_needs_the_file` (a missing file under a read-only profile raises in `from_url`).
-- **Next step:** none; a `workflow_dispatch` run of `platforms.yml` confirms it once pushes resume.
 
 ### TB-021 · Platform path filters too narrow (G-T1 F-15, CC-3)
 
@@ -847,6 +833,29 @@ required (owner decision of 2026-11-08 11:26Z).
   hand-edited secret file therefore reaches libpq with its spaces (libpq accepts them in a URL only at the end).
 - **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
   Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
+
+### TB-074 · Windows: `safe_url` percent-encoded a SQLite path (TABRION TAB-040 readiness gap 2)
+
+- **Priority:** P2 Medium · **Status:** Done (this pull request) · **Refs:** TABRION TAB-040, TAB-018, K3, nightly
+  issue #18
+- **What:** the nightly of `546d254` failed on `windows-latest`: `Database.safe_url` showed `C%3A%5C...` for a
+  Windows path (SQLAlchemy percent-encodes the path when it renders a URL), and layer-B mutation probe 7 could not
+  turn its test red because `test_b04_sqlite_path_checks_run_in_from_url` skips on Windows.
+- **Fix:** `safe_url` shows the SQLite path as it is (`test_b01_safe_url_shows_the_sqlite_path_as_it_is`, a
+  Windows-style path on every OS, with its own mutation probe); probes whose test skips on Windows skip there too.
+- **Review of #37:** what is not printable in the path is percent-encoded (M-1); the URL is masked before the path
+  goes in, through a per-call placeholder (M-2, L-1; `test_b01_safe_url_masks_first_and_then_shows_the_path`,
+  `test_b01_safe_url_placeholder_is_new_for_every_call`); `test_b04` is split into a portable half
+  (`test_b04_from_url_opens_the_file`, probed on every OS) and the POSIX-only half, and the probe file imports the
+  test's own `POSIX` predicate (L-3); CHANGELOG and contract I-37 name the POSIX changes (L-2).
+- **CI of `1146bbc`:** the probe of `test_b01_safe_url_shows_the_sqlite_path_as_it_is` survived in the
+  SQLAlchemy 2.0 jobs (Python 3.12 and lowest versions): SQLAlchemy 2.0 does not percent-encode the path, so the
+  old rendering already passed the three original cases. The `:`/`@`, `?password=` and control-character cases
+  added for M-1 and M-2 fail under the old rendering on both 2.0 and 2.1; checked locally with 2.0.57 and 2.1.8.
+- **CI of `42b59fe`:** with the probe 10 mutant (`ch if True else`), a lone surrogate in a test path reaches the
+  output of the child pytest raw, and pytest 8.0.0 (lowest versions job) writes it as a byte that is not UTF-8, so
+  the probe failed with `UnicodeDecodeError` before it read the return code. The probe runner now decodes the
+  child's output with `errors="backslashreplace"`; checked locally with the lowest versions.
 
 ## Cross-repository dependencies
 

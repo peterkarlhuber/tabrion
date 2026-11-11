@@ -84,4 +84,5 @@ nav:
       - Status: program/STATUS.md
       - Risks and rollback: program/risks.md
       - "Report: name check": program/reports/name-check.md
+      - "Report: QA-22 conventions audit": program/reports/qa-22-conventions.md
       - Open work: TODO.md
