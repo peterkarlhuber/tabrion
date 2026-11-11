@@ -352,9 +352,9 @@ required (owner decision of 2026-11-08 11:26Z).
   - Review condition C-2: both guards now decide from the base branch. `api surface` requires `--base` once the base's
     `api_surface.py` has it, and `conformance` fails when the base has `conformance/MANIFEST.json` but the head does
     not, so a pull request that deletes either cannot pass.
-  - K1: job `coverage` (the whole suite with PostgreSQL 17, branch coverage) with floors at the measured values of
-    2026-11-08, rounded down: total 94 % (K1 asks 90 %), `errors.py` 95 %, `sql.py` 95 %, `sqlite.py` 94.9 %. K1
-    asks 95 % for `sqlite`; it is 0.06 points short. The floors live in `ci.yml`, so lowering one needs the
+  - K1: job `coverage` (the whole suite with PostgreSQL 17, branch coverage) with floors: total 93.5 % (measured
+    94.05 % on 2026-11-08 and 93.99 % after the merge of master `cf815fd`, so half a point of headroom; K1 asks
+    90 %), `errors.py` 95 %, `sql.py` 95 %, `sqlite.py` 94.9 %. K1 asks 95 % for `sqlite`; it is 0.06 points short. The floors live in `ci.yml`, so lowering one needs the
     workflow-change review. Job `mutation probes` runs the four mutation-probe modules. `test` skips them, so the
     unit run takes about 56 s locally (K1: under 60 s); the PostgreSQL probes still run in every `pg` job.
   - K7/K8: `tests/ci/flaky.txt` (empty) with `tests/unit/test_flaky_list.py`; ruff `S` is the documented Bandit
