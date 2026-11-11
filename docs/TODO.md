@@ -781,6 +781,10 @@ required (owner decision of 2026-11-08 11:26Z).
   SQLAlchemy 2.0 jobs (Python 3.12 and lowest versions): SQLAlchemy 2.0 does not percent-encode the path, so the
   old rendering already passed the three original cases. The `:`/`@`, `?password=` and control-character cases
   added for M-1 and M-2 fail under the old rendering on both 2.0 and 2.1; checked locally with 2.0.57 and 2.1.8.
+- **CI of `42b59fe`:** with the probe 10 mutant (`ch if True else`), a lone surrogate in a test path reaches the
+  output of the child pytest raw, and pytest 8.0.0 (lowest versions job) writes it as a byte that is not UTF-8, so
+  the probe failed with `UnicodeDecodeError` before it read the return code. The probe runner now decodes the
+  child's output with `errors="backslashreplace"`; checked locally with the lowest versions.
 
 ## Cross-repository dependencies
 
