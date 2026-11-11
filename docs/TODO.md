@@ -666,8 +666,15 @@ required (owner decision of 2026-11-08 11:26Z).
      random-order plugin they fail spuriously, under `pytest-xdist` they skip silently (neither is used today).
   9. Not exercised by the suite: `logging.captureWarnings` and SQLAlchemy `SAWarning` texts, and the structlog
      processor (it has its own unit tests).
-- **Next step:** decide 1, 3 and 7 with the 0.2 surface review (TB-033); 2, 5 and 6 are documented behavior; 8 and
-  9 when such a plugin or path is adopted.
+  10. A `BaseException` that is no `Exception` (such as `KeyboardInterrupt`) inside `connection.execute` is not
+      caught by `Transaction._run`: its frame and SQLAlchemy's keep the parameters (review Info-B of #25, I-76).
+  11. Tests still missing (review of #25): the `MigrationFailed` frame-local fix of `tabrion.sqlite.migrate` (a step
+      whose error message holds the canary, checked with `assert_clean`; L-B), the `GRANT` failure branch of
+      `_RoleSet.create` (Info-C), and a positive control for the SQLite `test_t110_layer_b_caller_connection`
+      (`canary in repr(info.value.__context__.params)`; Info-D).
+- **Next step:** decide 1, 3 and 7 with the 0.2 surface review (TB-033); 2, 5, 6 and 10 are documented behavior; 8
+  and 9 when such a plugin or path is adopted; 11 in a QA follow-up. The non-`TabrionError` path of `from_url` (review
+  C-1/L-A of #25) is closed: every exception leaves it without the helper frames.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 

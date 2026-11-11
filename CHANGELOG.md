@@ -101,8 +101,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `psycopg.OperationalError`.
 - Layer B and `tabrion.config` keep values out of the frame locals of their tracebacks, which Sentry, `rich` and
   `pytest -l` show: the statement parameters and SQL text (`execute`, `fetch_*`, on `Database` and `Transaction`),
-  the fetched rows of `MultipleRowsError`, the URL and `engine_options` of `from_url` and `from_env` (a
-  `ConfigurationError` from `from_url` is raised without the frames of its helpers), the environment and the file
+  the fetched rows of `MultipleRowsError`, the URL and `engine_options` of `from_url` and `from_env` (every
+  exception of `from_url`, also a `TypeError` of `create_engine` for an unknown engine option, is raised without
+  the frames of its helpers), the environment and the file
   content in `url_from_env`, and the original error of `BackupFailed` and `MigrationFailed` in `tabrion.sqlite.migrate`
   (contract I-76).
 - `Database.from_url` creates its engine with `hide_parameters=True`: SQLAlchemy's `sqlalchemy.engine` log records

@@ -675,13 +675,11 @@ class Database:
         """``sqlite:///path``, ``sqlite://`` (memory), ``postgresql://`` (rewritten to ``+psycopg``)."""
         try:
             return cls._from_url(url, profile, engine_options)
-        except TabrionError as exc:
+        except BaseException as exc:
             error = exc
-        except BaseException:
-            del url, engine_options  # I-76
-            raise
         # Raised here without the frames of the helpers: their locals hold the URL, its password and the
-        # ``connect_args``, which tools that capture locals would show (I-76).
+        # ``connect_args``, which tools that capture locals would show (I-76). This holds for every exception, also
+        # the ``TypeError`` of ``create_engine`` for an engine option it does not know (review C-1/L-A of #25).
         del url, engine_options
         raise error.with_traceback(None)
 
