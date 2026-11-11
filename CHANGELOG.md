@@ -8,6 +8,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
+  and remove a stable name, and the downstream notice in the release flow. The internal helper
+  `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
+  replacement and the removal version, and refuses a window shorter than S-3. `scripts/api_surface.py` checks every
+  deprecation against `surface.json` (`"deprecated"`) and the CHANGELOG, and with `--base <ref>` that every surface
+  change since `<ref>` is named under `Deprecated`, `Removed` or `Changed` in `[Unreleased]` (S-6).
+
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
   `examples/`.
