@@ -33,6 +33,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   no PyPI. The migrations guide gives Alembic a profile of its own (SQLite foreign keys off before a batch rebuild,
   `PRAGMA foreign_key_check` afterwards, longer PostgreSQL timeouts), because a batch rebuild with foreign keys on
   deletes child rows through `ON DELETE CASCADE`.
+
+- `docs/api-consumers.md`: which public function each consumer uses and which consumer test covers it (K11).
+  `tests/unit/test_api_consumers.py` checks it against contract section 8 (API names per row), the golden record keys
+  and the replay tests. `advisory_unlock` is listed as not yet covered by a consumer record.
 - API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
   and remove a stable name, and the downstream notice in the release flow. The internal helper
   `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the

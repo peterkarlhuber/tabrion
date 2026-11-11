@@ -80,6 +80,7 @@ nav:
       - Troubleshooting: guides/troubleshooting.md
   - Specification: specification.md
   - API contract: api/contract.md
+  - API consumers: api-consumers.md
   - Development:
       - API stability policy: development/api-stability.md
   - Architecture decisions:
