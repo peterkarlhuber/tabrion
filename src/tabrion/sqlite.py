@@ -31,6 +31,7 @@ from pathlib import Path
 import secrets
 import sqlite3
 import stat
+import threading
 from typing import Any, TypeAlias
 
 from tabrion.errors import (
@@ -335,8 +336,11 @@ def _same_file(path: str, expected: tuple[int, int], connection: sqlite3.Connect
     if not opened:
         return True
     # SQLite's unix VFS resolves links in the name it opens; a link followed at open time shows up here even when
-    # it was swapped back before the check above.
-    return os.path.normcase(os.path.realpath(opened)) == os.path.normcase(os.path.realpath(path))
+    # it was swapped back before the check above. Only the directory of ``path`` is resolved: its last component was
+    # checked above, and resolving it again would follow a link put there since (TB-045).
+    directory, base = os.path.split(os.path.abspath(path))
+    checked = os.path.join(os.path.realpath(directory), base)
+    return os.path.normcase(os.path.realpath(opened)) == os.path.normcase(checked)
 
 
 def _rows(connection: sqlite3.Connection, statement: str, limit: int | None = None) -> list[tuple[Any, ...]]:
@@ -380,6 +384,71 @@ def _open(target: str, *, uri: bool, timeout: float, check_same_thread: bool) ->
     return sqlite3.connect(target, uri=uri, timeout=timeout, isolation_level=None, check_same_thread=check_same_thread)
 
 
+_DESCRIPTOR_DIRECTORIES = ("/proc/self/fd", "/dev/fd")
+"""Where a POSIX system lists the process's open descriptors (Linux; macOS and the BSDs)."""
+_OPEN_ATTEMPTS = 3
+"""``connect``: how often SQLite opens the file before an unverified open is refused (I-22, TB-045)."""
+_OPEN_LOCK = threading.Lock()
+"""One ``connect`` at a time between its two descriptor snapshots, so concurrent connects cannot mask each other."""
+
+
+def _open_files() -> frozenset[tuple[int, int, int]] | None:
+    """The process's open regular files as ``(descriptor, st_dev, st_ino)``; ``None`` where they cannot be listed."""
+    if not _POSIX:
+        return None
+    for directory in _DESCRIPTOR_DIRECTORIES:
+        try:
+            names = os.listdir(directory)
+        except OSError:
+            continue
+        files: set[tuple[int, int, int]] = set()
+        for name in names:
+            try:
+                descriptor = int(name)
+                info = os.fstat(descriptor)
+            except (OSError, ValueError):
+                continue  # the listing's own descriptor, closed again, or not a number
+            if stat.S_ISREG(info.st_mode):
+                files.add((descriptor, info.st_dev, info.st_ino))
+        return frozenset(files)
+    return None
+
+
+def _opened_checked_file(
+    before: frozenset[tuple[int, int, int]], after: frozenset[tuple[int, int, int]], expected: tuple[int, int]
+) -> bool:
+    """Whether the descriptor SQLite opened is the checked file (contract I-22, TB-045).
+
+    SQLite opens the main file in ``sqlite3_open``: a new descriptor on the checked ``(st_dev, st_ino)`` proves it.
+    SQLite may instead reuse a descriptor it kept for that file (another connection of the process holds a lock on
+    it); then no regular file is new, and one of the process's descriptors is the checked file.
+    """
+    new = after - before
+    if any((dev, ino) == expected for _, dev, ino in new):
+        return True
+    return not new and any((dev, ino) == expected for _, dev, ino in after)
+
+
+def _open_checked(
+    target: str, *, uri: bool, timeout: float, check_same_thread: bool, expected: tuple[int, int]
+) -> sqlite3.Connection | None:
+    """Open ``target``; on POSIX the file SQLite opened must be the checked one, else ``None`` (I-22, TB-045).
+
+    The name SQLite opens can change between its own name resolution and its ``open``, which no check of the name
+    sees; the descriptor it holds cannot. Where the descriptors cannot be listed (Windows) or the identity is unknown,
+    the checks of the name after opening remain.
+    """
+    for _ in range(_OPEN_ATTEMPTS):
+        with _OPEN_LOCK:
+            before = _open_files() if expected[1] else None
+            connection = _open(target, uri=uri, timeout=timeout, check_same_thread=check_same_thread)
+            after = _open_files() if before is not None else None
+        if before is None or after is None or _opened_checked_file(before, after, expected):
+            return connection
+        connection.close()  # a file opened concurrently elsewhere in the process can cause a benign mismatch: retry
+    return None
+
+
 def connect(
     path: str | os.PathLike[str],
     *,
@@ -396,7 +465,7 @@ def connect(
     ``read_only`` opens the URI ``file:...?mode=ro`` and sets ``PRAGMA query_only=ON``; it never creates or changes
     the database file (for a WAL database SQLite may create ``-wal``/``-shm`` with the main file's mode). After
     opening, the path must still be the file that was checked, and SQLite must have opened that file, not a link
-    target (``UnsafePath``, contract I-22).
+    target: on POSIX the descriptor SQLite holds is compared with the checked file (``UnsafePath``, contract I-22).
     """
     name = os.fspath(path)
     memory = _is_memory(name)
@@ -416,7 +485,12 @@ def connect(
         target, uri = Path(name).absolute().as_uri() + "?mode=ro", True
     else:
         target, uri = name, False
-    connection = _open(target, uri=uri, timeout=profile.busy_timeout, check_same_thread=check_same_thread)
+    opened = _open_checked(
+        target, uri=uri, timeout=profile.busy_timeout, check_same_thread=check_same_thread, expected=expected
+    )
+    if opened is None:
+        raise _unsafe("sqlite.unsafe_path", name)
+    connection = opened
     try:
         # SQLite opened the database file in ``_open``: check it before the profile writes anything to it, and the
         # side files again once WAL mode has opened them.

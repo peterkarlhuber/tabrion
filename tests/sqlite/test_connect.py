@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import threading
 from typing import Any
 
 import pytest
@@ -538,10 +539,14 @@ def test_s07_existing_file_swapped_for_a_link(tmp_path: Path, symlinks: None, mo
     assert digest(victim) == before
 
 
+@pytest.mark.parametrize("descriptors", [True, False], ids=["descriptors", "names-only"])
 def test_s07_link_followed_while_opening_and_swapped_back(
-    tmp_path: Path, symlinks: None, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, symlinks: None, monkeypatch: pytest.MonkeyPatch, descriptors: bool
 ) -> None:
-    """The attacker swaps in a link only while SQLite opens the file and swaps the real file back afterwards."""
+    """The attacker swaps in a link only while SQLite opens the file and swaps the real file back afterwards.
+    ``names-only``: without the descriptor check (Windows, TB-045), the name SQLite reports still catches it."""
+    if not descriptors:
+        monkeypatch.setattr(ts, "_open_files", lambda: None)
     path = tmp_path / "a.db"
     make_database(path)
     victim, _, _ = _victim(tmp_path)
@@ -583,8 +588,14 @@ def test_s07_link_followed_while_opening_and_swapped_back(
         swapped[0].execute("SELECT 1")  # closed
 
 
-def test_s07_file_replaced_between_check_and_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Another regular file put in place after the check (a different inode) is refused too."""
+@pytest.mark.parametrize("descriptors", [True, False], ids=["descriptors", "names-only"])
+def test_s07_file_replaced_between_check_and_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, descriptors: bool
+) -> None:
+    """Another regular file put in place after the check (a different inode) is refused too. ``names-only``: the
+    inode check of the name still catches it without the descriptor check (Windows, TB-045)."""
+    if not descriptors:
+        monkeypatch.setattr(ts, "_open_files", lambda: None)
     path = tmp_path / "a.db"
     make_database(path)
     other = tmp_path / "other.db"
@@ -592,7 +603,8 @@ def test_s07_file_replaced_between_check_and_open(tmp_path: Path, monkeypatch: p
     original = ts._open
 
     def replace_then_open(*args: Any, **kwargs: Any) -> sqlite3.Connection:
-        os.replace(other, path)
+        if other.exists():  # once: connect retries an open it could not verify
+            os.replace(other, path)
         return original(*args, **kwargs)
 
     monkeypatch.setattr(ts, "_open", replace_then_open)
@@ -601,6 +613,169 @@ def test_s07_file_replaced_between_check_and_open(tmp_path: Path, monkeypatch: p
     with pytest.raises(UnsafePath) as info:
         ts.connect(path)
     assert info.value.code == "sqlite.unsafe_path"
+
+
+# --- connect: the descriptor SQLite opened is the checked file (contract I-22, TB-045, TM-04) ------------------------
+
+
+def _open_other(other: Path, path: Path, monkeypatch: pytest.MonkeyPatch, times: int) -> list[sqlite3.Connection]:
+    """A seam for the window inside SQLite's own open: the first ``times`` opens get ``other`` while SQLite still
+    reports the checked name (as when the name changes between SQLite's name resolution and its ``open``)."""
+    original_open, original_main_file = ts._open, ts._main_file
+    redirected: list[sqlite3.Connection] = []
+
+    def open_other(target: str, **kwargs: Any) -> sqlite3.Connection:
+        if len(redirected) < times:
+            redirected.append(original_open(str(other), **kwargs))
+            return redirected[-1]
+        return original_open(target, **kwargs)
+
+    def main_file(connection: sqlite3.Connection) -> str:
+        return os.path.abspath(path) if connection in redirected else original_main_file(connection)
+
+    monkeypatch.setattr(ts, "_open", open_other)
+    monkeypatch.setattr(ts, "_main_file", main_file)
+    return redirected
+
+
+@posix_only
+@pytest.mark.parametrize("held", [False, True], ids=["alone", "file-held-elsewhere"])
+@pytest.mark.parametrize("kwargs", [{}, {"read_only": True}])
+def test_tb045_another_file_opened_by_sqlite_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kwargs: dict[str, Any], held: bool
+) -> None:
+    """TAB-T-123 / TB-045, deterministic: every name check passes (no link, the same inode under the name, the
+    reported name is the real path), but SQLite holds another file. The descriptor check refuses it, after its
+    retries, and nothing is written to the other file. ``file-held-elsewhere``: another descriptor of the process
+    is the checked file, which must not count (only a reused descriptor, with nothing new opened, may)."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    holder = plain(path) if held else None
+    other = tmp_path / "other.db"
+    make_database(other)
+    to_delete_mode = plain(other)
+    to_delete_mode.execute("PRAGMA journal_mode = DELETE").fetchone()
+    to_delete_mode.close()
+    before = digest(other)  # nothing may be written to it, not even the WAL flag of the profile
+    redirected = _open_other(other, path, monkeypatch, times=ts._OPEN_ATTEMPTS)
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path, **kwargs).close()
+    assert info.value.code == "sqlite.unsafe_path"
+    assert len(redirected) == ts._OPEN_ATTEMPTS
+    for connection in redirected:
+        with pytest.raises(sqlite3.ProgrammingError):
+            connection.execute("SELECT 1")  # closed
+    assert digest(other) == before
+    if holder is not None:
+        holder.close()
+
+
+@posix_only
+def test_tb045_names_alone_cannot_tell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Why the descriptor check exists: without it (as on Windows) the same open is accepted (documented, I-22)."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    other = tmp_path / "other.db"
+    make_database(other)
+    _open_other(other, path, monkeypatch, times=1)
+    monkeypatch.setattr(ts, "_open_files", lambda: None)
+    connection = ts.connect(path)
+    try:
+        assert connection.execute("SELECT count(*) FROM parent").fetchone() is not None
+        assert os.path.samefile(connection.execute("PRAGMA database_list").fetchone()[2], other)
+    finally:
+        connection.close()
+
+
+def test_tb045_the_last_check_does_not_follow_the_name(
+    tmp_path: Path, symlinks: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Names only (Windows, or no descriptor listing): the comparison with the name SQLite opened resolves the
+    directory, not the name itself, so a link put under the name after its checks cannot make both sides agree."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    other = tmp_path / "other.db"
+    make_database(other)
+    _open_other(other, path, monkeypatch, times=ts._OPEN_ATTEMPTS)
+    monkeypatch.setattr(ts, "_main_file", lambda connection: str(other))  # SQLite reports what it opened
+    monkeypatch.setattr(ts, "_open_files", lambda: None)
+    real_realpath = os.path.realpath
+    stash = tmp_path / "stash.db"
+
+    def realpath(candidate: Any, *args: Any, **kwargs: Any) -> str:
+        if os.fspath(candidate) == str(path) and not stash.exists():
+            path.rename(stash)
+            path.symlink_to(other)
+        return real_realpath(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(os.path, "realpath", realpath)
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path).close()
+    assert info.value.code == "sqlite.unsafe_path"
+
+
+@posix_only
+def test_tb045_a_single_mismatch_is_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "a.db"
+    make_database(path)
+    other = tmp_path / "other.db"
+    make_database(other)
+    redirected = _open_other(other, path, monkeypatch, times=1)
+    connection = ts.connect(path)
+    try:
+        assert os.path.samefile(connection.execute("PRAGMA database_list").fetchone()[2], path)
+    finally:
+        connection.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        redirected[0].execute("SELECT 1")
+
+
+@posix_only
+def test_tb045_a_descriptor_sqlite_reuses_is_accepted(tmp_path: Path) -> None:
+    """SQLite keeps the descriptor of a closed connection while another connection of the process holds a lock on
+    the file (WAL keeps a shared lock), and the next open takes it: no new descriptor, still the checked file."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    holder = ts.connect(path)
+    holder.execute("SELECT count(*) FROM parent").fetchone()
+    try:
+        closed = ts.connect(path)
+        closed.execute("SELECT count(*) FROM parent").fetchone()
+        closed.close()
+        before = ts._open_files()
+        reused = ts.connect(path)
+        after = ts._open_files()
+        assert before is not None and after is not None
+        identity = (os.stat(path).st_dev, os.stat(path).st_ino)
+        assert not {entry for entry in after - before if entry[1:] == identity}  # the reuse case really ran
+        assert reused.execute("SELECT count(*) FROM parent").fetchone() == (3,)
+        reused.close()
+    finally:
+        holder.close()
+
+
+@posix_only
+def test_tb045_concurrent_connects_are_not_refused(tmp_path: Path) -> None:
+    """Pools open and close connections from many threads; the snapshots must not refuse a correct open."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    errors: list[BaseException] = []
+
+    def churn() -> None:
+        try:
+            for _ in range(25):
+                connection = ts.connect(path)
+                connection.execute("SELECT count(*) FROM parent").fetchone()
+                connection.close()
+        except BaseException as exc:  # noqa: BLE001 - reported below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=churn) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
 
 
 def test_l3_link_planted_while_the_profile_is_applied(

@@ -49,6 +49,14 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         False,
         True,
     ),
+    # TB-045: the last check resolves the directory only, never the checked name again.
+    (
+        "    checked = os.path.join(os.path.realpath(directory), base)\n",
+        "    checked = os.path.realpath(path)\n",
+        _T + "test_connect.py::test_tb045_the_last_check_does_not_follow_the_name",
+        False,
+        True,
+    ),
     # TM-04: a link followed while SQLite opened the file is caught after opening.
     (
         "    return os.path.normcase(os.path.realpath(opened)) == os.path.normcase(os.path.realpath(path))\n",
@@ -56,6 +64,30 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         _T + "test_connect.py::test_s07_link_followed_while_opening_and_swapped_back",
         True,
         True,
+    ),
+    # TM-04, TB-045: the descriptor SQLite opened is the checked file.
+    (
+        "        if before is None or after is None or _opened_checked_file(before, after, expected):\n",
+        "        if True:\n",
+        _T + "test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused",
+        True,
+        False,
+    ),
+    # TB-045: only a reused descriptor, with nothing new opened, may stand for the checked file.
+    (
+        "    return not new and any((dev, ino) == expected for _, dev, ino in after)\n",
+        "    return any((dev, ino) == expected for _, dev, ino in after)\n",
+        _T + "test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused",
+        True,
+        False,
+    ),
+    # TB-045: a descriptor SQLite reuses for the checked file is accepted (pools would fail otherwise).
+    (
+        "    return not new and any((dev, ino) == expected for _, dev, ino in after)\n",
+        "    return False\n",
+        _T + "test_connect.py::test_tb045_a_descriptor_sqlite_reuses_is_accepted",
+        True,
+        False,
     ),
     # TM-04: the file that was checked is the file that was opened (same inode).
     (
