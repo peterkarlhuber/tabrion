@@ -1,0 +1,363 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.0",
+  "area": "sqlite-profile",
+  "vectors": [
+    {
+      "id": "LDP-SQP-001",
+      "level": "MUST",
+      "rule": "SQP-1",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "default"
+        }
+      },
+      "expect": {
+        "file_mode": "0600",
+        "journal_mode": "wal",
+        "foreign_keys": true,
+        "busy_timeout_ms_min": 1000
+      },
+      "provenance": "tabrion docs/api/contract.md section 3.1 (SQLiteProfile defaults)",
+      "note": "SQP-1, SQP-3, SQP-4 and SQP-5 at once; POSIX only (file mode)"
+    },
+    {
+      "id": "LDP-SQP-002",
+      "level": "MUST",
+      "rule": "SQP-1",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "orkexa"
+        }
+      },
+      "expect": {
+        "file_mode": "0600",
+        "journal_mode": "wal",
+        "foreign_keys": true,
+        "busy_timeout_ms_min": 1000
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:31,80-94 (0600), :156 (timeout=30), :162 (WAL); foreign_keys: tabrion docs/api/contract.md section 3.1; not in nodestro-runtime@463e0d9 or orkexa@5bf139e (a tightening, SPEC SQP-3 note)",
+      "note": "SQP-1, SQP-3, SQP-4 and SQP-5 at once; POSIX only (file mode)"
+    },
+    {
+      "id": "LDP-SQP-003",
+      "level": "MUST",
+      "rule": "SQP-1",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "nodestro"
+        }
+      },
+      "expect": {
+        "file_mode": "0600",
+        "journal_mode": "wal",
+        "foreign_keys": true,
+        "busy_timeout_ms_min": 1000
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:280 (timeout=30), :282 (WAL); 0600 and foreign_keys: tabrion docs/api/contract.md section 3.1; not in nodestro-runtime@463e0d9 or orkexa@5bf139e (a tightening, SPEC SQP-3 note)",
+      "note": "SQP-1, SQP-3, SQP-4 and SQP-5 at once; POSIX only (file mode)"
+    },
+    {
+      "id": "LDP-SQP-004",
+      "level": "MUST",
+      "rule": "SQP-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "default",
+          "symlink": "main",
+          "target_exists": true
+        }
+      },
+      "expect": {
+        "error": "sqlite.symlink"
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
+    },
+    {
+      "id": "LDP-SQP-005",
+      "level": "MUST",
+      "rule": "SQP-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "default",
+          "symlink": "main",
+          "target_exists": false
+        }
+      },
+      "expect": {
+        "error": "sqlite.symlink"
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
+    },
+    {
+      "id": "LDP-SQP-006",
+      "level": "MUST",
+      "rule": "SQP-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "default",
+          "symlink": "-wal",
+          "target_exists": true
+        }
+      },
+      "expect": {
+        "error": "sqlite.symlink"
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
+    },
+    {
+      "id": "LDP-SQP-007",
+      "level": "MUST",
+      "rule": "SQP-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "default",
+          "symlink": "-wal",
+          "target_exists": false
+        }
+      },
+      "expect": {
+        "error": "sqlite.symlink"
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
+    },
+    {
+      "id": "LDP-SQP-008",
+      "level": "MUST",
+      "rule": "SQP-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "default",
+          "symlink": "-shm",
+          "target_exists": true
+        }
+      },
+      "expect": {
+        "error": "sqlite.symlink"
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
+    },
+    {
+      "id": "LDP-SQP-009",
+      "level": "MUST",
+      "rule": "SQP-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "default",
+          "symlink": "-shm",
+          "target_exists": false
+        }
+      },
+      "expect": {
+        "error": "sqlite.symlink"
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
+    },
+    {
+      "id": "LDP-SQP-010",
+      "level": "MUST",
+      "rule": "SQP-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "default",
+          "symlink": "-journal",
+          "target_exists": true
+        }
+      },
+      "expect": {
+        "error": "sqlite.symlink"
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
+    },
+    {
+      "id": "LDP-SQP-011",
+      "level": "MUST",
+      "rule": "SQP-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_new_file",
+        "args": {
+          "profile": "default",
+          "symlink": "-journal",
+          "target_exists": false
+        }
+      },
+      "expect": {
+        "error": "sqlite.symlink"
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:39,96-115",
+      "note": "POSIX only (symlinks)"
+    },
+    {
+      "id": "LDP-SQP-012",
+      "level": "MUST",
+      "rule": "SQP-3",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "inspect_pragmas",
+        "args": {
+          "profile": "default",
+          "memory": true
+        }
+      },
+      "expect": {
+        "foreign_keys": true
+      },
+      "provenance": "tabrion docs/api/contract.md section 3.1 (SQLiteProfile.foreign_keys); not in nodestro-runtime@463e0d9 or orkexa@5bf139e (a tightening, SPEC SQP-3 note)"
+    },
+    {
+      "id": "LDP-SQP-013",
+      "level": "MUST",
+      "rule": "SQP-3",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "inspect_pragmas",
+        "args": {
+          "profile": "nodestro",
+          "memory": true
+        }
+      },
+      "expect": {
+        "foreign_keys": true
+      },
+      "provenance": "tabrion docs/api/contract.md section 3.1 (SQLiteProfile.foreign_keys); not in nodestro-runtime@463e0d9 or orkexa@5bf139e (a tightening, SPEC SQP-3 note)"
+    },
+    {
+      "id": "LDP-SQP-014",
+      "level": "MUST",
+      "rule": "SQP-4",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "inspect_pragmas",
+        "args": {
+          "profile": "orkexa",
+          "memory": true
+        }
+      },
+      "expect": {
+        "busy_timeout_ms_min": 1000
+      },
+      "provenance": "orkexa@5bf139e src/orkexa/_storage.py:156"
+    },
+    {
+      "id": "LDP-SQP-015",
+      "level": "MUST",
+      "rule": "SQP-5",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "inspect_pragmas",
+        "args": {
+          "profile": "default",
+          "memory": false
+        }
+      },
+      "expect": {
+        "journal_mode": "wal"
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:282"
+    },
+    {
+      "id": "LDP-SQP-016",
+      "level": "INFO",
+      "rule": "SQP-6",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "inspect_pragmas",
+        "args": {
+          "profile": "default",
+          "memory": false
+        }
+      },
+      "expect": {
+        "synchronous": "full",
+        "secure_delete": true,
+        "trusted_schema": false,
+        "busy_timeout_ms": 30000
+      },
+      "provenance": "tabrion docs/api/contract.md section 3.1 (SQLiteProfile defaults)"
+    },
+    {
+      "id": "LDP-SQP-017",
+      "level": "MUST",
+      "rule": "SQP-7",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_existing",
+        "args": {
+          "mode": "0644",
+          "profile": "default"
+        }
+      },
+      "expect": {
+        "file_mode": "0644",
+        "foreign_keys": true
+      },
+      "provenance": "tabrion docs/api/contract.md section 3.1 (connect)",
+      "note": "POSIX only (file mode)"
+    },
+    {
+      "id": "LDP-SQP-018",
+      "level": "MUST",
+      "rule": "SQP-7",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "open_existing",
+        "args": {
+          "mode": "0640",
+          "profile": "default"
+        }
+      },
+      "expect": {
+        "file_mode": "0640",
+        "foreign_keys": true
+      },
+      "provenance": "tabrion docs/api/contract.md section 3.1 (connect)",
+      "note": "POSIX only (file mode)"
+    }
+  ]
+}

@@ -23,8 +23,8 @@ integration branch of the ready pull requests).
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 9 |
-| P2 Medium | 12 |
-| P3 Low | 43 |
+| P2 Medium | 13 |
+| P3 Low | 45 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -155,8 +155,8 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Status note:** TAB-022 part (a) is merged (#19 `4d8e486`, follow-up #33 `5a7bc9e`; contract I-61, D-74, D-75): the
   consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
   The CI jobs are TB-070.
-- **Next step:** TAB-050 after TAB-016. TAB-051 is in review (branch `claude/project-thread-rdo6g3-tab051`; the
-  workflow parts are TB-090).
+- **Next step:** TAB-051 is on master (#21; the workflow parts are TB-090). TAB-050 is in review (branch
+  `claude/project-thread-rdo6g3-tab050`; its CI job is TB-092).
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
@@ -511,6 +511,36 @@ required (owner decision of 2026-11-08 11:26Z).
   codes are string literals at the raise sites and not in `surface.json`.
 - **Next step:** decide with TAB-040 whether to collect the codes (for example from the contract tables or an
   internal registry) into a `codes` section of `surface.json`.
+
+### TB-092 · CI job `conformance` (TABRION TAB-050, deviation D-92)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-050, TB-017, contract I-82
+- **What:** the LDP vectors run inside the jobs `test (...)` and `pg (...)`; planning document 02 names a job
+  `conformance` of its own (`pytest -m conformance` with and without PostgreSQL, `python -m tests.support.conformance`),
+  listed in `.github/ci-manifest.json`; and `conformance/**` and `tests/conformance/**` in the path filter of
+  `platforms.yml`, so a vector change runs on Windows and macOS (the POSIX-only vectors skip there; review H-1).
+- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml`, `platforms.yml` and
+  `ci-manifest.json` (lane J has the `platforms.yml` filter).
+
+### TB-093 · Foreign keys turn on when Nodestro and Orkexa switch to Tabrion (TABRION TAB-050 review M-1)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-050, LDP SQP-1, SQP-3, MIG-NOD, MIG-ORK
+- **What:** LDP SQP-3 (every connection has `foreign_keys` on) is a tightening: Nodestro `storage.py` and Orkexa
+  `_storage.py` open SQLite without it at the pinned commits, and Nodestro sets no file mode (SQP-1). After the switch,
+  writes that touch a row violating a foreign key, or its parent row, fail; other writes are not affected.
+- **Next step:** the MIG-NOD and MIG-ORK SQLite steps run `tabrion.sqlite.foreign_key_check` on existing databases
+  before the switch and record the result (conformance/SPEC.md, migration note). The note in SPEC says more broadly
+  that such rows "make writes fail"; SPEC.md is hashed, so the narrower wording waits for the next LDP version.
+
+### TB-094 · A stability downgrade from S to X passes `api_surface.py --base` (review of #21, L-6)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-051, S-3, S-6, contract I-81
+- **What:** `body()` leaves `stability` out of the compare, so `check_changelog(base, recorded)` reports nothing when
+  a stable name changes from `S` to `X`, and the run without `--base` does not catch a hand edit of `surface.json`
+  either. Promoting `X` to `S` needs no section, but a downgrade removes the S-3 guarantee from a stable name, and
+  consumers must be told.
+- **Next step:** in `check_changelog`, report a name with `base.stability == "S"` and another recorded stability
+  unless the name is under `### Changed` or `### Removed`, with a test. No current change downgrades a name.
 
 ### TB-018 · PostgreSQL matrix cost on pull requests
 
