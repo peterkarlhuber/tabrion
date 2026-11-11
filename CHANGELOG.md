@@ -8,6 +8,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Conventions audit (QA-22): report `docs/program/reports/qa-22-conventions.md` (both new repositories against the
+  checklist and against orkexa and axentra) and `tests/security/test_conventions.py` (license, security policy,
+  community files, Dependabot policy with a red-tested no-auto-merge check, CI manifest).
 - API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
   and remove a stable name, and the downstream notice in the release flow. The internal helper
   `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
