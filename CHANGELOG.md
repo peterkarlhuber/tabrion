@@ -18,6 +18,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   the wheel hash is reproducible for that backend, also offline from a local wheel cache. Report
   `docs/program/reports/qa-8-supply-chain.md`.
 
+- Blocked-module tests per optional edge (AC-3, TABRION QA-18): `tests/packaging/edges.py` lists each extra
+  (`postgres`, `sqlalchemy`, `migrations`, `testing`) with what imports without it and what refuses with the
+  installation hint; `tests/unit/test_optional_edges.py` runs one fresh `python -I` per edge with the extra's modules
+  blocked, checks that the list equals the extras of `pyproject.toml` and turns red when a copy of the package imports
+  the extra at the top of a module. `tests/packaging/test_independent.py` imports every module while orkexa, axentra,
+  `nodestro_*` and `tabrion_studio` are blocked by a meta path finder (document 05, section 3.2), with probes. Tests
+  only.
+
 - API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
   and remove a stable name, and the downstream notice in the release flow. The internal helper
   `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
