@@ -10,6 +10,9 @@ log records (logger ``tabrion``, at DEBUG) are captured for every scenario and m
 the coverage test at the end of each file checks that every kind of its engine was raised on both layers.
 """
 
+# The SQL is built from canaries this file generates and fixed text, never from outside input.
+# ruff: noqa: S608
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
@@ -24,7 +27,16 @@ import pytest
 
 from tabrion import sqlite as tsqlite
 from tabrion.errors import Kind, MigrationFailed, TabrionError, UnsafePath, classify
-from tests.canary import assert_clean, assert_logs_clean, assert_redacted, module_fully_selected, new_canary
+from tests.canary import (
+    assert_clean,
+    assert_logs_clean,
+    assert_redacted,
+    capture_all_logs,
+    frame_locals,
+    module_fully_selected,
+    new_canary,
+    phase_records,
+)
 
 pytestmark = pytest.mark.security
 
@@ -58,12 +70,13 @@ def path_canary() -> str:
 
 
 @pytest.fixture(autouse=True)
-def tabrion_logs(caplog: pytest.LogCaptureFixture, canary: str, path_canary: str) -> Iterator[None]:
-    """TAB-T-113: Tabrion's loggers at DEBUG; no record of the test may carry the canary."""
-    caplog.set_level(logging.DEBUG, logger="tabrion")
+def all_logs(caplog: pytest.LogCaptureFixture, canary: str, path_canary: str) -> Iterator[None]:
+    """TAB-T-113: every logger at DEBUG (root and SQLAlchemy's); no record of the test may carry the canary."""
+    capture_all_logs(caplog)
     yield
-    assert_logs_clean(caplog.records, canary)
-    assert_logs_clean([r for r in caplog.records if r.levelno >= logging.INFO], path_canary)
+    records = phase_records(caplog)
+    assert_logs_clean(records, canary)
+    assert_logs_clean([r for r in records if r.levelno >= logging.INFO], path_canary)
 
 
 @pytest.fixture
@@ -155,6 +168,11 @@ def _layer_a_run(conn: sqlite3.Connection) -> Callable[[str, Any], None]:
 def _check_a(exc: BaseException, kind: Kind, canary: str, *, leaks: bool = False) -> None:
     assert classify(exc).kind is kind, (classify(exc), exc)
     assert_redacted(exc, canary, leaks=leaks)
+    if not leaks:
+        # SQLite never quotes a bound value: a caller's note carries the canary into the error instead, so every
+        # case has a positive control (review L-3 of #25).
+        exc.add_note(f"while writing {canary}")
+        assert_redacted(exc, canary, leaks=True)
     COVERED_A.add(kind)
 
 
@@ -293,7 +311,7 @@ def test_t110_layer_a_unsafe_path_and_missing_file(tmp_path: Path, path_canary: 
         pytest.skip("symbolic links cannot be created here")
     with pytest.raises(UnsafePath) as info:
         tsqlite.connect(str(link))
-    assert_clean(info.value, canary)
+    assert_clean(info.value, paths=(canary,))
     with pytest.raises(FileNotFoundError) as missing:
         tsqlite.connect(str(folder / "missing.db"), create=False)
     assert canary not in str(missing.value) and canary not in repr(missing.value)
@@ -405,10 +423,12 @@ def test_t110_layer_b_every_entry_point(db: Database, path: str, canary: str) ->
 
 def test_t110_layer_b_caller_connection(db: Database, canary: str) -> None:
     """The caller's own use of ``Transaction.connection``: the caller's error is a suppressed ``__context__``
-    (contract I-39); nothing of it reaches ``str``, the traceback or a log."""
+    (contract I-39); nothing of it reaches ``str``, the traceback or a log. SQLAlchemy's own text of it leaves the
+    parameters out: ``Database.from_url`` sets ``hide_parameters`` (I-76)."""
     with pytest.raises(DatabaseError) as info, db.transaction() as tx:
         tx.connection.execute(sqlalchemy.text("INSERT INTO t (id, v) VALUES (2, :v)"), {"v": canary})
-    assert canary in str(info.value.__context__)  # positive control: SQLAlchemy's text has the parameters
+    context = str(info.value.__context__)
+    assert "[SQL parameters hidden" in context and canary not in context
     _check_b(info.value, Kind.UNIQUE, canary, context=sqlalchemy.exc.IntegrityError)
 
 
@@ -485,7 +505,7 @@ def test_t110_layer_b_missing_file(tmp_path: Path, path_canary: str) -> None:
     assert path_canary not in str(missing.value) and path_canary not in repr(missing.value)
     with pytest.raises(UnsafePath) as unsafe:
         Database.from_url(f"sqlite:///{folder}").close()  # a directory
-    assert_clean(unsafe.value, path_canary)
+    assert_clean(unsafe.value, paths=(path_canary,))
 
 
 def test_t110_layer_b_connection_unknown_resource(tmp_path: Path, canary: str) -> None:
@@ -520,6 +540,53 @@ def test_t110_layer_b_unclosed_warning(path: str, canary: str) -> None:
     with pytest.warns(ResourceWarning) as warned:
         database.__del__()
     assert all(canary not in str(w.message) for w in warned)
+
+
+def test_t111_frame_locals_hold_no_values(db: Database, canary: str) -> None:
+    """I-76 (review M-1 of #25): the frames a layer-B error passes keep their locals, which Sentry, ``rich`` or
+    ``pytest -l`` render. Neither the parameters nor the SQL text are among them, for each statement method and
+    for ``executemany``; the test's own frame does hold the canary (positive control of the capture)."""
+    text = new_canary("sql-")  # in the SQL text, which SQLAlchemy's engine logger prints as written
+    insert = f"INSERT INTO t (id, v) VALUES (2, :v) -- {text}"
+    calls: list[Callable[[], object]] = [
+        lambda: db.execute(insert, {"v": canary}),
+        lambda: db.execute(insert, [{"v": canary + "1"}, {"v": canary}]),
+        lambda: db.fetch_one(f"SELECT missing FROM t WHERE v = :v -- {text}", {"v": canary}),
+        lambda: db.fetch_all(f"SELECT missing FROM t WHERE v = :v -- {text}", {"v": canary}),
+        lambda: db.fetch_scalar(f"SELECT missing FROM t WHERE v = :v -- {text}", {"v": canary}),
+        lambda: db.fetch_one("SELECT v FROM t UNION ALL SELECT :v", {"v": canary}),  # MultipleRowsError
+        lambda: db.execute(f"SELECT {text!r} FROM t WHERE x", {"v": canary}),  # unknown column
+    ]
+
+    def in_transaction() -> None:
+        with db.transaction() as tx:
+            tx.execute(insert, {"v": canary})
+
+    def timed_out() -> None:
+        recursive = "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r) SELECT count(*) FROM r"
+        with db.read() as tx:
+            tx.fetch_scalar(f"{recursive} WHERE :v <> ''", {"v": canary}, timeout=0.05)
+
+    for call in [*calls, in_transaction, timed_out]:
+        with pytest.raises(TabrionError) as info:
+            call()
+        assert canary in frame_locals(info.value, own=True)  # the capture sees the test's frames
+        assert_clean(info.value, canary, text)
+
+
+def test_t113_sqlalchemy_engine_log_has_no_parameters(path: str, canary: str, caplog: pytest.LogCaptureFixture) -> None:
+    """I-76 (review L-1 of #25): ``sqlalchemy.engine`` at INFO (a common debugging step) logs every statement;
+    ``Database.from_url`` sets ``hide_parameters``, so its records carry no value. The positive control turns it
+    off through ``engine_options`` and sees a second canary in the records."""
+    other = new_canary("shown-")
+    caplog.set_level(logging.INFO, logger="sqlalchemy.engine")
+    with Database.from_url(f"sqlite:///{path}") as database:
+        database.execute("INSERT INTO t (id, v) VALUES (7, :v)", {"v": canary + "7"})
+        assert database.fetch_scalar("SELECT id FROM t WHERE v = :v", {"v": canary + "7"}) == 7
+    assert any(r.name.startswith("sqlalchemy.engine") for r in caplog.records)
+    with Database.from_url(f"sqlite:///{path}", engine_options={"hide_parameters": False}) as shown:
+        shown.execute("INSERT INTO t (id, v) VALUES (8, :v)", {"v": other})
+    assert any(other in r.getMessage() for r in caplog.records)  # the fixture checks the first canary
 
 
 def test_t110_every_sqlite_kind_on_both_layers(request: pytest.FixtureRequest) -> None:

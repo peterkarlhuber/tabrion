@@ -24,7 +24,7 @@ review of #19).
 | P0 Critical | 0 |
 | P1 High | 11 |
 | P2 Medium | 11 |
-| P3 Low | 30 |
+| P3 Low | 31 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -587,13 +587,16 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-085 · Canary suite: what it does not cover (TABRION QA-2)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-2, TAB-T-110..113, contract I-39, I-75
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-2, TAB-T-110..113, contract I-39, I-75, I-76,
+  review `qa-2-review.md` of #25
 - **What:** points the canary suite found outside Tabrion's renderings, or covers only partly:
   1. `Database.engine.url` is SQLAlchemy's `URL`: its `repr` masks the password in the user part only, not a
      `?password=` query parameter. `repr(Database)` and `Database.safe_url` mask both.
   2. The caller's own error from `Transaction.connection` stays the suppressed `__context__` of the translated error
-     (I-39); a tool that walks `__context__` despite `__suppress_context__` sees SQLAlchemy's `[parameters: ...]`.
-     The standard traceback, `logging` and the filter do not.
+     (I-39); a tool that walks `__context__` despite `__suppress_context__` sees its text (with `hide_parameters`,
+     I-76, no parameters, but a PostgreSQL `DETAIL`). It is also the `value` local of `contextlib`'s `__exit__`
+     frames that threw it into `Database.transaction()`, which tools that capture locals show. The standard
+     traceback, `logging` and the filter do not.
   3. `tabrion.testing._faults` helpers take a plain conninfo `str`: in a pytest report of a failure inside them, the
      arguments of their frames can show the password (not a fixture value, so `repr` masking cannot help).
   4. `SQLITE_NOMEM` (kind `RESOURCE`) and, on layer B, `UNKNOWN`, `CONNECTION` and `RESOURCE` on SQLite are not
@@ -601,8 +604,17 @@ required (owner decision of 2026-11-08 11:26Z).
      `CORRUPT`, `DISK_FULL`, `RESOURCE` and a server-side `CONNECTION` state on PostgreSQL come from the server
      through `RAISE ... USING ERRCODE`.
   5. Paths are logged at DEBUG by `tabrion.sqlite` (by design); the suite checks records at INFO and above for a path
-     canary only.
-- **Next step:** decide 1 and 3 with the 0.2 surface review (TB-033); 2 and 5 are documented behavior.
+     canary only. Paths may be frame locals (the path arguments of `connect`).
+  6. `sqlalchemy.engine` at DEBUG logs the fetched rows (like `echo="debug"`), and at INFO the SQL text as written:
+     the suite captures `sqlalchemy` at INFO and leaves the statement records (no arguments) out of the check.
+  7. `SQLITE_IOERR_CORRUPTFS` (8458) is `CONNECTION` through `SQLITE_IOERR*` (contract section 1.3); `CORRUPT` would
+     fit better (review, optional). It changes the documented mapping table, so it waits for a decision.
+  8. The coverage tests `test_t110_every_*_on_both_layers` rely on running last and on `session.items`: under a
+     random-order plugin they fail spuriously, under `pytest-xdist` they skip silently (neither is used today).
+  9. Not exercised by the suite: `logging.captureWarnings` and SQLAlchemy `SAWarning` texts, and the structlog
+     processor (it has its own unit tests).
+- **Next step:** decide 1, 3 and 7 with the 0.2 surface review (TB-033); 2, 5 and 6 are documented behavior; 8 and
+  9 when such a plugin or path is adopted.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
