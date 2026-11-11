@@ -47,7 +47,20 @@ def _v2(connection: sqlite3.Connection) -> None:
     connection.execute("CREATE INDEX measurement_ts ON measurement (ts_utc)")
 
 
-MIGRATIONS: dict[int, tsqlite.Migration] = {1: _v1, 2: _v2}
+def _v3(connection: sqlite3.Connection) -> None:
+    # The transfer's high-water mark per upstream target (RA-B-2): every row with seq <= mark is committed upstream.
+    # Written only after the upstream COMMIT, and never moved back (Store.advance).
+    connection.execute(
+        """
+        CREATE TABLE transfer_mark (
+            target TEXT PRIMARY KEY CHECK (length(target) BETWEEN 1 AND 64),
+            seq INTEGER NOT NULL CHECK (typeof(seq) = 'integer' AND seq >= 0)
+        )
+        """
+    )
+
+
+MIGRATIONS: dict[int, tsqlite.Migration] = {1: _v1, 2: _v2, 3: _v3}
 SCHEMA_VERSION = max(MIGRATIONS)
 
 
@@ -60,7 +73,7 @@ def open_database(
 ) -> sqlite3.Connection:
     """Open (or create) the database and migrate it to ``target``, with a backup first for an existing database.
 
-    The backup is ``<backup_dir>/measurements-v<from>-<UTC time>.db``. A failed backup raises
+    The backup is ``<backup_dir>/measurements-v<from>-to-v<to>-<UTC time>.db``. A failed backup raises
     ``tabrion.errors.BackupFailed`` and leaves the database unchanged.
     """
     directory = Path(backup_dir)
