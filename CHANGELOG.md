@@ -8,9 +8,18 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
+  and remove a stable name, and the downstream notice in the release flow. The internal helper
+  `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
+  replacement and the removal version, and refuses a window shorter than S-3. `scripts/api_surface.py` checks every
+  deprecation against `surface.json` (`"deprecated"`) and the CHANGELOG, and with `--base <ref>` that every surface
+  change since `<ref>` is named under `Deprecated`, `Removed` or `Changed` in `[Unreleased]` (S-6).
+
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
-  `examples/`.
+  `examples/`. RA-B-2 adds the idempotent transfer to PostgreSQL through layer B (high-water mark, `ON CONFLICT DO
+  NOTHING` on the natural key, the mark moved only after the upstream commit, `transfer --from-start` after
+  switching the upstream), tested on SQLite and PostgreSQL.
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
   `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`
@@ -55,6 +64,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- Windows (issue #18, TB-134): `scripts/downstream.py` hands uv the interpreter file `Scripts\python.exe` (new
+  `venv_python()`), so a downstream run works there; the downstream and golden-replay tests assert the Windows
+  behavior (psycopg's `ConnectionTimeout` for a refused local connect, no POSIX mode in the replay).
 - CI (workflow change, QA-11, K1, K7/K8): `release.yml` takes an annotated tag or a full commit SHA on master,
   requires a final `__version__` and a dated CHANGELOG section (`.github/scripts/release_check.py`), and runs the
   attestation only with the opt-in input `attest`. `ci.yml` has the jobs `coverage` (branch coverage with the whole
@@ -66,8 +78,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   runs `scripts/api_surface.py --base <merge base>` (S-6, TAB-051). `nightly.yml` has the non-blocking job
   `downstream` (S-7, TAB-022b). `release.yml` has the job `downstream-notice`, a dry run that prints the consumer
   issues of the release flow and opens none. `platforms.yml` also runs on pull requests that change `conformance/**`,
-  `tests/conformance/**`, `config.py`, `errors.py`, `testing/sqlite.py` or `pyproject.toml`. No new secret, trigger
-  or write permission.
+  `tests/conformance/**`, `config.py`, `errors.py`, `testing/sqlite.py`, `pyproject.toml`, `scripts/downstream.py`,
+  `tests/unit/test_downstream.py` or `tests/unit/test_golden_consumers.py` (TB-021, TB-134). No new secret, trigger or
+  write permission.
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
   final (TAB-040) is the merge commit of the version-bump pull request that sets `0.1.0`, pinned by full SHA; its

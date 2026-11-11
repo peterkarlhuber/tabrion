@@ -45,12 +45,15 @@
         ".github/workflows/platforms.yml",
         "conformance/**",
         "pyproject.toml",
+        "scripts/downstream.py",
         "src/tabrion/config.py",
         "src/tabrion/errors.py",
         "src/tabrion/sqlite.py",
         "src/tabrion/testing/sqlite.py",
         "tests/conformance/**",
-        "tests/sqlite/**"
+        "tests/sqlite/**",
+        "tests/unit/test_downstream.py",
+        "tests/unit/test_golden_consumers.py"
       ]
     }
   },

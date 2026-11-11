@@ -102,6 +102,18 @@ MUTATIONS: dict[str, tuple[list[Edit], str]] = {
         [("_sa/_v02.py", "batch_size: int = 500", "batch_size: int = 100")],
         "tabrion.Transaction.stream: staged signature changed",
     ),
+    "deprecation without surface.json and CHANGELOG (TAB-051)": (
+        [
+            (
+                "sql.py",
+                "\ndef split_statements(",
+                "\nfrom tabrion._deprecated import deprecated_callable  # noqa: E402\n\n\n"
+                '@deprecated_callable("tabrion.sql.split_statements", replacement="x", since="0.1", remove_in="0.3")\n'
+                "def split_statements(",
+            )
+        ],
+        "tabrion.sql.split_statements: deprecation differs",
+    ),
     "new public name": (
         [
             (
