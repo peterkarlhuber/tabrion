@@ -1036,9 +1036,10 @@ def test_tb045_the_identity_check_runs_under_the_lock(tmp_path: Path, monkeypatc
 
 
 @posix_only
-def test_tb045_a_listing_must_show_the_probe_as_the_same_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Review F12: a directory that has an entry for every number (also those a daemon may have freed, 0..2) but not
-    the open files themselves is no listing: the probe is a copy numbered 3 or higher and must be the same file."""
+def test_tb045_a_listing_must_follow_the_open_descriptors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F12/F15: a directory that has an entry for every number (also those a daemon may have freed, 0..2) but
+    does not follow the open descriptors is no listing: the probe is a copy numbered 3 or higher that must be listed
+    while open and gone after it is closed."""
     fake = tmp_path / "fd"
     fake.mkdir()
     for number in range(4096):
@@ -1046,6 +1047,32 @@ def test_tb045_a_listing_must_show_the_probe_as_the_same_file(tmp_path: Path, mo
     monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (str(fake),))
     monkeypatch.setattr(ts, "_LISTINGS", {})
     assert ts._listing_directory() is None
+
+
+@posix_only
+def test_tb045_a_listing_without_links_is_proved_by_open_and_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F15: macOS ``/dev/fd`` entries are no links and their ``stat`` need not match the open file; the
+    proof that the listing follows the descriptors does not depend on it (simulated here by hiding the links)."""
+    monkeypatch.setattr(ts, "_LISTINGS", {})
+    monkeypatch.setattr(os.path, "islink", lambda entry: False)
+    assert ts._listing_directory() in ts._DESCRIPTOR_DIRECTORIES
+
+
+@posix_only
+def test_tb045_the_probe_tries_again_when_the_number_is_taken_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F15: another thread may open a file right after the probe's copy is closed and get its number; one
+    such round does not make the process give up the listing."""
+    monkeypatch.setattr(ts, "_LISTINGS", {})
+    original = ts._probe_once
+    rounds: list[str | None] = []
+
+    def taken_once(candidates: tuple[str, ...], probe: int) -> str | None:
+        rounds.append(None if not rounds else original(candidates, probe))
+        return rounds[-1]
+
+    monkeypatch.setattr(ts, "_probe_once", taken_once)
+    assert ts._listing_directory() in ts._DESCRIPTOR_DIRECTORIES
+    assert len(rounds) == 2
 
 
 @posix_only

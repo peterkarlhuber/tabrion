@@ -187,11 +187,11 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         True,
         False,
     ),
-    # TB-045 review F12: the listed probe must be the same file, not just a listed number.
+    # TB-045 review F12/F15: the listing must drop the probe's copy after it is closed.
     (
-        "            if (listed.st_dev, listed.st_ino) == (info.st_dev, info.st_ino):\n",
-        "            if True:\n",
-        _T + "test_connect.py::test_tb045_a_listing_must_show_the_probe_as_the_same_file",
+        "        if not _listed(directory, copy):\n",
+        "        if True:\n",
+        _T + "test_connect.py::test_tb045_a_listing_must_follow_the_open_descriptors",
         True,
         False,
     ),
@@ -226,9 +226,17 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TB-045 review F16: running out of descriptors while listing a candidate is no verdict on it.
     (
-        "                if exc.errno in _EXHAUSTED:\n",
-        "                if False:\n",
+        "        if exc.errno in _EXHAUSTED:\n            raise  # the probe could not run",
+        "        if False:\n            raise  # the probe could not run",
         _T + "test_connect.py::test_tb045_a_probe_that_cannot_run_is_not_cached",
+        True,
+        False,
+    ),
+    # TB-045 review F15: a number taken again by another thread right after the close does not end the probe.
+    (
+        "_PROBE_ROUNDS = 3\n",
+        "_PROBE_ROUNDS = 1\n",
+        _T + "test_connect.py::test_tb045_the_probe_tries_again_when_the_number_is_taken_again",
         True,
         False,
     ),

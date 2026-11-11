@@ -445,29 +445,67 @@ _EXHAUSTED = (errno.EMFILE, errno.ENFILE, errno.ENOMEM)
 
 
 def _complete_listing(candidates: tuple[str, ...], probe: int) -> str | None:
-    """The first of ``candidates`` that lists a copy of ``probe`` numbered 3 or higher, as the same file.
+    """The first of ``candidates`` that lists the process's descriptors live: a copy of ``probe`` numbered 3 or
+    higher is listed while it is open and gone after it is closed (review F12, F15).
 
-    0, 1 and 2 are not proof: an incomplete ``/dev/fd`` lists them, and a daemon may have closed them (review F12).
+    0, 1 and 2 are not proof: an incomplete ``/dev/fd`` lists them, and a daemon may have closed them; a directory of
+    fixed entries keeps listing the closed copy. Where the entry is a link (``/proc/self/fd`` on Linux), it must also
+    lead to the probe's file. Another thread may take the number again right after the close, so the test runs up to
+    ``_PROBE_ROUNDS`` times before a candidate is given up.
     """
+    for _ in range(_PROBE_ROUNDS):
+        found = _probe_once(candidates, probe)
+        if found is not None:
+            return found
+    return None
+
+
+_PROBE_ROUNDS = 3
+
+
+def _listed(directory: str, descriptor: int) -> bool:
+    """Whether ``directory`` lists ``descriptor``; a missing directory lists nothing, exhaustion is raised."""
+    try:
+        return str(descriptor) in os.listdir(directory)
+    except OSError as exc:
+        if exc.errno in _EXHAUSTED:
+            raise  # the probe could not run: no verdict on this directory (review F16)
+        return False
+
+
+def _probe_once(candidates: tuple[str, ...], probe: int) -> str | None:
     import fcntl  # POSIX only: imported here, not at module level
 
-    copy = fcntl.fcntl(probe, getattr(fcntl, "F_DUPFD_CLOEXEC", fcntl.F_DUPFD), 3)
+    duplicate = getattr(fcntl, "F_DUPFD_CLOEXEC", fcntl.F_DUPFD)
+    low = fcntl.fcntl(probe, duplicate, 3)
+    try:
+        copy = fcntl.fcntl(probe, duplicate, 3)  # above ``low``
+    finally:
+        # A free number below the copy: the listing's own descriptor takes that one, never the closed copy's number.
+        os.close(low)
     try:
         info = os.fstat(copy)
-        for directory in candidates:
-            try:
-                if str(copy) not in os.listdir(directory):
-                    continue
-                listed = os.stat(os.path.join(directory, str(copy)))
-            except OSError as exc:
-                if exc.errno in _EXHAUSTED:
-                    raise  # the probe could not run: no verdict on this directory (review F16)
-                continue  # missing or no directory: this one is no listing
-            if (listed.st_dev, listed.st_ino) == (info.st_dev, info.st_ino):
-                return directory
-        return None
+        listing = [directory for directory in candidates if _listed(directory, copy)]
+        listing = [directory for directory in listing if _leads_to(os.path.join(directory, str(copy)), info)]
     finally:
         os.close(copy)
+    for directory in listing:
+        if not _listed(directory, copy):
+            return directory
+    return None
+
+
+def _leads_to(entry: str, info: os.stat_result) -> bool:
+    """An entry that is a link (Linux) must lead to the file of ``info``; other entries (macOS) are not compared."""
+    try:
+        if not os.path.islink(entry):
+            return True
+        listed = os.stat(entry)
+    except OSError as exc:
+        if exc.errno not in _EXHAUSTED:
+            return False
+        raise
+    return (listed.st_dev, listed.st_ino) == (info.st_dev, info.st_ino)
 
 
 def _open_files() -> frozenset[tuple[int, int, int]] | None:
