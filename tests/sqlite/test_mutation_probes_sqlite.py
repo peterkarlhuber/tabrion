@@ -67,7 +67,7 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TM-04, TB-045: the descriptor SQLite opened is the checked file.
     (
-        "        if before is None or after is None or _opened_checked_file(before, after, expected):\n",
+        "        if _opened_checked_file(before, after, expected, _side_file_identities(name)):\n",
         "        if True:\n",
         _T + "test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused",
         True,
@@ -75,7 +75,7 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TB-045: only a reused descriptor, with nothing new opened, may stand for the checked file.
     (
-        "    return not new and any((dev, ino) == expected for _, dev, ino in after)\n",
+        "    return not unexplained and any((dev, ino) == expected for _, dev, ino in after)\n",
         "    return any((dev, ino) == expected for _, dev, ino in after)\n",
         _T + "test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused",
         True,
@@ -83,10 +83,18 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TB-045: a descriptor SQLite reuses for the checked file is accepted (pools would fail otherwise).
     (
-        "    return not new and any((dev, ino) == expected for _, dev, ino in after)\n",
+        "    return not unexplained and any((dev, ino) == expected for _, dev, ino in after)\n",
         "    return False\n",
         _T + "test_connect.py::test_tb045_a_descriptor_sqlite_reuses_is_accepted",
         True,
+        False,
+    ),
+    # TB-045: only the database's own side files opened meanwhile are ignored, nothing else.
+    (
+        "    unexplained = [entry for entry in new if entry[1:] not in side_files]\n",
+        "    unexplained: list[tuple[int, int, int]] = []\n",
+        _T + "test_connect.py::test_tb045_side_files_opened_meanwhile_do_not_hide_a_reused_descriptor",
+        False,
         False,
     ),
     # TM-04: the file that was checked is the file that was opened (same inode).

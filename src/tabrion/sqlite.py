@@ -414,25 +414,45 @@ def _open_files() -> frozenset[tuple[int, int, int]] | None:
     return None
 
 
+def _side_file_identities(name: str) -> frozenset[tuple[int, int]]:
+    """``(st_dev, st_ino)`` of the regular ``-wal``, ``-shm`` and ``-journal`` files of ``name`` that exist now."""
+    identities: set[tuple[int, int]] = set()
+    for candidate in (name + suffix for suffix in _SIDE_FILES):
+        try:
+            info = os.lstat(candidate)
+        except OSError:
+            continue
+        if stat.S_ISREG(info.st_mode):
+            identities.add((info.st_dev, info.st_ino))
+    return frozenset(identities)
+
+
 def _opened_checked_file(
-    before: frozenset[tuple[int, int, int]], after: frozenset[tuple[int, int, int]], expected: tuple[int, int]
+    before: frozenset[tuple[int, int, int]],
+    after: frozenset[tuple[int, int, int]],
+    expected: tuple[int, int],
+    side_files: frozenset[tuple[int, int]] = frozenset(),
 ) -> bool:
     """Whether the descriptor SQLite opened is the checked file (contract I-22, TB-045).
 
     SQLite opens the main file in ``sqlite3_open``: a new descriptor on the checked ``(st_dev, st_ino)`` proves it.
     SQLite may instead reuse a descriptor it kept for that file (another connection of the process holds a lock on
-    it); then no regular file is new, and one of the process's descriptors is the checked file.
+    it); then SQLite opened no new main file, and one of the process's descriptors is the checked file. Other
+    connections of the same database open its ``-wal`` and ``-shm`` files at any time, outside ``_OPEN_LOCK``: those
+    (``side_files``) do not count as new.
     """
     new = after - before
     if any((dev, ino) == expected for _, dev, ino in new):
         return True
-    return not new and any((dev, ino) == expected for _, dev, ino in after)
+    unexplained = [entry for entry in new if entry[1:] not in side_files]
+    return not unexplained and any((dev, ino) == expected for _, dev, ino in after)
 
 
 def _open_checked(
-    target: str, *, uri: bool, timeout: float, check_same_thread: bool, expected: tuple[int, int]
+    target: str, *, name: str, uri: bool, timeout: float, check_same_thread: bool, expected: tuple[int, int]
 ) -> sqlite3.Connection | None:
-    """Open ``target``; on POSIX the file SQLite opened must be the checked one, else ``None`` (I-22, TB-045).
+    """Open ``target`` (the database ``name``); on POSIX the file SQLite opened must be the checked one, else
+    ``None`` (I-22, TB-045).
 
     The name SQLite opens can change between its own name resolution and its ``open``, which no check of the name
     sees; the descriptor it holds cannot. Where the descriptors cannot be listed (Windows) or the identity is unknown,
@@ -443,7 +463,9 @@ def _open_checked(
             before = _open_files() if expected[1] else None
             connection = _open(target, uri=uri, timeout=timeout, check_same_thread=check_same_thread)
             after = _open_files() if before is not None else None
-        if before is None or after is None or _opened_checked_file(before, after, expected):
+        if before is None or after is None:
+            return connection
+        if _opened_checked_file(before, after, expected, _side_file_identities(name)):
             return connection
         connection.close()  # a file opened concurrently elsewhere in the process can cause a benign mismatch: retry
     return None
@@ -486,7 +508,12 @@ def connect(
     else:
         target, uri = name, False
     opened = _open_checked(
-        target, uri=uri, timeout=profile.busy_timeout, check_same_thread=check_same_thread, expected=expected
+        target,
+        name=name,
+        uri=uri,
+        timeout=profile.busy_timeout,
+        check_same_thread=check_same_thread,
+        expected=expected,
     )
     if opened is None:
         raise _unsafe("sqlite.unsafe_path", name)

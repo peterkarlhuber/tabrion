@@ -798,6 +798,34 @@ def test_tb045_a_descriptor_sqlite_reuses_is_accepted(tmp_path: Path) -> None:
         holder.close()
 
 
+def test_tb045_side_files_opened_meanwhile_do_not_hide_a_reused_descriptor() -> None:
+    """While SQLite reuses a descriptor of the checked file, other connections of the database may open its ``-wal``
+    or ``-shm`` (outside the lock; seen on macOS CI): those do not count as new. Any other new file still does."""
+    checked, wal, other = (1, 10), (1, 11), (1, 12)
+    before = frozenset({(3, *checked)})
+    with_wal = before | {(4, *wal)}
+    with_other = before | {(4, *other)}
+    assert ts._opened_checked_file(before, with_wal, checked, frozenset({wal}))
+    assert not ts._opened_checked_file(before, with_wal, checked, frozenset())
+    assert not ts._opened_checked_file(before, with_other, checked, frozenset({wal}))
+    assert not ts._opened_checked_file(frozenset(), frozenset({(4, *wal)}), checked, frozenset({wal}))  # not held
+    assert ts._opened_checked_file(frozenset(), frozenset({(5, *checked)}), checked)
+
+
+@posix_only
+def test_tb045_side_file_identities(tmp_path: Path) -> None:
+    path = tmp_path / "a.db"
+    make_database(path)
+    holder = ts.connect(path)
+    holder.execute("SELECT count(*) FROM parent").fetchone()  # opens -wal and -shm
+    try:
+        expected = {(os.stat(p).st_dev, os.stat(p).st_ino) for p in (f"{path}-wal", f"{path}-shm")}
+        assert ts._side_file_identities(str(path)) == expected
+        assert ts._side_file_identities(str(tmp_path / "missing.db")) == frozenset()
+    finally:
+        holder.close()
+
+
 @posix_only
 def test_tb045_concurrent_connects_are_not_refused(tmp_path: Path) -> None:
     """Pools open and close connections from many threads; the snapshots must not refuse a correct open."""
