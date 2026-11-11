@@ -155,9 +155,12 @@ The rules:
 - A step that **rebuilds a table** (create a new table, copy the rows, `DROP TABLE` the old one, rename) deletes the
   rows of child tables through `ON DELETE CASCADE` while foreign keys are on, because SQLite deletes the rows of a
   dropped table first ([Migrations](migrations.md#an-alembic-project-on-tabriondatabase) shows it). Since
-  `PRAGMA foreign_keys` has no effect inside the migration transaction, migrate on a connection opened with
-  `SQLiteProfile(foreign_keys=False)` (or run `PRAGMA foreign_keys = OFF` before `migrate`), and call
-  `sqlite.foreign_key_check(conn)` afterwards: it must return `[]`.
+  `PRAGMA foreign_keys` has no effect inside the migration transaction, migrate on a **dedicated** connection opened
+  with `SQLiteProfile(foreign_keys=False)` and close it afterwards; the application's connections keep foreign keys
+  on. Check the references **inside** the migration: `migrate` commits before it returns, so a
+  `foreign_key_check` after it would only find a violation that is already committed. Wrap the steps so that each
+  one ends with `sqlite.foreign_key_check(conn)` and raises when the list is not empty; `migrate` then rolls back
+  (example below).
 - Two processes that migrate at the same time apply each step once; the second sees the new version.
 
 ```pycon
@@ -174,6 +177,36 @@ Traceback (most recent call last):
 tabrion.errors.MigrationFailed: sqlite.migration_failed (found=2, supported=3, step=3)
 >>> [row[1] for row in conn.execute("PRAGMA table_info(parts)")]
 ['id', 'name', 'stock', 'price_cents']
+```
+
+A migration with foreign keys off, checked before the commit:
+
+```pycon
+>>> def checked(step):
+...     def run(conn):
+...         step(conn)
+...         if sqlite.foreign_key_check(conn):
+...             raise RuntimeError("foreign key violations")
+...
+...     return run
+>>> def create_orders(conn):
+...     conn.execute("CREATE TABLE customers (id INTEGER PRIMARY KEY)")
+...     conn.execute("CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers (id))")
+...     conn.execute("INSERT INTO customers VALUES (1)")
+...     conn.execute("INSERT INTO orders VALUES (10, 1)")
+>>> def drop_customers(conn):
+...     conn.execute("DELETE FROM customers")
+>>> order_steps = {1: checked(create_orders), 2: checked(drop_customers)}
+>>> migration_conn = sqlite.connect("orders.db", profile=sqlite.SQLiteProfile(foreign_keys=False))
+>>> sqlite.migrate(migration_conn, order_steps, target=1, backup=None)
+MigrationResult(previous=0, current=1, backed_up=False)
+>>> sqlite.migrate(migration_conn, order_steps, target=2, backup=lambda found, target: None)
+Traceback (most recent call last):
+  ...
+tabrion.errors.MigrationFailed: sqlite.migration_failed (found=1, supported=2, step=2)
+>>> migration_conn.execute("SELECT count(*) FROM customers").fetchone()
+(1,)
+>>> migration_conn.close()
 ```
 
 ## Backups

@@ -88,11 +88,13 @@ role without write rights, or file permissions that do not let the process write
 What the guard does and where it ends (contract implementation note [I-56](../api/contract.md#57-implementation-notes-tab-018)):
 
 - Right before the `COMMIT` of a `read()`, Tabrion reads the read-only state back. When the SQL lifted it, Tabrion
-  rolls back, raises `UsageError("database.read_only")` and invalidates the connection, so nothing of it stays in the
-  pool.
+  rolls back, raises `UsageError("database.read_only")` and, on PostgreSQL and a file-backed SQLite database,
+  invalidates the connection, so nothing of it stays in the pool. The one shared connection of an in-memory SQLite
+  database is the database itself and stays.
 - The read-back sees the end state only. SQL that lifts read-only, writes and restores it before the end, or that
   ends the transaction itself and commits another one (`ROLLBACK; BEGIN READ WRITE; ...; COMMIT`), is committed
   (TODO TB-061).
-- On SQLite, `mode=ro` covers the main file only, and only `Database.from_url` adds it and the `ATTACH` limit:
+- On SQLite, `mode=ro` covers the main file only, and only `Database.from_url` with `Profile.readonly()` adds it
+  and the `ATTACH` limit; `read()` on a normal profile sets `query_only` for the transaction, not `mode=ro`:
   `Database.from_engine` gets neither, and layer A's `connect(read_only=True)` sets no `SQLITE_LIMIT_ATTACHED`, so an
   `ATTACH` of the same file can open it read-write.
