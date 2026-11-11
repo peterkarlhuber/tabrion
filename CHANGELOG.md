@@ -11,6 +11,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Conventions audit (QA-22): report `docs/program/reports/qa-22-conventions.md` (both new repositories against the
   checklist and against orkexa and axentra) and `tests/security/test_conventions.py` (license, security policy,
   community files, Dependabot policy with a red-tested no-auto-merge check, CI manifest).
+
+- Supply chain (QA-8): `scripts/sbom.py` writes a deterministic CycloneDX 1.6 SBOM for a built wheel (standard
+  library only); packaging tests check that two builds give the same wheel hash and that the SBOM describes the
+  wheel. The build backend is pinned exactly (`hatchling==1.33.0`, and with hashes in `build-constraints.txt`), so
+  the wheel hash is reproducible for that backend, also offline from a local wheel cache. Report
+  `docs/program/reports/qa-8-supply-chain.md`.
+
 - API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
   and remove a stable name, and the downstream notice in the release flow. The internal helper
   `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the

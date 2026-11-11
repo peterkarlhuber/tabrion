@@ -23,8 +23,8 @@ integration branch of the ready pull requests).
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 9 |
-| P2 Medium | 12 |
-| P3 Low | 32 |
+| P2 Medium | 13 |
+| P3 Low | 33 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -162,7 +162,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
 - **What:** the canary suite (no values in errors or logs, QA-2); concurrency and stress suite, nightly (QA-4);
-  supply chain with SBOM next to the existing `dependency audit` job (QA-8); the release workflow is in place but
+  supply chain with SBOM next to the existing `dependency audit` job (QA-8, in review: SBOM script and
+  reproducible-wheel test; the CI step is TB-130); the release workflow is in place but
   its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
   `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`).
 - **QA-22 follow-up (F-1, Low):** tabrion has no `.gitattributes` and no `.editorconfig` (orkexa has both). Nothing
@@ -265,6 +266,48 @@ required (owner decision of 2026-11-08 11:26Z).
   I-55 says that a never-migrated database (no version table) gives no TAB-B-002.
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
+
+### TB-130 · Hashed build and SBOM step in CI and in the release workflow (TABRION QA-8)
+
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8, QA-11,
+  07 TM-10, review of PR #30 (M-1)
+- **What:** `scripts/sbom.py` writes the CycloneDX SBOM of a wheel and is tested on the CI build's wheel, and
+  `build-constraints.txt` pins the build backend with hashes, but no workflow uses either yet.
+- **Next step:** in `ci.yml`, jobs `build and install` and `extras matrix`, and in `release.yml`, job `build`, replace
+  `- run: python -m build --outdir dist` with
+
+  ```yaml
+      - run: python -m build --outdir dist
+        env:
+          PIP_CONSTRAINT: build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
+  ```
+
+  In `build and install` and in the release `build`, add after `twine check --strict dist/*`
+  `- run: mkdir -p sbom && python -I scripts/sbom.py dist/tabrion-*.whl --vcs-ref "$GITHUB_SHA" -o sbom/tabrion.cdx.json`
+  and upload `sbom/` with `dist/` (`path: |` with both lines). In `release.yml`, add `sbom/tabrion.cdx.json` to the
+  files attested by job `attest`. The SBOM stays outside `dist/`, because `twine check dist/*` checks every file.
+
+### TB-133 · QA-8 follow-ups: backend pins in step, SBOM extras per Tabrion extra, purl of local installs
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-8, review of PR #30 (M-1; delta review L-5, L-6),
+  `build-constraints.txt`, `.github/dependabot.yml`, `scripts/sbom.py`
+- **What:**
+  - Backend pins: `pyproject.toml` (`requires = ["hatchling==1.33.0"]`) and the hashed `build-constraints.txt` must
+    name the same hatchling; `tests/unit/test_build_constraints.py` fails when they differ. Whether Dependabot's pip
+    updater proposes both files in one pull request is not verified.
+  - L-5: `tabrion:requested-extra` is merged over every Tabrion extra of a dependency. Only `extra == "dev"` asks
+    for `psycopg[binary]`, but the `psycopg` component carries the extras all, dev and postgres **and**
+    `requested-extra` binary, so a reader could conclude that `tabrion[postgres]` pulls in the binary wheel
+    (bundled libpq and OpenSSL), which it does not.
+  - L-6: with `--environment`, a local-path or editable install (`direct_url.json` with `dir_info`) and a URL
+    archive (`archive_info`) still get `pkg:pypi/<name>@<v>`, although they did not come from PyPI; the common case
+    is a Git-pinned sibling installed from a local checkout (`pip install -e ../axentra`).
+- **Next step:** after the first hatchling release, check the Dependabot pull request; if it updates only one file,
+  regenerate the other by the recipe in `build-constraints.txt` in the same pull request. In `scripts/sbom.py`:
+  emit the requested extra per Tabrion extra (`tabrion:requested-extra` = `dev:binary`), and give `archive_info`
+  installs `pkg:generic/<name>@<v>?download_url=<url>` and `dir_info` installs `pkg:generic` (or no purl); each
+  with a unit test.
 
 ## M3, M5 and M8: work in this repository
 

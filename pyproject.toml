@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.26"]
+requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -67,7 +67,7 @@ path = "src/tabrion/_version.py"
 packages = ["src/tabrion"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/tabrion", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "TRADEMARKS.md", "mkdocs.yml", "pyproject.toml"]
+include = ["src/tabrion", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "TRADEMARKS.md", "mkdocs.yml", "pyproject.toml", "build-constraints.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
