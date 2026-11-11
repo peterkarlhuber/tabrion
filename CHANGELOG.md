@@ -48,6 +48,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   unknown and nothing pending, so a head covered by `depends_on` counts as applied; a script directory Alembic
   cannot resolve raises `ConfigurationError("migrations.revisions")` without path or cause chain. Only
   `<script_location>/versions` is read (TODO TB-066).
+- Reference application `examples/parts` (RA-A-1): a portable schema (material, part, property, part_relation)
+  with Alembic on SQLite and PostgreSQL and `require_current` as the gate; decimals are scaled integers on SQLite,
+  so they order and compare as on PostgreSQL, and migrations run in `Database.transaction()`; not part of the wheel
+  or the sdist.
 
 ### Changed
 
@@ -188,7 +192,8 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `scripts/record_golden.py` from the consumers' own code in throwaway environments and replayed against Tabrion in
   every test run, each naming the consumer's full 40-character commit; `scripts/downstream.py` runs the consumers'
   database tests against Tabrion HEAD, which `uv pip install --override` puts in place of any Tabrion requirement
-  the consumer has (a Git commit pin), with a timeout on every step.
+  the consumer has (a Git commit pin), with all extras, with a timeout on every step; a database that cannot be
+  dropped is a note beside the consumer's result.
 - `tabrion.testing` re-review fixes (#11): `truncate_tables` without `schema=` empties only a schema the plugin created
   and refuses a `CASCADE` into another schema; a schema teardown that would drop an extension is rolled back; the
   fixtures work under a `NOINHERIT` admin on PostgreSQL 16+, try every role at the end and drop the roles' grants in
