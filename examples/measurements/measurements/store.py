@@ -17,6 +17,9 @@ _INSERT = (
 
 Row = tuple[str, str, str, float, str, int]
 
+DEFAULT_TARGET = "upstream"
+"""The name of the transfer target whose high-water mark ``Store.mark`` and ``Store.advance`` keep."""
+
 
 def format_ts(moment: datetime) -> str:
     """Fixed-width UTC text, ``2026-11-08T12:00:00.000000Z``; a naive ``datetime`` and a year before 1000 (which
@@ -114,6 +117,37 @@ class Store:
     def count(self) -> int:
         with tsqlite.read_transaction(self.connection) as connection:
             return int(connection.execute("SELECT count(*) FROM measurement").fetchone()[0])
+
+    def mark(self, target: str = DEFAULT_TARGET) -> int:
+        """The transfer's high-water mark for ``target``: every row with ``seq`` up to it is committed upstream."""
+        with tsqlite.read_transaction(self.connection) as connection:
+            row = connection.execute("SELECT seq FROM transfer_mark WHERE target = ?", (target,)).fetchone()
+            return 0 if row is None else int(row[0])
+
+    def advance(self, target: str, seq: int) -> None:
+        """Move the mark of ``target`` up to ``seq``; call it only after the upstream ``COMMIT`` (RA-B-2).
+
+        The mark never moves back: a smaller ``seq`` leaves it where it is.
+        """
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+            raise ValueError("seq must be an int of at least 0")
+        _name(target, "target", 64)
+        with tsqlite.write_transaction(self.connection) as connection:
+            connection.execute(
+                "INSERT INTO transfer_mark (target, seq) VALUES (?, ?) "
+                "ON CONFLICT (target) DO UPDATE SET seq = max(seq, excluded.seq)",
+                (target, seq),
+            )
+
+    def reset_mark(self, target: str = DEFAULT_TARGET) -> None:
+        """Forget the mark of ``target``: the next transfer sends everything again (review L-1 of #23).
+
+        For a switched or restored upstream, which may lack rows the mark counts as sent. Safe because the transfer
+        is idempotent: rows that are already upstream are skipped.
+        """
+        _name(target, "target", 64)
+        with tsqlite.write_transaction(self.connection) as connection:
+            connection.execute("DELETE FROM transfer_mark WHERE target = ?", (target,))
 
     def after(self, seq: int = 0, *, limit: int = 1000) -> list[Stored]:
         """Rows with ``seq`` above ``seq``, in capture order: the batches of the transfer (RA-B-2)."""
