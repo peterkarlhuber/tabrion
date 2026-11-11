@@ -56,8 +56,35 @@ def test_dependabot_covers_pip_and_actions_weekly_with_a_cooldown() -> None:
         assert "cooldown:" in block, ecosystem
     # No auto-merge: no workflow merges a Dependabot pull request on its own.
     for workflow in (GITHUB / "workflows").glob("*.yml"):
-        text = _text(workflow)
-        assert "--auto" not in text and "enable-automerge" not in text.replace("_", "").replace("-", ""), workflow.name
+        assert not _enables_auto_merge(_text(workflow)), workflow.name
+
+
+def _enables_auto_merge(text: str) -> bool:
+    """``gh pr merge --auto``, an ``enable-automerge`` action or the GraphQL ``enablePullRequestAutoMerge``.
+
+    Hyphens and underscores are dropped and the case folded first, so every spelling of the action matches
+    (review C-1 of #42: the check must not search for a hyphen after dropping them).
+    """
+    folded = text.replace("_", "").replace("-", "").lower()
+    return "--auto" in text or "enableautomerge" in folded or "enablepullrequestautomerge" in folded
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'run: gh pr merge --auto --merge "$PR_URL"',
+        "uses: peter-evans/enable-pull-request-automerge@v3",
+        "uses: some/enable-automerge@v1",
+        "uses: some/Enable_AutoMerge@v1",
+        "mutation { enablePullRequestAutoMerge(input: {pullRequestId: $id}) { clientMutationId } }",
+    ],
+)
+def test_auto_merge_check_turns_red(line: str) -> None:
+    assert _enables_auto_merge(f"jobs:\n  merge:\n    steps:\n      - {line}\n")
+
+
+def test_auto_merge_check_ignores_a_comment_that_rules_it_out() -> None:
+    assert not _enables_auto_merge("# No auto-merge: a person merges every Dependabot pull request.\n")
 
 
 def test_ci_manifest_names_existing_workflows() -> None:
