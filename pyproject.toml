@@ -50,6 +50,8 @@ dev = [
     "mkdocs-material>=9.5",
     "build>=1.2",
     "twine>=6",
+    # scripts/downstream.py: --override puts Tabrion HEAD in place of a consumer's Tabrion pin.
+    "uv>=0.5",
 ]
 
 [project.urls]
@@ -120,6 +122,12 @@ strict = true
 packages = ["tabrion"]
 mypy_path = "src:examples/measurements:examples/parts"
 warn_unused_ignores = true
+
+# The consumer recorders (tests/golden/consumers/record_*.py) import the consumers, which are installed only in
+# the throwaway environments of scripts/record_golden.py, never next to Tabrion.
+[[tool.mypy.overrides]]
+module = ["axentra.*", "nodestro_runtime.*", "nodestro_api.*", "orkexa.*"]
+ignore_missing_imports = true
 
 # Import contracts (AC-1 = QA-16, 05 §2.3 and §4.2, edge list K-33). CI runs `lint-imports` (jobs "lint" and
 # "architecture"); tests/architecture checks that the lists below name every module of the package and that a

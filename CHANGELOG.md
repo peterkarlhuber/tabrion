@@ -48,6 +48,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   unknown and nothing pending, so a head covered by `depends_on` counts as applied; a script directory Alembic
   cannot resolve raises `ConfigurationError("migrations.revisions")` without path or cause chain. Only
   `<script_location>/versions` is read (TODO TB-066).
+- Reference application `examples/parts` (RA-A-1): a portable schema (material, part, property, part_relation)
+  with Alembic on SQLite and PostgreSQL and `require_current` as the gate; decimals are scaled integers on SQLite,
+  so they order and compare as on PostgreSQL, and migrations run in `Database.transaction()`; not part of the wheel
+  or the sdist.
 
 - The canary suite (QA-2, TAB-T-110..113): a unique value in parameters, rows, passwords and secret files, through
   every kind of both engines and both layers; no `str`, `repr`, traceback, stderr output, log record or pytest report
@@ -84,7 +88,19 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   for example `SQLITE_CONSTRAINT_DATATYPE` of a STRICT table on Python 3.13) by its number: `DATA` instead of
   `UNKNOWN` (contract I-75).
 - The PostgreSQL fixtures of `tabrion.testing` no longer print the password when the server is unreachable: pytest
-  showed the conninfo argument of psycopg's frames; the test now fails with the masked URL (contract I-75).
+  showed the conninfo argument of psycopg's frames; the test now fails with the masked URL (contract I-75). A failed
+  `CREATE ROLE` or membership `GRANT` (an admin without `CREATEROLE`) fails the test the same way, without the
+  generated role password. A caller of `truncate_tables` with an unreachable URL gets pytest's `Failed` instead of
+  `psycopg.OperationalError`.
+- Layer B and `tabrion.config` keep values out of the frame locals of their tracebacks, which Sentry, `rich` and
+  `pytest -l` show: the statement parameters and SQL text (`execute`, `fetch_*`, on `Database` and `Transaction`),
+  the fetched rows of `MultipleRowsError`, the URL and `engine_options` of `from_url` and `from_env` (a
+  `ConfigurationError` from `from_url` is raised without the frames of its helpers), the environment and the file
+  content in `url_from_env`, and the original error of `BackupFailed` and `MigrationFailed` in `tabrion.sqlite.migrate`
+  (contract I-76).
+- `Database.from_url` creates its engine with `hide_parameters=True`: SQLAlchemy's `sqlalchemy.engine` log records
+  and the `[parameters: ...]` part of its error messages leave the values out (`engine_options={"hide_parameters":
+  False}` turns them back on; contract I-76).
 
 ## [0.1.0a1] - internal pre-release, not published
 
@@ -194,10 +210,19 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   (fails when required); a require variable counts unless it is empty or `0`; `tabrion_sqlite_path` and
   `tabrion_sqlite`. Tabrion's own PostgreSQL suites run on it and check after each test that nothing they created is
   left on the server.
+- Consumer protection (TAB-022): golden files of the consumers' behavior for every category A/B row of contract
+  section 8 (`tests/golden/{axentra,nodestro,nodestro_api,orkexa}.json`, each with the full commit), recorded by
+  `scripts/record_golden.py` from the consumers' own code in throwaway environments and replayed against Tabrion in
+  every test run, each naming the consumer's full 40-character commit; `scripts/downstream.py` runs the consumers'
+  database tests against Tabrion HEAD, which `uv pip install --override` puts in place of any Tabrion requirement
+  the consumer has (a Git commit pin), with all extras, with a timeout on every step; a database that cannot be
+  dropped is a note beside the consumer's result.
 - `tabrion.testing` re-review fixes (#11): `truncate_tables` without `schema=` empties only a schema the plugin created
   and refuses a `CASCADE` into another schema; a schema teardown that would drop an extension is rolled back; the
   fixtures work under a `NOINHERIT` admin on PostgreSQL 16+, try every role at the end and drop the roles' grants in
-  the admin's database.
+  the admin's database. `truncate_tables` locks the selected tables before its check and names why a table in
+  another schema would be emptied (foreign key, partition, inheritance child); it checks again after the `TRUNCATE`
+  and rolls it back when a foreign key was added in between (review L-1 of #19).
 - `tabrion.testing` database per session and roles without superuser (TAB-032): `tabrion_postgres_database` creates a
   throwaway database with an owner and an app role as `tabrion_role_setup` describes (`RoleSetup()`, `split=False`,
   named roles, or none) and drops database and roles at the end; `tabrion_postgres_roles` gives the same two roles in
@@ -219,8 +244,8 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 94 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
-  pool tests.
+  transaction state, and carry 101 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  pool tests and `uv` for `scripts/downstream.py`.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`
   and `all`; ruff, mypy `--strict` and import-linter contracts (layers, stdlib-only core, no Levuvo platform).

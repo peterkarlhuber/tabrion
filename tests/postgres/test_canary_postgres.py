@@ -7,7 +7,7 @@ provokes (``CORRUPT``, ``DISK_FULL``, ``RESOURCE``, a server-side ``CONNECTION``
 ``RAISE ... USING ERRCODE``, with the canary in ``MESSAGE``, ``DETAIL`` and ``HINT``; they are still psycopg errors
 of a live server. Layer A (psycopg errors that Tabrion classifies) must keep the canary out of ``safe_message``,
 ``classify`` and ``DbErrorRedactionFilter``; layer B (``TabrionError``) out of every rendering (``tests/canary.py``).
-The ``tabrion`` loggers are captured at DEBUG for every test.
+Every logger (root and ``sqlalchemy``) is captured at DEBUG for every test.
 """
 
 # The SQL is built from names this file generates (the plugin's schema) and fixed text, never from outside input.
@@ -16,7 +16,6 @@ The ``tabrion`` loggers are captured at DEBUG for every test.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-import logging
 import threading
 from typing import Any
 
@@ -24,9 +23,17 @@ import pytest
 
 from tabrion.errors import Kind, classify
 from tabrion.testing import PostgresSchema
-from tests.canary import assert_clean, assert_logs_clean, assert_redacted, module_fully_selected, new_canary
+from tests.canary import (
+    assert_clean,
+    assert_logs_clean,
+    assert_redacted,
+    capture_all_logs,
+    module_fully_selected,
+    new_canary,
+    phase_records,
+)
 
-from .conftest import Role, with_params
+from .conftest import PREFIX, Role, with_params
 
 psycopg = pytest.importorskip("psycopg")
 sqlalchemy = pytest.importorskip("sqlalchemy")
@@ -56,10 +63,11 @@ def canary() -> str:
 
 
 @pytest.fixture(autouse=True)
-def tabrion_logs(caplog: pytest.LogCaptureFixture, canary: str) -> Iterator[None]:
-    caplog.set_level(logging.DEBUG, logger="tabrion")
+def all_logs(caplog: pytest.LogCaptureFixture, canary: str) -> Iterator[None]:
+    capture_all_logs(caplog)
     yield
-    assert_logs_clean(caplog.records, canary)
+    records = phase_records(caplog)
+    assert_logs_clean(records, canary)
 
 
 @pytest.fixture
@@ -69,13 +77,15 @@ def s(admin_url: str, tabrion_postgres_schema: PostgresSchema, canary: str) -> s
     with psycopg.connect(admin_url, autocommit=True) as conn:
         conn.execute(
             f"CREATE TABLE {name}.parent (id int PRIMARY KEY);"
+            f"CREATE TABLE {name}.keyed (code text PRIMARY KEY);"
             f"CREATE TABLE {name}.t (id int PRIMARY KEY, v text UNIQUE, n int NOT NULL DEFAULT 1 CHECK (n > 0),"
-            f" p int REFERENCES {name}.parent (id), r int4range, EXCLUDE USING gist (r WITH &&));"
+            f" p text REFERENCES {name}.keyed (code), e text, EXCLUDE USING btree (e WITH =));"
             f"CREATE FUNCTION {name}.raise_canary(code text, value text) RETURNS int LANGUAGE plpgsql AS $$"
             " BEGIN RAISE EXCEPTION USING ERRCODE = code, MESSAGE = 'failed for ' || value,"
             " DETAIL = 'detail ' || value, HINT = 'hint ' || value; END $$"
         )
-        conn.execute(f"INSERT INTO {name}.t (id, v, r) VALUES (1, %s, '[1,5)')", (canary,))
+        conn.execute(f"INSERT INTO {name}.keyed (code) VALUES (%s)", (canary,))
+        conn.execute(f"INSERT INTO {name}.t (id, v, e) VALUES (1, %s, %s)", (canary, canary))
     return name
 
 
@@ -83,11 +93,12 @@ def s(admin_url: str, tabrion_postgres_schema: PostgresSchema, canary: str) -> s
 
 STATEMENTS: list[tuple[Kind, str, bool]] = [
     (Kind.UNIQUE, "INSERT INTO {s}.t (id, v) VALUES (2, :v)", True),  # DETAIL: Key (v)=(<canary>)
-    (Kind.UNIQUE, "INSERT INTO {s}.t (id, v) VALUES (1, :v || 'x')", False),
-    (Kind.FOREIGN_KEY, "INSERT INTO {s}.t (id, v, p) VALUES (3, :v || 'f', 99)", False),
+    (Kind.UNIQUE, "INSERT INTO {s}.t (id, v) VALUES (1, :v || 'x')", False),  # Key (id)=(1): no value to leak
+    (Kind.UNIQUE, "INSERT INTO {s}.keyed (code) VALUES (:v)", True),  # a text primary key: Key (code)=(<canary>)
+    (Kind.FOREIGN_KEY, "INSERT INTO {s}.t (id, v, p) VALUES (3, :v || 'f', :v || 'p')", True),  # Key (p)=(...)
     (Kind.NOT_NULL, "INSERT INTO {s}.t (id, v, n) VALUES (4, :v || 'n', NULL)", True),  # Failing row contains
     (Kind.CHECK, "INSERT INTO {s}.t (id, v, n) VALUES (5, :v || 'c', -1)", True),
-    (Kind.EXCLUSION, "INSERT INTO {s}.t (id, v, r) VALUES (6, :v || 'e', '[2,3)')", False),
+    (Kind.EXCLUSION, "INSERT INTO {s}.t (id, v, e) VALUES (6, :v || 'e', :v)", True),  # Key (e)=(<canary>)
     (Kind.DATA, "SELECT CAST(:v AS int)", True),  # invalid input syntax for type integer: "<canary>"
     (Kind.UNDEFINED_OBJECT, "SELECT missing FROM {s}.t WHERE v = :v", False),
     (Kind.SYNTAX, "SELECT 1 FROM {s}.t WHERE v = :v AND AND", False),
@@ -363,7 +374,8 @@ def test_t110_layer_b_permission_read_only_connection(
 def test_t110_layer_b_caller_connection_and_check(db: Database, s: str, canary: str) -> None:
     with pytest.raises(DatabaseError) as info, db.transaction() as tx:
         tx.connection.execute(sqlalchemy.text(f"INSERT INTO {s}.t (id, v) VALUES (2, :v)"), {"v": canary})
-    assert canary in str(info.value.__context__)  # positive control: DETAIL and [parameters]
+    context = str(info.value.__context__)
+    assert canary in context and "[SQL parameters hidden" in context  # positive control: the server's DETAIL
     _check_b(info.value, Kind.UNIQUE, canary, context=sqlalchemy.exc.IntegrityError)
     texts = [repr(db.check()), repr(db.health())]
     assert all(canary not in text for text in texts)
@@ -376,6 +388,42 @@ def test_t110_layer_b_session_settings_profile(admin_url: str, s: str, canary: s
     with Database.from_url(url, profile=profile) as database, pytest.raises(DatabaseError) as info:
         database.execute("INSERT INTO t (id, v) VALUES (2, :v)", {"v": canary})
     _check_b(info.value, Kind.UNIQUE, canary)
+
+
+# --- tabrion.testing: an admin that cannot create roles (review L-2 of #25) -------------------------------------------
+
+NEEDS_ROLES = """
+def test_roles(tabrion_postgres_roles):
+    assert False, "never reached"
+
+def test_database(tabrion_postgres_database):
+    assert False, "never reached"
+"""
+
+
+def test_t110_testing_role_password_not_shown(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, make_role: Callable[..., Role], canary: str
+) -> None:
+    """An admin without ``CREATEROLE``: ``CREATE ROLE`` fails, and the generated password (the canary: the inner run
+    patches ``secrets.token_urlsafe``) is in no line of pytest's report, also with ``-l``. Before the fix,
+    psycopg's ``execute`` frame showed the ``Composed`` query with the password (contract I-75)."""
+    admin = make_role()
+    pytester.makeconftest(
+        'pytest_plugins = ["tabrion.testing"]\n'
+        "import secrets\n"
+        f"secrets.token_urlsafe = lambda nbytes=None: {canary!r}\n"
+        f"from tabrion.testing import configure\nconfigure(schema_prefix={PREFIX + 'in_'!r})\n"
+    )
+    pytester.makepyfile(NEEDS_ROLES)
+    monkeypatch.setenv("TABRION_TEST_POSTGRES", admin.url)
+    monkeypatch.setenv("TABRION_REQUIRE_POSTGRES", "1")
+    output = ""
+    for options in ((), ("-l", "--tb=long")):
+        result = pytester.runpytest_subprocess("-p", "no:cacheprovider", *options, timeout=180)
+        output += result.stdout.str() + result.stderr.str()
+    result.assert_outcomes(errors=2)
+    assert "cannot create the role" in output and "permission" in output, output
+    assert canary not in output, output
 
 
 # --- Coverage ---------------------------------------------------------------------------------------------------------

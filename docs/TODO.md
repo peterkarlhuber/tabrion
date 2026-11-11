@@ -16,12 +16,15 @@
 
 ## Summary
 
+The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-08,
+review of #19).
+
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 12 |
+| P1 High | 11 |
 | P2 Medium | 12 |
-| P3 Low | 29 |
+| P3 Low | 30 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -134,7 +137,8 @@ required (owner decision of 2026-11-08 11:26Z).
   the second lane C pull request as the internal `tabrion.testing._faults` (TB-033).
 - **Status note:** TAB-020 and TAB-032 are in the fourth lane C pull request (#11; contract I-36, I-60), after #8
   (TAB-031) merged. Re-review at `5110c8f`: TAB-020 accepted, TAB-032 accepted with conditions; M-1 (the condition),
-  DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73).
+  DL-1, DL-2, L-1, L-2 and the Info items are fixed in #11 (D-73); both accepted after the second re-review and merged
+  in #11 (`e9da2a3`). Its non-blocking follow-ups (RR2-L1, Info) are in the TAB-022 pull request.
 - **Next step:** TAB-018 is in review (contract section 5.7, I-37..I-44; it decided TB-040, TB-020 and F-14).
   TAB-019 (`tabrion.migrations`, contract I-57) is done (#14). TAB-021 (`tabrion.testing.profiles`, contract I-58,
   deviations D-62 and D-63) is done (#15) after its review fix round (M-1..M-3, L-1..L-3; follow-up TB-064).
@@ -148,7 +152,10 @@ required (owner decision of 2026-11-08 11:26Z).
   and the nightly `downstream` job (TAB-022); the internal "Levuvo Database Profile" with `conformance/SPEC.md`,
   vectors, manifest and the job `conformance` (TAB-050); the API stability policy and a deprecation helper
   (TAB-051).
-- **Next step:** TAB-022 after TAB-014, TAB-016 and TAB-030; TAB-050 after TAB-016; TAB-051 after TAB-023.
+- **Status note:** TAB-022 is in the fifth lane C pull request (on master after #11; contract I-61, D-74, D-75): the
+  consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
+  The CI jobs are TB-070.
+- **Next step:** TAB-050 after TAB-016; TAB-051 after TAB-023.
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-8, QA-11, QA-22)
 
@@ -160,7 +167,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 in review) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 in review, #22) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
   RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
@@ -170,7 +177,8 @@ required (owner decision of 2026-11-08 11:26Z).
   it for `mypy --strict src tests scripts`.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-B-2 (transfer through layer B) after RA-B-1; RA-A-1 after TAB-019.
+- **Next step:** RA-A-1 is accepted (#22, delta re-review of `0ab3134`; its notes N-1 to N-3 are done on #22); then
+  RA-A-2 (#29) and RA-A-3 (baseline); RA-B-2..4 in `examples/measurements` (lane H).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
@@ -227,17 +235,20 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
-- **Priority:** P1 High · **Status:** In review (layer-B follow-up pull request) · **Refs:** TABRION TAB-017,
+- **Priority:** P1 High · **Status:** Done (merged in #17, `a9ec3b8`; review L-1 with RA-A-1) · **Refs:** TABRION TAB-017,
   TAB-018, TAB-019, contract section 7, I-44, I-55, deviations D-60, D-66, TAB-T-K21, K25, K26
-- **What:** `tabrion._sa._check.collect` is still a stub, so `check(database)` raises `NotImplementedError`. It must
+- **What:** `tabrion._sa._check.collect` was a stub (`check(database)` raised `NotImplementedError`). It was to
   run the SQLite or PostgreSQL checks on a raw driver connection of the `Database` (read only, T-NOTX) and add
   TAB-B-001 (pool without `pre_ping`), TAB-B-002 (Alembic schema not current, through `tabrion.migrations`) and
-  TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` must call it.
+  TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` was to call it.
 - **Done in the follow-up:** `collect` runs the dialect's checks on the pooled driver connection inside one
   `read()` and adds TAB-PG-012, TAB-B-001 and TAB-B-002 (`tests/unit/test_check_database.py`,
   `tests/postgres/test_check_layer_b.py`). TAB-B-002 stays an `info` "Not checked" when an `alembic_version` table
   exists: `check()` has no script directory and layer B never imports Alembic (D-66); `require_current` is the gate.
-- **Next step:** review and merge. D-66 is accepted by the coordinator as the 0.1 design (subject to review).
+- **Next step:** none for 0.1 (merged; D-66 accepted by the coordinator as the 0.1 design); see the 0.2 candidate.
+- **Review of #17 (L-1), done with RA-A-1:** a unit test pins the TAB-PG-012 version gate with a stubbed
+  `server_version` (CI runs PostgreSQL 16 only), a PostgreSQL test pins that `expect` reaches the layer-A check, and
+  I-55 says that a never-migrated database (no version table) gives no TAB-B-002.
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
@@ -572,13 +583,16 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-085 · Canary suite: what it does not cover (TABRION QA-2)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-2, TAB-T-110..113, contract I-39, I-75
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-2, TAB-T-110..113, contract I-39, I-75, I-76,
+  review `qa-2-review.md` of #25
 - **What:** points the canary suite found outside Tabrion's renderings, or covers only partly:
   1. `Database.engine.url` is SQLAlchemy's `URL`: its `repr` masks the password in the user part only, not a
      `?password=` query parameter. `repr(Database)` and `Database.safe_url` mask both.
   2. The caller's own error from `Transaction.connection` stays the suppressed `__context__` of the translated error
-     (I-39); a tool that walks `__context__` despite `__suppress_context__` sees SQLAlchemy's `[parameters: ...]`.
-     The standard traceback, `logging` and the filter do not.
+     (I-39); a tool that walks `__context__` despite `__suppress_context__` sees its text (with `hide_parameters`,
+     I-76, no parameters, but a PostgreSQL `DETAIL`). It is also the `value` local of `contextlib`'s `__exit__`
+     frames that threw it into `Database.transaction()`, which tools that capture locals show. The standard
+     traceback, `logging` and the filter do not.
   3. `tabrion.testing._faults` helpers take a plain conninfo `str`: in a pytest report of a failure inside them, the
      arguments of their frames can show the password (not a fixture value, so `repr` masking cannot help).
   4. `SQLITE_NOMEM` (kind `RESOURCE`) and, on layer B, `UNKNOWN`, `CONNECTION` and `RESOURCE` on SQLite are not
@@ -586,8 +600,17 @@ required (owner decision of 2026-11-08 11:26Z).
      `CORRUPT`, `DISK_FULL`, `RESOURCE` and a server-side `CONNECTION` state on PostgreSQL come from the server
      through `RAISE ... USING ERRCODE`.
   5. Paths are logged at DEBUG by `tabrion.sqlite` (by design); the suite checks records at INFO and above for a path
-     canary only.
-- **Next step:** decide 1 and 3 with the 0.2 surface review (TB-033); 2 and 5 are documented behavior.
+     canary only. Paths may be frame locals (the path arguments of `connect`).
+  6. `sqlalchemy.engine` at DEBUG logs the fetched rows (like `echo="debug"`), and at INFO the SQL text as written:
+     the suite captures `sqlalchemy` at INFO and leaves the statement records (no arguments) out of the check.
+  7. `SQLITE_IOERR_CORRUPTFS` (8458) is `CONNECTION` through `SQLITE_IOERR*` (contract section 1.3); `CORRUPT` would
+     fit better (review, optional). It changes the documented mapping table, so it waits for a decision.
+  8. The coverage tests `test_t110_every_*_on_both_layers` rely on running last and on `session.items`: under a
+     random-order plugin they fail spuriously, under `pytest-xdist` they skip silently (neither is used today).
+  9. Not exercised by the suite: `logging.captureWarnings` and SQLAlchemy `SAWarning` texts, and the structlog
+     processor (it has its own unit tests).
+- **Next step:** decide 1, 3 and 7 with the 0.2 surface review (TB-033); 2, 5 and 6 are documented behavior; 8 and
+  9 when such a plugin or path is adopted.
 
 ### TB-086 · Nightly `stress` job: 200 repetitions (TABRION QA-4)
 
@@ -715,6 +738,48 @@ required (owner decision of 2026-11-08 11:26Z).
   `tabrion_postgres_roles` and `tabrion_postgres_database` where the cases allow it (most role cases need several
   roles per test with chosen attributes, which the session fixtures do not give); the SQLite suites follow when
   lane B next touches them.
+
+### TB-070 · CI jobs `golden files` and nightly `downstream` (TABRION TAB-022)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-022, TB-017, specification S-7, contract I-61
+- **What:** the golden tests run today in the existing unit and `pg` jobs. The plan wants a job `golden files` in
+  `ci.yml` (blocking) and a job `downstream` in `nightly.yml` that runs `python scripts/downstream.py --summary
+  "$GITHUB_STEP_SUMMARY"` against a PostgreSQL service (not blocking; its result is a release-gate criterion of
+  TAB-040). Lane C does not change `.github/`. The script installs each consumer with `uv pip install --override`,
+  so HEAD replaces the consumer's Tabrion requirement (a Git commit pin; Tabrion is not published to an index),
+  and checks that it did (review M-1 of #19, fixed); the override names `tabrion[all]`, so a consumer keeps the
+  extras it asks for (N-1 of the delta re-review, fixed). The job needs network access for the clones and installs.
+- **Next step:** whoever may change `.github/` adds both jobs (with the label `workflow-change-reviewed`) and lists
+  them in `.github/ci-manifest.json`; the release gate reads the last nightly result.
+
+### TB-071 · Record `pgvector_status` on a server with pgvector (TABRION TAB-022)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-022, contract 8.2, I-61
+- **What:** `tests/golden/nodestro.json` was recorded on a server without pgvector, so only the `unavailable` case of
+  Nodestro's `pgvector_status` is recorded; on a server with pgvector the replay test checks the states the contract
+  lists instead (`other_schema`, `active`).
+- **Next step:** run `scripts/record_golden.py --consumer nodestro` against the pgvector server of CI (the `pg`
+  job with pgvector 17) and commit the file.
+
+### TB-072 · The pgvector switch of the consumers' test suites (TABRION TAB-022)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-022, TAB-020, contract 8.2, 8.3, I-36
+- **What:** Nodestro and Orkexa have `<PREFIX>_REQUIRE_PGVECTOR=1` as a flag; `tabrion.testing` reads a list,
+  `<PREFIX>_REQUIRE_EXTENSIONS=vector` (golden test `test_testing_environment_names`). With `configure(env_prefix=...)`
+  alone, the consumers' CI switch would be ignored and a missing pgvector would skip instead of fail.
+- **Next step:** at adoption (MIG-NOD, MIG-ORK) the consumers' CI jobs set `<PREFIX>_REQUIRE_EXTENSIONS=vector`
+  instead of `<PREFIX>_REQUIRE_PGVECTOR=1` (pointing `require_extensions_env` at the old name would read its `1` as
+  an extension name).
+
+### TB-073 · `url_from_env` keeps white space that Nodestro strips (TABRION TAB-022, TAB-012)
+
+- **Priority:** P3 Low · **Status:** Done (decided: deviation D-76) · **Refs:** TABRION TAB-012, TAB-022, contract 2.3, 8.2
+- **What:** the golden test `test_nodestro_url_from_env` shows that Nodestro's `server_settings.py` strips white
+  space around `NODESTRO_DATABASE_URL` and around the content of `_FILE`; `url_from_env` removes only the file's
+  trailing newline. The contract row said "identical rule". A value such as `" postgresql://..."` from a
+  hand-edited secret file therefore reaches libpq with its spaces (libpq accepts them in a URL only at the end).
+- **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
+  Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
 ## Cross-repository dependencies
 

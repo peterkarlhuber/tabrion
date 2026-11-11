@@ -399,33 +399,53 @@ class _RoleSet:
         self._roles: list[_Role] = []
 
     def create(self, name: str) -> _Role:
+        """``CREATE ROLE`` and the admin's membership; a failure fails the test without the password.
+
+        The password is only in the returned ``_Role``, whose ``repr`` leaves it out: a driver error of ``execute``
+        would put it into the report (the ``Composed`` query is an argument of psycopg's frames, review L-2 of #25),
+        so every failure becomes the safe message of the driver error, as in ``_connect`` (contract I-75).
+        """
         import psycopg
         from psycopg import sql
 
-        password = secrets.token_urlsafe(24)
+        from tabrion.errors import classify, safe_message
+
+        role = _Role(name, secrets.token_urlsafe(24))
+        duplicate = False
+        failure: str | None = None
         with _connect(self._admin_url) as conn:
             try:
                 conn.execute(
                     sql.SQL(
                         "CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD {}"
-                    ).format(sql.Identifier(name), sql.Literal(password))
+                    ).format(sql.Identifier(name), sql.Literal(role.password))
                 )
             except psycopg.errors.DuplicateObject:
-                pytest.fail(
-                    f"tabrion.testing: the role {name!r} already exists; the fixture creates its roles itself and"
-                    " never changes or drops a role it did not create",
-                    pytrace=False,
-                )
-            role = _Role(name, password)
-            self._roles.append(role)
-            # Membership lets a non-superuser admin (CREATEROLE) create the database for the role and drop what
-            # it owns; DROP ROLE ends it. From PostgreSQL 16 a membership has its own INHERIT option, which by
-            # default follows the admin's rolinherit: a NOINHERIT admin would get a membership whose privileges
-            # it does not use, and could neither hand the role a schema nor drop its database (review L-1).
-            grant = "GRANT {} TO CURRENT_USER"
-            if conn.info.server_version >= _MEMBERSHIP_OPTIONS:
-                grant += " WITH INHERIT TRUE, SET TRUE"
-            conn.execute(sql.SQL(grant).format(sql.Identifier(name)))
+                duplicate = True
+            except psycopg.Error as exc:
+                failure = safe_message(classify(exc))
+            else:
+                self._roles.append(role)
+                # Membership lets a non-superuser admin (CREATEROLE) create the database for the role and drop
+                # what it owns; DROP ROLE ends it. From PostgreSQL 16 a membership has its own INHERIT option,
+                # which by default follows the admin's rolinherit: a NOINHERIT admin would get a membership whose
+                # privileges it does not use, and could neither hand the role a schema nor drop its database
+                # (review L-1).
+                grant = "GRANT {} TO CURRENT_USER"
+                if conn.info.server_version >= _MEMBERSHIP_OPTIONS:
+                    grant += " WITH INHERIT TRUE, SET TRUE"
+                try:
+                    conn.execute(sql.SQL(grant).format(sql.Identifier(name)))
+                except psycopg.Error as exc:
+                    failure = safe_message(classify(exc))
+        if duplicate:
+            pytest.fail(
+                f"tabrion.testing: the role {name!r} already exists; the fixture creates its roles itself and"
+                " never changes or drops a role it did not create",
+                pytrace=False,
+            )
+        if failure is not None:
+            pytest.fail(f"tabrion.testing: cannot create the role {name!r}: {failure}", pytrace=False)
         return role
 
     @property
@@ -604,28 +624,44 @@ def _truncate(conn: psycopg.Connection[Any], schema: str | None, like: str | Non
         ).fetchall()
         if not found:
             return 0
-        _refuse_cascade_out_of(conn, namespace, name, [int(oid) for oid, _ in found])
         tables = sorted(str(table) for _, table in found)
+        oids = [int(oid) for oid, _ in found]
+        # The selected tables first (ONLY: their children elsewhere are not locked before the refusal), so no
+        # foreign key, partition or child can be added to them between the check and the TRUNCATE (re-review Info).
+        conn.execute(
+            sql.SQL("LOCK TABLE ONLY {} IN ACCESS EXCLUSIVE MODE").format(
+                sql.SQL(", ").join(sql.Identifier(name, table) for table in tables)
+            )
+        )
+        _refuse_cascade_out_of(conn, namespace, name, oids)  # the early refusal: nothing emptied yet
         conn.execute(
             sql.SQL("TRUNCATE TABLE {} RESTART IDENTITY CASCADE").format(
                 sql.SQL(", ").join(sql.Identifier(name, table) for table in tables)
             )
         )
+        # A table CASCADE reaches without being selected (an excluded one, one LIKE filters out, a further hop) was
+        # not locked, so a foreign key to it may have been committed in between. The TRUNCATE now holds ACCESS
+        # EXCLUSIVE on every table it reached, so this second look sees a final catalog; a hit raises and the
+        # transaction (or savepoint) undoes the TRUNCATE (review L-1 of #19).
+        _refuse_cascade_out_of(conn, namespace, name, oids)
     return len(tables)
 
 
 # Every table the TRUNCATE ... CASCADE reaches: the tables, their partitions, and (repeatedly) every table with a
 # foreign key to one reached; those outside the schema. One recursive reference (a LATERAL union of both steps).
 _CASCADE_OUTSIDE_SQL = (
-    "WITH RECURSIVE reached (oid) AS ("
-    " SELECT pg_catalog.unnest(%(tables)s::pg_catalog.oid[])"
+    "WITH RECURSIVE reached (oid, how) AS ("
+    " SELECT t.oid, 'selected'::pg_catalog.text FROM pg_catalog.unnest(%(tables)s::pg_catalog.oid[]) AS t (oid)"
     " UNION"
-    " SELECT next.oid FROM reached r, LATERAL ("
-    "   SELECT i.inhrelid AS oid FROM pg_catalog.pg_inherits i WHERE i.inhparent OPERATOR(pg_catalog.=) r.oid"
+    " SELECT next.oid, next.how FROM reached r, LATERAL ("
+    "   SELECT i.inhrelid AS oid, CASE WHEN p.relispartition THEN 'partition'::pg_catalog.text"
+    "     ELSE 'inheritance child'::pg_catalog.text END AS how"
+    "   FROM pg_catalog.pg_inherits i, pg_catalog.pg_class p"
+    "   WHERE i.inhparent OPERATOR(pg_catalog.=) r.oid AND p.oid OPERATOR(pg_catalog.=) i.inhrelid"
     "   UNION ALL"
-    "   SELECT k.conrelid FROM pg_catalog.pg_constraint k"
+    "   SELECT k.conrelid, 'foreign key'::pg_catalog.text FROM pg_catalog.pg_constraint k"
     "   WHERE k.confrelid OPERATOR(pg_catalog.=) r.oid AND k.contype OPERATOR(pg_catalog.=) 'f') next)"
-    " SELECT n.nspname::pg_catalog.text, c.relname::pg_catalog.text"
+    " SELECT n.nspname::pg_catalog.text, c.relname::pg_catalog.text, r.how"
     " FROM reached r, pg_catalog.pg_class c, pg_catalog.pg_namespace n"
     " WHERE c.oid OPERATOR(pg_catalog.=) r.oid AND n.oid OPERATOR(pg_catalog.=) c.relnamespace"
     " AND c.relnamespace OPERATOR(pg_catalog.<>) %(namespace)s::pg_catalog.oid"
@@ -633,15 +669,18 @@ _CASCADE_OUTSIDE_SQL = (
 
 
 def _refuse_cascade_out_of(conn: psycopg.Connection[Any], namespace: int, name: str, tables: list[int]) -> None:
-    """``ValueError`` if the ``CASCADE`` would empty a table in another schema (through a foreign key)."""
+    """``ValueError`` if the ``TRUNCATE`` would empty a table in another schema: a table with a foreign key to one
+    it empties, a partition or an inheritance child (each reason is named)."""
     from psycopg import sql
 
-    outside = conn.execute(_CASCADE_OUTSIDE_SQL, {"tables": tables, "namespace": namespace}).fetchall()
-    if outside:
-        names = ", ".join(sorted(sql.Identifier(str(n), str(t)).as_string(conn) for n, t in outside))
+    reasons: dict[str, set[str]] = {}
+    for schema, table, how in conn.execute(_CASCADE_OUTSIDE_SQL, {"tables": tables, "namespace": namespace}):
+        reasons.setdefault(sql.Identifier(str(schema), str(table)).as_string(conn), set()).add(str(how))
+    if reasons:
+        names = ", ".join(f"{qualified} ({', '.join(sorted(how))})" for qualified, how in sorted(reasons.items()))
         raise ValueError(
             f"truncate_tables: TRUNCATE ... CASCADE of the schema {name!r} would also empty {names} in another"
-            " schema (a foreign key); empty those tables yourself or remove the foreign key"
+            " schema; empty those tables yourself, or remove the foreign key or detach the table"
         )
 
 

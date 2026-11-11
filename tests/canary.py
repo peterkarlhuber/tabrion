@@ -6,9 +6,11 @@ exception every way Python and ``logging`` render one and fail when the canary a
 
 - :func:`assert_clean` for an error **Tabrion raises** (``TabrionError``): ``str``, ``repr``, ``args``, ``details``,
   ``classification``, ``__notes__``, ``traceback.format_exception`` and ``print_exception`` (what reaches stderr for an
-  uncaught error), a plain ``logging`` handler **without** :class:`~tabrion.errors.DbErrorRedactionFilter`, and a
-  pickle round trip. ``__cause__`` is ``None``; a ``__context__`` is only allowed when it is suppressed and named by
-  the caller (contract I-39: the caller's own error from ``Transaction.connection``).
+  uncaught error), the locals of the traceback's frames (what Sentry, ``rich`` or ``pytest -l`` show; frames of the
+  test suite itself are left out, they hold the canary on purpose), a plain ``logging`` handler **without**
+  :class:`~tabrion.errors.DbErrorRedactionFilter`, and a pickle round trip. ``__cause__`` is ``None``; a
+  ``__context__`` is only allowed when it is suppressed and named by the caller (contract I-39: the caller's own
+  error from ``Transaction.connection``).
 - :func:`assert_redacted` for a **driver error** that Tabrion classifies but does not raise (layer A passes driver
   errors through): ``safe_message``, ``repr(classify(...))`` and a ``logging`` handler with the filter, also for the
   error wrapped in a caller's exception. ``leaks=True`` is the positive control: the canary must be in the raw
@@ -18,8 +20,10 @@ exception every way Python and ``logging`` render one and fail when the canary a
 from __future__ import annotations
 
 from collections.abc import Iterable
+import contextlib
 import io
 import logging
+from pathlib import Path
 import pickle
 import traceback
 from typing import Any
@@ -35,6 +39,23 @@ def new_canary(label: str = "") -> str:
 
 def _format(exc: BaseException) -> str:
     return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+
+
+_TESTS = str(Path(__file__).resolve().parent)
+
+
+def frame_locals(exc: BaseException, *, own: bool = False, skip: tuple[str, ...] = ()) -> str:
+    """The locals of every frame of ``exc``'s traceback, as ``capture_locals=True`` renders them (``repr``).
+
+    Frames of the test suite are left out unless ``own`` is true: the test's own frame holds the canary. ``skip``
+    leaves out the frames of these files too."""
+    summary = traceback.TracebackException.from_exception(exc, capture_locals=True)
+    lines = [
+        f"{frame.filename}:{frame.lineno} in {frame.name}: {frame.locals!r}"
+        for frame in summary.stack
+        if own or not (str(Path(frame.filename).resolve()).startswith(_TESTS) or frame.filename in skip)
+    ]
+    return "\n".join(lines)
 
 
 def _stderr(exc: BaseException) -> str:
@@ -82,6 +103,7 @@ def renderings(exc: BaseException) -> dict[str, str]:
         "notes": repr(getattr(exc, "__notes__", None)),
         "format_exception": _format(exc),
         "stderr": _stderr(exc),
+        "frame locals": frame_locals(exc),
         "log": logged(exc, redact=False),
     }
     if isinstance(exc, TabrionError):
@@ -98,19 +120,29 @@ def _check(found: dict[str, str], canaries: Iterable[str]) -> None:
     assert not hits, "canary leaked in " + "; ".join(hits) + "\n" + "\n".join(f"--- {k}\n{v}" for k, v in found.items())
 
 
-def assert_clean(exc: BaseException, *canaries: str, context: type[BaseException] | None = None) -> None:
+def assert_clean(
+    exc: BaseException, *canaries: str, context: type[BaseException] | None = None, paths: tuple[str, ...] = ()
+) -> None:
     """No canary in any rendering of ``exc``, an error raised by Tabrion; no ``__cause__``.
 
     ``context`` names the type of an allowed ``__context__`` (it must be suppressed); without it there is none.
+    That caller's error is also the ``value`` local of ``contextlib``'s ``__exit__`` frames, which threw it into
+    ``Database.transaction()``: those frames are left out (TB-085 item 2). ``paths`` are canaries in a file name:
+    paths are no data values, so they may be frame locals (the path arguments of ``connect``), and are kept out of
+    every other rendering.
     """
-    assert canaries
+    assert canaries or paths
     assert isinstance(exc, TabrionError), f"not raised by Tabrion: {type(exc).__name__}"
     assert exc.__cause__ is None, f"{exc!r} chains {type(exc.__cause__).__name__} as __cause__"
     if context is None:
         assert exc.__context__ is None, f"{exc!r} has the __context__ {type(exc.__context__).__name__}"
     else:
         assert isinstance(exc.__context__, context) and exc.__suppress_context__
-    _check(renderings(exc), canaries)
+    found = renderings(exc)
+    if context is not None:
+        found["frame locals"] = frame_locals(exc, skip=(contextlib.__file__,))
+    _check(found, canaries)
+    _check({name: text for name, text in found.items() if name != "frame locals"}, paths)
 
 
 def assert_redacted(exc: BaseException, *canaries: str, leaks: bool = False) -> None:
@@ -133,6 +165,28 @@ def assert_redacted(exc: BaseException, *canaries: str, leaks: bool = False) -> 
     except RuntimeError as wrapper:
         found["log of a wrapper"] = logged(wrapper, redact=True)
     _check(found, canaries)
+
+
+def capture_all_logs(caplog: Any) -> None:
+    """``caplog`` at DEBUG for the root logger, at INFO for ``sqlalchemy`` (which sets itself to WARNING on import).
+
+    Every record of the test reaches the capture, Tabrion's and a dependency's: an application that turns on
+    ``sqlalchemy.engine`` at INFO to see its statements must not log the values (contract I-76). At DEBUG,
+    SQLAlchemy also logs the rows it fetched, as ``echo="debug"`` does: that level is the application's choice
+    like ``echo`` (SR-06), and TB-085 records it."""
+    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.INFO, logger="sqlalchemy")
+
+
+def phase_records(caplog: Any) -> list[logging.LogRecord]:
+    """The records of the test's setup, call and teardown so far, without SQLAlchemy's records of SQL text.
+
+    In a fixture's teardown ``caplog.records`` holds the teardown's records only: the other phases are read with
+    ``get_records``. ``sqlalchemy.engine`` logs each statement as its message without arguments: that is the
+    application's SQL text as written (a canary scenario puts a literal into it), not a parameter. Its records of
+    the parameters (``[generated in ...] ...``, with arguments) are kept and checked."""
+    records = [*caplog.get_records("setup"), *caplog.get_records("call"), *caplog.records]
+    return [r for r in records if not (r.name.startswith("sqlalchemy.engine") and not r.args)]
 
 
 def assert_logs_clean(records: Iterable[logging.LogRecord], *canaries: str) -> None:

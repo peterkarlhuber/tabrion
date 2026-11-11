@@ -94,3 +94,18 @@ def test_k30_check_runs_in_a_read_only_transaction(make_db: Any, monkeypatch: py
     monkeypatch.setattr(sa_check, "check", spy)
     database.check()
     assert seen == ["on"]
+
+
+def test_k27_expect_reaches_the_layer_a_check(make_db: Any) -> None:
+    """``expect`` is passed to the PostgreSQL checks of the pooled connection (review L-1 of #17, mutant C10). The
+    admin owns the schema's table and may create in it: TAB-PG-003 and TAB-PG-009 under ``runtime``, ``info`` under
+    ``any``, nothing under ``owner``."""
+    database = make_db()
+    owner_codes = {"TAB-PG-003", "TAB-PG-009"}
+
+    def by_code(expect: Any) -> dict[str, Severity]:
+        return {f.code: f.severity for f in tabrion.check.check(database, expect=expect) if f.code in owner_codes}
+
+    assert by_code("runtime") == {"TAB-PG-003": Severity.WARNING, "TAB-PG-009": Severity.WARNING}
+    assert by_code("any") == {"TAB-PG-003": Severity.INFO, "TAB-PG-009": Severity.INFO}
+    assert by_code("owner") == {}

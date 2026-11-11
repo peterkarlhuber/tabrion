@@ -8,7 +8,6 @@ URL option; none may appear in an error, a ``repr``, ``safe_url``, a warning, a 
 from __future__ import annotations
 
 from collections.abc import Iterator
-import logging
 import os
 from pathlib import Path
 import socket
@@ -17,7 +16,7 @@ import pytest
 
 from tabrion.config import safe_url, url_from_env
 from tabrion.errors import ConfigurationError, TabrionError
-from tests.canary import assert_clean, assert_logs_clean, new_canary
+from tests.canary import assert_clean, assert_logs_clean, capture_all_logs, new_canary, phase_records
 
 pytestmark = pytest.mark.security
 
@@ -28,10 +27,11 @@ def canary() -> str:
 
 
 @pytest.fixture(autouse=True)
-def tabrion_logs(caplog: pytest.LogCaptureFixture, canary: str) -> Iterator[None]:
-    caplog.set_level(logging.DEBUG, logger="tabrion")
+def all_logs(caplog: pytest.LogCaptureFixture, canary: str) -> Iterator[None]:
+    capture_all_logs(caplog)
     yield
-    assert_logs_clean(caplog.records, canary)
+    records = phase_records(caplog)
+    assert_logs_clean(records, canary)
 
 
 def closed_port() -> int:
