@@ -313,6 +313,9 @@ def _run(copy: Path, tests: list[str]) -> subprocess.CompletedProcess[str]:
         env=env,
         capture_output=True,
         text=True,
+        # A mutant can make the child print bytes that are not UTF-8 (probe 10 of layer B lets a lone surrogate
+        # through ``safe_url``; pytest 8.0 writes it raw); the probe only needs the return code.
+        errors="backslashreplace",
         timeout=300,
         check=False,
     )

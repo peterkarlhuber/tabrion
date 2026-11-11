@@ -18,6 +18,7 @@ import time
 import traceback
 import types
 from typing import Any
+import uuid
 
 import pytest
 
@@ -158,6 +159,60 @@ def test_b01_sqlite_file_urls(path: Path, scheme: str) -> None:
         assert database.safe_url == f"sqlite+pysqlite:///{path}"
         assert repr(database) == f"<tabrion.Database sqlite+pysqlite:///{path}>"
     assert path.exists()
+
+
+@pytest.mark.parametrize(
+    ("database", "shown"),
+    [
+        (r"C:\Users\a b\layer-b.db", r"sqlite+pysqlite:///C:\Users\a b\layer-b.db?mode=ro"),  # a Windows path
+        ("/srv/a@b/x%y.db", "sqlite+pysqlite:////srv/a@b/x%y.db?mode=ro"),  # "@" is no user name, "%" no escape
+        (":memory:", "sqlite+pysqlite:///:memory:?mode=ro"),
+        ("/srv/\u00fc.db", "sqlite+pysqlite:////srv/\u00fc.db?mode=ro"),  # non-ASCII stays readable
+        # Review M-1 of #37: what is not printable is percent-encoded, so a file name cannot forge a log line.
+        ("/srv/x\nERROR fake log line.db", "sqlite+pysqlite:////srv/x%0AERROR fake log line.db?mode=ro"),
+        ("/srv/x\r\t.db", "sqlite+pysqlite:////srv/x%0D%09.db?mode=ro"),
+        ("/srv/x\x1b[31mred\x07.db", "sqlite+pysqlite:////srv/x%1B[31mred%07.db?mode=ro"),
+        ("/srv/x\x7f\x85.db", "sqlite+pysqlite:////srv/x%7F%C2%85.db?mode=ro"),
+        ("/srv/x\u202edb.exe", "sqlite+pysqlite:////srv/x%E2%80%AEdb.exe?mode=ro"),
+        ("/srv/x\udcff.db", "sqlite+pysqlite:////srv/x%ED%B3%BF.db?mode=ro"),  # os.fsdecode of a byte 0xff
+        # Review M-2 of #37: ":", "@" and "?password=" in a path are no credentials, no host and no query.
+        (r"C:\Users\john@corp\x.db", r"sqlite+pysqlite:///C:\Users\john@corp\x.db?mode=ro"),
+        ("/srv/a:b@evil.example/x.db", "sqlite+pysqlite:////srv/a:b@evil.example/x.db?mode=ro"),
+        ("/srv/x?password=leak.db", "sqlite+pysqlite:////srv/x?password=leak.db?mode=ro"),
+    ],
+)
+def test_b01_safe_url_shows_the_sqlite_path_as_it_is(database: str, shown: str) -> None:
+    """SQLAlchemy percent-encodes the path when it renders a URL (``C%3A%5CUsers...``); ``safe_url`` does not
+    (Windows nightly of 546d254, TAB-040 readiness gap 2). Checked on every OS with a Windows-style path."""
+    url = sqlalchemy.URL.create("sqlite+pysqlite", database=database, query={"mode": "ro"})
+    assert tabrion._sa.database._safe_url(url) == shown
+
+
+@pytest.mark.parametrize(
+    ("username", "database", "shown"),
+    [
+        ("u", r"C:\a:b@c\x.db", r"sqlite+pysqlite://u:***@/C:\a:b@c\x.db"),
+        # Review L-1 of #37: a user name that looks like the placeholder of the old code changes nothing.
+        ("tabrion-database-slot", "/real.db", "sqlite+pysqlite://tabrion-database-slot:***@//real.db"),
+    ],
+)
+def test_b01_safe_url_masks_first_and_then_shows_the_path(username: str, database: str, shown: str) -> None:
+    """The credentials of a foreign engine's URL are masked before the path goes in (review M-2 of #37)."""
+    url = sqlalchemy.URL.create("sqlite+pysqlite", username=username, password="pw-canary", database=database)
+    assert tabrion._sa.database._safe_url(url) == shown
+
+
+def test_b01_safe_url_placeholder_is_new_for_every_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review L-1 of #37: the path goes in at the one place of a per-call placeholder, and if that place is not
+    unique the URL is rendered the old way rather than wrongly."""
+    fixed = uuid.UUID(int=7)
+    monkeypatch.setattr(uuid, "uuid4", lambda: fixed)  # _safe_url calls uuid.uuid4()
+    url = sqlalchemy.URL.create(
+        "sqlite+pysqlite", username=f"tabrion{fixed.hex}", password="pw-canary", database=r"C:\x.db"
+    )
+    shown = tabrion._sa.database._safe_url(url)
+    assert "pw-canary" not in shown
+    assert shown == url.render_as_string(hide_password=True)
 
 
 def test_b01_url_object(path: Path) -> None:
@@ -372,9 +427,24 @@ def test_b03_tls_without_a_host_follows_pghost(monkeypatch: pytest.MonkeyPatch) 
         assert sslmode(database) is None
 
 
+def test_b04_from_url_opens_the_file(tmp_path: Path) -> None:
+    """The portable half of the path checks in ``from_url`` (review L-3 of #37): the file is opened, created and
+    checked once in ``from_url``, before the engine's first connection, on every OS."""
+    fresh = tmp_path / "fresh.db"
+    database = Database.from_url(f"sqlite:///{fresh}")
+    try:
+        assert fresh.exists()
+    finally:
+        database.close()
+    missing_parent = tmp_path / "no-such-directory" / "x.db"
+    with pytest.raises(FileNotFoundError):  # raised by from_url itself, not by the first statement
+        Database.from_url(f"sqlite:///{missing_parent}")
+
+
 @pytest.mark.security
 @pytest.mark.skipif(not POSIX, reason="symbolic links and modes")
 def test_b04_sqlite_path_checks_run_in_from_url(tmp_path: Path) -> None:
+    """The POSIX-only half: a symbolic link is refused and a new file is ``0600`` whatever the umask."""
     target = tmp_path / "target.db"
     link = tmp_path / "link.db"
     link.symlink_to(target)
