@@ -22,6 +22,7 @@ import sqlite3
 import threading
 import time
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, TypeAlias, TypeVar
+import uuid
 import warnings
 
 import sqlalchemy
@@ -555,23 +556,33 @@ def _postgres_engine(url: sqlalchemy.URL, profile: Profile, options: dict[str, A
     return sqlalchemy.create_engine(url, **kwargs)
 
 
-_DATABASE_SLOT = "tabrion-database-slot"
-"""Stands for a SQLite file path while the URL is rendered; nothing in it is percent-encoded."""
+def _printable_path(path: str) -> str:
+    """The path as it is, except that a character that is not printable (a newline, ESC, BEL, DEL, a bidi override,
+    a lone surrogate) is percent-encoded as its UTF-8 bytes, so a file name cannot forge a log line or recolour a
+    terminal. ``\\``, ``:``, ``@``, ``%`` and spaces stay as they are."""
+    return "".join(
+        ch if ch.isprintable() else "".join(f"%{byte:02X}" for byte in ch.encode("utf-8", "surrogatepass"))
+        for ch in path
+    )
 
 
 def _safe_url(url: sqlalchemy.URL) -> str:
-    """The URL with its password masked. A SQLite file path is shown as it is: SQLAlchemy percent-encodes it when it
-    renders the URL (``C%3A%5C...`` for ``C:\\...`` on Windows), which no reader of a log recognizes."""
+    """The URL with its password masked. A SQLite file path is shown as it is (with :func:`_printable_path`):
+    SQLAlchemy percent-encodes it when it renders the URL (``C%3A%5C...`` for ``C:\\...`` on Windows), which no
+    reader of a log recognizes. The URL is masked with a placeholder for the path, and the path goes in only
+    afterwards, so ``:``, ``@`` or ``?password=`` in a path are never read as credentials or a query."""
     try:
         database = url.database
-        if url.get_backend_name() == "sqlite" and database:
-            rendered = url.set(database=_DATABASE_SLOT).render_as_string(hide_password=True)
-            rendered = rendered.replace(_DATABASE_SLOT, database, 1)
-        else:
-            rendered = url.render_as_string(hide_password=True)
+        if url.get_backend_name() != "sqlite" or not database:
+            return _config.safe_url(url.render_as_string(hide_password=True))
+        slot = f"tabrion{uuid.uuid4().hex}"  # letters and digits only: masking leaves it alone
+        masked = _config.safe_url(url.set(database=slot).render_as_string(hide_password=True))
+        before, found, after = masked.partition(slot)
+        if not found or slot in after:
+            return _config.safe_url(url.render_as_string(hide_password=True))
+        return before + _printable_path(database) + after
     except Exception:
         return "<unparseable url>"
-    return _config.safe_url(rendered)
 
 
 def _pool_status(engine: sqlalchemy.Engine) -> dict[str, int] | None:

@@ -739,7 +739,6 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
   Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
-
 ### TB-074 · Windows: `safe_url` percent-encoded a SQLite path (TABRION TAB-040 readiness gap 2)
 
 - **Priority:** P2 Medium · **Status:** Done (this pull request) · **Refs:** TABRION TAB-040, TAB-018, K3, nightly
@@ -749,6 +748,12 @@ required (owner decision of 2026-11-08 11:26Z).
   turn its test red because `test_b04_sqlite_path_checks_run_in_from_url` skips on Windows.
 - **Fix:** `safe_url` shows the SQLite path as it is (`test_b01_safe_url_shows_the_sqlite_path_as_it_is`, a
   Windows-style path on every OS, with its own mutation probe); probes whose test skips on Windows skip there too.
+- **Review of #37:** what is not printable in the path is percent-encoded (M-1); the URL is masked before the path
+  goes in, through a per-call placeholder (M-2, L-1; `test_b01_safe_url_masks_first_and_then_shows_the_path`,
+  `test_b01_safe_url_placeholder_is_new_for_every_call`); `test_b04` is split into a portable half
+  (`test_b04_from_url_opens_the_file`, probed on every OS) and the POSIX-only half, and the probe file imports the
+  test's own `POSIX` predicate (L-3); CHANGELOG and contract I-37 name the POSIX changes (L-2).
+
 ## Cross-repository dependencies
 
 | This repo item | Other repo | Other item | Relation |
