@@ -10,14 +10,17 @@ from collections.abc import Iterator
 import hashlib
 from pathlib import Path
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("sqlalchemy")
 
 from tabrion import Database, Profile
+import tabrion._sa._check as sa_check
 from tabrion.check import Finding, Severity, check
 from tabrion.errors import UsageError
+from tabrion.postgres import SessionSettings
 
 
 def codes(findings: list[Finding]) -> list[str]:
@@ -104,3 +107,22 @@ def test_k29_closed_database_raises(path: Path) -> None:
     database.close()
     with pytest.raises(UsageError):
         database.check()
+
+
+@pytest.mark.parametrize(
+    ("wanted", "server_version", "reported"),
+    [
+        (60_000, 160_009, True),
+        (60_000, 169_999, True),
+        (60_000, 170_000, False),  # PostgreSQL 17 applies transaction_timeout: nothing to report
+        (60_000, 180_001, False),
+        (None, 160_009, False),
+        (0, 160_009, False),
+    ],
+)
+def test_k21_version_gate(wanted: int | None, server_version: int, reported: bool) -> None:
+    """TAB-PG-012's gate on a stub connection: CI runs PostgreSQL 16 only (review L-1 of #17, mutant C4)."""
+    target = SimpleNamespace(_profile=Profile(postgres=SessionSettings(transaction_timeout_ms=wanted)))
+    dbapi = SimpleNamespace(info=SimpleNamespace(server_version=server_version))
+    findings = sa_check._transaction_timeout(target, dbapi)  # type: ignore[arg-type]
+    assert [finding.code for finding in findings] == (["TAB-PG-012"] if reported else [])
