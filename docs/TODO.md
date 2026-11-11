@@ -270,7 +270,9 @@ required (owner decision of 2026-11-08 11:26Z).
   optional edge beyond the core (QA-18); the Tabrion rows of the clean-install matrix with pip 25.0 and the current
   pip (QA-19); `docs/api-consumers.md` as the export target of the consumers' API check (QA-21); the ecosystem
   migration documentation under `docs/ecosystem/` (QA-23) and the closing record (QA-24).
-- **Next step:** QA-17 after QA-16 is done in every repository.
+- **Status note (QA-17):** the copy of the dependency policy (no edges) and the vendored checker with its test are in
+  the QA-17 pull request (nodestro-studio holds the policy, ST-061).
+- **Next step:** QA-18, QA-19, QA-21, QA-23 and QA-24.
 
 ## M4: Tabrion 0.2
 
