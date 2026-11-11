@@ -706,12 +706,56 @@ def test_tb045_the_last_check_does_not_follow_the_name(
         if os.fspath(candidate) == str(path) and not stash.exists():
             path.rename(stash)
             path.symlink_to(other)
-        return real_realpath(candidate, *args, **kwargs)
+        return str(real_realpath(candidate, *args, **kwargs))
 
     monkeypatch.setattr(os.path, "realpath", realpath)
     with pytest.raises(UnsafePath) as info:
         ts.connect(path).close()
     assert info.value.code == "sqlite.unsafe_path"
+
+
+def test_tb045_descriptor_listing_by_platform(tmp_path: Path) -> None:
+    """The descriptor check exists on POSIX only (I-22 (e)). On Linux, macOS and the BSDs the process's open regular
+    files are listed with their identity; on Windows nothing is listed and ``connect`` relies on the name checks of
+    I-22 (d), which still open a normal database."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    with open(path, "rb") as handle:
+        listed = ts._open_files()
+        if POSIX:
+            assert listed is not None
+            info = os.fstat(handle.fileno())
+            assert (handle.fileno(), info.st_dev, info.st_ino) in listed
+        else:
+            assert listed is None
+    connection = ts.connect(path)
+    try:
+        assert connection.execute("SELECT count(*) FROM parent").fetchone() == (3,)
+    finally:
+        connection.close()
+
+
+@posix_only
+def test_tb045_no_descriptor_listing_falls_back_to_the_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A POSIX system without ``/proc/self/fd`` and ``/dev/fd`` behaves like Windows: one open, the name checks."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (str(tmp_path / "missing"),))
+    assert ts._open_files() is None
+    opens: list[str] = []
+    original = ts._open
+
+    def counting_open(target: str, **kwargs: Any) -> sqlite3.Connection:
+        opens.append(target)
+        return original(target, **kwargs)
+
+    monkeypatch.setattr(ts, "_open", counting_open)
+    connection = ts.connect(path)
+    try:
+        assert connection.execute("SELECT count(*) FROM parent").fetchone() == (3,)
+    finally:
+        connection.close()
+    assert len(opens) == 1
 
 
 @posix_only
@@ -767,7 +811,7 @@ def test_tb045_concurrent_connects_are_not_refused(tmp_path: Path) -> None:
                 connection = ts.connect(path)
                 connection.execute("SELECT count(*) FROM parent").fetchone()
                 connection.close()
-        except BaseException as exc:  # noqa: BLE001 - reported below
+        except BaseException as exc:  # reported below
             errors.append(exc)
 
     threads = [threading.Thread(target=churn) for _ in range(6)]

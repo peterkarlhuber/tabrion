@@ -593,14 +593,18 @@ required (owner decision of 2026-11-08 11:26Z).
   items are TB-046..TB-049.
 - **Next step:** delta re-review of the fix round, then merge.
 
-### TB-045 · Randomized symlink race (TAB-T-123) in the nightly stress suite (QA-4)
+### TB-045 · SQLite open race: descriptor identity check and randomized race test (TAB-T-123, QA-4)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-013, QA-4, TM-04, TAB-T-123
+- **Priority:** P3 Low · **Status:** In progress (hardening in the TB-045 pull request; the randomized test is
+  open) · **Refs:** TABRION TAB-013, QA-4, TM-04, TAB-T-123, contract I-22
 - **What:** planning document 07 asks for a race test with 1,000 repetitions (a link swapped in between the check
   and the open, 0 hits). The pull request tests every window deterministically through seams (TAB-T-S07: before
   creation, after the check, while SQLite opens and swapped back, an inode swap); a randomized repetition test would
-  be timing-dependent on pull requests.
-- **Next step:** add it to the nightly stress job with QA-4.
+  be timing-dependent on pull requests. A time-of-check to time-of-use window remained inside SQLite's own open,
+  which no check of the name sees: on POSIX `connect` now verifies that the descriptor SQLite opened is the checked
+  file (I-22 (e), `test_tb045_*` with mutation probes), and the last name check resolves the directory only. On
+  Windows the name checks remain the only check (documented and tested as such).
+- **Next step:** add the randomized race test to the nightly stress job with QA-4; then close.
 
 ### TB-046 · ATTACH on a read-only SQLite connection creates an empty file (review I-1)
 

@@ -59,7 +59,7 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TM-04: a link followed while SQLite opened the file is caught after opening.
     (
-        "    return os.path.normcase(os.path.realpath(opened)) == os.path.normcase(os.path.realpath(path))\n",
+        "    return os.path.normcase(os.path.realpath(opened)) == os.path.normcase(checked)\n",
         "    return True\n",
         _T + "test_connect.py::test_s07_link_followed_while_opening_and_swapped_back",
         True,
