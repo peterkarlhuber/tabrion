@@ -395,7 +395,8 @@ def _open(target: str, *, uri: bool, timeout: float, check_same_thread: bool) ->
 
 
 _DESCRIPTOR_DIRECTORIES = ("/proc/self/fd", "/dev/fd")
-"""Where a POSIX system lists the process's open descriptors (Linux; macOS, and the BSDs with ``fdescfs``)."""
+"""Where a POSIX system may list the process's open descriptors (Linux, macOS); used only after the probe of
+``_listing_directory`` (elsewhere, such as the BSDs, unverified: names only unless the probe passes)."""
 _OPEN_ATTEMPTS = 8
 """``connect``: how often SQLite opens the file before an unverified open is refused (I-22, TB-045)."""
 _OPEN_BACKOFF = 0.002
@@ -421,8 +422,8 @@ _LISTINGS: dict[tuple[str, ...], str | None] = {}
 def _listing_directory() -> str | None:
     """The directory that lists every open descriptor of the process, or ``None``.
 
-    A directory counts only when a descriptor opened for the probe shows up in it: ``/dev/fd`` on a BSD without
-    ``fdescfs`` lists only 0, 1 and 2, and taking it as complete would refuse every open (review F4).
+    A directory counts only when a descriptor opened for the probe shows up in it as the same file: a ``/dev/fd``
+    that lists only 0, 1 and 2 (a BSD without ``fdescfs``), taken as complete, would refuse every open (review F4).
     """
     candidates = _DESCRIPTOR_DIRECTORIES
     if candidates in _LISTINGS:
@@ -447,7 +448,7 @@ def _complete_listing(candidates: tuple[str, ...], probe: int) -> str | None:
     """
     import fcntl  # POSIX only: imported here, not at module level
 
-    copy = fcntl.fcntl(probe, fcntl.F_DUPFD_CLOEXEC, 3)
+    copy = fcntl.fcntl(probe, getattr(fcntl, "F_DUPFD_CLOEXEC", fcntl.F_DUPFD), 3)
     try:
         info = os.fstat(copy)
         for directory in candidates:
@@ -465,14 +466,15 @@ def _complete_listing(candidates: tuple[str, ...], probe: int) -> str | None:
 
 
 def _open_files() -> frozenset[tuple[int, int, int]] | None:
-    """The process's open regular files as ``(descriptor, st_dev, st_ino)``; ``None`` where they cannot be listed."""
+    """The process's open regular files as ``(descriptor, st_dev, st_ino)``; ``None`` where they cannot be listed.
+
+    Once a listing was proved complete, a failing one (no descriptors or memory left) raises its ``OSError``: taking
+    it as "no listing" would open without the descriptor check (review F14).
+    """
     directory = _listing_directory()
     if directory is None:
         return None
-    try:
-        names = os.listdir(directory)
-    except OSError:
-        return None
+    names = os.listdir(directory)
     files: set[tuple[int, int, int]] = set()
     for name in names:
         try:
@@ -598,8 +600,12 @@ def _open_checked(
                 return _open(target, uri=uri, timeout=timeout, check_same_thread=check_same_thread)
             sides = _side_file_identities(name, allow_shared_file=allow_shared_file)
             connection = _open(target, uri=uri, timeout=timeout, check_same_thread=check_same_thread)
-            after = _open_files()
-            sides &= _side_file_identities(name, allow_shared_file=allow_shared_file)
+            try:
+                after = _open_files()
+                sides &= _side_file_identities(name, allow_shared_file=allow_shared_file)
+            except BaseException:
+                connection.close()
+                raise
         if after is not None and _opened_checked_file(before, after, expected, sides):
             return connection
         connection.close()  # a file opened concurrently elsewhere in the process can cause a benign mismatch: retry

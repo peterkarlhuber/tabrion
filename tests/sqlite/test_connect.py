@@ -717,7 +717,7 @@ def test_tb045_the_last_check_does_not_follow_the_name(
 
 
 def test_tb045_descriptor_listing_by_platform(tmp_path: Path) -> None:
-    """The descriptor check exists on POSIX only (I-22 (e)). On Linux, macOS and the BSDs the process's open regular
+    """The descriptor check exists on POSIX only (I-22 (e)). On Linux and macOS the process's open regular
     files are listed with their identity; on Windows nothing is listed and ``connect`` relies on the name checks of
     I-22 (d), which still open a normal database."""
     path = tmp_path / "a.db"
@@ -1114,7 +1114,8 @@ def test_tb045_a_name_that_stays_gone_is_refused(tmp_path: Path, monkeypatch: py
 
 
 @posix_only
-def test_tb045_an_unreadable_file_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("number", [errno.EACCES, errno.EPERM], ids=["EACCES", "EPERM"])
+def test_tb045_an_unreadable_file_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, number: int) -> None:
     """Review F1: an existing file whose identity cannot be taken is refused, not opened unchecked."""
     path = tmp_path / "a.db"
     make_database(path)
@@ -1122,7 +1123,7 @@ def test_tb045_an_unreadable_file_is_refused(tmp_path: Path, monkeypatch: pytest
 
     def denied(candidate: Any, *args: Any, **kwargs: Any) -> int:
         if os.fspath(candidate) == str(path):
-            raise PermissionError(13, "denied")
+            raise PermissionError(number, os.strerror(number))
         return real_open(candidate, *args, **kwargs)
 
     monkeypatch.setattr(os, "open", denied)
@@ -1134,6 +1135,43 @@ def test_tb045_an_unreadable_file_is_refused(tmp_path: Path, monkeypatch: pytest
 
 def _never_opened(target: str, **kwargs: Any) -> sqlite3.Connection:
     raise AssertionError("SQLite must not open a file whose identity was not taken")
+
+
+@posix_only
+@pytest.mark.parametrize("failing", [1, 2], ids=["first-listing", "second-listing"])
+def test_tb045_a_failing_listing_is_raised(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: int) -> None:
+    """Review F14: once the listing was proved complete, a listing that fails (here: no descriptors left) raises its
+    ``OSError``; it is not taken as "no listing", which would open without the descriptor check. A connection SQLite
+    opened before the second listing failed is closed."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    directory = ts._listing_directory()
+    assert directory is not None
+    real_listdir, real_open = os.listdir, ts._open
+    calls: list[str] = []
+    opened: list[sqlite3.Connection] = []
+
+    def listdir(candidate: Any = ".") -> list[str]:
+        if os.fspath(candidate) == directory:
+            calls.append(directory)
+            if len(calls) == failing:
+                raise OSError(errno.EMFILE, os.strerror(errno.EMFILE))
+        return real_listdir(candidate)
+
+    def recording_open(target: str, **kwargs: Any) -> sqlite3.Connection:
+        opened.append(real_open(target, **kwargs))
+        return opened[-1]
+
+    monkeypatch.setattr(os, "listdir", listdir)
+    monkeypatch.setattr(ts, "_open", recording_open)
+    with pytest.raises(OSError) as info:
+        ts.connect(path).close()
+    assert not isinstance(info.value, UnsafePath)
+    assert info.value.errno == errno.EMFILE
+    assert len(opened) == failing - 1
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            connection.execute("SELECT 1")  # closed
 
 
 @posix_only

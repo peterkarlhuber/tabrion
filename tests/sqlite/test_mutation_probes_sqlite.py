@@ -195,6 +195,22 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         True,
         False,
     ),
+    # TB-045 review F14: a failing listing after the probe is raised, never taken as "no listing".
+    (
+        "    names = os.listdir(directory)\n",
+        "    try:\n        names = os.listdir(directory)\n    except OSError:\n        return None\n",
+        _T + "test_connect.py::test_tb045_a_failing_listing_is_raised",
+        True,
+        False,
+    ),
+    # TB-045 review F14: the connection is closed when the second listing fails.
+    (
+        "            except BaseException:\n                connection.close()\n                raise\n",
+        "            except BaseException:\n                raise\n",
+        _T + "test_connect.py::test_tb045_a_failing_listing_is_raised",
+        True,
+        False,
+    ),
     # TM-04: the file that was checked is the file that was opened (same inode).
     (
         "    if expected[1] and (info.st_dev, info.st_ino) != expected:\n        return False\n",

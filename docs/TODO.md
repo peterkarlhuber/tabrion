@@ -609,7 +609,8 @@ required (owner decision of 2026-11-08 11:26Z).
   the database is held). Target: no false `UnsafePath` under a realistic pool load (connections opened and closed
   by a few threads, occasional unrelated file opens); under deliberately aggressive load the rate is measured and
   reported, not required to be 0. Also open: a `diagnose` field that says whether the descriptor check is active
-  (review F9). Then close.
+  (review F9), and verifying the descriptor listing on a BSD (unverified there; without a passing probe a BSD
+  gets the name checks only, review F15). Then close.
 
 ### TB-046 · ATTACH on a read-only SQLite connection creates an empty file (review I-1)
 

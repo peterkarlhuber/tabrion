@@ -65,7 +65,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 ### Changed
 
 - `tabrion.sqlite.connect` hardens its open against a time-of-check to time-of-use race (TB-045, contract I-22,
-  TM-04): on POSIX it lists the process's open regular files (`/proc/self/fd`, or `/dev/fd` on macOS and the BSDs)
+  TM-04): on POSIX it lists the process's open regular files (`/proc/self/fd`, or `/dev/fd` on macOS)
   before and after SQLite opens the database and requires the descriptor SQLite opened to be the checked file
   (`(st_dev, st_ino)`); a mismatch is retried after a short random pause, eight attempts in all, then refused with
   `UnsafePath("sqlite.unsafe_path")`. The final name check now resolves only the directory of the path, not its
