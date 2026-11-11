@@ -16,13 +16,13 @@
 
 ## Summary
 
-The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-08,
-review of #19).
+The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-11,
+review of #38).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 11 |
+| P1 High | 9 |
 | P2 Medium | 11 |
 | P3 Low | 31 |
 | P4 Optional | 5 |
@@ -115,8 +115,8 @@ required (owner decision of 2026-11-08 11:26Z).
   `backup` and checks (TAB-014), `tabrion.postgres` configure, ping, diagnose, extension status (TAB-015), roles
   (TAB-016), `tabrion.check` and finding codes (TAB-017), `SessionLock` and advisory helpers (TAB-030),
   `grant_runtime_role` (TAB-031). Each with the TAB-T test IDs of the contract.
-- **Next step:** TAB-010..TAB-012 are merged (independent review accepted at `ece7572`). TAB-013 and TAB-014 are in
-  review (independent review TB-044). `test_stubs_raise_not_implemented` shrinks module by module as stubs are
+- **Next step:** TAB-010..TAB-012 are merged (independent review accepted at `ece7572`). TAB-013 and TAB-014 are
+  merged (#4, `af0f3dc`; independent review TB-044 accepted). `test_stubs_raise_not_implemented` shrinks module by module as stubs are
   replaced (`errors`, `sql`, `config`, `sqlite` have left it); every change to a signature also runs
   `scripts/api_surface.py --write` and updates the contract. TAB-017 follows the dispatch of C-1 (contract section
   7). TAB-015 and TAB-016 are merged (contract I-14..I-20, [M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence),
@@ -152,7 +152,7 @@ required (owner decision of 2026-11-08 11:26Z).
   and the nightly `downstream` job (TAB-022); the internal "Levuvo Database Profile" with `conformance/SPEC.md`,
   vectors, manifest and the job `conformance` (TAB-050); the API stability policy and a deprecation helper
   (TAB-051).
-- **Status note:** TAB-022 is in the fifth lane C pull request (on master after #11; contract I-61, D-74, D-75): the
+- **Status note:** TAB-022 part (a) is merged (#19 `4d8e486`, follow-up #33 `5a7bc9e`; contract I-61, D-74, D-75): the
   consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
   The CI jobs are TB-070.
 - **Next step:** TAB-050 after TAB-016; TAB-051 after TAB-023.
@@ -202,7 +202,7 @@ required (owner decision of 2026-11-08 11:26Z).
   names in `tabrion._sa._v02` raise, and `scripts/api_surface.py` keeps names with a newer `since` out of the
   exported surface. The check is still missing as a mode, so a stub cannot come back unnoticed.
 - **Next step:** the mode goes into the TAB-040 version-bump pull request (branch `claude/project-thread-rdo6g3-v010`);
-  `release.yml` runs it with QA-11 (lane J).
+  `release.yml` runs it with QA-11.
 
 ### TB-062 · Checks outside the specification's code table (TAB-017 review Info of #13; 0.2 addendum candidate)
 
@@ -538,13 +538,13 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-044 · Independent review of TAB-013 and TAB-014 (planning document 07 section 6)
 
-- **Priority:** P1 High · **Status:** In progress (fix round in pull request #4) · **Refs:** TABRION TAB-013, TAB-014,
+- **Priority:** P1 High · **Status:** Done (accepted after the delta re-review at `6c131b6`; #4 merged as `af0f3dc`) · **Refs:** TABRION TAB-013, TAB-014,
   B-06-3, B-06-5, MIG-NOD-6, `reviews/tab-013-014-review.md`
 - **What:** the review model requires an independent review agent for TAB packages in `sqlite` (file permissions,
   transactions). The review at `8e78e9c` is ACCEPTED WITH CONDITIONS (M-1..M-3); the fix round fixes M-1..M-3 and
   L-1..L-3 in the same pull request ([STATUS.md](program/STATUS.md#review-fix-round-tab-013-tab-014)); the Info
   items are TB-046..TB-049.
-- **Next step:** delta re-review of the fix round, then merge.
+- **Next step:** none; the Info items continue as TB-046..TB-049.
 
 ### TB-045 · Randomized symlink race (TAB-T-123) in the nightly stress suite (QA-4)
 
@@ -745,16 +745,19 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
   Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
-
-### TB-075 · Core size: the 0.2 layout that brings the stdlib core down (TABRION TAB-040 T-9, deviation D-78)
+### TB-075 · Core size: what could still shrink the stdlib core (TABRION TAB-040 T-9, deviation D-78)
 
 - **Priority:** P3 Low · **Status:** Open (0.2) · **Refs:** TABRION TAB-040, plan 07 section 5 (T-9), plan 01 ST-7,
   STATUS D-78, TB-050, TB-051
-- **What:** the stdlib-only core has 2 128 code lines against the guideline of 1 500; D-78 justifies it for 0.1.0.
-  The real reductions: the log redaction of `tabrion.errors` (about 500 code lines) in a module of its own, the
-  SQLSTATE and SQLite code tables as one data table, one path-check helper for `sqlite.connect`, `migrate` and
-  `backup`.
-- **Next step:** with TB-050 and TB-051 in 0.2, without changing a public name or a behavior.
+- **What:** the stdlib-only core has 2 128 code lines against the guideline of 1 500; D-78 justifies it, and the
+  justification stays in force after 0.1.0. Small 0.2 changes: the SQLSTATE and SQLite code tables as one data table
+  (a few lines) and more shared path checks in `sqlite` (little). The log redaction of `tabrion.errors` (326 code
+  lines) leaves the count only behind an extra (for example `tabrion[logging]`) or by an owner decision to count
+  opt-in logging integration outside the core; a stdlib module of its own is still core. Even then the core stays at
+  about 1 800 lines, over 1 500.
+- **Next step:** with TB-050 and TB-051 in 0.2, without changing a public name or a behavior; the extra or the owner
+  decision first, if the redaction is to move.
+
 ## Cross-repository dependencies
 
 | This repo item | Other repo | Other item | Relation |
