@@ -174,7 +174,8 @@ required (owner decision of 2026-11-08 11:26Z).
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
 - **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 merged in #22; RA-B-2 in review,
-  #23) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
+  #23; RA-A-2 in review, #29; RA-A-3 in review, #35) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2,
+  RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
   tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. RA-B-1 is
@@ -187,11 +188,16 @@ required (owner decision of 2026-11-08 11:26Z).
   The tests live in `tests/examples/` and run inside the normal suite: `tests/examples/conftest.py` puts each
   application on `sys.path`, and `mypy_path` in `pyproject.toml` names it for `mypy --strict src tests scripts`. The
   transfer tests run against an upstream SQLite file in the core jobs and against PostgreSQL (marker `postgres`) in
-  the `pg (...)` jobs.
+  the `pg (...)` jobs. RA-A-3 is `examples/parts-baseline` (package `parts_baseline`, plain
+  SQLAlchemy); `tests/examples/parts_suite.py` is the suite both parts variants run, and a baseline deviation is a
+  strict `xfail` with its reason. "Plain SQLAlchemy" is defined as in RA-B-4: the documented pysqlite recipe
+  (`isolation_level = None`, a `begin` event, `BEGIN IMMEDIATE` for writes) is part of the baseline; one deviation
+  remains, the constraint's name in a violation (review H-1 and L-2 of #35). MW-1 leaves out test setup: both
+  variants share `tabrion.testing`'s PostgreSQL fixtures (review L-3 of #35).
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-A-2 (#29) and RA-A-3 (baseline); RA-B-3 (offline and failure tests with the fault proxy of
-  TAB-034, #26) and RA-B-4 (plain SQLAlchemy baseline, #28) after RA-B-2 (lane H).
+- **Next step:** RA-A-2 (#29) and RA-A-3 (#35, stacked on #29); RA-B-3 (offline and failure tests with the fault
+  proxy of TAB-034, #26) and RA-B-4 (plain SQLAlchemy baseline, #28) after RA-B-2 (lane H); then RA-EVAL.
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 

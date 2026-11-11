@@ -65,6 +65,16 @@ _EXACT = Context(prec=MAX_PREC, Emax=MAX_EMAX, Emin=MIN_EMIN)
 T = TypeVar("T")
 
 
+def _fits(column: sa.Column[Decimal], value: object) -> Decimal:
+    """``value`` as the column's ``ExactDecimal`` stores it; ``InvalidValue`` for a float, ``NaN`` or a value that
+    does not fit ``numeric(p, s)`` (raised outside the ``except`` block)."""
+    try:
+        return column.type.exact(value)  # type: ignore[attr-defined, no-any-return]
+    except ValueError:
+        pass
+    raise InvalidValue("a value is out of range")
+
+
 @dataclass(frozen=True, slots=True)
 class Part:
     id: int
@@ -266,6 +276,8 @@ def set_property(database: Database, part_number: str, key: str, value: Decimal,
     """Insert or replace one property (exact ``Decimal``, with its unit). Two concurrent first inserts of one key:
     the second gets the ``UNIQUE`` violation and runs again, now as an update."""
 
+    value = _fits(property_.c.value, value)
+
     def work(connection: sa.Connection) -> None:
         part_id = _part_id(connection, part_number)
         changed = connection.execute(
@@ -309,10 +321,11 @@ def _descendants(connection: sa.Connection, part_id: int) -> set[int]:
 
 def add_component(database: Database, assembly: str, component: str, quantity: Decimal) -> None:
     """``component`` becomes part of ``assembly`` ``quantity`` times; a cycle is refused (``CycleRefused``)."""
+    quantity = _fits(part_relation.c.quantity, quantity)
 
     def work(connection: sa.Connection) -> None:
         if connection.dialect.name == "postgresql":
-            connection.execute(sa.select(sa.func.pg_advisory_xact_lock(RELATIONS_LOCK)))
+            connection.execute(sa.select(sa.func.pg_catalog.pg_advisory_xact_lock(RELATIONS_LOCK)))
         assembly_id = _part_id(connection, assembly)
         component_id = _part_id(connection, component)
         if component_id == assembly_id or assembly_id in _descendants(connection, component_id):
@@ -357,7 +370,9 @@ def bill_of_materials(database: Database, assembly: str) -> list[Component]:
 
     The parts are visited in topological order (Kahn's algorithm), so the time is linear in the relations and no
     depth is too deep. The arithmetic is exact (a ``decimal`` context that never rounds); each total is rounded
-    once, half even, to ``BOM_SCALE`` decimal places. Stored relations with a cycle raise ``CycleFound``."""
+    once, half even, to ``BOM_SCALE`` decimal places. A positive total that would round to 0 (three levels of
+    ``0.001``, for example) raises ``InvalidValue`` rather than listing a part as needed 0 times. Stored relations
+    with a cycle raise ``CycleFound``."""
     with database.read() as transaction:
         root = _part_id(transaction.connection, assembly)
         edges = _reachable_edges(transaction.connection, root)
@@ -391,6 +406,8 @@ def bill_of_materials(database: Database, assembly: str) -> list[Component]:
             Component(numbers[node], totals[node].quantize(step, rounding=ROUND_HALF_EVEN), depths[node])
             for node in waiting
         ]
+    if any(not component.quantity for component in result):
+        raise InvalidValue("a total is below the bill of materials scale")
     return sorted(result, key=lambda component: component.part_number)
 
 

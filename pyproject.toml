@@ -116,7 +116,7 @@ extend-immutable-calls = [
 python_version = "3.11"
 strict = true
 packages = ["tabrion"]
-mypy_path = "src:examples/measurements:examples/parts"
+mypy_path = "src:examples/measurements:examples/parts:examples/parts-baseline"
 warn_unused_ignores = true
 
 # The consumer recorders (tests/golden/consumers/record_*.py) import the consumers, which are installed only in
