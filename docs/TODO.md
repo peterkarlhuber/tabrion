@@ -22,7 +22,7 @@ review of #19).
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 11 |
+| P1 High | 10 |
 | P2 Medium | 10 |
 | P3 Low | 32 |
 | P4 Optional | 6 |
