@@ -206,7 +206,7 @@ def test_b01_safe_url_placeholder_is_new_for_every_call(monkeypatch: pytest.Monk
     """Review L-1 of #37: the path goes in at the one place of a per-call placeholder, and if that place is not
     unique the URL is rendered the old way rather than wrongly."""
     fixed = uuid.UUID(int=7)
-    monkeypatch.setattr(tabrion._sa.database.uuid, "uuid4", lambda: fixed)
+    monkeypatch.setattr(uuid, "uuid4", lambda: fixed)  # _safe_url calls uuid.uuid4()
     url = sqlalchemy.URL.create(
         "sqlite+pysqlite", username=f"tabrion{fixed.hex}", password="pw-canary", database=r"C:\x.db"
     )
