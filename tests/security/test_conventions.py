@@ -9,6 +9,10 @@ from pathlib import Path
 import re
 import tomllib
 
+import pytest
+
+pytestmark = pytest.mark.security
+
 ROOT = Path(__file__).resolve().parents[2]
 GITHUB = ROOT / ".github"
 
