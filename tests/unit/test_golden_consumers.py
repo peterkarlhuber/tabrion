@@ -150,7 +150,11 @@ def test_nodestro_url_from_env(tmp_path: Path) -> None:
 def test_orkexa_open(tmp_path: Path) -> None:
     """``_storage.connect_private_database``: ``connect(path, profile=SQLiteProfile.orkexa())``."""
     replay = scenarios.sqlite_open_scenario(tmp_path, _opener(SQLiteProfile.orkexa()))
-    assert ORKEXA["sqlite.open"]["file_mode"] == ("0o600" if POSIX else None)  # Orkexa already makes it private
+    # The golden file is recorded on Linux (scripts/record_golden.py in CI), so it holds Orkexa's POSIX mode on every
+    # platform: Orkexa already makes the file private.
+    assert ORKEXA["sqlite.open"]["file_mode"] == "0o600"
+    # The replay runs here: 0600 on POSIX; Windows has no POSIX mode bits, and the scenario records None (issue #18).
+    assert replay["file_mode"] == ("0o600" if POSIX else None)
     assert replay == _tabrion_pragmas(ORKEXA["sqlite.open"])
 
 
