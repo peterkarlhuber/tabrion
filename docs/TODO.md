@@ -792,6 +792,29 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
   Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
+### TB-074 · Windows: `safe_url` percent-encoded a SQLite path (TABRION TAB-040 readiness gap 2)
+
+- **Priority:** P2 Medium · **Status:** Done (this pull request) · **Refs:** TABRION TAB-040, TAB-018, K3, nightly
+  issue #18
+- **What:** the nightly of `546d254` failed on `windows-latest`: `Database.safe_url` showed `C%3A%5C...` for a
+  Windows path (SQLAlchemy percent-encodes the path when it renders a URL), and layer-B mutation probe 7 could not
+  turn its test red because `test_b04_sqlite_path_checks_run_in_from_url` skips on Windows.
+- **Fix:** `safe_url` shows the SQLite path as it is (`test_b01_safe_url_shows_the_sqlite_path_as_it_is`, a
+  Windows-style path on every OS, with its own mutation probe); probes whose test skips on Windows skip there too.
+- **Review of #37:** what is not printable in the path is percent-encoded (M-1); the URL is masked before the path
+  goes in, through a per-call placeholder (M-2, L-1; `test_b01_safe_url_masks_first_and_then_shows_the_path`,
+  `test_b01_safe_url_placeholder_is_new_for_every_call`); `test_b04` is split into a portable half
+  (`test_b04_from_url_opens_the_file`, probed on every OS) and the POSIX-only half, and the probe file imports the
+  test's own `POSIX` predicate (L-3); CHANGELOG and contract I-37 name the POSIX changes (L-2).
+- **CI of `1146bbc`:** the probe of `test_b01_safe_url_shows_the_sqlite_path_as_it_is` survived in the
+  SQLAlchemy 2.0 jobs (Python 3.12 and lowest versions): SQLAlchemy 2.0 does not percent-encode the path, so the
+  old rendering already passed the three original cases. The `:`/`@`, `?password=` and control-character cases
+  added for M-1 and M-2 fail under the old rendering on both 2.0 and 2.1; checked locally with 2.0.57 and 2.1.8.
+- **CI of `42b59fe`:** with the probe 10 mutant (`ch if True else`), a lone surrogate in a test path reaches the
+  output of the child pytest raw, and pytest 8.0.0 (lowest versions job) writes it as a byte that is not UTF-8, so
+  the probe failed with `UnicodeDecodeError` before it read the return code. The probe runner now decodes the
+  child's output with `errors="backslashreplace"`; checked locally with the lowest versions.
+
 ## Cross-repository dependencies
 
 | This repo item | Other repo | Other item | Relation |
