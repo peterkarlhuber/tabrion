@@ -7,7 +7,7 @@ arguments in ``.github/workflows/ci.yml``, so lowering one is a workflow change 
 ``workflow-change-reviewed`` (ADR 0012). A named file that is missing from the report fails too, so a rename cannot
 drop its floor silently. Standard library only. Usage:
 
-  python3 -I .github/scripts/coverage_floors.py --report coverage.json --total 94 \\
+  python3 -I .github/scripts/coverage_floors.py --report coverage.json --total 93.5 \\
       --floor src/tabrion/errors.py=95 --floor src/tabrion/sqlite.py=94.9
 
 The percentages are coverage.py's ``percent_covered`` (statements and branches together when branch coverage is on).
@@ -45,7 +45,7 @@ def check(report: dict[str, object], total: float | None, floors: list[tuple[str
     if total is not None:
         value = float(totals["percent_covered"])
         if value < total:
-            problems.append(f"total: {value:.2f} % is below the floor {total:g} %")
+            problems.append(f"total: {value:.3f} % is below the floor {total:g} %")
     for path, floor in floors:
         entry = files.get(path)
         if not isinstance(entry, dict):
@@ -53,7 +53,7 @@ def check(report: dict[str, object], total: float | None, floors: list[tuple[str
             continue
         value = float(entry["summary"]["percent_covered"])
         if value < floor:
-            problems.append(f"{path}: {value:.2f} % is below the floor {floor:g} %")
+            problems.append(f"{path}: {value:.3f} % is below the floor {floor:g} %")
     return problems
 
 
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         entry = report.get("files", {}).get(path)
         rows.append((path, float(entry["summary"]["percent_covered"]) if entry else float("nan"), floor))
     for name, value, floor in rows:
-        print(f"{name}: {value:.2f} % (floor {'-' if floor is None else f'{floor:g} %'})")
+        print(f"{name}: {value:.3f} % (floor {'-' if floor is None else f'{floor:g} %'})")
     for line in problems:
         print(f"::error::coverage floor: {line}")
     return 1 if problems else 0

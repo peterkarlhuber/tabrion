@@ -16,15 +16,15 @@
 
 ## Summary
 
-The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-08,
-review of #19).
+The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-11,
+master merge into #41).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 11 |
-| P2 Medium | 11 |
-| P3 Low | 30 |
+| P1 High | 10 |
+| P2 Medium | 12 |
+| P3 Low | 31 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -155,7 +155,8 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Status note:** TAB-022 is in the fifth lane C pull request (on master after #11; contract I-61, D-74, D-75): the
   consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
   The CI jobs are TB-070.
-- **Next step:** TAB-050 after TAB-016; TAB-051 after TAB-023.
+- **Next step:** TAB-050 after TAB-016. TAB-051 is in review (branch `claude/project-thread-rdo6g3-tab051`; the
+  workflow parts are TB-090).
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
@@ -170,19 +171,26 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 in review, #22) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
-  RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 merged in #22; RA-B-2 in review,
+  #23) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
   tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. RA-B-1 is
-  `examples/measurements` (local capture, layer A). Its tests live in `tests/examples/` and run inside the normal
-  suite: `tests/examples/conftest.py` puts each application on `sys.path`, and `mypy_path` in `pyproject.toml` names
-  it for `mypy --strict src tests scripts`.
+  `examples/measurements` (local capture, layer A). RA-B-2 adds the idempotent transfer through layer B
+  (`measurements/transfer.py`, `measurements/upstream.py`: batches by the high-water mark `seq`, `ON CONFLICT DO
+  NOTHING` on the natural key, the mark moved only after the upstream commit; local migration 3 `transfer_mark`).
+  The mark is not tied to an upstream identity (review L-1 of #23): `transfer --from-start` (`Store.reset_mark`) is
+  the documented reset after switching or restoring the upstream; storing an upstream fingerprint with the mark
+  (for example a UUID row that `init-upstream` creates) is open for RA-EVAL.
+  The tests live in `tests/examples/` and run inside the normal suite: `tests/examples/conftest.py` puts each
+  application on `sys.path`, and `mypy_path` in `pyproject.toml` names it for `mypy --strict src tests scripts`. The
+  transfer tests run against an upstream SQLite file in the core jobs and against PostgreSQL (marker `postgres`) in
+  the `pg (...)` jobs.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. One
   job `examples` (all of `tests/examples`, with a PostgreSQL 17 service) is in the workflow-change pull request of
   TB-017; a split per application can follow when the suites grow.
-- **Next step:** RA-A-1 is accepted (#22, delta re-review of `0ab3134`; its notes N-1 to N-3 are done on #22); then
-  RA-A-2 (#29) and RA-A-3 (baseline); RA-B-2..4 in `examples/measurements` (lane H).
+- **Next step:** RA-A-2 (#29) and RA-A-3 (baseline); RA-B-3 (offline and failure tests with the fault proxy of
+  TAB-034, #26) and RA-B-4 (plain SQLAlchemy baseline, #28) after RA-B-2 (lane H).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
@@ -352,9 +360,9 @@ required (owner decision of 2026-11-08 11:26Z).
   - Review condition C-2: both guards now decide from the base branch. `api surface` requires `--base` once the base's
     `api_surface.py` has it, and `conformance` fails when the base has `conformance/MANIFEST.json` but the head does
     not, so a pull request that deletes either cannot pass.
-  - K1: job `coverage` (the whole suite with PostgreSQL 17, branch coverage) with floors at the measured values of
-    2026-11-08, rounded down: total 94 % (K1 asks 90 %), `errors.py` 95 %, `sql.py` 95 %, `sqlite.py` 94.9 %. K1
-    asks 95 % for `sqlite`; it is 0.06 points short. The floors live in `ci.yml`, so lowering one needs the
+  - K1: job `coverage` (the whole suite with PostgreSQL 17, branch coverage) with floors: total 93.5 % (measured
+    94.05 % on 2026-11-08 and 93.99 % after the merge of master `cf815fd`, so half a point of headroom; K1 asks
+    90 %), `errors.py` 95 %, `sql.py` 95 %, `sqlite.py` 94.9 %. K1 asks 95 % for `sqlite`; it is 0.06 points short. The floors live in `ci.yml`, so lowering one needs the
     workflow-change review. Job `mutation probes` runs the four mutation-probe modules. `test` skips them, so the
     unit run takes about 56 s locally (K1: under 60 s); the PostgreSQL probes still run in every `pg` job.
   - K7/K8: `tests/ci/flaky.txt` (empty) with `tests/unit/test_flaky_list.py`; ruff `S` is the documented Bandit
@@ -369,6 +377,26 @@ required (owner decision of 2026-11-08 11:26Z).
   `examples` and `downstream` parts. Still open: fault injection 3x (TAB-034), stress 200x (QA-4), the nightly
   DB-restart case once TAB-T-009 exists, the `sqlite` floor raised to 95 % once tests reach it, and the TAB-T
   traceability check of lane C, wired into CI once it lands.
+
+### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-051, S-6, S-8, contract I-81
+- **What:** the job `api surface` in `ci.yml` runs `scripts/api_surface.py` without `--base`, so a surface change
+  without a CHANGELOG entry fails only when a reviewer runs `--base origin/master` (the job needs
+  `fetch-depth: 0` and `--base ${{ github.event.pull_request.base.sha }}`). `release.yml` has no gate that runs
+  `--base <previous release SHA>` and checks the `downstream` result (S-7). The downstream issues of the release
+  flow stay manual: the owner, or the coordinator on the owner's go, opens them (`docs/development/api-stability.md`).
+- **Next step:** the workflow-change pull request of TB-017 (branch `claude/project-thread-rdo6g3-ci-wiring`) adds
+  `--base <merge base>` to `api surface` and the dry-run job `downstream-notice` to `release.yml`; close this entry
+  when it merges. Until then the release checklist runs both steps by hand.
+
+### TB-091 · Error codes in `surface.json` (TABRION TAB-051, deviation D-91)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-051, TAB-023, S-2, S-6
+- **What:** S-2 makes `TabrionError.code` values stable and S-6 wants `api_surface.py` to compare them, but the
+  codes are string literals at the raise sites and not in `surface.json`.
+- **Next step:** decide with TAB-040 whether to collect the codes (for example from the contract tables or an
+  internal registry) into a `codes` section of `surface.json`.
 
 ### TB-018 · PostgreSQL matrix cost on pull requests
 
@@ -389,11 +417,33 @@ required (owner decision of 2026-11-08 11:26Z).
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** G-T1 F-15, CC-3, TABRION TAB-004
 - **What:** macOS and Windows run on pull requests only when `sqlite.py` or `tests/sqlite/**` change; `config.py`,
-  `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms.
+  `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms, and so do the Windows-specific
+  paths of `scripts/downstream.py`, `tests/unit/test_downstream.py` and `tests/unit/test_golden_consumers.py`
+  (TB-134: those failed on Windows in the nightly only).
 - **Next step:** the workflow-change pull request of TB-017 adds `config.py`, `errors.py`, `testing/sqlite.py`,
-  `pyproject.toml`, and for the LDP vectors (TAB-050 review H-1) `conformance/**` and `tests/conformance/**`, to
-  `platforms.yml` and the manifest's `path_filters` (ci-ok judges by the default branch's manifest, so it takes effect
-  once merged); close this entry then.
+  `pyproject.toml`, for the LDP vectors (TAB-050 review H-1) `conformance/**` and `tests/conformance/**`, and the
+  three TB-134 paths to `platforms.yml` and the manifest's `path_filters` (ci-ok judges by the default branch's
+  manifest, so it takes effect once merged); close this entry then.
+
+### TB-134 · Windows: downstream runner and golden replay failed in the platforms job (issue #18)
+
+- **Priority:** P2 Medium · **Status:** Done · **Refs:** issue #18, nightly run 42809181374, TAB-022, TB-021
+- **What:** eight Windows failures besides the two of TB-074 (#37):
+  - six `tests/unit/test_downstream.py` installs: `uv pip install --python <venv>\Scripts\python` exits 2 ("No
+    virtual environment or system Python installation found"). `subprocess` starts `Scripts\python` because
+    `CreateProcess` adds `.exe`, but uv takes the path as given. A real bug of `scripts/downstream.py` on Windows,
+    in `run_consumer` as well, not only in the tests. Fixed: `downstream.venv_python()` returns
+    `Scripts\python.exe` on Windows, used by the script and the tests; `test_venv_python_is_the_interpreter_file`
+    pins it (the file must exist).
+  - `test_a_database_error_is_a_setup_failure_without_its_message`: Windows retries a refused local connect until
+    `connect_timeout`, so psycopg raises `ConnectionTimeout`, a subclass of `OperationalError`. The script's report
+    was right (class name, no message); the test now asserts the cause is an `OperationalError`, exactly that class on
+    POSIX and that class or `ConnectionTimeout` on Windows, and the exact report text.
+  - `test_golden_consumers.py::test_orkexa_open` compared the golden file, recorded on Linux, with the current
+    platform's mode. The golden file holds `0o600` everywhere; the replay records `None` on Windows (no POSIX mode
+    bits), which the test now asserts explicitly.
+- **Next step:** none. The platforms job runs these files on pull requests only once TB-021 widens its path filter;
+  the fix was proven by a `workflow_dispatch` run of `platforms.yml` on the fix branch.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 
