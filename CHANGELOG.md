@@ -15,9 +15,19 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   the extra at the top of a module. `tests/packaging/test_independent.py` imports every module while orkexa, axentra,
   `nodestro_*` and `tabrion_studio` are blocked by a meta path finder (document 05, section 3.2), with probes. Tests
   only.
+
+- API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
+  and remove a stable name, and the downstream notice in the release flow. The internal helper
+  `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
+  replacement and the removal version, and refuses a window shorter than S-3. `scripts/api_surface.py` checks every
+  deprecation against `surface.json` (`"deprecated"`) and the CHANGELOG, and with `--base <ref>` that every surface
+  change since `<ref>` is named under `Deprecated`, `Removed` or `Changed` in `[Unreleased]` (S-6).
+
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
-  `examples/`.
+  `examples/`. RA-B-2 adds the idempotent transfer to PostgreSQL through layer B (high-water mark, `ON CONFLICT DO
+  NOTHING` on the natural key, the mark moved only after the upstream commit, `transfer --from-start` after
+  switching the upstream), tested on SQLite and PostgreSQL.
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
   `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`
@@ -55,8 +65,16 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   unknown and nothing pending, so a head covered by `depends_on` counts as applied; a script directory Alembic
   cannot resolve raises `ConfigurationError("migrations.revisions")` without path or cause chain. Only
   `<script_location>/versions` is read (TODO TB-066).
+- Reference application `examples/parts` (RA-A-1): a portable schema (material, part, property, part_relation)
+  with Alembic on SQLite and PostgreSQL and `require_current` as the gate; decimals are scaled integers on SQLite,
+  so they order and compare as on PostgreSQL, and migrations run in `Database.transaction()`; not part of the wheel
+  or the sdist.
 
 ### Changed
+
+- Windows (issue #18, TB-134): `scripts/downstream.py` hands uv the interpreter file `Scripts\python.exe` (new
+  `venv_python()`), so a downstream run works there; the downstream and golden-replay tests assert the Windows
+  behavior (psycopg's `ConnectionTimeout` for a refused local connect, no POSIX mode in the replay).
 
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
@@ -188,7 +206,8 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `scripts/record_golden.py` from the consumers' own code in throwaway environments and replayed against Tabrion in
   every test run, each naming the consumer's full 40-character commit; `scripts/downstream.py` runs the consumers'
   database tests against Tabrion HEAD, which `uv pip install --override` puts in place of any Tabrion requirement
-  the consumer has (a Git commit pin), with a timeout on every step.
+  the consumer has (a Git commit pin), with all extras, with a timeout on every step; a database that cannot be
+  dropped is a note beside the consumer's result.
 - `tabrion.testing` re-review fixes (#11): `truncate_tables` without `schema=` empties only a schema the plugin created
   and refuses a `CASCADE` into another schema; a schema teardown that would drop an extension is rolled back; the
   fixtures work under a `NOINHERIT` admin on PostgreSQL 16+, try every role at the end and drop the roles' grants in
