@@ -63,6 +63,8 @@ nav:
       - Installation: getting-started/installation.md
   - Specification: specification.md
   - API contract: api/contract.md
+  - Development:
+      - API stability policy: development/api-stability.md
   - Architecture decisions:
       - adr/README.md
       - "0001 Standalone library": adr/0001-standalone-library.md
