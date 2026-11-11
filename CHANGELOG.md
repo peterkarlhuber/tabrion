@@ -8,8 +8,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
-- `docs/api-consumers.md`: which public function each consumer uses and which consumer test covers it (K11),
-  checked against contract section 8 by `tests/unit/test_api_consumers.py`.
+- `docs/api-consumers.md`: which public function each consumer uses and which consumer test covers it (K11).
+  `tests/unit/test_api_consumers.py` checks it against contract section 8 (API names per row), the golden record keys
+  and the replay tests. `advisory_unlock` is listed as not yet covered by a consumer record.
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
   `examples/`.

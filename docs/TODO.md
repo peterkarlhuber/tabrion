@@ -743,16 +743,26 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
   Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
-
 ### TB-076 · K11 consumer coverage list `docs/api-consumers.md` (TABRION TAB-040 readiness gap 6)
 
 - **Priority:** P3 Low · **Status:** Open (kept current) · **Refs:** TABRION TAB-040, plan 07 K11, contract 8, I-61
 - **What:** `docs/api-consumers.md` lists every public function a consumer uses with its golden record and replay
-  test; `tests/unit/test_api_consumers.py` requires every category A/B row of contract section 8 and every named test
-  to exist. Two uses have no consumer record yet (Orkexa's error texts, Orkexa's `check_database_path` outside
-  `connect`).
+  test. `tests/unit/test_api_consumers.py` requires the following:
+  - every category A/B row of contract section 8 is quoted by a row whose API cells name the contract's Tabrion
+    functions;
+  - every golden key exists;
+  - every consumer of a coverage row has a replay test;
+  - every named test exists in the strict form.
+
+  Three uses have no consumer record yet: Axentra's `advisory_unlock` (raw SQL at `migrations.py:511`), Orkexa's
+  error texts, and Orkexa's `check_database_path` outside `connect`.
 - **Next step:** each MIG-AXE, MIG-NOD and MIG-ORK step adds the consumer's own test of the adopted function to the
-  page; MIG-ORK-2 closes the Orkexa error-text row.
+  page. MIG-AXE closes the `advisory_unlock` row; MIG-ORK-2 closes the Orkexa error-text row. The governance lane
+  refreshes the stale line numbers of contract section 8 (review of #39, L-3): Axentra `Database._configure`, the
+  Nodestro `storage_postgres.py` cells for `_configure`, the session locks, `role_info`, `grant_runtime_role`,
+  `inspect_role` and `pgvector_status`, and the Axentra worker lock (`LeaderLock` in `events/schedules.py:72`, not
+  `events/worker.py`). The page lists the lines at the golden commits; the same PR updates its verbatim quotes.
+
 ## Cross-repository dependencies
 
 | This repo item | Other repo | Other item | Relation |
