@@ -23,8 +23,8 @@ review of #38).
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 9 |
-| P2 Medium | 11 |
-| P3 Low | 31 |
+| P2 Medium | 12 |
+| P3 Low | 32 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -155,7 +155,8 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Status note:** TAB-022 part (a) is merged (#19 `4d8e486`, follow-up #33 `5a7bc9e`; contract I-61, D-74, D-75): the
   consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
   The CI jobs are TB-070.
-- **Next step:** TAB-050 after TAB-016; TAB-051 after TAB-023.
+- **Next step:** TAB-050 after TAB-016. TAB-051 is in review (branch `claude/project-thread-rdo6g3-tab051`; the
+  workflow parts are TB-090).
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
@@ -333,6 +334,25 @@ required (owner decision of 2026-11-08 11:26Z).
 - **What:** `conformance`, `golden files` and `examples` in `ci.yml` (`api surface` arrived with TAB-023); fault injection, stress and
   `downstream` in `nightly.yml`. Each is added with its work package and listed in `.github/ci-manifest.json`.
 - **Next step:** with each work package.
+
+### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-051, S-6, S-8, contract I-81
+- **What:** the job `api surface` in `ci.yml` runs `scripts/api_surface.py` without `--base`, so a surface change
+  without a CHANGELOG entry fails only when a reviewer runs `--base origin/master` (the job needs
+  `fetch-depth: 0` and `--base ${{ github.event.pull_request.base.sha }}`). `release.yml` has no gate that runs
+  `--base <previous release SHA>` and checks the `downstream` result (S-7). The downstream issues of the release
+  flow stay manual: the owner, or the coordinator on the owner's go, opens them (`docs/development/api-stability.md`).
+- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml` and `release.yml`; until then the
+  release checklist runs both steps by hand.
+
+### TB-091 · Error codes in `surface.json` (TABRION TAB-051, deviation D-91)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-051, TAB-023, S-2, S-6
+- **What:** S-2 makes `TabrionError.code` values stable and S-6 wants `api_surface.py` to compare them, but the
+  codes are string literals at the raise sites and not in `surface.json`.
+- **Next step:** decide with TAB-040 whether to collect the codes (for example from the contract tables or an
+  internal registry) into a `codes` section of `surface.json`.
 
 ### TB-018 · PostgreSQL matrix cost on pull requests
 
