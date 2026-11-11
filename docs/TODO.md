@@ -374,6 +374,24 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** none. TAB-018 keeps them documentation-only aliases and drops them from
   `tabrion._sa.database.__all__`; `surface.json` is unchanged (contract I-37).
 
+### TB-135 · Windows: `safe_url` test and a skipped mutation probe in the platforms job (PR #25, #31)
+
+- **Priority:** P3 Low · **Status:** Done · **Refs:** contract I-37, TAB-018, platforms jobs 130762928488 (#25) and
+  130764624073 (#31), TB-021
+- **What:** two Windows failures of `sqlite (windows-latest)`, latent on master (no platforms run there since
+  TAB-018; the same three failures on the TB-045 branch, which is master plus its own change):
+  - `test_b01_sqlite_file_urls` expected the input string, `sqlite+pysqlite:///C:\Users\...`. `safe_url` is
+    SQLAlchemy's rendering (I-37), and SQLAlchemy 2.1 percent-encodes the database part (`C%3A%5CUsers...`; 2.0
+    renders it raw). The code is right: the encoded form is what SQLAlchemy shows for `engine.url` and parses back
+    to the same path, while a raw `?` or `#` in a path would be ambiguous. The test now compares with
+    `URL.create(...).render_as_string()`, checks that `make_url` gives the path back, and adds file names with `#`
+    (all platforms) and `C:\x\...` (POSIX) so Linux CI sees the encoding too.
+  - The probe "check_path and the file creation run in from_url" named
+    `test_b04_sqlite_path_checks_run_in_from_url`, which skips itself outside POSIX: the skip passed for the missed
+    mutation. That probe now skips outside POSIX, and a second probe of the same mutation names the portable
+    `test_b04_read_only_profile_needs_the_file` (a missing file under a read-only profile raises in `from_url`).
+- **Next step:** none; a `workflow_dispatch` run of `platforms.yml` confirms it once pushes resume.
+
 ### TB-021 · Platform path filters too narrow (G-T1 F-15, CC-3)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** G-T1 F-15, CC-3, TABRION TAB-004

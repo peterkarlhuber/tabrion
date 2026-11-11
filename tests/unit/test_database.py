@@ -150,13 +150,28 @@ def test_f14_classes_have_no_public_constructor() -> None:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "layer-b.db",
+        # Characters SQLAlchemy 2.1 percent-encodes in the database part (2.0 renders them raw): on Linux too, the
+        # test sees what a Windows path (``C:\\...``) looks like in safe_url.
+        "layer b#1.db",
+        pytest.param("C:\\x\\layer-b.db", marks=pytest.mark.skipif(not POSIX, reason="one file name on POSIX only")),
+    ],
+)
 @pytest.mark.parametrize("scheme", ["sqlite", "sqlite+pysqlite"])
-def test_b01_sqlite_file_urls(path: Path, scheme: str) -> None:
+def test_b01_sqlite_file_urls(tmp_path: Path, scheme: str, name: str) -> None:
+    path = tmp_path / name
     with Database.from_url(f"{scheme}:///{path}") as database:
         assert database.dialect == "sqlite"
         assert database.fetch_scalar("SELECT 1") == 1
-        assert database.safe_url == f"sqlite+pysqlite:///{path}"
-        assert repr(database) == f"<tabrion.Database sqlite+pysqlite:///{path}>"
+        # safe_url is SQLAlchemy's rendering of the URL (contract I-37), not the input string: SQLAlchemy 2.1
+        # percent-encodes the path (``C:\\Users`` -> ``C%3A%5CUsers`` on Windows), and make_url gives the path back.
+        rendered = sqlalchemy.URL.create("sqlite+pysqlite", database=str(path)).render_as_string(hide_password=True)
+        assert database.safe_url == rendered
+        assert sqlalchemy.make_url(database.safe_url).database == str(path)
+        assert repr(database) == f"<tabrion.Database {rendered}>"
     assert path.exists()
 
 

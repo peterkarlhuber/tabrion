@@ -6,6 +6,7 @@ exactly once, so a refactoring cannot disarm a probe silently.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,9 @@ pytest.importorskip("sqlalchemy")
 pytest.importorskip("psycopg")
 
 T = "tests/unit/test_database.py::"
+
+POSIX_ONLY = {T + "test_b04_sqlite_path_checks_run_in_from_url"}
+"""Probed tests that skip themselves outside POSIX: there, a skip would pass for a missed mutation."""
 
 PROBES = [
     # Write transactions take the write lock at BEGIN (specification 3.2).
@@ -52,12 +56,19 @@ PROBES = [
         "        pass\n",
         T + "test_b13_no_deadline_stays_behind",
     ),
-    # check_path and the file creation run in from_url.
+    # check_path and the file creation run in from_url (POSIX: symbolic link and file mode).
     (
         "_sa/database.py",
         "            _sqlite_creator(path, profile).close()\n",
         "            pass\n",
         T + "test_b04_sqlite_path_checks_run_in_from_url",
+    ),
+    # The same mutation on every platform: a missing file under a read-only profile raises in from_url.
+    (
+        "_sa/database.py",
+        "            _sqlite_creator(path, profile).close()\n",
+        "            pass\n",
+        T + "test_b04_read_only_profile_needs_the_file",
     ),
     # TLS: a weak sslmode for a remote host is refused.
     ("_sa/database.py", "if sslmode in _WEAK_SSLMODES or", "if False and", T + "test_b03_tls_violations"),
@@ -90,6 +101,8 @@ def test_unmutated_copy_passes(tmp_path: Path) -> None:
     ids=[p[3].split("::")[1] + f"-{i}" for i, p in enumerate(PROBES)],
 )
 def test_mutation_turns_the_test_red(tmp_path: Path, module: str, anchor: str, replacement: str, test: str) -> None:
+    if test in POSIX_ONLY and os.name != "posix":
+        pytest.skip("the probed test runs on POSIX only; a portable probe covers the same mutation")
     copy = _copy(tmp_path)
     target = copy / "tabrion" / module
     text = target.read_text(encoding="utf-8")
