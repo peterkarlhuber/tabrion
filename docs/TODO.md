@@ -168,18 +168,25 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 in review, #22) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
-  RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 merged in #22; RA-B-2 in review,
+  #23) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
   tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. RA-B-1 is
-  `examples/measurements` (local capture, layer A). Its tests live in `tests/examples/` and run inside the normal
-  suite: `tests/examples/conftest.py` puts each application on `sys.path`, and `mypy_path` in `pyproject.toml` names
-  it for `mypy --strict src tests scripts`.
+  `examples/measurements` (local capture, layer A). RA-B-2 adds the idempotent transfer through layer B
+  (`measurements/transfer.py`, `measurements/upstream.py`: batches by the high-water mark `seq`, `ON CONFLICT DO
+  NOTHING` on the natural key, the mark moved only after the upstream commit; local migration 3 `transfer_mark`).
+  The mark is not tied to an upstream identity (review L-1 of #23): `transfer --from-start` (`Store.reset_mark`) is
+  the documented reset after switching or restoring the upstream; storing an upstream fingerprint with the mark
+  (for example a UUID row that `init-upstream` creates) is open for RA-EVAL.
+  The tests live in `tests/examples/` and run inside the normal suite: `tests/examples/conftest.py` puts each
+  application on `sys.path`, and `mypy_path` in `pyproject.toml` names it for `mypy --strict src tests scripts`. The
+  transfer tests run against an upstream SQLite file in the core jobs and against PostgreSQL (marker `postgres`) in
+  the `pg (...)` jobs.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-A-1 is accepted (#22, delta re-review of `0ab3134`; its notes N-1 to N-3 are done on #22); then
-  RA-A-2 (#29) and RA-A-3 (baseline); RA-B-2..4 in `examples/measurements` (lane H).
+- **Next step:** RA-A-2 (#29) and RA-A-3 (baseline); RA-B-3 (offline and failure tests with the fault proxy of
+  TAB-034, #26) and RA-B-4 (plain SQLAlchemy baseline, #28) after RA-B-2 (lane H).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 

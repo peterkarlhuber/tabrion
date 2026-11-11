@@ -17,7 +17,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
-  `examples/`.
+  `examples/`. RA-B-2 adds the idempotent transfer to PostgreSQL through layer B (high-water mark, `ON CONFLICT DO
+  NOTHING` on the natural key, the mark moved only after the upstream commit, `transfer --from-start` after
+  switching the upstream), tested on SQLite and PostgreSQL.
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
   `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`
