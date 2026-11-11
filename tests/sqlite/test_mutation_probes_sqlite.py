@@ -67,7 +67,7 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TM-04, TB-045: the descriptor SQLite opened is the checked file.
     (
-        "        if _opened_checked_file(before, after, expected, _side_file_identities(name)):\n",
+        "        if after is not None and _opened_checked_file(before, after, expected, sides):\n",
         "        if True:\n",
         _T + "test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused",
         True,
@@ -75,15 +75,15 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TB-045: only a reused descriptor, with nothing new opened, may stand for the checked file.
     (
-        "    return not unexplained and any((dev, ino) == expected for _, dev, ino in after)\n",
-        "    return any((dev, ino) == expected for _, dev, ino in after)\n",
+        "    if unexplained:\n",
+        "    if False:\n",
         _T + "test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused",
         True,
         False,
     ),
     # TB-045: a descriptor SQLite reuses for the checked file is accepted (pools would fail otherwise).
     (
-        "    return not unexplained and any((dev, ino) == expected for _, dev, ino in after)\n",
+        "    return held\n",
         "    return False\n",
         _T + "test_connect.py::test_tb045_a_descriptor_sqlite_reuses_is_accepted",
         True,
@@ -95,6 +95,55 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         "    unexplained: list[tuple[int, int, int]] = []\n",
         _T + "test_connect.py::test_tb045_side_files_opened_meanwhile_do_not_hide_a_reused_descriptor",
         False,
+        False,
+    ),
+    # TB-045 review F2: a side file counts only with a single link (nothing else linked under its name).
+    (
+        "            and info.st_nlink == 1\n",
+        "",
+        _T + "test_connect.py::test_tb045_side_file_identities_need_one_link_and_the_owners_rules",
+        True,
+        False,
+    ),
+    # TB-045 review F2: a side file counts only when it was the same before and after the open.
+    (
+        "            sides &= _side_file_identities(name, allow_shared_file=allow_shared_file)\n",
+        "            sides = _side_file_identities(name, allow_shared_file=allow_shared_file)\n",
+        _T + "test_connect.py::test_tb045_a_side_file_that_appeared_during_the_open_is_not_exempt",
+        True,
+        False,
+    ),
+    # TB-045 review F6: concurrent connects cannot interleave between the snapshots.
+    (
+        "        with _OPEN_LOCK:\n            before = _open_files() if name is not None else None\n",
+        "        with contextlib.nullcontext():\n            before = _open_files() if name is not None else None\n",
+        _T + "test_connect.py::test_tb045_connects_do_not_interleave_between_the_snapshots",
+        True,
+        False,
+    ),
+    # TB-045 review F6: only regular files are compared (a pipe or socket opened meanwhile is not a mismatch).
+    (
+        "        if stat.S_ISREG(info.st_mode):\n            files.add((descriptor, info.st_dev, info.st_ino))\n",
+        "        files.add((descriptor, info.st_dev, info.st_ino))\n",
+        _T + "test_connect.py::test_tb045_a_pipe_opened_meanwhile_does_not_count",
+        True,
+        False,
+    ),
+    # TB-045 review F4: a listing counts only when a probe descriptor shows up in it.
+    (
+        "                        if str(descriptor) in os.listdir(directory):\n",
+        "                        if os.listdir(directory) is not None:\n",
+        _T + "test_connect.py::test_tb045_an_incomplete_listing_is_not_used",
+        True,
+        False,
+    ),
+    # TB-045 review F1: a name that is gone while it is checked is checked again, never opened unchecked.
+    (
+        "            except FileNotFoundError:\n"
+        '                _log.debug("the database file %s disappeared while it was checked", name)\n',
+        "            except FileNotFoundError:\n                return 0, 0\n",
+        _T + "test_connect.py::test_tb045_a_name_gone_while_checked_is_checked_again",
+        True,
         False,
     ),
     # TM-04: the file that was checked is the file that was opened (same inode).

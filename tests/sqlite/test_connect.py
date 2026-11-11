@@ -13,6 +13,7 @@ import sqlite3
 import stat
 import threading
 from typing import Any
+import warnings
 
 import pytest
 
@@ -821,9 +822,233 @@ def test_tb045_side_file_identities(tmp_path: Path) -> None:
     try:
         expected = {(os.stat(p).st_dev, os.stat(p).st_ino) for p in (f"{path}-wal", f"{path}-shm")}
         assert ts._side_file_identities(str(path)) == expected
+        assert ts._side_file_identities(str(path), allow_shared_file=True) == frozenset()
         assert ts._side_file_identities(str(tmp_path / "missing.db")) == frozenset()
     finally:
         holder.close()
+
+
+@posix_only
+def test_tb045_side_file_identities_need_one_link_and_the_owners_rules(tmp_path: Path) -> None:
+    """Review F2: only what SQLite creates next to a checked database counts as a side file. A file linked under a
+    side file's name (it has a second name) or one that others may write does not."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    linked = tmp_path / "linked"
+    linked.write_bytes(b"x")
+    linked.chmod(0o600)
+    os.link(linked, f"{path}-wal")
+    shared = Path(f"{path}-shm")
+    shared.write_bytes(b"x")
+    shared.chmod(0o666)
+    single = Path(f"{path}-journal")
+    single.write_bytes(b"x")
+    single.chmod(0o600)
+    assert ts._side_file_identities(str(path)) == {(single.stat().st_dev, single.stat().st_ino)}
+
+
+def _reuse_the_holder(
+    holder: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch, side_effect: Callable[[], None]
+) -> None:
+    """A seam for SQLite reusing a descriptor of the checked file: ``_open`` opens no new main file (it returns the
+    holder) while ``side_effect`` opens something else in the window."""
+
+    def reuse(target: str, **kwargs: Any) -> sqlite3.Connection:
+        side_effect()
+        return holder
+
+    monkeypatch.setattr(ts, "_open", reuse)
+
+
+@posix_only
+def test_tb045_a_side_file_that_appeared_during_the_open_is_not_exempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F2: a side file counts only when it was the same before and after the open; one put under the name of
+    the ``-wal`` meanwhile is an unexplained new file."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    holder = plain(path)
+    holder.execute("SELECT count(*) FROM parent").fetchone()
+    descriptors: list[int] = []
+
+    def new_wal() -> None:
+        fresh = tmp_path / f"fresh{len(descriptors)}"
+        descriptors.append(os.open(fresh, os.O_CREAT | os.O_RDWR, 0o600))
+        os.replace(fresh, f"{path}-wal")
+
+    _reuse_the_holder(holder, monkeypatch, new_wal)
+    try:
+        with pytest.raises(UnsafePath) as info:
+            ts.connect(path)
+        assert info.value.code == "sqlite.unsafe_path"
+        assert len(descriptors) == ts._OPEN_ATTEMPTS
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+        holder.close()
+
+
+@posix_only
+def test_tb045_a_pipe_opened_meanwhile_does_not_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F6: only regular files are compared; a pipe or socket opened by another thread while SQLite reuses a
+    descriptor of the checked file does not refuse the open."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    holder = plain(path)
+    holder.execute("SELECT count(*) FROM parent").fetchone()
+    pipes: list[int] = []
+    _reuse_the_holder(holder, monkeypatch, lambda: pipes.extend(os.pipe()))
+    try:
+        connection = ts.connect(path)
+        assert connection is holder
+        assert len(pipes) == 2  # accepted at the first attempt
+    finally:
+        for descriptor in pipes:
+            os.close(descriptor)
+        holder.close()
+
+
+@posix_only
+def test_tb045_connects_do_not_interleave_between_the_snapshots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F6: while one connect is between its snapshots, another connect cannot open (``_OPEN_LOCK``)."""
+    first, second = tmp_path / "a.db", tmp_path / "b.db"
+    make_database(first)
+    make_database(second)
+    original = ts._open
+    first_inside, release, second_inside = threading.Event(), threading.Event(), threading.Event()
+
+    def gated(target: str, **kwargs: Any) -> sqlite3.Connection:
+        if target == str(first):
+            first_inside.set()
+            assert release.wait(30)
+        else:
+            second_inside.set()
+        return original(target, **kwargs)
+
+    monkeypatch.setattr(ts, "_open", gated)
+    results: list[sqlite3.Connection | BaseException] = []
+
+    def run(path: Path) -> None:
+        try:
+            results.append(ts.connect(path))
+        except BaseException as exc:  # reported below
+            results.append(exc)
+
+    threads = [threading.Thread(target=run, args=(first,))]
+    threads[0].start()
+    try:
+        assert first_inside.wait(30)
+        threads.append(threading.Thread(target=run, args=(second,)))
+        threads[1].start()
+        assert not second_inside.wait(0.5)
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join()
+    assert second_inside.is_set()
+    for result in results:
+        assert isinstance(result, sqlite3.Connection), result
+        result.close()
+
+
+@posix_only
+def test_tb045_an_incomplete_listing_is_not_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F4: a ``/dev/fd`` that lists only 0, 1 and 2 (a BSD without ``fdescfs``) would refuse every open; it
+    is detected once and ``connect`` checks the names only, as without a listing."""
+    fake = tmp_path / "fd"
+    fake.mkdir()
+    for number in ("0", "1", "2"):
+        (fake / number).touch()
+    monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (str(fake),))
+    monkeypatch.setattr(ts, "_LISTINGS", {})
+    assert ts._listing_directory() is None
+    assert ts._open_files() is None
+    path = tmp_path / "a.db"
+    make_database(path)
+    ts.connect(path).close()
+    monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (str(fake), "/proc/self/fd", "/dev/fd"))
+    assert ts._listing_directory() in ("/proc/self/fd", "/dev/fd")  # the next candidate is complete
+
+
+def test_tb045_a_name_gone_while_checked_is_checked_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F1: a name that is missing for a moment while its identity is taken is never opened unchecked: the
+    file put there instead goes through every check (here its mode is refused)."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    replacement = tmp_path / "replacement.db"
+    make_database(replacement)
+    if POSIX:
+        replacement.chmod(0o666)
+    stash = tmp_path / "stash.db"
+    original = ts._identity
+
+    def vanish_once(candidate: str, **kwargs: Any) -> tuple[int, int]:
+        if not stash.exists():
+            path.rename(stash)
+            try:
+                return original(candidate, **kwargs)
+            finally:
+                os.replace(replacement, path)
+        return original(candidate, **kwargs)
+
+    monkeypatch.setattr(ts, "_identity", vanish_once)
+    if POSIX:
+        with pytest.raises(UnsafePath) as info:
+            ts.connect(path)
+        assert info.value.code == "sqlite.unsafe_mode"
+    else:
+        connection = ts.connect(path)
+        connection.close()
+
+
+def test_tb045_a_name_that_stays_gone_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "a.db"
+    make_database(path)
+    calls: list[str] = []
+
+    def gone(candidate: str, **kwargs: Any) -> tuple[int, int]:
+        calls.append(candidate)
+        raise FileNotFoundError(2, "gone")
+
+    monkeypatch.setattr(ts, "_identity", gone)
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path)
+    assert info.value.code == "sqlite.unsafe_path"
+    assert len(calls) == ts._OPEN_ATTEMPTS
+
+
+@posix_only
+def test_tb045_an_unreadable_file_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F1: an existing file whose identity cannot be taken is refused, not opened unchecked."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    real_open = os.open
+
+    def denied(candidate: Any, *args: Any, **kwargs: Any) -> int:
+        if os.fspath(candidate) == str(path):
+            raise PermissionError(13, "denied")
+        return real_open(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", denied)
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path)
+    assert info.value.code == "sqlite.unsafe_path"
+
+
+@posix_only
+def test_tb045_the_lock_is_free_in_a_forked_child() -> None:
+    """Review F8: a child forked while another thread holds ``_OPEN_LOCK`` gets a free lock."""
+    with ts._OPEN_LOCK:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)  # forking a process with threads
+            child = os.fork()
+        if child == 0:  # pragma: no cover - runs in the child
+            os._exit(0 if ts._OPEN_LOCK.acquire(blocking=False) else 1)
+    _, status = os.waitpid(child, 0)
+    assert os.waitstatus_to_exitcode(status) == 0
 
 
 @posix_only

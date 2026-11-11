@@ -31,7 +31,9 @@ from pathlib import Path
 import secrets
 import sqlite3
 import stat
+import tempfile
 import threading
+import time
 from typing import Any, TypeAlias
 
 from tabrion.errors import (
@@ -292,7 +294,9 @@ def _check_side_files(path: str, *, allow_shared_file: bool) -> None:
 def _identity(path: str, *, allow_shared_file: bool = True) -> tuple[int, int]:
     """``(dev, ino)`` of the existing regular file ``path``, opened without following a link (``UnsafePath``).
 
-    Without ``allow_shared_file`` the file must belong to this user and not be group- or world-writable.
+    Without ``allow_shared_file`` the file must belong to this user and not be group- or world-writable. A name
+    that is gone raises ``FileNotFoundError`` (the caller checks it again); any other failure is ``UnsafePath``:
+    ``connect`` never opens a file whose identity it does not know (review F1, TB-045).
     """
     if _POSIX:
         failure: int | None = None
@@ -307,16 +311,19 @@ def _identity(path: str, *, allow_shared_file: bool = True) -> tuple[int, int]:
                 os.close(descriptor)
         if failure == errno.ELOOP:
             raise _unsafe("sqlite.symlink", path)
+        if failure == errno.ENOENT:
+            raise FileNotFoundError(errno.ENOENT, "the database file does not exist")
         if failure is not None:
-            # Missing or unreadable: sqlite3 gives the precise error when it opens the file.
-            return 0, 0
+            raise _unsafe("sqlite.unsafe_path", path)  # unreadable: SQLite could not open it either
     else:
         if _is_link(path):
             raise _unsafe("sqlite.symlink", path)
         try:
             info = os.lstat(path)
+        except FileNotFoundError:
+            raise FileNotFoundError(errno.ENOENT, "the database file does not exist") from None
         except OSError:
-            return 0, 0
+            raise _unsafe("sqlite.unsafe_path", path) from None
     if not stat.S_ISREG(info.st_mode):
         raise _unsafe("sqlite.unsafe_path", path)
     _owner_and_mode(path, info, allow_shared_file=allow_shared_file)
@@ -385,44 +392,100 @@ def _open(target: str, *, uri: bool, timeout: float, check_same_thread: bool) ->
 
 
 _DESCRIPTOR_DIRECTORIES = ("/proc/self/fd", "/dev/fd")
-"""Where a POSIX system lists the process's open descriptors (Linux; macOS and the BSDs)."""
-_OPEN_ATTEMPTS = 3
+"""Where a POSIX system lists the process's open descriptors (Linux; macOS, and the BSDs with ``fdescfs``)."""
+_OPEN_ATTEMPTS = 5
 """``connect``: how often SQLite opens the file before an unverified open is refused (I-22, TB-045)."""
+_OPEN_BACKOFF = 0.002
+"""Seconds: the upper bound of the random pause before the second attempt; it doubles with each further attempt."""
 _OPEN_LOCK = threading.Lock()
-"""One ``connect`` at a time between its two descriptor snapshots, so concurrent connects cannot mask each other."""
+"""One ``connect`` at a time from its identity check to its second descriptor snapshot, so concurrent connects
+cannot mask each other (I-22 (e))."""
+
+
+def _new_open_lock() -> None:
+    """After ``fork``: a lock another thread held stays held in the child; give the child a free one (review F8)."""
+    global _OPEN_LOCK
+    _OPEN_LOCK = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_new_open_lock)
+
+_LISTINGS: dict[tuple[str, ...], str | None] = {}
+"""Per candidate tuple: the first directory whose listing proved complete, or ``None`` (probed once, review F4)."""
+
+
+def _listing_directory() -> str | None:
+    """The directory that lists every open descriptor of the process, or ``None``.
+
+    A directory counts only when a descriptor opened for the probe shows up in it: ``/dev/fd`` on a BSD without
+    ``fdescfs`` lists only 0, 1 and 2, and taking it as complete would refuse every open (review F4).
+    """
+    candidates = _DESCRIPTOR_DIRECTORIES
+    if candidates in _LISTINGS:
+        return _LISTINGS[candidates]
+    found: str | None = None
+    if _POSIX:
+        try:
+            with tempfile.TemporaryFile() as probe:
+                descriptor = probe.fileno()
+                for directory in candidates:
+                    try:
+                        if str(descriptor) in os.listdir(directory):
+                            found = directory
+                            break
+                    except OSError:
+                        continue
+        except OSError:
+            found = None
+        if found is None:
+            _log.debug("no complete descriptor listing: connect checks the names only (I-22 (e))")
+    _LISTINGS[candidates] = found
+    return found
 
 
 def _open_files() -> frozenset[tuple[int, int, int]] | None:
     """The process's open regular files as ``(descriptor, st_dev, st_ino)``; ``None`` where they cannot be listed."""
-    if not _POSIX:
+    directory = _listing_directory()
+    if directory is None:
         return None
-    for directory in _DESCRIPTOR_DIRECTORIES:
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return None
+    files: set[tuple[int, int, int]] = set()
+    for name in names:
         try:
-            names = os.listdir(directory)
-        except OSError:
-            continue
-        files: set[tuple[int, int, int]] = set()
-        for name in names:
-            try:
-                descriptor = int(name)
-                info = os.fstat(descriptor)
-            except (OSError, ValueError):
-                continue  # the listing's own descriptor, closed again, or not a number
-            if stat.S_ISREG(info.st_mode):
-                files.add((descriptor, info.st_dev, info.st_ino))
-        return frozenset(files)
-    return None
+            descriptor = int(name)
+            info = os.fstat(descriptor)
+        except (OSError, ValueError):
+            continue  # the listing's own descriptor, closed again, or not a number
+        if stat.S_ISREG(info.st_mode):
+            files.add((descriptor, info.st_dev, info.st_ino))
+    return frozenset(files)
 
 
-def _side_file_identities(name: str) -> frozenset[tuple[int, int]]:
-    """``(st_dev, st_ino)`` of the regular ``-wal``, ``-shm`` and ``-journal`` files of ``name`` that exist now."""
+def _side_file_identities(name: str, *, allow_shared_file: bool = False) -> frozenset[tuple[int, int]]:
+    """``(st_dev, st_ino)`` of the ``-wal``, ``-shm`` and ``-journal`` files of ``name`` that may stand for side files.
+
+    Only a regular file with a single link that belongs to this user and is not group- or world-writable counts
+    (what SQLite creates next to a checked database): another file linked under a side file's name does not (review
+    F2). With ``allow_shared_file`` those rules do not hold, and no file counts.
+    """
+    if not _POSIX or allow_shared_file:
+        return frozenset()
     identities: set[tuple[int, int]] = set()
     for candidate in (name + suffix for suffix in _SIDE_FILES):
         try:
             info = os.lstat(candidate)
         except OSError:
             continue
-        if stat.S_ISREG(info.st_mode):
+        if (
+            stat.S_ISREG(info.st_mode)
+            and info.st_nlink == 1
+            and info.st_uid == os.geteuid()
+            and not info.st_mode & _SHARED_WRITE
+        ):
             identities.add((info.st_dev, info.st_ino))
     return frozenset(identities)
 
@@ -439,33 +502,79 @@ def _opened_checked_file(
     SQLite may instead reuse a descriptor it kept for that file (another connection of the process holds a lock on
     it); then SQLite opened no new main file, and one of the process's descriptors is the checked file. Other
     connections of the same database open its ``-wal`` and ``-shm`` files at any time, outside ``_OPEN_LOCK``: those
-    (``side_files``) do not count as new.
+    (``side_files``, the same before and after the open) do not count as new.
     """
     new = after - before
     if any((dev, ino) == expected for _, dev, ino in new):
         return True
     unexplained = [entry for entry in new if entry[1:] not in side_files]
-    return not unexplained and any((dev, ino) == expected for _, dev, ino in after)
+    if unexplained:
+        _log.debug("descriptor check: %d unexplained new file(s) while SQLite opened the database", len(unexplained))
+        return False
+    held = any((dev, ino) == expected for _, dev, ino in after)
+    if not held:
+        _log.debug("descriptor check: SQLite holds no descriptor of the checked file")
+    return held
+
+
+def _pause(attempt: int) -> None:
+    """A short random pause before the next attempt, so a burst of unrelated opens can pass (review F3)."""
+    bound = round(_OPEN_BACKOFF * 2**attempt * 1_000_000)
+    time.sleep(secrets.randbelow(bound + 1) / 1_000_000)
+
+
+def _checked_identity(name: str, profile: SQLiteProfile, *, read_only: bool, create: bool) -> tuple[int, int]:
+    """Create ``name`` or check the existing file; its ``(dev, ino)`` (I-22 (b), (c)).
+
+    A name that disappears while it is checked is checked again (bounded), never opened unchecked (review F1). Runs
+    under ``_OPEN_LOCK``, so this check's own descriptor cannot appear in another connect's snapshots (review F5).
+    """
+    for attempt in range(_OPEN_ATTEMPTS):
+        if attempt:
+            _pause(attempt - 1)
+        with _OPEN_LOCK:
+            if not os.path.lexists(name):
+                if read_only or not create:
+                    raise FileNotFoundError(errno.ENOENT, "the database file does not exist")
+                created = _create(name, profile.file_mode)
+                if created is not None:
+                    return created
+            try:
+                return _identity(name, allow_shared_file=profile.allow_shared_file)
+            except FileNotFoundError:
+                _log.debug("the database file %s disappeared while it was checked", name)
+    raise _unsafe("sqlite.unsafe_path", name)
 
 
 def _open_checked(
-    target: str, *, name: str, uri: bool, timeout: float, check_same_thread: bool, expected: tuple[int, int]
+    target: str,
+    *,
+    name: str | None,
+    uri: bool,
+    timeout: float,
+    check_same_thread: bool,
+    expected: tuple[int, int],
+    allow_shared_file: bool = False,
 ) -> sqlite3.Connection | None:
-    """Open ``target`` (the database ``name``); on POSIX the file SQLite opened must be the checked one, else
-    ``None`` (I-22, TB-045).
+    """Open ``target`` (the database ``name``, ``None`` for a database without a file); on POSIX the file SQLite
+    opened must be the checked one, else ``None`` (I-22, TB-045).
 
     The name SQLite opens can change between its own name resolution and its ``open``, which no check of the name
-    sees; the descriptor it holds cannot. Where the descriptors cannot be listed (Windows) or the identity is unknown,
-    the checks of the name after opening remain.
+    sees; the descriptor it holds cannot. Where the descriptors cannot be listed (Windows), the checks of the name
+    after opening remain.
     """
-    for _ in range(_OPEN_ATTEMPTS):
+    for attempt in range(_OPEN_ATTEMPTS):
+        if attempt:
+            _pause(attempt - 1)
         with _OPEN_LOCK:
-            before = _open_files() if expected[1] else None
+            before = _open_files() if name is not None else None
+            if name is None or before is None:
+                return _open(target, uri=uri, timeout=timeout, check_same_thread=check_same_thread)
+            sides = _side_file_identities(name, allow_shared_file=allow_shared_file)
             connection = _open(target, uri=uri, timeout=timeout, check_same_thread=check_same_thread)
-            after = _open_files() if before is not None else None
-        if before is None or after is None:
-            return connection
-        if _opened_checked_file(before, after, expected, _side_file_identities(name)):
+            after = _open_files()
+            sides &= _side_file_identities(name, allow_shared_file=allow_shared_file)
+        if after is not None and _opened_checked_file(before, after, expected, sides):
             return connection
         connection.close()  # a file opened concurrently elsewhere in the process can cause a benign mismatch: retry
     return None
@@ -494,14 +603,7 @@ def connect(
     expected = (0, 0)
     if not memory:
         check_path(name)
-        if not os.path.lexists(name):
-            if read_only or not create:
-                raise FileNotFoundError(errno.ENOENT, "the database file does not exist")
-            created = _create(name, profile.file_mode)
-            shared = profile.allow_shared_file
-            expected = created if created is not None else _identity(name, allow_shared_file=shared)
-        else:
-            expected = _identity(name, allow_shared_file=profile.allow_shared_file)
+        expected = _checked_identity(name, profile, read_only=read_only, create=create)
         _check_side_files(name, allow_shared_file=profile.allow_shared_file)
     if read_only and not memory:
         target, uri = Path(name).absolute().as_uri() + "?mode=ro", True
@@ -509,11 +611,12 @@ def connect(
         target, uri = name, False
     opened = _open_checked(
         target,
-        name=name,
+        name=None if memory else name,
         uri=uri,
         timeout=profile.busy_timeout,
         check_same_thread=check_same_thread,
         expected=expected,
+        allow_shared_file=profile.allow_shared_file,
     )
     if opened is None:
         raise _unsafe("sqlite.unsafe_path", name)

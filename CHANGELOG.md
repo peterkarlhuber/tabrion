@@ -67,9 +67,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - `tabrion.sqlite.connect` hardens its open against a time-of-check to time-of-use race (TB-045, contract I-22,
   TM-04): on POSIX it lists the process's open regular files (`/proc/self/fd`, or `/dev/fd` on macOS and the BSDs)
   before and after SQLite opens the database and requires the descriptor SQLite opened to be the checked file
-  (`(st_dev, st_ino)`); a mismatch is retried twice, then refused with `UnsafePath("sqlite.unsafe_path")`. The
-  final name check now resolves only the directory of the path, not its last component again. On Windows, where the
-  descriptors cannot be listed, the existing name checks after opening remain the only check (documented in I-22).
+  (`(st_dev, st_ino)`); a mismatch is retried after a short random pause, five attempts in all, then refused with
+  `UnsafePath("sqlite.unsafe_path")`. The final name check now resolves only the directory of the path, not its
+  last component again. An existing file that cannot be opened for its check is now `UnsafePath("sqlite.unsafe_path")`
+  instead of being left to SQLite, and a name that disappears during the check is checked again. On Windows, and
+  where no complete descriptor listing exists, the existing name checks after opening remain the only check
+  (documented in I-22).
 
 - Windows (issue #18, TB-134): `scripts/downstream.py` hands uv the interpreter file `Scripts\python.exe` (new
   `venv_python()`), so a downstream run works there; the downstream and golden-replay tests assert the Windows
