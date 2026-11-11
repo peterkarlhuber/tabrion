@@ -62,6 +62,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- Windows (issue #18, TB-134): `scripts/downstream.py` hands uv the interpreter file `Scripts\python.exe` (new
+  `venv_python()`), so a downstream run works there; the downstream and golden-replay tests assert the Windows
+  behavior (psycopg's `ConnectionTimeout` for a refused local connect, no POSIX mode in the replay).
+
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
   final (TAB-040) is the merge commit of the version-bump pull request that sets `0.1.0`, pinned by full SHA; its
