@@ -59,7 +59,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   OS: a Windows path (`C:\...` instead of `C%3A%5C...`), and on POSIX too a path with `@`, `%`, `:`, `?` or
   non-ASCII characters (`/tmp/ü.db` instead of `/tmp/%C3%BC.db`). A character that is not printable (newline, ESC,
   BEL, DEL, bidi overrides) is still percent-encoded, so a file name cannot forge a log line, and the path goes in
-  after the URL is masked, so `:` and `@` in a path never look like credentials (TB-074).
+  after the URL is masked, so `:` and `@` in a path never look like credentials (TB-074). The output is now the
+  same under SQLAlchemy 2.0 and 2.1: 2.0 rendered the path raw (control characters included, and `C:\a@b\x.db`
+  was misread as credentials by the masking), 2.1 percent-encodes it.
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
   final (TAB-040) is the merge commit of the version-bump pull request that sets `0.1.0`, pinned by full SHA; its

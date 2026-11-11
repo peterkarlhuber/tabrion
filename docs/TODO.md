@@ -757,6 +757,10 @@ required (owner decision of 2026-11-08 11:26Z).
   `test_b01_safe_url_placeholder_is_new_for_every_call`); `test_b04` is split into a portable half
   (`test_b04_from_url_opens_the_file`, probed on every OS) and the POSIX-only half, and the probe file imports the
   test's own `POSIX` predicate (L-3); CHANGELOG and contract I-37 name the POSIX changes (L-2).
+- **CI of `1146bbc`:** the probe of `test_b01_safe_url_shows_the_sqlite_path_as_it_is` survived in the
+  SQLAlchemy 2.0 jobs (Python 3.12 and lowest versions): SQLAlchemy 2.0 does not percent-encode the path, so the
+  old rendering already passed the three original cases. The `:`/`@`, `?password=` and control-character cases
+  added for M-1 and M-2 fail under the old rendering on both 2.0 and 2.1; checked locally with 2.0.57 and 2.1.8.
 
 ## Cross-repository dependencies
 
