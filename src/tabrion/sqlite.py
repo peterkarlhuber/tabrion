@@ -422,8 +422,9 @@ _LISTINGS: dict[tuple[str, ...], str | None] = {}
 def _listing_directory() -> str | None:
     """The directory that lists every open descriptor of the process, or ``None``.
 
-    A directory counts only when a descriptor opened for the probe shows up in it as the same file: a ``/dev/fd``
-    that lists only 0, 1 and 2 (a BSD without ``fdescfs``), taken as complete, would refuse every open (review F4).
+    A directory counts only when it follows the open descriptors (``_complete_listing``): a ``/dev/fd`` that lists
+    only 0, 1 and 2 (a BSD without ``fdescfs``), taken as complete, would refuse every open (review F4). Only a probe
+    that ran and found no listing is cached; a probe that could not decide raises (reviews F16, F17).
     """
     candidates = _DESCRIPTOR_DIRECTORIES
     if candidates in _LISTINGS:
@@ -442,57 +443,74 @@ def _listing_directory() -> str | None:
 
 _EXHAUSTED = (errno.EMFILE, errno.ENFILE, errno.ENOMEM)
 """Errors that say nothing about a descriptor directory, only that the process ran out of a resource."""
+_PROBE_ROUNDS = 3
+"""How often an undecided probe of a candidate (its copy still listed after the close) is repeated."""
+_PROBE_GAP = 16
+"""The probe's copy is numbered at least this far above every number the candidate lists, so the descriptors other
+threads open meanwhile, and the listing's own, get lower numbers and never the copy's (review F17)."""
 
 
 def _complete_listing(candidates: tuple[str, ...], probe: int) -> str | None:
-    """The first of ``candidates`` that lists the process's descriptors live: a copy of ``probe`` numbered 3 or
-    higher is listed while it is open and gone after it is closed (review F12, F15).
+    """The first of ``candidates`` that lists the process's descriptors live, or ``None`` (reviews F12, F15, F17).
 
-    0, 1 and 2 are not proof: an incomplete ``/dev/fd`` lists them, and a daemon may have closed them; a directory of
-    fixed entries keeps listing the closed copy. Where the entry is a link (``/proc/self/fd`` on Linux), it must also
-    lead to the probe's file. Another thread may take the number again right after the close, so the test runs up to
-    ``_PROBE_ROUNDS`` times before a candidate is given up.
+    A copy of ``probe``, numbered above every number the candidate lists, must be listed while it is open and gone
+    after it is closed. A candidate that does not list the open copy (such as a ``/dev/fd`` of only 0, 1 and 2) is no
+    listing. A candidate that still lists the closed copy is undecided (fixed entries, or a number taken again): the
+    probe is repeated, and if no round decides, ``UnsafePath`` is raised and nothing is cached, so an undecided probe
+    never turns the descriptor check off. Where the entry is a link (``/proc/self/fd`` on Linux), it must also lead
+    to the probe's file.
     """
-    for _ in range(_PROBE_ROUNDS):
-        found = _probe_once(candidates, probe)
-        if found is not None:
-            return found
+    for directory in candidates:
+        for round_ in range(_PROBE_ROUNDS):
+            if round_:
+                _pause(round_ - 1)
+            verdict = _probe_once(directory, probe)
+            if verdict is not None:
+                break
+        else:
+            raise _unsafe("sqlite.unsafe_path", directory)  # undecided: refuse rather than open unchecked
+        if verdict:
+            return directory
     return None
 
 
-_PROBE_ROUNDS = 3
-
-
-def _listed(directory: str, descriptor: int) -> bool:
-    """Whether ``directory`` lists ``descriptor``; a missing directory lists nothing, exhaustion is raised."""
+def _listed_numbers(directory: str) -> list[int] | None:
+    """The numbers ``directory`` lists; ``None`` for a missing directory, exhaustion is raised."""
     try:
-        return str(descriptor) in os.listdir(directory)
+        names = os.listdir(directory)
     except OSError as exc:
         if exc.errno in _EXHAUSTED:
             raise  # the probe could not run: no verdict on this directory (review F16)
-        return False
+        return None
+    return [int(name) for name in names if name.isdigit()]
 
 
-def _probe_once(candidates: tuple[str, ...], probe: int) -> str | None:
+def _probe_once(directory: str, probe: int) -> bool | None:
+    """One round: ``True`` (follows the open descriptors), ``False`` (no listing) or ``None`` (undecided)."""
     import fcntl  # POSIX only: imported here, not at module level
+    import resource  # POSIX only
 
-    duplicate = getattr(fcntl, "F_DUPFD_CLOEXEC", fcntl.F_DUPFD)
-    low = fcntl.fcntl(probe, duplicate, 3)
-    try:
-        copy = fcntl.fcntl(probe, duplicate, 3)  # above ``low``
-    finally:
-        # A free number below the copy: the listing's own descriptor takes that one, never the closed copy's number.
-        os.close(low)
+    numbers = _listed_numbers(directory)
+    if numbers is None:
+        return False
+    floor = max([2, *numbers]) + _PROBE_GAP
+    soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft != resource.RLIM_INFINITY:
+        floor = max(3, min(floor, soft - 1))
+    copy = fcntl.fcntl(probe, getattr(fcntl, "F_DUPFD_CLOEXEC", fcntl.F_DUPFD), floor)
     try:
         info = os.fstat(copy)
-        listing = [directory for directory in candidates if _listed(directory, copy)]
-        listing = [directory for directory in listing if _leads_to(os.path.join(directory, str(copy)), info)]
+        while_open = _listed_numbers(directory)
+        if while_open is None or copy not in while_open:
+            return False
+        if not _leads_to(os.path.join(directory, str(copy)), info):
+            return False
     finally:
         os.close(copy)
-    for directory in listing:
-        if not _listed(directory, copy):
-            return directory
-    return None
+    after_close = _listed_numbers(directory)
+    if after_close is None:
+        return False
+    return None if copy in after_close else True
 
 
 def _leads_to(entry: str, info: os.stat_result) -> bool:

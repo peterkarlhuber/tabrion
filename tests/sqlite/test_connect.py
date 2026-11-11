@@ -1035,44 +1035,146 @@ def test_tb045_the_identity_check_runs_under_the_lock(tmp_path: Path, monkeypatc
         result.close()
 
 
-@posix_only
-def test_tb045_a_listing_must_follow_the_open_descriptors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Review F12/F15: a directory that has an entry for every number (also those a daemon may have freed, 0..2) but
-    does not follow the open descriptors is no listing: the probe is a copy numbered 3 or higher that must be listed
-    while open and gone after it is closed."""
-    fake = tmp_path / "fd"
-    fake.mkdir()
-    for number in range(4096):
-        (fake / str(number)).touch()
-    monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (str(fake),))
+def _fixed_listing(monkeypatch: pytest.MonkeyPatch, directory: Path, numbers: range) -> None:
+    """``directory`` lists ``numbers`` whatever is open (a listing of fixed entries)."""
+    real_listdir = os.listdir
+
+    def listdir(candidate: Any = ".") -> list[str]:
+        if os.fspath(candidate) == str(directory):
+            return [str(number) for number in numbers]
+        return real_listdir(candidate)
+
+    monkeypatch.setattr(os, "listdir", listdir)
+    monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (str(directory),))
     monkeypatch.setattr(ts, "_LISTINGS", {})
+
+
+@posix_only
+def test_tb045_a_listing_of_fixed_entries_is_never_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F12/F15/F17: a directory that lists every number (also those a daemon may have freed, 0..2) whatever
+    is open keeps listing the probe's copy after it is closed. That is undecided, so the probe refuses: the open is
+    never made without the check, and nothing is cached (the next connect probes again)."""
+    _fixed_listing(monkeypatch, tmp_path / "fd", range(1_000_000))
+    with pytest.raises(UnsafePath) as info:
+        ts._listing_directory()
+    assert info.value.code == "sqlite.unsafe_path"
+    assert ts._LISTINGS == {}
+    path = tmp_path / "a.db"
+    make_database(path)
+    with pytest.raises(UnsafePath):
+        ts.connect(path)
+
+
+@posix_only
+def test_tb045_a_listing_without_the_open_copy_is_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F12/F17: the copy is numbered above every listed number, so fixed entries cannot list it while open."""
+    _fixed_listing(monkeypatch, tmp_path / "fd", range(64))
     assert ts._listing_directory() is None
 
 
 @posix_only
+def test_tb045_descriptors_opened_during_the_probe_do_not_hide_the_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F17: other threads open descriptors while the probe runs (sockets, logs); they get the lowest free
+    numbers, never the copy's, which lies above every listed number. Simulated by opening descriptors in each
+    listing; the listing is still found, not cached as absent."""
+    monkeypatch.setattr(ts, "_LISTINGS", {})
+    real_listdir = os.listdir
+    opened: list[int] = []
+
+    def busy_listdir(candidate: Any = ".") -> list[str]:
+        if os.fspath(candidate) in ts._DESCRIPTOR_DIRECTORIES:
+            for _ in range(4):
+                opened.append(os.open(os.devnull, os.O_RDONLY))
+        return real_listdir(candidate)
+
+    monkeypatch.setattr(os, "listdir", busy_listdir)
+    try:
+        assert ts._listing_directory() in ts._DESCRIPTOR_DIRECTORIES
+    finally:
+        for descriptor in opened:
+            os.close(descriptor)
+    assert opened
+
+
+@posix_only
 def test_tb045_a_listing_without_links_is_proved_by_open_and_close(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Review F15: macOS ``/dev/fd`` entries are no links and their ``stat`` need not match the open file; the
-    proof that the listing follows the descriptors does not depend on it (simulated here by hiding the links)."""
+    """Review F15/F18: macOS ``/dev/fd`` entries are no links and their ``stat`` does not report the open file; the
+    proof that the listing follows the descriptors does not depend on it (simulated: no links, and ``stat`` of an
+    entry reports another file)."""
     monkeypatch.setattr(ts, "_LISTINGS", {})
     monkeypatch.setattr(os.path, "islink", lambda entry: False)
+    real_stat = os.stat
+    other = real_stat(__file__)
+
+    def stat_elsewhere(candidate: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        if any(os.fspath(candidate).startswith(directory + os.sep) for directory in ts._DESCRIPTOR_DIRECTORIES):
+            return other
+        return real_stat(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", stat_elsewhere)
     assert ts._listing_directory() in ts._DESCRIPTOR_DIRECTORIES
+
+
+def _links_listing() -> str:
+    directory = ts._DESCRIPTOR_DIRECTORIES[0]
+    if not os.path.islink(os.path.join(directory, "0")):
+        pytest.skip("the descriptor entries are no links here (macOS)")
+    return directory
+
+
+@posix_only
+def test_tb045_a_link_entry_must_lead_to_the_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where the entries are links (Linux), the copy's entry must lead to the probe's file (defence in depth)."""
+    directory = _links_listing()
+    monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (directory,))
+    monkeypatch.setattr(ts, "_LISTINGS", {})
+    real_stat = os.stat
+    other = real_stat(__file__)
+
+    def stat_elsewhere(candidate: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        if os.fspath(candidate).startswith(directory + os.sep):
+            return other
+        return real_stat(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", stat_elsewhere)
+    assert ts._listing_directory() is None
+
+
+@posix_only
+def test_tb045_exhaustion_while_following_a_link_is_raised(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F16: running out of memory while the copy's link entry is followed is raised, not cached."""
+    directory = _links_listing()
+    monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (directory,))
+    monkeypatch.setattr(ts, "_LISTINGS", {})
+    real_stat = os.stat
+
+    def stat_exhausted(candidate: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        if os.fspath(candidate).startswith(directory + os.sep):
+            raise OSError(errno.ENOMEM, os.strerror(errno.ENOMEM))
+        return real_stat(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", stat_exhausted)
+    with pytest.raises(OSError) as info:
+        ts._listing_directory()
+    assert info.value.errno == errno.ENOMEM
+    assert ts._LISTINGS == {}
 
 
 @posix_only
 def test_tb045_the_probe_tries_again_when_the_number_is_taken_again(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Review F15: another thread may open a file right after the probe's copy is closed and get its number; one
-    such round does not make the process give up the listing."""
+    """Review F15/F17: a round that cannot decide (the closed copy still listed: its number taken again) is
+    repeated; one such round does not make the process give up the listing."""
     monkeypatch.setattr(ts, "_LISTINGS", {})
     original = ts._probe_once
-    rounds: list[str | None] = []
+    rounds: list[bool | None] = []
 
-    def taken_once(candidates: tuple[str, ...], probe: int) -> str | None:
-        rounds.append(None if not rounds else original(candidates, probe))
+    def taken_once(directory: str, probe: int) -> bool | None:
+        rounds.append(None if not rounds else original(directory, probe))
         return rounds[-1]
 
     monkeypatch.setattr(ts, "_probe_once", taken_once)
     assert ts._listing_directory() in ts._DESCRIPTOR_DIRECTORIES
-    assert len(rounds) == 2
+    assert rounds == [None, True]
 
 
 @posix_only

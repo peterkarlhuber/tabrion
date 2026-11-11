@@ -189,15 +189,16 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TB-045 review F12/F15: the listing must drop the probe's copy after it is closed.
     (
-        "        if not _listed(directory, copy):\n",
-        "        if True:\n",
-        _T + "test_connect.py::test_tb045_a_listing_must_follow_the_open_descriptors",
+        "    return None if copy in after_close else True\n",
+        "    return True\n",
+        _T + "test_connect.py::test_tb045_a_listing_of_fixed_entries_is_never_used",
         True,
         False,
     ),
     # TB-045 review F14: a failing listing after the probe is raised, never taken as "no listing".
     (
-        "    names = os.listdir(directory)\n",
+        "        return None\n    names = os.listdir(directory)\n",
+        "        return None\n"
         "    try:\n        names = os.listdir(directory)\n    except OSError:\n        return None\n",
         _T + "test_connect.py::test_tb045_a_failing_listing_is_raised",
         True,
@@ -237,6 +238,30 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         "_PROBE_ROUNDS = 3\n",
         "_PROBE_ROUNDS = 1\n",
         _T + "test_connect.py::test_tb045_the_probe_tries_again_when_the_number_is_taken_again",
+        True,
+        False,
+    ),
+    # TB-045 review F17: the copy lies above every listed number, out of reach of other threads' new descriptors.
+    (
+        "_PROBE_GAP = 16\n",
+        "_PROBE_GAP = 1\n",
+        _T + "test_connect.py::test_tb045_descriptors_opened_during_the_probe_do_not_hide_the_listing",
+        True,
+        False,
+    ),
+    # TB-045 review F17: an undecided probe refuses; it is never cached as "no listing".
+    (
+        '            raise _unsafe("sqlite.unsafe_path", directory)  # undecided: refuse rather than open unchecked\n',
+        "            verdict = False\n",
+        _T + "test_connect.py::test_tb045_a_listing_of_fixed_entries_is_never_used",
+        True,
+        False,
+    ),
+    # TB-045: where the entries are links, the copy's entry must lead to the probe's file.
+    (
+        "    return (listed.st_dev, listed.st_ino) == (info.st_dev, info.st_ino)\n",
+        "    return True\n",
+        _T + "test_connect.py::test_tb045_a_link_entry_must_lead_to_the_probe",
         True,
         False,
     ),
