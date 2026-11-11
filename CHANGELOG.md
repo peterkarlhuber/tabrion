@@ -8,6 +8,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Conventions audit (QA-22): report `docs/program/reports/qa-22-conventions.md` (both new repositories against the
+  checklist and against orkexa and axentra) and `tests/security/test_conventions.py` (license, security policy,
+  community files, Dependabot policy with a red-tested no-auto-merge check, CI manifest).
 - API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
   and remove a stable name, and the downstream notice in the release flow. The internal helper
   `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
@@ -74,11 +77,16 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   descriptors left) are raised as `OSError`. A name that disappears during the check is checked again. On Windows, and
   where no complete descriptor listing exists, the existing name checks after opening remain the only check
   (documented in I-22).
-
+- `Database.safe_url` and `repr(Database)` show a SQLite file path as it is instead of percent-encoded, on every
+  OS: a Windows path (`C:\...` instead of `C%3A%5C...`), and on POSIX too a path with `@`, `%`, `:`, `?` or
+  non-ASCII characters (`/tmp/ü.db` instead of `/tmp/%C3%BC.db`). A character that is not printable (newline, ESC,
+  BEL, DEL, bidi overrides) is still percent-encoded, so a file name cannot forge a log line, and the path goes in
+  after the URL is masked, so `:` and `@` in a path never look like credentials (TB-074). The output is now the
+  same under SQLAlchemy 2.0 and 2.1: 2.0 rendered the path raw (control characters included, and `C:\a@b\x.db`
+  was misread as credentials by the masking), 2.1 percent-encodes it.
 - Windows (issue #18, TB-134): `scripts/downstream.py` hands uv the interpreter file `Scripts\python.exe` (new
   `venv_python()`), so a downstream run works there; the downstream and golden-replay tests assert the Windows
   behavior (psycopg's `ConnectionTimeout` for a refused local connect, no POSIX mode in the replay).
-
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
   final (TAB-040) is the merge commit of the version-bump pull request that sets `0.1.0`, pinned by full SHA; its
