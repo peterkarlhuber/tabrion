@@ -173,9 +173,9 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 merged in #22; RA-B-2 in review,
-  #23; RA-A-2 in review, #29; RA-A-3 in review, #35) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2,
-  RA-B-3, RA-B-4, RA-EVAL
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 merged in #22; RA-B-2 merged in
+  #23; RA-A-2 in review, #29; RA-A-3 in review, #35; RA-B-3 in review, #26) · **Refs:** TABRION RA-A-1, RA-A-2,
+  RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
   tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. RA-B-1 is
@@ -194,10 +194,17 @@ required (owner decision of 2026-11-08 11:26Z).
   (`isolation_level = None`, a `begin` event, `BEGIN IMMEDIATE` for writes) is part of the baseline; one deviation
   remains, the constraint's name in a violation (review H-1 and L-2 of #35). MW-1 leaves out test setup: both
   variants share `tabrion.testing`'s PostgreSQL fixtures (review L-3 of #35).
+  RA-B-3 adds `tests/examples/test_measurements_faults.py`: network faults through the internal
+  fault proxy (TB-033), `SIGKILL` of the CLI placed by the proxy and at drawn moments, and 24 hours offline
+  simulated; each counts losses and duplicates (metric MW-6: 0/0). Open before RA-EVAL relies on them (review of
+  #26): L-4, the offline day swaps in an unreachable handle instead of taking the real upstream away; drive it
+  through the fault proxy against one `Database` and add a server restart (`pg_terminate_backend`) between two
+  batches. L-5, no server-side fault yet: a lock wait past `lock_timeout` (a second connection holding `SELECT ...
+  FOR UPDATE`) and a serialization failure or deadlock, each with an unchanged mark, a classified error and 0/0.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-A-2 (#29) and RA-A-3 (#35, stacked on #29); RA-B-3 (offline and failure tests with the fault
-  proxy of TAB-034, #26) and RA-B-4 (plain SQLAlchemy baseline, #28) after RA-B-2 (lane H); then RA-EVAL.
+- **Next step:** RA-A-2 (#29) and RA-A-3 (#35, stacked on #29); RA-B-4 (plain SQLAlchemy baseline, #28) after
+  RA-B-3 (lane H); then RA-EVAL.
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
@@ -623,8 +630,9 @@ required (owner decision of 2026-11-08 11:26Z).
 - **What:** planning documents 07 (K7: `tabrion.testing.faults.DropReplyProxy`) and 09 (TAB-034) made the
   fault-injection proxy a public module, while the frozen contract has no `tabrion.testing.faults`. Decision
   (coordinator, 2026-11-08): do not extend the frozen surface now. TAB-034 ships the proxy as the internal, unstable
-  `tabrion.testing._faults` (not in `surface.json`, not exported), used by Tabrion's own tests.
-- **Next step:** making it public (for RA-B-3 and Axentra's MIG-T-AXE-8) is a 0.2 surface decision: a contract
+  `tabrion.testing._faults` (not in `surface.json`, not exported), used by Tabrion's own tests, including the
+  in-repository RA-B-3 tests of `examples/measurements`, which therefore need no public module.
+- **Next step:** making it public (for Axentra's MIG-T-AXE-8 and other consumers) is a 0.2 surface decision: a contract
   addendum with `surface.json` entries and a review.
 
 ### TB-034 · `ping` has no client-side deadline (TABRION TAB-015)
