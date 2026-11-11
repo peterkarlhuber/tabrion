@@ -162,7 +162,11 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
 - **What:** the canary suite (no values in errors or logs, QA-2); concurrency and stress suite, nightly (QA-4);
   supply chain with SBOM next to the existing `dependency audit` job (QA-8); the release workflow is in place but
-  its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22).
+  its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
+  `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`).
+- **QA-22 follow-up (F-1, Low):** tabrion has no `.gitattributes` and no `.editorconfig` (orkexa has both). Nothing
+  breaks today (golden files are compared as JSON, the Windows job reads them); add both when a byte-compared
+  fixture arrives, with `-text` for it.
 - **Next step:** QA-8 and QA-11 can start now (they depend on TAB-004 and TAB-005 only).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)

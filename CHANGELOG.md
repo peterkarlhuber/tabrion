@@ -8,6 +8,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Conventions audit (QA-22): report `docs/program/reports/qa-22-conventions.md` (both new repositories against the
+  checklist and against orkexa and axentra) and `tests/security/test_conventions.py` (license, security policy,
+  community files, Dependabot policy, CI manifest).
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
   `examples/`.
