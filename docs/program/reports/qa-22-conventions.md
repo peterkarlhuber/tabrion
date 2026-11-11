@@ -6,7 +6,7 @@ file, SECURITY.md" with every item met and an evidence link per item.
 
 Audited on 2026-11-11: tabrion master `cf815fd` and tabrion-studio master `061db9d`, compared with orkexa master
 `840add4` and axentra master `ea7aa9f`. The Studio side is also recorded in its repository
-(`docs/development/conventions.md`, its own QA-22 pull request).
+(`docs/development/conventions.md`, tabrion-studio #28).
 
 ## Checklist
 
@@ -46,7 +46,8 @@ benchmark.
 - **F-1 (Low): tabrion has no `.gitattributes` and no `.editorconfig`.** orkexa pins line endings for byte-compared
   fixtures; tabrion compares golden files as JSON, not bytes, and the Windows job is green on them, so nothing breaks
   today. Recorded in TODO TB-009.
-- **F-2 (Low): Studio has no `CODE_OF_CONDUCT.md` and no `SUPPORT.md`.** Recorded in the Studio TODO.
+- **F-2 (Low): Studio had no `CODE_OF_CONDUCT.md` and no `SUPPORT.md`.** Added in the Studio QA-22 pull request
+  (tabrion-studio #28), which also adds its `test_conventions.py`.
 - **F-3 (Info): tabrion has no `CODEOWNERS`.** Studio has one for `/.github/` (review F-03 there); TB-003 already
   recommends it for both repositories, as part of the optional hardening.
 
