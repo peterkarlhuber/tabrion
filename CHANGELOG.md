@@ -18,7 +18,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   other repository): `conformance/SPEC.md` (33 rules in ten areas, MUST/SHOULD/INFO, with the reference behavior of
   Nodestro, Orkexa and Axentra), the JSON Schema of API contract section 10.1, 115 vectors in `conformance/vectors/`,
   `conformance/MANIFEST.json` and the internal loader `tests/support/conformance.py`. Tabrion passes every vector;
-  a changed expectation or action handler fails the tests until the manifest is regenerated, the LDP version is raised and this file names the new version and digest.
+  a changed expectation or action handler fails the tests until the manifest is regenerated, the LDP version is
+  raised and this file names the new version and digest. `.gitattributes` keeps LF line endings for the hashed files,
+  so the manifest also holds on a Windows checkout with `core.autocrlf=true`.
   LDP-0.1.0 digest d70eeb2a7dc5.
 
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;

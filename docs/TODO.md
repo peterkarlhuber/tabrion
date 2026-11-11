@@ -24,7 +24,7 @@ review of #19).
 | P0 Critical | 0 |
 | P1 High | 11 |
 | P2 Medium | 13 |
-| P3 Low | 32 |
+| P3 Low | 33 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -367,9 +367,20 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-050, LDP SQP-1, SQP-3, MIG-NOD, MIG-ORK
 - **What:** LDP SQP-3 (every connection has `foreign_keys` on) is a tightening: Nodestro `storage.py` and Orkexa
   `_storage.py` open SQLite without it at the pinned commits, and Nodestro sets no file mode (SQP-1). After the switch,
-  existing rows that violate a foreign key make writes fail.
+  writes that touch a row violating a foreign key, or its parent row, fail; other writes are not affected.
 - **Next step:** the MIG-NOD and MIG-ORK SQLite steps run `tabrion.sqlite.foreign_key_check` on existing databases
-  before the switch and record the result (conformance/SPEC.md, migration note).
+  before the switch and record the result (conformance/SPEC.md, migration note). The note in SPEC says more broadly
+  that such rows "make writes fail"; SPEC.md is hashed, so the narrower wording waits for the next LDP version.
+
+### TB-094 · A stability downgrade from S to X passes `api_surface.py --base` (review of #21, L-6)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-051, S-3, S-6, contract I-81
+- **What:** `body()` leaves `stability` out of the compare, so `check_changelog(base, recorded)` reports nothing when
+  a stable name changes from `S` to `X`, and the run without `--base` does not catch a hand edit of `surface.json`
+  either. Promoting `X` to `S` needs no section, but a downgrade removes the S-3 guarantee from a stable name, and
+  consumers must be told.
+- **Next step:** in `check_changelog`, report a name with `base.stability == "S"` and another recorded stability
+  unless the name is under `### Changed` or `### Removed`, with a test. No current change downgrades a name.
 
 ### TB-018 · PostgreSQL matrix cost on pull requests
 
