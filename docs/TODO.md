@@ -22,9 +22,9 @@ review of #19).
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 11 |
-| P2 Medium | 11 |
-| P3 Low | 30 |
+| P1 High | 12 |
+| P2 Medium | 13 |
+| P3 Low | 32 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -351,9 +351,31 @@ required (owner decision of 2026-11-08 11:26Z).
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** G-T1 F-15, CC-3, TABRION TAB-004
 - **What:** macOS and Windows run on pull requests only when `sqlite.py` or `tests/sqlite/**` change; `config.py`,
-  `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms.
+  `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms, and so do the Windows-specific
+  paths of `scripts/downstream.py`, `tests/unit/test_downstream.py` and `tests/unit/test_golden_consumers.py`
+  (TB-134: those failed on Windows in the nightly only).
 - **Next step:** add the paths to `platforms.yml` and to the manifest's `path_filters` in one pull request merged
   before the change that needs them (ci-ok judges by the default branch's manifest).
+
+### TB-134 · Windows: downstream runner and golden replay failed in the platforms job (issue #18)
+
+- **Priority:** P2 Medium · **Status:** Done · **Refs:** issue #18, nightly run 42809181374, TAB-022, TB-021
+- **What:** eight Windows failures besides the two of TB-074 (#37):
+  - six `tests/unit/test_downstream.py` installs: `uv pip install --python <venv>\Scripts\python` exits 2 ("No
+    virtual environment or system Python installation found"). `subprocess` starts `Scripts\python` because
+    `CreateProcess` adds `.exe`, but uv takes the path as given. A real bug of `scripts/downstream.py` on Windows,
+    in `run_consumer` as well, not only in the tests. Fixed: `downstream.venv_python()` returns
+    `Scripts\python.exe` on Windows, used by the script and the tests; `test_venv_python_is_the_interpreter_file`
+    pins it (the file must exist).
+  - `test_a_database_error_is_a_setup_failure_without_its_message`: Windows retries a refused local connect until
+    `connect_timeout`, so psycopg raises `ConnectionTimeout`, a subclass of `OperationalError`. The script's report
+    was right (class name, no message); the test now asserts the cause is an `OperationalError`, exactly that class on
+    POSIX and that class or `ConnectionTimeout` on Windows, and the exact report text.
+  - `test_golden_consumers.py::test_orkexa_open` compared the golden file, recorded on Linux, with the current
+    platform's mode. The golden file holds `0o600` everywhere; the replay records `None` on Windows (no POSIX mode
+    bits), which the test now asserts explicitly.
+- **Next step:** none. The platforms job runs these files on pull requests only once TB-021 widens its path filter;
+  the fix was proven by a `workflow_dispatch` run of `platforms.yml` on the fix branch.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 
