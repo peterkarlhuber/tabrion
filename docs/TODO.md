@@ -16,6 +16,9 @@
 
 ## Summary
 
+The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-08,
+review of #19).
+
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
@@ -165,7 +168,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 in review) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 in review, #22) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
   RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
@@ -175,7 +178,8 @@ required (owner decision of 2026-11-08 11:26Z).
   it for `mypy --strict src tests scripts`.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-B-2 (transfer through layer B) after RA-B-1; RA-A-1 after TAB-019.
+- **Next step:** RA-A-1 is accepted (#22, delta re-review of `0ab3134`; its notes N-1 to N-3 are done on #22); then
+  RA-A-2 (#29) and RA-A-3 (baseline); RA-B-2..4 in `examples/measurements` (lane H).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
@@ -232,17 +236,20 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
-- **Priority:** P1 High · **Status:** In review (layer-B follow-up pull request) · **Refs:** TABRION TAB-017,
+- **Priority:** P1 High · **Status:** Done (merged in #17, `a9ec3b8`; review L-1 with RA-A-1) · **Refs:** TABRION TAB-017,
   TAB-018, TAB-019, contract section 7, I-44, I-55, deviations D-60, D-66, TAB-T-K21, K25, K26
-- **What:** `tabrion._sa._check.collect` is still a stub, so `check(database)` raises `NotImplementedError`. It must
+- **What:** `tabrion._sa._check.collect` was a stub (`check(database)` raised `NotImplementedError`). It was to
   run the SQLite or PostgreSQL checks on a raw driver connection of the `Database` (read only, T-NOTX) and add
   TAB-B-001 (pool without `pre_ping`), TAB-B-002 (Alembic schema not current, through `tabrion.migrations`) and
-  TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` must call it.
+  TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` was to call it.
 - **Done in the follow-up:** `collect` runs the dialect's checks on the pooled driver connection inside one
   `read()` and adds TAB-PG-012, TAB-B-001 and TAB-B-002 (`tests/unit/test_check_database.py`,
   `tests/postgres/test_check_layer_b.py`). TAB-B-002 stays an `info` "Not checked" when an `alembic_version` table
   exists: `check()` has no script directory and layer B never imports Alembic (D-66); `require_current` is the gate.
-- **Next step:** review and merge. D-66 is accepted by the coordinator as the 0.1 design (subject to review).
+- **Next step:** none for 0.1 (merged; D-66 accepted by the coordinator as the 0.1 design); see the 0.2 candidate.
+- **Review of #17 (L-1), done with RA-A-1:** a unit test pins the TAB-PG-012 version gate with a stubbed
+  `server_version` (CI runs PostgreSQL 16 only), a PostgreSQL test pins that `expect` reaches the layer-A check, and
+  I-55 says that a never-migrated database (no version table) gives no TAB-B-002.
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
@@ -267,14 +274,26 @@ required (owner decision of 2026-11-08 11:26Z).
   and upload `sbom/` with `dist/` (`path: |` with both lines). In `release.yml`, add `sbom/tabrion.cdx.json` to the
   files attested by job `attest`. The SBOM stays outside `dist/`, because `twine check dist/*` checks every file.
 
-### TB-133 · Keep the two build backend pins in step (TABRION QA-8 review M-1)
+### TB-133 · QA-8 follow-ups: backend pins in step, SBOM extras per Tabrion extra, purl of local installs
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-8, `build-constraints.txt`, `.github/dependabot.yml`
-- **What:** `pyproject.toml` (`requires = ["hatchling==1.33.0"]`) and the hashed `build-constraints.txt` must name
-  the same hatchling; `tests/unit/test_build_constraints.py` fails when they differ. Whether Dependabot's pip updater
-  proposes both files in one pull request is not verified.
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-8, review of PR #30 (M-1; delta review L-5, L-6),
+  `build-constraints.txt`, `.github/dependabot.yml`, `scripts/sbom.py`
+- **What:**
+  - Backend pins: `pyproject.toml` (`requires = ["hatchling==1.33.0"]`) and the hashed `build-constraints.txt` must
+    name the same hatchling; `tests/unit/test_build_constraints.py` fails when they differ. Whether Dependabot's pip
+    updater proposes both files in one pull request is not verified.
+  - L-5: `tabrion:requested-extra` is merged over every Tabrion extra of a dependency. Only `extra == "dev"` asks
+    for `psycopg[binary]`, but the `psycopg` component carries the extras all, dev and postgres **and**
+    `requested-extra` binary, so a reader could conclude that `tabrion[postgres]` pulls in the binary wheel
+    (bundled libpq and OpenSSL), which it does not.
+  - L-6: with `--environment`, a local-path or editable install (`direct_url.json` with `dir_info`) and a URL
+    archive (`archive_info`) still get `pkg:pypi/<name>@<v>`, although they did not come from PyPI; the common case
+    is a Git-pinned sibling installed from a local checkout (`pip install -e ../axentra`).
 - **Next step:** after the first hatchling release, check the Dependabot pull request; if it updates only one file,
-  regenerate the other by the recipe in `build-constraints.txt` in the same pull request.
+  regenerate the other by the recipe in `build-constraints.txt` in the same pull request. In `scripts/sbom.py`:
+  emit the requested extra per Tabrion extra (`tabrion:requested-extra` = `dev:binary`), and give `archive_info`
+  installs `pkg:generic/<name>@<v>?download_url=<url>` and `dir_info` installs `pkg:generic` (or no purl); each
+  with a unit test.
 
 ## M3, M5 and M8: work in this repository
 
@@ -733,7 +752,8 @@ required (owner decision of 2026-11-08 11:26Z).
   "$GITHUB_STEP_SUMMARY"` against a PostgreSQL service (not blocking; its result is a release-gate criterion of
   TAB-040). Lane C does not change `.github/`. The script installs each consumer with `uv pip install --override`,
   so HEAD replaces the consumer's Tabrion requirement (a Git commit pin; Tabrion is not published to an index),
-  and checks that it did (review M-1 of #19, fixed). The job needs network access for the clones and installs.
+  and checks that it did (review M-1 of #19, fixed); the override names `tabrion[all]`, so a consumer keeps the
+  extras it asks for (N-1 of the delta re-review, fixed). The job needs network access for the clones and installs.
 - **Next step:** whoever may change `.github/` adds both jobs (with the label `workflow-change-reviewed`) and lists
   them in `.github/ci-manifest.json`; the release gate reads the last nightly result.
 

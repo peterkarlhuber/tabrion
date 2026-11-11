@@ -1,10 +1,11 @@
 """The grant functions of Axentra and Nodestro, verbatim, as the test oracles of TAB-031 (TAB-T-R11, R12).
 
 Copied from peterkarlhuber/axentra ``src/axentra/data/roles.py`` (``grant_runtime_role``, ``inspect_role``,
-``TABLE_PRIVILEGES``, ``SEQUENCE_PRIVILEGES``) at commit 1a59c84, and from peterkarlhuber/nodestro-runtime
-``src/nodestro_runtime/storage_postgres.py`` (``grant_runtime_role``, ``inspect_role``, ``RUNTIME_TABLE_PRIVILEGES``,
-``SCHEMA_VERSION_TABLES``) at commit 6698265 (both MIT, Copyright (c) 2026 Peter Karlhuber). The SQL and the order
-of the statements are unchanged. Only the plumbing changed: both take a psycopg connection (Axentra's URL variant and
+``TABLE_PRIVILEGES``, ``SEQUENCE_PRIVILEGES``) at commit 1a59c84237f77bf9b699187e25005b1fe28f2a2f, and from
+peterkarlhuber/nodestro-runtime ``src/nodestro_runtime/storage_postgres.py`` (``grant_runtime_role``,
+``inspect_role``, ``RUNTIME_TABLE_PRIVILEGES``, ``SCHEMA_VERSION_TABLES``) at commit
+6698265c134b17a337ad0568da02361900050c70 (both MIT, Copyright (c) 2026 Peter Karlhuber). The SQL and the order of the
+statements are unchanged. Only the plumbing changed: both take a psycopg connection (Axentra's URL variant and
 Nodestro's ``PostgresDatabase`` wrapper are gone; Nodestro's ``owner._transaction()`` is ``connection.transaction()``
 and its ``_query`` a cursor), and the errors are plain ``RuntimeError``s. ``role_grants.json`` holds the catalog
 snapshot both produce on the fixture schema of ``tests/postgres/test_grants.py``; that test checks that these
