@@ -147,6 +147,7 @@ def test_core_contract_names_the_stdlib_modules() -> None:
         "tabrion.config",
         "tabrion.sqlite",
         "tabrion.check",
+        "tabrion._deprecated",
     }
     assert {"psycopg", "sqlalchemy", "alembic", "pytest"} <= set(core["forbidden_modules"])  # type: ignore[call-overload]
 
@@ -281,8 +282,10 @@ def test_prefix_scan_detects_a_probe(tmp_path: Path) -> None:
 # G-T1 F-09 and F-10 (TODO TB-019): "stdlib-only" as an allowlist. import-linter's core contract forbids a list of
 # packages, so any other third-party import (for example ``pluggy``, which comes with pytest) would pass it, and the
 # root package ``tabrion`` (whose ``__getattr__`` reaches layer B) is in no contract at all.
-CORE_FILES = ("errors.py", "sql.py", "config.py", "sqlite.py", "check.py")
-CORE_IMPORTABLE = frozenset({"tabrion.errors", "tabrion.sql", "tabrion.config", "tabrion.sqlite", "tabrion.check"})
+CORE_FILES = ("errors.py", "sql.py", "config.py", "sqlite.py", "check.py", "_deprecated.py")
+CORE_IMPORTABLE = frozenset(
+    {"tabrion.errors", "tabrion.sql", "tabrion.config", "tabrion.sqlite", "tabrion.check", "tabrion._deprecated"}
+)
 
 
 def _core_import_offenders(source: str, filename: str = "<probe>") -> list[str]:
