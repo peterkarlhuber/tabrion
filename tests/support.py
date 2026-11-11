@@ -7,7 +7,15 @@ from pathlib import Path
 import subprocess
 import sys
 
-CORE_MODULES = ("tabrion", "tabrion.errors", "tabrion.sql", "tabrion.config", "tabrion.sqlite", "tabrion.check")
+CORE_MODULES = (
+    "tabrion",
+    "tabrion.errors",
+    "tabrion.sql",
+    "tabrion.config",
+    "tabrion.sqlite",
+    "tabrion.check",
+    "tabrion._deprecated",
+)
 """Layer A without extras (05 section 2.3); importing them loads no optional dependency."""
 
 OPTIONAL = ("psycopg", "psycopg_pool", "sqlalchemy", "alembic", "pytest")

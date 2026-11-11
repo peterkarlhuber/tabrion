@@ -16,10 +16,13 @@
 
 ## Summary
 
+The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-11,
+master merge into #41).
+
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 12 |
+| P1 High | 10 |
 | P2 Medium | 12 |
 | P3 Low | 31 |
 | P4 Optional | 5 |
@@ -152,7 +155,8 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Status note:** TAB-022 is in the fifth lane C pull request (on master after #11; contract I-61, D-74, D-75): the
   consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
   The CI jobs are TB-070.
-- **Next step:** TAB-050 after TAB-016; TAB-051 after TAB-023.
+- **Next step:** TAB-050 after TAB-016. TAB-051 is in review (branch `claude/project-thread-rdo6g3-tab051`; the
+  workflow parts are TB-090).
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
@@ -164,8 +168,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 done in #16; RA-B-2 and RA-B-3 in review) · **Refs:** TABRION
-  RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 merged in #22; RA-B-2 merged in
+  #23; RA-B-3 in review, #26) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
   tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. RA-B-1 is
@@ -187,7 +191,7 @@ required (owner decision of 2026-11-08 11:26Z).
   FOR UPDATE`) and a serialization failure or deadlock, each with an unchanged mark, a classified error and 0/0.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-B-4 (plain SQLAlchemy baseline) after RA-B-2; RA-A-1 after TAB-019.
+- **Next step:** RA-A-2 (#29) and RA-A-3 (baseline); RA-B-4 (plain SQLAlchemy baseline, #28) after RA-B-3 (lane H).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
@@ -244,17 +248,20 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
-- **Priority:** P1 High · **Status:** In review (layer-B follow-up pull request) · **Refs:** TABRION TAB-017,
+- **Priority:** P1 High · **Status:** Done (merged in #17, `a9ec3b8`; review L-1 with RA-A-1) · **Refs:** TABRION TAB-017,
   TAB-018, TAB-019, contract section 7, I-44, I-55, deviations D-60, D-66, TAB-T-K21, K25, K26
-- **What:** `tabrion._sa._check.collect` is still a stub, so `check(database)` raises `NotImplementedError`. It must
+- **What:** `tabrion._sa._check.collect` was a stub (`check(database)` raised `NotImplementedError`). It was to
   run the SQLite or PostgreSQL checks on a raw driver connection of the `Database` (read only, T-NOTX) and add
   TAB-B-001 (pool without `pre_ping`), TAB-B-002 (Alembic schema not current, through `tabrion.migrations`) and
-  TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` must call it.
+  TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` was to call it.
 - **Done in the follow-up:** `collect` runs the dialect's checks on the pooled driver connection inside one
   `read()` and adds TAB-PG-012, TAB-B-001 and TAB-B-002 (`tests/unit/test_check_database.py`,
   `tests/postgres/test_check_layer_b.py`). TAB-B-002 stays an `info` "Not checked" when an `alembic_version` table
   exists: `check()` has no script directory and layer B never imports Alembic (D-66); `require_current` is the gate.
-- **Next step:** review and merge. D-66 is accepted by the coordinator as the 0.1 design (subject to review).
+- **Next step:** none for 0.1 (merged; D-66 accepted by the coordinator as the 0.1 design); see the 0.2 candidate.
+- **Review of #17 (L-1), done with RA-A-1:** a unit test pins the TAB-PG-012 version gate with a stubbed
+  `server_version` (CI runs PostgreSQL 16 only), a PostgreSQL test pins that `expect` reaches the layer-A check, and
+  I-55 says that a never-migrated database (no version table) gives no TAB-B-002.
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
@@ -338,6 +345,25 @@ required (owner decision of 2026-11-08 11:26Z).
   `downstream` in `nightly.yml`. Each is added with its work package and listed in `.github/ci-manifest.json`.
 - **Next step:** with each work package.
 
+### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-051, S-6, S-8, contract I-81
+- **What:** the job `api surface` in `ci.yml` runs `scripts/api_surface.py` without `--base`, so a surface change
+  without a CHANGELOG entry fails only when a reviewer runs `--base origin/master` (the job needs
+  `fetch-depth: 0` and `--base ${{ github.event.pull_request.base.sha }}`). `release.yml` has no gate that runs
+  `--base <previous release SHA>` and checks the `downstream` result (S-7). The downstream issues of the release
+  flow stay manual: the owner, or the coordinator on the owner's go, opens them (`docs/development/api-stability.md`).
+- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml` and `release.yml`; until then the
+  release checklist runs both steps by hand.
+
+### TB-091 · Error codes in `surface.json` (TABRION TAB-051, deviation D-91)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-051, TAB-023, S-2, S-6
+- **What:** S-2 makes `TabrionError.code` values stable and S-6 wants `api_surface.py` to compare them, but the
+  codes are string literals at the raise sites and not in `surface.json`.
+- **Next step:** decide with TAB-040 whether to collect the codes (for example from the contract tables or an
+  internal registry) into a `codes` section of `surface.json`.
+
 ### TB-018 · PostgreSQL matrix cost on pull requests
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** deviation D-3
@@ -357,9 +383,31 @@ required (owner decision of 2026-11-08 11:26Z).
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** G-T1 F-15, CC-3, TABRION TAB-004
 - **What:** macOS and Windows run on pull requests only when `sqlite.py` or `tests/sqlite/**` change; `config.py`,
-  `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms.
+  `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms, and so do the Windows-specific
+  paths of `scripts/downstream.py`, `tests/unit/test_downstream.py` and `tests/unit/test_golden_consumers.py`
+  (TB-134: those failed on Windows in the nightly only).
 - **Next step:** add the paths to `platforms.yml` and to the manifest's `path_filters` in one pull request merged
   before the change that needs them (ci-ok judges by the default branch's manifest).
+
+### TB-134 · Windows: downstream runner and golden replay failed in the platforms job (issue #18)
+
+- **Priority:** P2 Medium · **Status:** Done · **Refs:** issue #18, nightly run 42809181374, TAB-022, TB-021
+- **What:** eight Windows failures besides the two of TB-074 (#37):
+  - six `tests/unit/test_downstream.py` installs: `uv pip install --python <venv>\Scripts\python` exits 2 ("No
+    virtual environment or system Python installation found"). `subprocess` starts `Scripts\python` because
+    `CreateProcess` adds `.exe`, but uv takes the path as given. A real bug of `scripts/downstream.py` on Windows,
+    in `run_consumer` as well, not only in the tests. Fixed: `downstream.venv_python()` returns
+    `Scripts\python.exe` on Windows, used by the script and the tests; `test_venv_python_is_the_interpreter_file`
+    pins it (the file must exist).
+  - `test_a_database_error_is_a_setup_failure_without_its_message`: Windows retries a refused local connect until
+    `connect_timeout`, so psycopg raises `ConnectionTimeout`, a subclass of `OperationalError`. The script's report
+    was right (class name, no message); the test now asserts the cause is an `OperationalError`, exactly that class on
+    POSIX and that class or `ConnectionTimeout` on Windows, and the exact report text.
+  - `test_golden_consumers.py::test_orkexa_open` compared the golden file, recorded on Linux, with the current
+    platform's mode. The golden file holds `0o600` everywhere; the replay records `None` on Windows (no POSIX mode
+    bits), which the test now asserts explicitly.
+- **Next step:** none. The platforms job runs these files on pull requests only once TB-021 widens its path filter;
+  the fix was proven by a `workflow_dispatch` run of `platforms.yml` on the fix branch.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 
@@ -716,7 +764,8 @@ required (owner decision of 2026-11-08 11:26Z).
   "$GITHUB_STEP_SUMMARY"` against a PostgreSQL service (not blocking; its result is a release-gate criterion of
   TAB-040). Lane C does not change `.github/`. The script installs each consumer with `uv pip install --override`,
   so HEAD replaces the consumer's Tabrion requirement (a Git commit pin; Tabrion is not published to an index),
-  and checks that it did (review M-1 of #19, fixed). The job needs network access for the clones and installs.
+  and checks that it did (review M-1 of #19, fixed); the override names `tabrion[all]`, so a consumer keeps the
+  extras it asks for (N-1 of the delta re-review, fixed). The job needs network access for the clones and installs.
 - **Next step:** whoever may change `.github/` adds both jobs (with the label `workflow-change-reviewed`) and lists
   them in `.github/ci-manifest.json`; the release gate reads the last nightly result.
 
