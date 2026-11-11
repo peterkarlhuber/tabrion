@@ -17,7 +17,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
-  `examples/`.
+  `examples/`. RA-B-2 adds the idempotent transfer to PostgreSQL through layer B (high-water mark, `ON CONFLICT DO
+  NOTHING` on the natural key, the mark moved only after the upstream commit, `transfer --from-start` after
+  switching the upstream), tested on SQLite and PostgreSQL.
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
   `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`
@@ -69,6 +71,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   after the URL is masked, so `:` and `@` in a path never look like credentials (TB-074). The output is now the
   same under SQLAlchemy 2.0 and 2.1: 2.0 rendered the path raw (control characters included, and `C:\a@b\x.db`
   was misread as credentials by the masking), 2.1 percent-encodes it.
+- Windows (issue #18, TB-134): `scripts/downstream.py` hands uv the interpreter file `Scripts\python.exe` (new
+  `venv_python()`), so a downstream run works there; the downstream and golden-replay tests assert the Windows
+  behavior (psycopg's `ConnectionTimeout` for a refused local connect, no POSIX mode in the replay).
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
   final (TAB-040) is the merge commit of the version-bump pull request that sets `0.1.0`, pinned by full SHA; its
