@@ -24,7 +24,7 @@ integration branch of the ready pull requests).
 | P0 Critical | 0 |
 | P1 High | 9 |
 | P2 Medium | 13 |
-| P3 Low | 33 |
+| P3 Low | 34 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -247,6 +247,18 @@ required (owner decision of 2026-11-08 11:26Z).
   `migrations.revisions`, missing heads make the database look current or newer (`unknown`).
 - **Next step:** in 0.2, keyword arguments `version_locations` and `recursive_version_locations` passed through to
   `ScriptDirectory` (a contract addendum, as `surface.json` is frozen for 0.1); until then I-57 documents the rule.
+
+### TB-110 · SQLite: an `ON DELETE RESTRICT` violation is classified as unknown (RA-A-2)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION RA-A-2, TAB-031, `tabrion.errors`
+- **What:** SQLite reports a violated `ON DELETE RESTRICT` foreign key with the extended code
+  `SQLITE_CONSTRAINT_TRIGGER` (message `FOREIGN KEY constraint failed`), not `SQLITE_CONSTRAINT_FOREIGNKEY`.
+  `tabrion.errors` maps it to `UnknownDatabaseError` instead of `IntegrityViolation(kind=FOREIGN_KEY)`; PostgreSQL
+  (SQLSTATE 23001) is classified correctly. `examples/parts` therefore declares its foreign keys with the default
+  `NO ACTION`, which behaves the same for a plain delete and is classified as `FOREIGN_KEY` on both engines.
+- **Next step:** lane C to classify `SQLITE_CONSTRAINT_TRIGGER` with that message as `FOREIGN_KEY` (with a test on
+  both engines); then `examples/parts` may go back to `RESTRICT`, which needs a migration `0002` once #22 (with
+  `0001`) is merged (review I-2 of #29).
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 

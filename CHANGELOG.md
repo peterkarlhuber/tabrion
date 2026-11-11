@@ -79,6 +79,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   with Alembic on SQLite and PostgreSQL and `require_current` as the gate; decimals are scaled integers on SQLite,
   so they order and compare as on PostgreSQL, and migrations run in `Database.transaction()`; not part of the wheel
   or the sdist.
+- `examples/parts` functions (RA-A-2): `parts.catalog` with CRUD, a status life cycle under an optimistic lock,
+  exact properties, components, bill of materials and where-used; the same tests on SQLite and PostgreSQL, including
+  a lost-update test; the cycle check is serialized (an advisory transaction lock on PostgreSQL), and the bill of
+  materials is linear, exact and cycle-safe. Its foreign keys use `NO ACTION` (TODO TB-110).
 
 ### Changed
 
