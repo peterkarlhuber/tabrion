@@ -23,9 +23,9 @@ integration branch of the ready pull requests).
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 9 |
-| P2 Medium | 13 |
-| P3 Low | 40 |
-| P4 Optional | 5 |
+| P2 Medium | 12 |
+| P3 Low | 43 |
+| P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
 trademark register check from gate G-T2 (TB-001 closed; a later public marketing under the name needs a new
@@ -41,7 +41,7 @@ lane B pull request implements `tabrion.sqlite` (TABRION TAB-013, TAB-014,
 TAB-030 and completed by TAB-031 in the third lane C pull request; `tabrion.check` (TAB-017) is merged, without
 its layer-B part (TB-060); the layer-B pull request implements the layer-B core (TABRION TAB-018,
 [M2 lane B2 evidence](program/STATUS.md#m2-lane-b2-evidence-tab-018)); `tabrion.migrations` and
-`tabrion.testing` still raise `NotImplementedError`.
+`tabrion.testing` still raise `NotImplementedError`. The 0.2 Studio APIs (TABRION TAB-033) are implemented and staged until 0.2 (TB-013).
 
 ## Priorities and statuses
 
@@ -416,12 +416,18 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-013 · Studio APIs and release 0.2.0 (TABRION TAB-033, TAB-042)
 
-- **Priority:** P1 High · **Status:** Blocked (TAB-040) · **Refs:** TABRION TAB-033, TAB-042
-- **What:** `query`/`Result`, `stream`, `cancel`, `inspector` (TAB-033), then the release 0.2.0 with the 0.2
-  documentation (TAB-042). The critical path to Studio runs through these. The frozen 0.2 stubs are staged in
-  `tabrion._sa._v02`; TAB-033 mixes them into `Database` and `Transaction`, exports `Result` and `Column` from
-  `tabrion` and drops the `staged` keys from `surface.json` when the version becomes 0.2.
-- **Next step:** after G-T2 for 0.1.
+- **Priority:** P1 High · **Status:** In progress (TAB-033 in review; TAB-042 blocked by TAB-040) · **Refs:** TABRION
+  TAB-033, TAB-042, contract I-100..I-106
+- **What:** TAB-033 implemented `query`/`Result`, `stream`, `cancel`, `inspector` and the experimental `on_begin`,
+  `run_transaction`, `savepoint` in the mixins of `tabrion._sa._v02`, tested on both engines through the private
+  `tabrion._sa._staged` classes; they stay staged while the version is 0.1 (G-T1 condition C-6). TAB-042 is the
+  release 0.2.0 with the 0.2 documentation.
+- **Next step:** with TAB-042, when the version becomes 0.2: `class Transaction(_TransactionV02)` and `class
+  Database(_DatabaseV02)` in `tabrion._sa.database` (the import at the top works, TB-024), export `Result` and
+  `Column` from `tabrion` (`__all__`, `_LAYER_B`, `tests/unit/test_public_api.py`), drop the `staged` keys of
+  `surface.json` and delete `_staged.py`; the tests switch from `_StagedDatabase` to `tabrion.Database`. Studio
+  STU-010 and STU-011 then replace their workaround (`fetch_all` with `prepare_threshold=0`) with `inspector`,
+  `query`, `stream` and `cancel`.
 
 ### TB-014 · Connection profile format v1 (TABRION TAB-CR-1)
 
@@ -802,14 +808,6 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** decide with TB-050 whether 0.2 exports it (contract addendum, `surface.json`); until then consumers
   that use native structlog keep Axentra's processor or render no tracebacks.
 
-### TB-024 · Circular import of the staged 0.2 mixins (G-T1 condition check CC-2)
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** CC-2, TABRION TAB-033, TB-013
-- **What:** `tabrion._sa._v02` imports `Isolation`, `Statement` and `Transaction` from `tabrion._sa.database`. When
-  TAB-033 lets `Database` and `Transaction` inherit from the `_v02` mixins, the two modules import each other.
-- **Next step:** before TAB-033, move the type aliases to `tabrion._sa._types`, type `run_transaction`'s `fn` against
-  a forward reference, and keep `surface.json` unchanged.
-
 ### TB-061 · Read-only is a guard, not a boundary: optional hardening (TABRION TAB-018 review H-1)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, contract I-56, SECURITY.md, plan 03:245-247,
@@ -824,10 +822,59 @@ required (owner decision of 2026-11-08 11:26Z).
   `test_b12_documents_the_gap_session_default_restored_locally` and
   `test_b12_documents_the_gap_transaction_control_in_read`. A server cannot refuse transaction control; the hard
   boundary is a role without write rights (or SQLite file permissions).
+- **TAB-033:** `query` and `stream` close the multi-statement and the transaction-control variants for their own
+  calls: the server refuses several commands (I-104), a transaction-control statement of the caller (`COMMIT`,
+  `ROLLBACK`, also `... AND CHAIN`, `END`, `ABORT`, `PREPARE TRANSACTION`) is refused before it is sent, and one
+  that still ended the transaction ends the call with `UsageError("database.transaction_ended")` and keeps the
+  connection out of the pool (review L-1 and re-review N-1 of #32).
+  The gap stays for the 0.1 methods (TB-121) and for lift-write-restore inside one statement's functions.
 - **Next step:** Studio and TAB-032 (runtime-role mode) run untrusted SQL only under such a role. Optional: a
   `checkin` check of `default_transaction_read_only` under `Profile.read_only` that invalidates the connection, and
   a snapshot-taking statement after `BEGIN READ ONLY` (review H-1). TAB-041 documents the guard as it is
   (`docs/guides/security.md`, `docs/guides/database.md`) and adds no hardening in 0.1; the decision moves to 0.2.
+
+### TB-120 · `query` on PostgreSQL receives the whole result before `max_rows` cuts it (TABRION TAB-033)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-033, STU-011, contract 5.4, I-100
+- **What:** as contract section 5.4 specifies, `query` uses no server cursor: libpq receives every row of the result,
+  and only then are `max_rows + 1` rows taken. `SELECT * FROM big` with `max_rows=1000` costs the whole table in
+  client memory and transfer time. `stream` uses a server cursor and holds one batch.
+- **Next step:** Studio's query engine (STU-011) streams with its row, byte and cell caps instead of calling `query`
+  for user SQL; a named cursor for `query` stays a 1.x option (contract 5.4), for row-returning statements only.
+
+### TB-121 · The 0.1 methods send a statement without parameters as a simple query (TABRION TAB-033, TB-061)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, TAB-033, contract I-56, I-104, TB-061
+- **What:** `query` and `stream` force the extended query protocol on PostgreSQL, so the server refuses a text with
+  several commands (I-104). `execute`, `fetch_one`, `fetch_all` and `fetch_scalar` keep psycopg's default: without
+  parameters a text goes as a simple query, and `COMMIT; BEGIN READ WRITE; ...` inside `read()` writes (pinned by
+  the `documents_the_gap` tests of TB-061). An engine whose `connect_args` set `prepare_threshold=0` (Studio) is
+  covered for every method. The transaction-status check after each statement (I-104) runs for `query`
+  and `stream` only.
+- **Next step:** decide with TAB-042 whether `read()` statements always use the extended protocol (a behavior
+  change of 0.1 methods, no signature change); until then tools that run user SQL use `query` or `stream`.
+
+### TB-122 · Result details the drivers do not give (TABRION TAB-033, D-120)
+
+- **Priority:** P4 Optional · **Status:** Optional · **Refs:** TABRION TAB-033, contract I-100, I-101, D-120
+- **What:** `Column.type_name` is `None` on SQLite (Python's `sqlite3` has no `sqlite3_column_decltype`),
+  `Column.nullable` is `None` on both engines, and `statement_kind` reads the first keyword, so a `WITH` that
+  writes counts as `select`.
+- **Next step:** none required; revisit if Python's `sqlite3` exposes declared types, or if Studio needs the
+  nullability of plain table columns (it can read it through `inspector`).
+
+### TB-123 · The transaction-control pre-check of `query` and `stream` sees only text statements (TABRION TAB-033, review of #32 C-1)
+
+- **Priority:** P3 Low · **Status:** Open (before TAB-042) · **Refs:** TABRION TAB-033, TAB-042, contract I-104,
+  review of #32 (P-1, condition C-1)
+- **What:** the check that refuses `COMMIT`, `ROLLBACK` and the like before they are sent looks only at a
+  `TextClause`. Other executables, such as `sqlalchemy.DDL(...)` and `text(...).columns()` (a `TextualSelect`), skip
+  it, and the check after the statement cannot see every form, so the I-104 sentence "the caller's SQL cannot end
+  the transaction" does not hold for them yet. The 0.2 names are staged and not public, so 0.1 is not affected.
+- **Next step:** before TAB-042 switches the 0.2 mixins on, lex the compiled SQL of every executable
+  (`str(executable.compile(dialect=connection.dialect))`), or at least unwrap `TextualSelect.element.text` and
+  `DDL.statement`, and add both forms to the `test_n1_*` tests; otherwise narrow the I-104 sentence to text
+  statements.
 
 ### TB-056 · Layer-B waits outside `timeout` (TABRION TAB-018, TAB-041)
 
@@ -982,6 +1029,7 @@ required (owner decision of 2026-11-08 11:26Z).
 | This repo item | Other repo | Other item | Relation |
 |---|---|---|---|
 | TB-012 | orkexa, axentra, tabrion-studio | TABRION QA-16 | Their AC-1 contracts and mutation probes |
+| TB-013 | tabrion-studio | TABRION STU-010, STU-011 | Use `inspector`, `query`, `stream` and `cancel` once 0.2 makes them public; until then Studio keeps its `fetch_all` workaround with `prepare_threshold=0` |
 | TB-014 | tabrion-studio, nodestro-runtime | TABRION STU-006, NOD-CR-3 | Use the profile format |
 | TB-015 | nodestro-runtime | TABRION NOD-CR-5 | Uses the schema fingerprint |
 | TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need the SHA of the `v0.1.0` final commit (RC-8) |

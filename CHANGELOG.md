@@ -37,6 +37,22 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - `docs/api-consumers.md`: which public function each consumer uses and which consumer test covers it (K11).
   `tests/unit/test_api_consumers.py` checks it against contract section 8 (API names per row), the golden record keys
   and the replay tests. `advisory_unlock` is listed as not yet covered by a consumer record.
+
+- The 0.2 Studio APIs (TAB-033), implemented and tested on SQLite and PostgreSQL but **not public yet**: they stay
+  staged in `tabrion._sa._v02` until the version is 0.2, so the 0.1 surface does not grow (G-T1 condition C-6).
+  `query` returns a frozen `Result` with `Column` names and PostgreSQL type names, cut at `max_rows`; `stream` yields
+  batches from a PostgreSQL server-side cursor or SQLite `fetchmany`; `cancel()` from another thread stops the
+  running statement within a second (`interrupt()`, `cancel_safe()`), never reaches a later user of the pooled
+  connection, and a canceled transaction is never committed; `inspector()` runs on a read-only connection;
+  `query` and `stream` send user SQL through the extended query protocol, so PostgreSQL refuses a text with several
+  commands (the multi-statement escape of `read()`); experimental `on_begin`, `run_transaction` (retries only
+  retryable errors with a known outcome) and `savepoint`. Contract implementation notes I-100..I-106, deviations
+  D-120 and D-121. Every SQLite statement of a layer-B transaction now runs with Tabrion's progress handler, so a
+  cancel cannot be lost (I-102). A PostgreSQL transaction that sent a cancel request never returns its connection to
+  the pool, because a late request would cancel the next user's statement; a `COMMIT`, `ROLLBACK` (also
+  `... AND CHAIN`), `END`, `ABORT` or `PREPARE TRANSACTION` of the caller inside `query` or `stream` is refused
+  before it is sent, with `UsageError`, and a statement that still ended the transaction is caught afterwards, so
+  later statements never run outside the transaction (review and re-review of #32).
 - API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
   and remove a stable name, and the downstream notice in the release flow. The internal helper
   `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
