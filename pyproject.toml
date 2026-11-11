@@ -143,7 +143,14 @@ exclude_type_checking_imports = true
 id = "core-stdlib-only"
 name = "Driver core is stdlib-only"
 type = "forbidden"
-source_modules = ["tabrion.errors", "tabrion.sql", "tabrion.config", "tabrion.sqlite", "tabrion.check"]
+source_modules = [
+    "tabrion.errors",
+    "tabrion.sql",
+    "tabrion.config",
+    "tabrion.sqlite",
+    "tabrion.check",
+    "tabrion._deprecated",
+]
 forbidden_modules = [
     "psycopg",
     "psycopg_pool",
@@ -202,6 +209,8 @@ layers = [
     "tabrion.sql | tabrion.config",
     # The foundation: every layer-A module raises or classifies with it (config raises ConfigurationError, TAB-012).
     "tabrion.errors",
+    # The deprecation helper (TAB-051): standard library only, so every module can deprecate a name with it.
+    "tabrion._deprecated",
 ]
 
 [[tool.importlinter.contracts]]

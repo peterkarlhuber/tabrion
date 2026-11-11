@@ -23,8 +23,8 @@ review of #19).
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 11 |
-| P2 Medium | 12 |
-| P3 Low | 31 |
+| P2 Medium | 13 |
+| P3 Low | 32 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -155,8 +155,8 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Status note:** TAB-022 is in the fifth lane C pull request (on master after #11; contract I-61, D-74, D-75): the
   consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
   The CI jobs are TB-070.
-- **Next step:** TAB-051 after TAB-023. TAB-050 is in review (branch `claude/project-thread-rdo6g3-tab050`; its
-  CI job is TB-092).
+- **Next step:** TAB-051 is on master (#21; the workflow parts are TB-090). TAB-050 is in review (branch
+  `claude/project-thread-rdo6g3-tab050`; its CI job is TB-092).
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
@@ -168,7 +168,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 in review) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 in review, #22) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3,
   RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
@@ -178,7 +178,8 @@ required (owner decision of 2026-11-08 11:26Z).
   it for `mypy --strict src tests scripts`.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
   a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
-- **Next step:** RA-B-2 (transfer through layer B) after RA-B-1; RA-A-1 after TAB-019.
+- **Next step:** RA-A-1 is accepted (#22, delta re-review of `0ab3134`; its notes N-1 to N-3 are done on #22); then
+  RA-A-2 (#29) and RA-A-3 (baseline); RA-B-2..4 in `examples/measurements` (lane H).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
@@ -235,17 +236,20 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
-- **Priority:** P1 High · **Status:** In review (layer-B follow-up pull request) · **Refs:** TABRION TAB-017,
+- **Priority:** P1 High · **Status:** Done (merged in #17, `a9ec3b8`; review L-1 with RA-A-1) · **Refs:** TABRION TAB-017,
   TAB-018, TAB-019, contract section 7, I-44, I-55, deviations D-60, D-66, TAB-T-K21, K25, K26
-- **What:** `tabrion._sa._check.collect` is still a stub, so `check(database)` raises `NotImplementedError`. It must
+- **What:** `tabrion._sa._check.collect` was a stub (`check(database)` raised `NotImplementedError`). It was to
   run the SQLite or PostgreSQL checks on a raw driver connection of the `Database` (read only, T-NOTX) and add
   TAB-B-001 (pool without `pre_ping`), TAB-B-002 (Alembic schema not current, through `tabrion.migrations`) and
-  TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` must call it.
+  TAB-PG-012 (the `Profile` sets a `transaction_timeout`, server before 17), and `Database.check()` was to call it.
 - **Done in the follow-up:** `collect` runs the dialect's checks on the pooled driver connection inside one
   `read()` and adds TAB-PG-012, TAB-B-001 and TAB-B-002 (`tests/unit/test_check_database.py`,
   `tests/postgres/test_check_layer_b.py`). TAB-B-002 stays an `info` "Not checked" when an `alembic_version` table
   exists: `check()` has no script directory and layer B never imports Alembic (D-66); `require_current` is the gate.
-- **Next step:** review and merge. D-66 is accepted by the coordinator as the 0.1 design (subject to review).
+- **Next step:** none for 0.1 (merged; D-66 accepted by the coordinator as the 0.1 design); see the 0.2 candidate.
+- **Review of #17 (L-1), done with RA-A-1:** a unit test pins the TAB-PG-012 version gate with a stubbed
+  `server_version` (CI runs PostgreSQL 16 only), a PostgreSQL test pins that `expect` reaches the layer-A check, and
+  I-55 says that a never-migrated database (no version table) gives no TAB-B-002.
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
@@ -328,6 +332,25 @@ required (owner decision of 2026-11-08 11:26Z).
 - **What:** `conformance`, `golden files` and `examples` in `ci.yml` (`api surface` arrived with TAB-023); fault injection, stress and
   `downstream` in `nightly.yml`. Each is added with its work package and listed in `.github/ci-manifest.json`.
 - **Next step:** with each work package.
+
+### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-051, S-6, S-8, contract I-81
+- **What:** the job `api surface` in `ci.yml` runs `scripts/api_surface.py` without `--base`, so a surface change
+  without a CHANGELOG entry fails only when a reviewer runs `--base origin/master` (the job needs
+  `fetch-depth: 0` and `--base ${{ github.event.pull_request.base.sha }}`). `release.yml` has no gate that runs
+  `--base <previous release SHA>` and checks the `downstream` result (S-7). The downstream issues of the release
+  flow stay manual: the owner, or the coordinator on the owner's go, opens them (`docs/development/api-stability.md`).
+- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml` and `release.yml`; until then the
+  release checklist runs both steps by hand.
+
+### TB-091 · Error codes in `surface.json` (TABRION TAB-051, deviation D-91)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-051, TAB-023, S-2, S-6
+- **What:** S-2 makes `TabrionError.code` values stable and S-6 wants `api_surface.py` to compare them, but the
+  codes are string literals at the raise sites and not in `surface.json`.
+- **Next step:** decide with TAB-040 whether to collect the codes (for example from the contract tables or an
+  internal registry) into a `codes` section of `surface.json`.
 
 ### TB-092 · CI job `conformance` (TABRION TAB-050, deviation D-92)
 

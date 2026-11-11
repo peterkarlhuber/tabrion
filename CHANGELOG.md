@@ -8,6 +8,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
+  and remove a stable name, and the downstream notice in the release flow. The internal helper
+  `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
+  replacement and the removal version, and refuses a window shorter than S-3. `scripts/api_surface.py` checks every
+  deprecation against `surface.json` (`"deprecated"`) and the CHANGELOG, and with `--base <ref>` that every surface
+  change since `<ref>` is named under `Deprecated`, `Removed` or `Changed` in `[Unreleased]` (S-6).
 - Internal test asset "Levuvo Database Profile" LDP-0.1.0 (TAB-050, K-35; not in the wheel, not vendored by any
   other repository): `conformance/SPEC.md` (33 rules in ten areas, MUST/SHOULD/INFO, with the reference behavior of
   Nodestro, Orkexa and Axentra), the JSON Schema of API contract section 10.1, 115 vectors in `conformance/vectors/`,
@@ -55,6 +61,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   unknown and nothing pending, so a head covered by `depends_on` counts as applied; a script directory Alembic
   cannot resolve raises `ConfigurationError("migrations.revisions")` without path or cause chain. Only
   `<script_location>/versions` is read (TODO TB-066).
+- Reference application `examples/parts` (RA-A-1): a portable schema (material, part, property, part_relation)
+  with Alembic on SQLite and PostgreSQL and `require_current` as the gate; decimals are scaled integers on SQLite,
+  so they order and compare as on PostgreSQL, and migrations run in `Database.transaction()`; not part of the wheel
+  or the sdist.
 
 ### Changed
 
