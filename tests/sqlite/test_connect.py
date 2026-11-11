@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import tempfile
 import threading
 from typing import Any
 import warnings
@@ -1135,6 +1136,50 @@ def test_tb045_an_unreadable_file_is_refused(tmp_path: Path, monkeypatch: pytest
 
 def _never_opened(target: str, **kwargs: Any) -> sqlite3.Connection:
     raise AssertionError("SQLite must not open a file whose identity was not taken")
+
+
+@posix_only
+@pytest.mark.parametrize("where", ["temporary-file", "listing"])
+def test_tb045_a_probe_that_cannot_run_is_not_cached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    """Review F16: when the listing probe itself runs out of descriptors, the ``OSError`` reaches the caller and no
+    verdict is cached; caching "no listing" would turn the descriptor check off for the rest of the process. The
+    next connect probes again and uses the listing."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    monkeypatch.setattr(ts, "_LISTINGS", {})
+    failures: list[str] = []
+    exhausted = OSError(errno.EMFILE, os.strerror(errno.EMFILE))
+    if where == "temporary-file":
+        real_temporary_file = tempfile.TemporaryFile
+
+        def temporary_file(*args: Any, **kwargs: Any) -> Any:
+            if not failures:
+                failures.append(where)
+                raise exhausted
+            return real_temporary_file(*args, **kwargs)
+
+        monkeypatch.setattr(tempfile, "TemporaryFile", temporary_file)
+    else:
+        real_listdir = os.listdir
+
+        def listdir(candidate: Any = ".") -> list[str]:
+            if not failures and os.fspath(candidate) in ts._DESCRIPTOR_DIRECTORIES:
+                failures.append(where)
+                raise exhausted
+            return real_listdir(candidate)
+
+        monkeypatch.setattr(os, "listdir", listdir)
+    with pytest.raises(OSError) as info:
+        ts.connect(path).close()
+    assert not isinstance(info.value, UnsafePath)
+    assert info.value.errno == errno.EMFILE
+    assert failures == [where]
+    assert ts._LISTINGS == {}
+    ts.connect(path).close()
+    assert list(ts._LISTINGS.values()) == [ts._listing_directory()]
+    assert ts._listing_directory() is not None
 
 
 @posix_only

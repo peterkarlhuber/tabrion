@@ -430,15 +430,18 @@ def _listing_directory() -> str | None:
         return _LISTINGS[candidates]
     found: str | None = None
     if _POSIX:
-        try:
-            with tempfile.TemporaryFile() as probe:
-                found = _complete_listing(candidates, probe.fileno())
-        except OSError:
-            found = None
+        # An OSError of the probe itself (no descriptors, memory or temporary file) is raised and nothing is cached:
+        # caching "no listing" then would turn the descriptor check off for the rest of the process (review F16).
+        with tempfile.TemporaryFile() as probe:
+            found = _complete_listing(candidates, probe.fileno())
         if found is None:
             _log.debug("no complete descriptor listing: connect checks the names only (I-22 (e))")
     _LISTINGS[candidates] = found
     return found
+
+
+_EXHAUSTED = (errno.EMFILE, errno.ENFILE, errno.ENOMEM)
+"""Errors that say nothing about a descriptor directory, only that the process ran out of a resource."""
 
 
 def _complete_listing(candidates: tuple[str, ...], probe: int) -> str | None:
@@ -456,8 +459,10 @@ def _complete_listing(candidates: tuple[str, ...], probe: int) -> str | None:
                 if str(copy) not in os.listdir(directory):
                     continue
                 listed = os.stat(os.path.join(directory, str(copy)))
-            except OSError:
-                continue
+            except OSError as exc:
+                if exc.errno in _EXHAUSTED:
+                    raise  # the probe could not run: no verdict on this directory (review F16)
+                continue  # missing or no directory: this one is no listing
             if (listed.st_dev, listed.st_ino) == (info.st_dev, info.st_ino):
                 return directory
         return None

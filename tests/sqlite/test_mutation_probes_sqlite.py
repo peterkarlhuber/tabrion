@@ -131,8 +131,8 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TB-045 review F4: a listing counts only when a probe descriptor shows up in it.
     (
-        "                found = _complete_listing(candidates, probe.fileno())\n",
-        "                found = candidates[0]\n",
+        "            found = _complete_listing(candidates, probe.fileno())\n",
+        "            found = candidates[0]\n",
         _T + "test_connect.py::test_tb045_an_incomplete_listing_is_not_used",
         True,
         False,
@@ -208,6 +208,27 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         "            except BaseException:\n                connection.close()\n                raise\n",
         "            except BaseException:\n                raise\n",
         _T + "test_connect.py::test_tb045_a_failing_listing_is_raised",
+        True,
+        False,
+    ),
+    # TB-045 review F16: a probe that could not run is raised and not cached as "no listing".
+    (
+        "        with tempfile.TemporaryFile() as probe:\n"
+        "            found = _complete_listing(candidates, probe.fileno())\n",
+        "        try:\n"
+        "            with tempfile.TemporaryFile() as probe:\n"
+        "                found = _complete_listing(candidates, probe.fileno())\n"
+        "        except OSError:\n"
+        "            found = None\n",
+        _T + "test_connect.py::test_tb045_a_probe_that_cannot_run_is_not_cached",
+        True,
+        False,
+    ),
+    # TB-045 review F16: running out of descriptors while listing a candidate is no verdict on it.
+    (
+        "                if exc.errno in _EXHAUSTED:\n",
+        "                if False:\n",
+        _T + "test_connect.py::test_tb045_a_probe_that_cannot_run_is_not_cached",
         True,
         False,
     ),
