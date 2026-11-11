@@ -78,7 +78,8 @@ def _head(directory: Path, marker: str = "HEAD") -> Path:
 
 def _venv(tmp_path: Path) -> Path:
     venv.EnvBuilder(with_pip=False).create(tmp_path / "venv")
-    return tmp_path / "venv" / ("Scripts" if sys.platform == "win32" else "bin") / "python"
+    python: Path = downstream.venv_python(tmp_path / "venv")
+    return python
 
 
 def _marker(python: Path, *modules: str) -> str:
@@ -175,7 +176,7 @@ def test_a_tabrion_that_is_not_head_is_a_setup_failure(
 ) -> None:
     uv = _uv()
     venv.EnvBuilder(with_pip=False).create(tmp_path / "venv")
-    python = tmp_path / "venv" / ("Scripts" if sys.platform == "win32" else "bin") / "python"
+    python = downstream.venv_python(tmp_path / "venv")
     head = _wheel(tmp_path, "tabrion", "0.1.0a2.dev0", [], marker="HEAD")
     offline = ("--offline", "--no-index", "--find-links", str(index))
     monkeypatch.setattr(downstream, "_INSTALLED_URL", "print('file:///somewhere/else')")
@@ -190,11 +191,34 @@ def test_report_cells_escape_pipes_and_line_breaks() -> None:
     assert row == "| axentra | `aaaaaaaaaaaa` | **failed** | 1 failed \\| 2 passed next | 1.0 | a \\| b |"
 
 
+def test_venv_python_is_the_interpreter_file(tmp_path: Path) -> None:
+    """Issue #18: the path handed to ``uv pip install --python`` is the interpreter file itself, ``python.exe`` on
+    Windows. ``Scripts\\python`` without the extension starts through ``subprocess`` but is no file, and uv finds no
+    environment there (exit 2)."""
+    venv.EnvBuilder(with_pip=False).create(tmp_path / "venv")
+    python = downstream.venv_python(tmp_path / "venv")
+    assert python.is_file()
+    if sys.platform == "win32":
+        assert python.parts[-2:] == ("Scripts", "python.exe")
+        assert not python.with_suffix("").is_file()
+    else:
+        assert python.parts[-2:] == ("bin", "python")
+
+
 def test_a_database_error_is_a_setup_failure_without_its_message() -> None:
+    """The report names the psycopg error class, never its message. A connection to a closed local port is refused at
+    once on Linux and macOS (``OperationalError``); Windows answers the refusal by retrying the connect until
+    ``connect_timeout`` (1 s) runs out, so psycopg raises its subclass ``ConnectionTimeout`` there (issue #18)."""
+    import psycopg
+
     url = "postgresql://nobody:secret-canary@127.0.0.1:1/none?connect_timeout=1"
     with pytest.raises(downstream.SetupFailed) as caught:
         downstream._database(url, "t_000000_ds_x", drop=False)
-    assert "create database failed (OperationalError" in str(caught.value)
+    cause = caught.value.__cause__
+    assert isinstance(cause, psycopg.OperationalError)
+    allowed = {"OperationalError", "ConnectionTimeout"} if sys.platform == "win32" else {"OperationalError"}
+    assert type(cause).__name__ in allowed
+    assert str(caught.value) == f"create database failed ({type(cause).__name__}, SQLSTATE -)"
     assert "secret-canary" not in str(caught.value)
     assert "127.0.0.1" not in str(caught.value)
 
