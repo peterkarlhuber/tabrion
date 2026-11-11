@@ -155,10 +155,8 @@ def test_b01_sqlite_file_urls(path: Path, scheme: str) -> None:
     with Database.from_url(f"{scheme}:///{path}") as database:
         assert database.dialect == "sqlite"
         assert database.fetch_scalar("SELECT 1") == 1
-        # SQLAlchemy percent-encodes a Windows path (``C%3A%5C...``) when it renders the URL; it parses back.
-        assert database.safe_url.startswith("sqlite+pysqlite:///")
-        assert sqlalchemy.make_url(database.safe_url).database == str(path)
-        assert repr(database) == f"<tabrion.Database {database.safe_url}>"
+        assert database.safe_url == f"sqlite+pysqlite:///{path}"
+        assert repr(database) == f"<tabrion.Database sqlite+pysqlite:///{path}>"
     assert path.exists()
 
 
