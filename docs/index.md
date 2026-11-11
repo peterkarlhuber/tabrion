@@ -9,10 +9,10 @@ Tabrion is a Python library with safe defaults for applications that talk to SQL
 inside the application's process: no server, no service, no pool of its own, no stored credentials
 ([ADR 0001](adr/0001-standalone-library.md)).
 
-!!! warning "Pre-release: M1 foundation"
-    This is the API freeze milestone. Every public name exists with its final signature, but each function still
-    raises `NotImplementedError`. The implementation follows in milestone M2 (Tabrion 0.1). Nothing is published
-    on PyPI: Tabrion is installed from Git, pinned to a commit SHA.
+!!! warning "Pre-release: Tabrion 0.1 in development"
+    The 0.1 modules are implemented (milestone M2); the 0.2 names are frozen in the API but raise
+    `NotImplementedError`. Nothing is published on PyPI: Tabrion is installed from Git, pinned to a commit SHA
+    ([Installation](getting-started/installation.md)).
 
 ## Two layers in one distribution
 
@@ -38,7 +38,12 @@ layer B ([ADR 0002](adr/0002-two-layers-one-distribution.md)).
 
 ## Where to read on
 
-- [Installation](getting-started/installation.md)
+- [Installation](getting-started/installation.md) and the [Quickstart](getting-started/quickstart.md)
+- The guides: [SQLite](guides/sqlite.md), [PostgreSQL](guides/postgresql.md),
+  [Database and Profile](guides/database.md), [Transactions](guides/transactions.md), [Errors](guides/errors.md),
+  [Migrations](guides/migrations.md), [Diagnosis](guides/check.md), [Testing](guides/testing.md),
+  [Portability](guides/portability.md), [Security](guides/security.md) and
+  [Troubleshooting](guides/troubleshooting.md). Every code example in them runs in the test suite.
 - [Specification](specification.md): the behavior Tabrion guarantees.
 - [API contract](api/contract.md): every public name with its signature (subject of the G-T1 review).
 - [Architecture decisions](adr/README.md)

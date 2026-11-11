@@ -26,6 +26,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `nodestro_*` and `tabrion_studio` are blocked by a meta path finder (document 05, section 3.2), with probes. Tests
   only.
 
+- User guides for 0.1 (TAB-041): a quickstart and guides for SQLite, PostgreSQL, layer B (`Database`, `Profile`),
+  transactions, errors, `tabrion.sql`, `tabrion.config`, migrations, `tabrion.check`, `tabrion.testing`,
+  portability, security, the PostgreSQL infrastructure baseline, existing platforms and troubleshooting. Every code
+  example runs in the test suite (`tests/docs/`, PostgreSQL pages in the pg jobs). Installation stays Git-SHA pins,
+  no PyPI. The migrations guide gives Alembic a profile of its own (SQLite foreign keys off before a batch rebuild,
+  `PRAGMA foreign_key_check` afterwards, longer PostgreSQL timeouts), because a batch rebuild with foreign keys on
+  deletes child rows through `ON DELETE CASCADE`.
 - API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
   and remove a stable name, and the downstream notice in the release flow. The internal helper
   `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the

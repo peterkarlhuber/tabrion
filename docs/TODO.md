@@ -24,7 +24,7 @@ integration branch of the ready pull requests).
 | P0 Critical | 0 |
 | P1 High | 9 |
 | P2 Medium | 13 |
-| P3 Low | 34 |
+| P3 Low | 39 |
 | P4 Optional | 5 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -202,7 +202,8 @@ required (owner decision of 2026-11-08 11:26Z).
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
 - **Priority:** P1 High · **Status:** Blocked · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
-- **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001); the internal
+- **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001; in review in
+  the TAB-041 pull request, branch `claude/project-thread-rdo6g3-docs`); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); `v0.1.0` final and gate G-T2 (TAB-040).
   `v0.1.0` final is the merge commit of the version-bump pull request that sets `0.1.0` (not a pre-release); TAB-040
   records its full SHA in CHANGELOG `[0.1.0]`, STATUS TAB-040 and `installation.md`, and the next pull request bumps
@@ -326,6 +327,75 @@ required (owner decision of 2026-11-08 11:26Z).
   emit the requested extra per Tabrion extra (`tabrion:requested-extra` = `dev:binary`), and give `archive_info`
   installs `pkg:generic/<name>@<v>?download_url=<url>` and `dir_info` installs `pkg:generic` (or no purl); each
   with a unit test.
+
+### TB-080 · `Transaction.execute` returns 0 for every Core insert on PostgreSQL (TABRION TAB-041, contract I-70)
+
+- **Priority:** P3 Low · **Status:** Open (0.2 decision, lane B/C) · **Refs:** TABRION TAB-018, TAB-041, contract 5.3,
+  I-70, review of PR #24 (M-1)
+- **What:** found while testing the guides and corrected in the review: `execute(table.insert(), params)` returns `0`
+  on PostgreSQL and `1` on SQLite. The cause is SQLAlchemy's rowcount rule, not `RETURNING`: since SQLAlchemy 2.0.28
+  a result keeps the driver's `rowcount` only for `UPDATE`/`DELETE` unless the statement carries the
+  `preserve_rowcount=True` execution option. SQLAlchemy then reports `-1` for every Core `insert()` on PostgreSQL
+  (also without a generated key, without a primary key, and for executemany; raw psycopg reports `1`), and Tabrion
+  maps -1 to 0 (contract 5.3). Core `update()`/`delete()` and SQL text inserts report the true count. Measured with
+  SQLAlchemy 2.1.8 and psycopg 3.3.8 on PostgreSQL 16; `insert().execution_options(preserve_rowcount=True)` makes
+  `execute` return `1`. The rule and the workaround are documented (I-70, `docs/guides/portability.md`, tested on
+  both engines).
+- **Fix option:** `execute` sets `preserve_rowcount=True` on the statements it runs (no signature change). That
+  changes the value a stable method returns on PostgreSQL, so it needs a contract addendum to 5.3 and a CHANGELOG
+  `Changed` entry; not done in the docs PR.
+- **Next step:** lane B/C decides for 0.2 between setting `preserve_rowcount` in `execute` and keeping the documented
+  rule.
+
+### TB-081 · Align the infrastructure baseline with the kit text (TABRION TAB-041, ADR 0001)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-041, ADR 0001, specification 5.4 and 8
+- **What:** `docs/guides/infrastructure-baseline.md` condenses the kit baseline from the specification (role model,
+  session limits, TLS, backup/PITR, the restore version rule). Planning document 02 section 8 names the longer kit
+  text `architekturbewertung-datenbankplattform.md` as its source; it is not in the planning folder the TAB-041 lane
+  could read, so the page was not checked against it.
+- **Next step:** the owner or the reviewer compares the page with that text and lists what is missing.
+
+### TB-082 · Run the guide examples on macOS and Windows on pull requests (TABRION TAB-041)
+
+- **Priority:** P3 Low · **Status:** Open (needs a `.github/` pull request) · **Refs:** TABRION TAB-041, 05 section 2.5
+- **What:** `tests/docs/test_guides.py` runs in every unit job (Linux, Python 3.11..3.14, lowest versions) and in the
+  nightly platform runs; `platforms.yml` runs on pull requests only for `src/tabrion/sqlite.py` and `tests/sqlite/**`,
+  so a guide change is checked on macOS and Windows only at night. POSIX-only examples (file modes, symlinks) are
+  marked `<!-- docs-test: posix -->`.
+- **Next step:** add `docs/guides/**`, `docs/getting-started/quickstart.md` and `tests/docs/**` to the path filter of
+  `platforms.yml` and the manifest's `path_filters` in a reviewed workflow pull request.
+
+### TB-083 · `tabrion.testing` URLs are conninfo strings; layer B needs a URL (TABRION TAB-041, TAB-020)
+
+- **Priority:** P3 Low · **Status:** Open (0.2 candidate) · **Refs:** TABRION TAB-020, TAB-032, TAB-041, contract 6
+- **What:** `PostgresSchema.owner_url` and the other fixture URLs are libpq conninfo strings (`host=... options=...`),
+  which psycopg takes but `tabrion.Database.from_url` does not. A consumer that runs layer-B tests on the fixtures
+  converts them itself (`tests/postgres/test_guides_postgres.py`, `as_url`); `options=-c search_path=...` needs care
+  in URL form, because libpq does not read `+` as a space.
+- **Next step:** for 0.2, decide on a documented helper or fixtures that also give a `postgresql://` URL (a new
+  public name: contract addendum).
+
+### TB-131 · Write the planned operations pages `backup-restore.md` and `roles.md` (TABRION TAB-041, D-83)
+
+- **Priority:** P3 Low · **Status:** Planned · **Refs:** TABRION TAB-041, TAB-040, planning document 05 section 2.1,
+  ADR 0001, deviation D-83
+- **What:** planning document 05 section 2.1 lists `docs/operations/backup-restore.md` and `docs/operations/roles.md`.
+  TAB-041 decided the 0.1 document set itself (D-83, no owner question): it follows ADR 0001 and keeps the
+  infrastructure baseline at `docs/guides/infrastructure-baseline.md`, whose sections cover backup and restore and the
+  roles for 0.1. The two operations pages are planned, not written.
+- **Next step:** write them when the kit content (TB-081) is aligned, moving the long sections out of the baseline
+  page and linking back; until then the baseline page is the reference.
+
+### TB-132 · The `ImportError` install hint names the PyPI form (TABRION TAB-041 review L-6)
+
+- **Priority:** P3 Low · **Status:** Open (lane B/C) · **Refs:** TABRION TAB-041, ADR 0009 amendment, D-67,
+  `docs/getting-started/installation.md`
+- **What:** the `ImportError` of a missing extra suggests `pip install "tabrion[sqlalchemy]"`, which resolves from
+  PyPI, where Tabrion is not published (dependency-confusion risk). The troubleshooting guide now says to use the
+  Git-pin form instead.
+- **Next step:** change the hint text in `src` to point to the installation page (message text only, no API change;
+  a bug fix for lane B/C, not part of the docs PR).
 
 ## M3, M5 and M8: work in this repository
 
@@ -756,15 +826,16 @@ required (owner decision of 2026-11-08 11:26Z).
   boundary is a role without write rights (or SQLite file permissions).
 - **Next step:** Studio and TAB-032 (runtime-role mode) run untrusted SQL only under such a role. Optional: a
   `checkin` check of `default_transaction_read_only` under `Profile.read_only` that invalidates the connection, and
-  a snapshot-taking statement after `BEGIN READ ONLY` (review H-1); decide with TAB-041.
+  a snapshot-taking statement after `BEGIN READ ONLY` (review H-1). TAB-041 documents the guard as it is
+  (`docs/guides/security.md`, `docs/guides/database.md`) and adds no hardening in 0.1; the decision moves to 0.2.
 
 ### TB-056 · Layer-B waits outside `timeout` (TABRION TAB-018, TAB-041)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, TAB-041, contract I-40, I-44
 - **What:** a statement `timeout` on SQLite counts VM steps, so a wait for a lock is bounded by the busy timeout, not
   by `timeout`; `Database.health(timeout=...)` waits for a pool connection up to `pool_timeout`, not `timeout`.
-- **Next step:** document both in the layer-B guide (TAB-041); decide for 0.2 whether `health` checks out with
-  `min(timeout, pool_timeout)` (needs no API change).
+- **Next step:** documented in the guides (`docs/guides/database.md`, section "Timeouts", TABRION TAB-041); decide
+  for 0.2 whether `health` checks out with `min(timeout, pool_timeout)` (needs no API change).
 
 ### TB-065 · F05 refusal for connection factories other than Tabrion's (TABRION TAB-021)
 
@@ -775,18 +846,6 @@ required (owner decision of 2026-11-08 11:26Z).
   the cases work for any connection factory. The strictness keeps sqlite3's own `OperationalError` from passing.
 - **Next step:** let the caller name the refusal exception (`sqlite_profile_cases(refusal=...)`, a 0.2 addendum
   candidate), or record a deviation before MIG-ORK uses the cases.
-
-### TB-064 · Portable UUID and timestamp columns in the guides (TABRION TAB-021, TAB-041)
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-021, TAB-041, contract I-58, deviations D-62 and
-  D-63, planning folder `reviews/tab-021-review.md` (L-1, L-2)
-- **What:** the SQLite mappings of TAB-T-D01 and D04 follow the stored formats of specification section 6 (UTC text
-  with `Z`, 36-character UUID text), so an application gets a `str` on SQLite and a `datetime` or `uuid.UUID` on
-  PostgreSQL. On SQLite, the cases D01, D02, D04, D07 and D09 document the mapping and cannot fail for an engine
-  setting; the SQLite pitfalls behind D01 and D02 are pinned by repository tests only.
-- **Next step:** the layer-B guide (TAB-041) shows a `TypeDecorator` for each of the two columns (UTC text, UUID
-  text) and says which portability cases check the engine; Tabrion ships no type library (specification section 6),
-  so the decorators stay examples unless a reference application needs them in the package.
 
 ### TB-052 · MIG-NOD note: one `lock_lost` in the scheduler pattern after a loss (delta re-review of #6)
 
