@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 from typing import Any
 
 import pytest
@@ -213,6 +214,25 @@ def test_vectors_hold_no_credentials_and_the_marker_only_in_redaction() -> None:
         assert "password" not in text.lower(), v.id
         if "SECRET-4711" in text:
             assert v.action == "redact_error" and "SECRET-4711" in v.expect["absent"], v.id
+
+
+def test_every_hashed_file_is_checked_out_with_lf() -> None:
+    """The manifest hashes raw bytes: ``.gitattributes`` pins LF for every hashed file, also under
+    ``core.autocrlf=true`` on Windows (review of #27, H-2)."""
+    if not (conformance.ROOT / ".git").exists() or shutil.which("git") is None:
+        pytest.skip("not a Git checkout")
+    names = [name for name, _ in conformance.manifest_files()]
+    result = subprocess.run(
+        ["git", "check-attr", "eol", "--", *names],
+        cwd=conformance.ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    eol = dict(line.rsplit(": eol: ", 1) for line in result.stdout.splitlines())
+    assert eol == dict.fromkeys(names, "lf")
+    for _, path in conformance.manifest_files():
+        assert b"\r" not in path.read_bytes(), path
 
 
 def test_standard_version_matches_spec_and_manifest() -> None:
