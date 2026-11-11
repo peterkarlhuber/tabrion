@@ -372,11 +372,17 @@ required (owner decision of 2026-11-08 11:26Z).
     `cancel-in-progress` only for `pull_request`; every other run has its own group via `run_id`, so master, nightly
     and dispatch runs are never cancelled). ci-ok judges each head SHA by its own runs (`head_sha` filter), so a
     cancelled old run gives the old SHA a NOT OK status, never success, and leaves the new SHA untouched.
-- **Next step:** after #21 and #27 are merged, remove both guards (a pull request with the label
-  `workflow-change-reviewed`), and close TB-070, TB-090, TB-092 and this entry's `conformance`, `golden files`,
-  `examples` and `downstream` parts. Still open: fault injection 3x (TAB-034), stress 200x (QA-4), the nightly
-  DB-restart case once TAB-T-009 exists, the `sqlite` floor raised to 95 % once tests reach it, and the TAB-T
-  traceability check of lane C, wired into CI once it lands.
+- **Status note (2026-11-11, follow-up workflow-change pull request on branch
+  `claude/project-thread-rdo6g3-ci-sbom-wip`, stacked on the `ci-release` branch, with TB-130):** the workflow review
+  of #34/#40 (conditions C-3, C-4) is applied there. `api surface` runs `--base <merge base>` without the guard,
+  since #21 is on `master`. `mutation probes` selects its files with `git ls-files 'tests/*/test_*mutation_probes*.py'`,
+  the pattern `test` and `coverage` ignore, so a new probe file cannot fall between the jobs. `ci_ok_status.py` gates
+  `.github/ci-manifest.json` like the workflows (a pull request that edits it needs the label
+  `workflow-change-reviewed`). The platforms filter grows (TB-021).
+- **Next step:** after #27 is merged, remove the `conformance` guard (workflow-change review), and close TB-070,
+  TB-090, TB-092 and this entry's `conformance`, `golden files`, `examples` and `downstream` parts. Still open: fault
+  injection 3x (TAB-034), stress 200x (QA-4), the nightly DB-restart case once TAB-T-009 exists, the `sqlite` floor
+  raised to 95 % once tests reach it, and the TAB-T traceability check of lane C, wired into CI once it lands.
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
 
@@ -420,10 +426,13 @@ required (owner decision of 2026-11-08 11:26Z).
   `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms, and so do the Windows-specific
   paths of `scripts/downstream.py`, `tests/unit/test_downstream.py` and `tests/unit/test_golden_consumers.py`
   (TB-134: those failed on Windows in the nightly only).
-- **Next step:** the workflow-change pull request of TB-017 adds `config.py`, `errors.py`, `testing/sqlite.py`,
+- **Next step:** the workflow-change pull request of TB-017 (#34) adds `config.py`, `errors.py`, `testing/sqlite.py`,
   `pyproject.toml`, for the LDP vectors (TAB-050 review H-1) `conformance/**` and `tests/conformance/**`, and the
   three TB-134 paths to `platforms.yml` and the manifest's `path_filters` (ci-ok judges by the default branch's
-  manifest, so it takes effect once merged); close this entry then.
+  manifest, so it takes effect once merged). The TB-130 pull request adds `src/tabrion/__init__.py`,
+  `src/tabrion/check.py`, `tests/conftest.py` and `tests/unit/test_mutation_probes.py` (workflow review of #34/#40,
+  finding 4). The filter is still a list, while the platforms job runs the whole non-PostgreSQL suite; the nightly
+  runs it on every platform, so a miss shows within a day. Close this entry when both are merged.
 
 ### TB-134 · Windows: downstream runner and golden replay failed in the platforms job (issue #18)
 

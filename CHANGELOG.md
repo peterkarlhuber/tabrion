@@ -67,6 +67,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Windows (issue #18, TB-134): `scripts/downstream.py` hands uv the interpreter file `Scripts\python.exe` (new
   `venv_python()`), so a downstream run works there; the downstream and golden-replay tests assert the Windows
   behavior (psycopg's `ConnectionTimeout` for a refused local connect, no POSIX mode in the replay).
+- CI (workflow change, TB-130, workflow review of #34/#40 C-3/C-4): the wheel and sdist are built with the hashed
+  build-backend pins of `build-constraints.txt` (`PIP_REQUIRE_HASHES`) in `ci.yml` and `release.yml`; the CycloneDX
+  SBOM of the wheel (`scripts/sbom.py`) is uploaded with the artifacts and attested with them in a release. `api
+  surface` always runs `--base <merge base>` on pull requests; `mutation probes` selects its files by the pattern the
+  other jobs ignore; ci-ok's workflow-change gate also covers `.github/ci-manifest.json`; the `platforms.yml` filter
+  adds `__init__.py`, `check.py`, `tests/conftest.py` and `tests/unit/test_mutation_probes.py`.
 - CI (workflow change, QA-11, K1, K7/K8): `release.yml` takes an annotated tag or a full commit SHA on master,
   requires a final `__version__` and a dated CHANGELOG section (`.github/scripts/release_check.py`), and runs the
   attestation only with the opt-in input `attest`. `ci.yml` has the jobs `coverage` (branch coverage with the whole
