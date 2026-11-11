@@ -137,6 +137,15 @@ def _run(*command: str | Path, cwd: Path | None = None, env: dict[str, str] | No
     return result.stdout
 
 
+def venv_python(venv: Path) -> Path:
+    """The interpreter of the virtual environment ``venv``: ``bin/python``, or ``Scripts\\python.exe`` on Windows.
+
+    The ``.exe`` matters: Windows starts ``Scripts\\python`` for ``subprocess`` (``CreateProcess`` adds the
+    extension), but ``uv pip install --python`` takes the path as given and finds no interpreter there (issue #18).
+    """
+    return venv / "Scripts" / "python.exe" if os.name == "nt" else venv / "bin" / "python"
+
+
 def find_uv(work: Path) -> Path:
     """Return a ``uv`` binary: this interpreter's (the ``dev`` extra), else ``UV_VERSION`` in ``work``."""
     try:
@@ -147,7 +156,7 @@ def find_uv(work: Path) -> Path:
         pass
     tools = work / "tools"
     _run(sys.executable, "-m", "venv", tools)
-    tool_python = tools / ("Scripts" if os.name == "nt" else "bin") / "python"
+    tool_python = venv_python(tools)
     _run(tool_python, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", f"uv=={UV_VERSION}")
     return tools / ("Scripts" if os.name == "nt" else "bin") / ("uv.exe" if os.name == "nt" else "uv")
 
@@ -226,7 +235,7 @@ def run_consumer(consumer: Consumer, admin_url: str, work: Path, uv: Path, minut
     _run("git", "clone", "--quiet", "--depth", "1", consumer.repository, source)
     commit = _run("git", "-C", source, "rev-parse", "HEAD").strip()
     _run(sys.executable, "-m", "venv", venv)
-    python = venv / ("Scripts" if os.name == "nt" else "bin") / "python"
+    python = venv_python(venv)
     try:
         install_with_head(uv, python, [f"{source}[{consumer.extras}]"], head=head_requirement(ROOT.as_uri()))
     except SetupFailed as exc:
