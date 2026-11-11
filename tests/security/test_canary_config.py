@@ -16,7 +16,7 @@ import pytest
 
 from tabrion.config import safe_url, url_from_env
 from tabrion.errors import ConfigurationError, TabrionError
-from tests.canary import assert_clean, assert_logs_clean, capture_all_logs, new_canary, phase_records
+from tests.canary import assert_clean, assert_logs_clean, capture_all_logs, frame_locals, new_canary, phase_records
 
 pytestmark = pytest.mark.security
 
@@ -127,6 +127,17 @@ def test_t110_layer_b_configuration_errors(canary: str) -> None:
             assert_clean(info.value, canary)
         else:  # refused by SQLAlchemy itself before Tabrion saw the URL
             assert canary not in str(info.value) and canary not in repr(info.value)
+
+
+@pytest.mark.parametrize("options", [{"bogus": 1}, {"pool_size": "nope"}])
+def test_t110_layer_b_engine_option_error_has_no_url_in_frame_locals(canary: str, options: dict[str, object]) -> None:
+    """Review C-1/L-A of #25: an error that is no ``TabrionError`` (``create_engine`` raises ``TypeError`` for an
+    option it does not know or a value of the wrong type) leaves ``from_url`` without the frames that hold the URL."""
+    url = f"postgresql://app:{canary}@127.0.0.1:{closed_port()}/db"
+    with pytest.raises(TypeError) as info:
+        Database.from_url(url, profile=Profile(tls=TLSMode.INSECURE), engine_options=options).close()
+    assert canary not in str(info.value) and canary not in repr(info.value)
+    assert canary not in frame_locals(info.value)
 
 
 def test_t110_layer_b_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, canary: str) -> None:
