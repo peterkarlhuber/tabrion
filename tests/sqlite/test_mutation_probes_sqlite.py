@@ -131,8 +131,8 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
     ),
     # TB-045 review F4: a listing counts only when a probe descriptor shows up in it.
     (
-        "                        if str(descriptor) in os.listdir(directory):\n",
-        "                        if os.listdir(directory) is not None:\n",
+        "                found = _complete_listing(candidates, probe.fileno())\n",
+        "                found = candidates[0]\n",
         _T + "test_connect.py::test_tb045_an_incomplete_listing_is_not_used",
         True,
         False,
@@ -143,6 +143,55 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         '                _log.debug("the database file %s disappeared while it was checked", name)\n',
         "            except FileNotFoundError:\n                return 0, 0\n",
         _T + "test_connect.py::test_tb045_a_name_gone_while_checked_is_checked_again",
+        True,
+        False,
+    ),
+    # TB-045 review F10: the -wal and -journal files are never exempt in the reuse case.
+    (
+        '_EXEMPT_SIDE_FILES = ("-shm",)\n',
+        '_EXEMPT_SIDE_FILES = ("-shm", "-wal", "-journal")\n',
+        _T + "test_connect.py::test_tb045_a_new_descriptor_on_the_wal_or_journal_is_retried",
+        True,
+        False,
+    ),
+    # TB-045 review F11: only a permission error is a refusal; other errors are raised as they are.
+    (
+        "            if exc.errno in _DENIED:\n",
+        "            if True:\n",
+        _T + "test_connect.py::test_tb045_resource_errors_are_not_refusals",
+        True,
+        False,
+    ),
+    # TB-045 review F1/F13: a file whose identity cannot be taken is refused before SQLite opens anything.
+    (
+        '                raise _unsafe("sqlite.unsafe_path", path) from None'
+        "  # unreadable: SQLite could not open it either\n",
+        "                return 0, 0\n",
+        _T + "test_connect.py::test_tb045_an_unreadable_file_is_refused",
+        True,
+        False,
+    ),
+    # TB-045 review F5/F13: the identity check runs under the open lock.
+    (
+        "        with _OPEN_LOCK:\n            if not os.path.lexists(name):\n",
+        "        with contextlib.nullcontext():\n            if not os.path.lexists(name):\n",
+        _T + "test_connect.py::test_tb045_the_identity_check_runs_under_the_lock",
+        True,
+        False,
+    ),
+    # TB-045 review F2/F13: a side file of another user is not exempt.
+    (
+        "            and info.st_uid == os.geteuid()\n",
+        "",
+        _T + "test_connect.py::test_tb045_side_file_identities_need_one_link_and_the_owners_rules",
+        True,
+        False,
+    ),
+    # TB-045 review F12: the listed probe must be the same file, not just a listed number.
+    (
+        "            if (listed.st_dev, listed.st_ino) == (info.st_dev, info.st_ino):\n",
+        "            if True:\n",
+        _T + "test_connect.py::test_tb045_a_listing_must_show_the_probe_as_the_same_file",
         True,
         False,
     ),

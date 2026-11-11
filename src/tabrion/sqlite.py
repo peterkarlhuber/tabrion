@@ -291,30 +291,33 @@ def _check_side_files(path: str, *, allow_shared_file: bool) -> None:
         _owner_and_mode(candidate, info, allow_shared_file=False)
 
 
+_DENIED = (errno.EACCES, errno.EPERM)
+"""``_identity``: the errors that make an existing file unusable for this user (``UnsafePath``)."""
+
+
 def _identity(path: str, *, allow_shared_file: bool = True) -> tuple[int, int]:
     """``(dev, ino)`` of the existing regular file ``path``, opened without following a link (``UnsafePath``).
 
     Without ``allow_shared_file`` the file must belong to this user and not be group- or world-writable. A name
-    that is gone raises ``FileNotFoundError`` (the caller checks it again); any other failure is ``UnsafePath``:
-    ``connect`` never opens a file whose identity it does not know (review F1, TB-045).
+    that is gone raises ``FileNotFoundError`` (the caller checks it again), a file this user may not open is
+    ``UnsafePath``, and any other failure (no descriptors or memory left, an I/O error) is raised as it is (review
+    F11): ``connect`` never opens a file whose identity it does not know (review F1, TB-045).
     """
     if _POSIX:
-        failure: int | None = None
         try:
             descriptor = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_CLOEXEC)
         except OSError as exc:
-            failure = exc.errno or -1
-        else:
-            try:
-                info = os.fstat(descriptor)
-            finally:
-                os.close(descriptor)
-        if failure == errno.ELOOP:
-            raise _unsafe("sqlite.symlink", path)
-        if failure == errno.ENOENT:
-            raise FileNotFoundError(errno.ENOENT, "the database file does not exist")
-        if failure is not None:
-            raise _unsafe("sqlite.unsafe_path", path)  # unreadable: SQLite could not open it either
+            if exc.errno == errno.ELOOP:
+                raise _unsafe("sqlite.symlink", path) from None
+            if exc.errno == errno.ENOENT:
+                raise FileNotFoundError(errno.ENOENT, "the database file does not exist") from None
+            if exc.errno in _DENIED:
+                raise _unsafe("sqlite.unsafe_path", path) from None  # unreadable: SQLite could not open it either
+            raise  # out of descriptors or memory, an I/O error: an operational problem, not a refusal
+        try:
+            info = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
     else:
         if _is_link(path):
             raise _unsafe("sqlite.symlink", path)
@@ -322,7 +325,7 @@ def _identity(path: str, *, allow_shared_file: bool = True) -> tuple[int, int]:
             info = os.lstat(path)
         except FileNotFoundError:
             raise FileNotFoundError(errno.ENOENT, "the database file does not exist") from None
-        except OSError:
+        except PermissionError:
             raise _unsafe("sqlite.unsafe_path", path) from None
     if not stat.S_ISREG(info.st_mode):
         raise _unsafe("sqlite.unsafe_path", path)
@@ -393,7 +396,7 @@ def _open(target: str, *, uri: bool, timeout: float, check_same_thread: bool) ->
 
 _DESCRIPTOR_DIRECTORIES = ("/proc/self/fd", "/dev/fd")
 """Where a POSIX system lists the process's open descriptors (Linux; macOS, and the BSDs with ``fdescfs``)."""
-_OPEN_ATTEMPTS = 5
+_OPEN_ATTEMPTS = 8
 """``connect``: how often SQLite opens the file before an unverified open is refused (I-22, TB-045)."""
 _OPEN_BACKOFF = 0.002
 """Seconds: the upper bound of the random pause before the second attempt; it doubles with each further attempt."""
@@ -428,20 +431,37 @@ def _listing_directory() -> str | None:
     if _POSIX:
         try:
             with tempfile.TemporaryFile() as probe:
-                descriptor = probe.fileno()
-                for directory in candidates:
-                    try:
-                        if str(descriptor) in os.listdir(directory):
-                            found = directory
-                            break
-                    except OSError:
-                        continue
+                found = _complete_listing(candidates, probe.fileno())
         except OSError:
             found = None
         if found is None:
             _log.debug("no complete descriptor listing: connect checks the names only (I-22 (e))")
     _LISTINGS[candidates] = found
     return found
+
+
+def _complete_listing(candidates: tuple[str, ...], probe: int) -> str | None:
+    """The first of ``candidates`` that lists a copy of ``probe`` numbered 3 or higher, as the same file.
+
+    0, 1 and 2 are not proof: an incomplete ``/dev/fd`` lists them, and a daemon may have closed them (review F12).
+    """
+    import fcntl  # POSIX only: imported here, not at module level
+
+    copy = fcntl.fcntl(probe, fcntl.F_DUPFD_CLOEXEC, 3)
+    try:
+        info = os.fstat(copy)
+        for directory in candidates:
+            try:
+                if str(copy) not in os.listdir(directory):
+                    continue
+                listed = os.stat(os.path.join(directory, str(copy)))
+            except OSError:
+                continue
+            if (listed.st_dev, listed.st_ino) == (info.st_dev, info.st_ino):
+                return directory
+        return None
+    finally:
+        os.close(copy)
 
 
 def _open_files() -> frozenset[tuple[int, int, int]] | None:
@@ -465,8 +485,14 @@ def _open_files() -> frozenset[tuple[int, int, int]] | None:
     return frozenset(files)
 
 
+_EXEMPT_SIDE_FILES = ("-shm",)
+"""The side files whose new descriptors the reuse case may ignore. Not ``-wal`` or ``-journal``: SQLite could open
+either one under the database's name and still serve the right rows, so a new descriptor on them is retried (review
+F10); a ``-shm`` file is no database."""
+
+
 def _side_file_identities(name: str, *, allow_shared_file: bool = False) -> frozenset[tuple[int, int]]:
-    """``(st_dev, st_ino)`` of the ``-wal``, ``-shm`` and ``-journal`` files of ``name`` that may stand for side files.
+    """``(st_dev, st_ino)`` of the ``-shm`` file of ``name`` if it may stand for a side file (``_EXEMPT_SIDE_FILES``).
 
     Only a regular file with a single link that belongs to this user and is not group- or world-writable counts
     (what SQLite creates next to a checked database): another file linked under a side file's name does not (review
@@ -475,7 +501,7 @@ def _side_file_identities(name: str, *, allow_shared_file: bool = False) -> froz
     if not _POSIX or allow_shared_file:
         return frozenset()
     identities: set[tuple[int, int]] = set()
-    for candidate in (name + suffix for suffix in _SIDE_FILES):
+    for candidate in (name + suffix for suffix in _EXEMPT_SIDE_FILES):
         try:
             info = os.lstat(candidate)
         except OSError:
@@ -501,8 +527,8 @@ def _opened_checked_file(
     SQLite opens the main file in ``sqlite3_open``: a new descriptor on the checked ``(st_dev, st_ino)`` proves it.
     SQLite may instead reuse a descriptor it kept for that file (another connection of the process holds a lock on
     it); then SQLite opened no new main file, and one of the process's descriptors is the checked file. Other
-    connections of the same database open its ``-wal`` and ``-shm`` files at any time, outside ``_OPEN_LOCK``: those
-    (``side_files``, the same before and after the open) do not count as new.
+    connections of the same database open its ``-shm`` file at any time, outside ``_OPEN_LOCK``: that file
+    (``side_files``, the same before and after the open) does not count as new; any other new file is retried.
     """
     new = after - before
     if any((dev, ino) == expected for _, dev, ino in new):

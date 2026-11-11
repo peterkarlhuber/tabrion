@@ -605,8 +605,11 @@ required (owner decision of 2026-11-08 11:26Z).
   file (I-22 (e), `test_tb045_*` with mutation probes), and the last name check resolves the directory only. On
   Windows the name checks remain the only check (documented and tested as such).
 - **Next step:** add the randomized race test to the nightly stress job with QA-4, including the false-refusal
-  case of the security review (F3: threads opening unrelated files while other connections hold the database; the
-  rate of `UnsafePath` must stay at 0 under the default attempts); then close.
+  case of the security review (F3: threads opening unrelated files, and other connections opening the `-wal`, while
+  the database is held). Target: no false `UnsafePath` under a realistic pool load (connections opened and closed
+  by a few threads, occasional unrelated file opens); under deliberately aggressive load the rate is measured and
+  reported, not required to be 0. Also open: a `diagnose` field that says whether the descriptor check is active
+  (review F9). Then close.
 
 ### TB-046 · ATTACH on a read-only SQLite connection creates an empty file (review I-1)
 

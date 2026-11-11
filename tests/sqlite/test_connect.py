@@ -6,6 +6,7 @@ Contract section 3.1 and 3.2, implementation notes I-21..I-23.
 from __future__ import annotations
 
 from collections.abc import Callable
+import errno
 import logging
 import os
 from pathlib import Path
@@ -800,16 +801,16 @@ def test_tb045_a_descriptor_sqlite_reuses_is_accepted(tmp_path: Path) -> None:
 
 
 def test_tb045_side_files_opened_meanwhile_do_not_hide_a_reused_descriptor() -> None:
-    """While SQLite reuses a descriptor of the checked file, other connections of the database may open its ``-wal``
-    or ``-shm`` (outside the lock; seen on macOS CI): those do not count as new. Any other new file still does."""
-    checked, wal, other = (1, 10), (1, 11), (1, 12)
+    """While SQLite reuses a descriptor of the checked file, other connections of the database may open its ``-shm``
+    (outside the lock; seen on macOS CI): that does not count as new. Any other new file still does."""
+    checked, shm, other = (1, 10), (1, 11), (1, 12)
     before = frozenset({(3, *checked)})
-    with_wal = before | {(4, *wal)}
+    with_shm = before | {(4, *shm)}
     with_other = before | {(4, *other)}
-    assert ts._opened_checked_file(before, with_wal, checked, frozenset({wal}))
-    assert not ts._opened_checked_file(before, with_wal, checked, frozenset())
-    assert not ts._opened_checked_file(before, with_other, checked, frozenset({wal}))
-    assert not ts._opened_checked_file(frozenset(), frozenset({(4, *wal)}), checked, frozenset({wal}))  # not held
+    assert ts._opened_checked_file(before, with_shm, checked, frozenset({shm}))
+    assert not ts._opened_checked_file(before, with_shm, checked, frozenset())
+    assert not ts._opened_checked_file(before, with_other, checked, frozenset({shm}))
+    assert not ts._opened_checked_file(frozenset(), frozenset({(4, *shm)}), checked, frozenset({shm}))  # not held
     assert ts._opened_checked_file(frozenset(), frozenset({(5, *checked)}), checked)
 
 
@@ -820,8 +821,9 @@ def test_tb045_side_file_identities(tmp_path: Path) -> None:
     holder = ts.connect(path)
     holder.execute("SELECT count(*) FROM parent").fetchone()  # opens -wal and -shm
     try:
-        expected = {(os.stat(p).st_dev, os.stat(p).st_ino) for p in (f"{path}-wal", f"{path}-shm")}
-        assert ts._side_file_identities(str(path)) == expected
+        shm = os.stat(f"{path}-shm")
+        assert os.path.exists(f"{path}-wal")  # present, but never exempt (review F10)
+        assert ts._side_file_identities(str(path)) == {(shm.st_dev, shm.st_ino)}
         assert ts._side_file_identities(str(path), allow_shared_file=True) == frozenset()
         assert ts._side_file_identities(str(tmp_path / "missing.db")) == frozenset()
     finally:
@@ -829,22 +831,26 @@ def test_tb045_side_file_identities(tmp_path: Path) -> None:
 
 
 @posix_only
-def test_tb045_side_file_identities_need_one_link_and_the_owners_rules(tmp_path: Path) -> None:
-    """Review F2: only what SQLite creates next to a checked database counts as a side file. A file linked under a
-    side file's name (it has a second name) or one that others may write does not."""
+def test_tb045_side_file_identities_need_one_link_and_the_owners_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F2: only what SQLite creates next to a checked database counts as a side file. A file linked under the
+    side file's name (it has a second name), one that others may write, or one of another user does not."""
     path = tmp_path / "a.db"
     make_database(path)
-    linked = tmp_path / "linked"
-    linked.write_bytes(b"x")
-    linked.chmod(0o600)
-    os.link(linked, f"{path}-wal")
-    shared = Path(f"{path}-shm")
-    shared.write_bytes(b"x")
-    shared.chmod(0o666)
-    single = Path(f"{path}-journal")
-    single.write_bytes(b"x")
-    single.chmod(0o600)
-    assert ts._side_file_identities(str(path)) == {(single.stat().st_dev, single.stat().st_ino)}
+    shm = Path(f"{path}-shm")
+    shm.write_bytes(b"x")
+    shm.chmod(0o600)
+    identity = {(shm.stat().st_dev, shm.stat().st_ino)}
+    assert ts._side_file_identities(str(path)) == identity
+    with monkeypatch.context() as patched:
+        patched.setattr(os, "geteuid", lambda: shm.stat().st_uid + 1)
+        assert ts._side_file_identities(str(path)) == frozenset()
+    shm.chmod(0o620)
+    assert ts._side_file_identities(str(path)) == frozenset()
+    shm.chmod(0o600)
+    os.link(shm, tmp_path / "second-name")
+    assert ts._side_file_identities(str(path)) == frozenset()
 
 
 def _reuse_the_holder(
@@ -865,19 +871,49 @@ def test_tb045_a_side_file_that_appeared_during_the_open_is_not_exempt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Review F2: a side file counts only when it was the same before and after the open; one put under the name of
-    the ``-wal`` meanwhile is an unexplained new file."""
+    the ``-shm`` meanwhile is an unexplained new file."""
     path = tmp_path / "a.db"
     make_database(path)
     holder = plain(path)
     holder.execute("SELECT count(*) FROM parent").fetchone()
     descriptors: list[int] = []
 
-    def new_wal() -> None:
+    def new_shm() -> None:
         fresh = tmp_path / f"fresh{len(descriptors)}"
         descriptors.append(os.open(fresh, os.O_CREAT | os.O_RDWR, 0o600))
-        os.replace(fresh, f"{path}-wal")
+        os.replace(fresh, f"{path}-shm")
 
-    _reuse_the_holder(holder, monkeypatch, new_wal)
+    _reuse_the_holder(holder, monkeypatch, new_shm)
+    try:
+        with pytest.raises(UnsafePath) as info:
+            ts.connect(path)
+        assert info.value.code == "sqlite.unsafe_path"
+        assert len(descriptors) == ts._OPEN_ATTEMPTS
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+        holder.close()
+
+
+@posix_only
+@pytest.mark.parametrize("suffix", ["-wal", "-journal"])
+def test_tb045_a_new_descriptor_on_the_wal_or_journal_is_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    """Review F10: while SQLite reuses a descriptor of the checked file, a new descriptor on the database's own
+    ``-wal`` or ``-journal`` is not explained (SQLite could have opened that file under the database's name): the
+    open is retried and, when it keeps happening, refused."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    holder = plain(path)
+    holder.execute("SELECT count(*) FROM parent").fetchone()
+    side = Path(f"{path}{suffix}")
+    if not side.exists():
+        side.write_bytes(b"")
+    side.chmod(0o600)
+    descriptors: list[int] = []
+    # O_CREAT: closing the refused holder after the first attempt may delete the -wal
+    _reuse_the_holder(holder, monkeypatch, lambda: descriptors.append(os.open(side, os.O_RDONLY | os.O_CREAT, 0o600)))
     try:
         with pytest.raises(UnsafePath) as info:
             ts.connect(path)
@@ -952,6 +988,63 @@ def test_tb045_connects_do_not_interleave_between_the_snapshots(
     for result in results:
         assert isinstance(result, sqlite3.Connection), result
         result.close()
+
+
+@posix_only
+def test_tb045_the_identity_check_runs_under_the_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F5/F13: the check of (b) and (c) holds ``_OPEN_LOCK``, so its own descriptor cannot fall between
+    another connect's snapshots: while one connect checks its file, another cannot check or open."""
+    first, second = tmp_path / "a.db", tmp_path / "b.db"
+    make_database(first)
+    make_database(second)
+    original = ts._identity
+    first_inside, release, second_inside = threading.Event(), threading.Event(), threading.Event()
+
+    def gated(candidate: str, **kwargs: Any) -> tuple[int, int]:
+        if candidate == str(first):
+            first_inside.set()
+            assert release.wait(30)
+        else:
+            second_inside.set()
+        return original(candidate, **kwargs)
+
+    monkeypatch.setattr(ts, "_identity", gated)
+    results: list[sqlite3.Connection | BaseException] = []
+
+    def run(path: Path) -> None:
+        try:
+            results.append(ts.connect(path))
+        except BaseException as exc:  # reported below
+            results.append(exc)
+
+    threads = [threading.Thread(target=run, args=(first,))]
+    threads[0].start()
+    try:
+        assert first_inside.wait(30)
+        threads.append(threading.Thread(target=run, args=(second,)))
+        threads[1].start()
+        assert not second_inside.wait(0.5)
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join()
+    assert second_inside.is_set()
+    for result in results:
+        assert isinstance(result, sqlite3.Connection), result
+        result.close()
+
+
+@posix_only
+def test_tb045_a_listing_must_show_the_probe_as_the_same_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review F12: a directory that has an entry for every number (also those a daemon may have freed, 0..2) but not
+    the open files themselves is no listing: the probe is a copy numbered 3 or higher and must be the same file."""
+    fake = tmp_path / "fd"
+    fake.mkdir()
+    for number in range(4096):
+        (fake / str(number)).touch()
+    monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (str(fake),))
+    monkeypatch.setattr(ts, "_LISTINGS", {})
+    assert ts._listing_directory() is None
 
 
 @posix_only
@@ -1033,9 +1126,38 @@ def test_tb045_an_unreadable_file_is_refused(tmp_path: Path, monkeypatch: pytest
         return real_open(candidate, *args, **kwargs)
 
     monkeypatch.setattr(os, "open", denied)
+    monkeypatch.setattr(ts, "_open", _never_opened)
     with pytest.raises(UnsafePath) as info:
         ts.connect(path)
     assert info.value.code == "sqlite.unsafe_path"
+
+
+def _never_opened(target: str, **kwargs: Any) -> sqlite3.Connection:
+    raise AssertionError("SQLite must not open a file whose identity was not taken")
+
+
+@posix_only
+@pytest.mark.parametrize(
+    "number", [errno.EMFILE, errno.ENFILE, errno.ENOMEM, errno.EIO], ids=["EMFILE", "ENFILE", "ENOMEM", "EIO"]
+)
+def test_tb045_resource_errors_are_not_refusals(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, number: int) -> None:
+    """Review F11: running out of descriptors or memory, or an I/O error, while the identity is taken is an
+    operational problem: the ``OSError`` is raised as it is, not ``UnsafePath``."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    real_open = os.open
+
+    def failing(candidate: Any, *args: Any, **kwargs: Any) -> int:
+        if os.fspath(candidate) == str(path):
+            raise OSError(number, os.strerror(number))
+        return real_open(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", failing)
+    monkeypatch.setattr(ts, "_open", _never_opened)
+    with pytest.raises(OSError) as info:
+        ts.connect(path)
+    assert not isinstance(info.value, UnsafePath)
+    assert info.value.errno == number
 
 
 @posix_only
