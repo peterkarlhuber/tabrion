@@ -93,3 +93,15 @@ def make_database(path: Path, rows: int = 3) -> None:
 
 
 WINDOWS = sys.platform == "win32"
+
+
+NO_DESCRIPTOR_LINKS = "the descriptor entries are no links here (macOS)"
+
+
+def descriptor_links() -> str | None:
+    """The first descriptor directory of ``tabrion.sqlite`` when its entries are links (``/proc/self/fd`` on Linux),
+    else ``None`` (macOS ``/dev/fd``). The one condition for the link tests and for the probes that target them."""
+    from tabrion import sqlite as ts  # imported when asked, after the test session set up its paths
+
+    directory = ts._DESCRIPTOR_DIRECTORIES[0]
+    return directory if os.path.islink(os.path.join(directory, "0")) else None

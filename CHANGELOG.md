@@ -140,6 +140,16 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- `tabrion.sqlite.connect` hardens its open against a time-of-check to time-of-use race (TB-045, contract I-22,
+  TM-04): on POSIX it lists the process's open regular files (`/proc/self/fd`, or `/dev/fd` on macOS)
+  before and after SQLite opens the database and requires the descriptor SQLite opened to be the checked file
+  (`(st_dev, st_ino)`); a mismatch is retried after a short random pause, eight attempts in all, then refused with
+  `UnsafePath("sqlite.unsafe_path")`. The final name check now resolves only the directory of the path, not its
+  last component again. An existing file this user may not open for its check is now `UnsafePath("sqlite.unsafe_path")`
+  instead of being left to SQLite (`sqlite3.OperationalError` before); other failures of that open (for example no
+  descriptors left) are raised as `OSError`. A name that disappears during the check is checked again. On Windows, and
+  where no complete descriptor listing exists, the existing name checks after opening remain the only check
+  (documented in I-22).
 - `Database.safe_url` and `repr(Database)` show a SQLite file path as it is instead of percent-encoded, on every
   OS: a Windows path (`C:\...` instead of `C%3A%5C...`), and on POSIX too a path with `@`, `%`, `:`, `?` or
   non-ASCII characters (`/tmp/ü.db` instead of `/tmp/%C3%BC.db`). A character that is not printable (newline, ESC,
