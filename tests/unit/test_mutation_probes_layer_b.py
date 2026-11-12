@@ -15,7 +15,11 @@ from tests.unit.test_mutation_probes import _copy, _run
 pytest.importorskip("sqlalchemy")
 pytest.importorskip("psycopg")
 
+from tests.unit.test_database import POSIX
+
 T = "tests/unit/test_database.py::"
+POSIX_ONLY = {T + "test_b04_sqlite_path_checks_run_in_from_url"}
+"""Probed tests that skip where not ``POSIX``: a skipped test cannot turn red, so their probes skip there too."""
 
 PROBES = [
     # Write transactions take the write lock at BEGIN (specification 3.2).
@@ -52,12 +56,47 @@ PROBES = [
         "        pass\n",
         T + "test_b13_no_deadline_stays_behind",
     ),
-    # check_path and the file creation run in from_url.
+    # check_path and the file creation run in from_url: the portable half, probed on every OS (review L-3 of #37) ...
+    (
+        "_sa/database.py",
+        "            _sqlite_creator(path, profile).close()\n",
+        "            pass\n",
+        T + "test_b04_from_url_opens_the_file",
+    ),
+    # ... and the POSIX-only half (symbolic link, 0600).
     (
         "_sa/database.py",
         "            _sqlite_creator(path, profile).close()\n",
         "            pass\n",
         T + "test_b04_sqlite_path_checks_run_in_from_url",
+    ),
+    # safe_url shows a SQLite path as it is, not percent-encoded (Windows nightly of 546d254).
+    (
+        "_sa/database.py",
+        "        return before + _printable_path(database) + after\n",
+        "        return _config.safe_url(url.render_as_string(hide_password=True))\n",
+        T + "test_b01_safe_url_shows_the_sqlite_path_as_it_is",
+    ),
+    # ... with what is not printable percent-encoded (review M-1 of #37) ...
+    (
+        "_sa/database.py",
+        "        ch if ch.isprintable() else",
+        "        ch if True else",
+        T + "test_b01_safe_url_shows_the_sqlite_path_as_it_is",
+    ),
+    # ... and only after the URL is masked (review M-2 of #37) ...
+    (
+        "_sa/database.py",
+        "        return before + _printable_path(database) + after\n",
+        "        return _config.safe_url(before + _printable_path(database) + after)\n",
+        T + "test_b01_safe_url_masks_first_and_then_shows_the_path",
+    ),
+    # ... at the one place of the placeholder (review L-1 of #37).
+    (
+        "_sa/database.py",
+        "        if not found or slot in after:\n",
+        "        if not found:\n",
+        T + "test_b01_safe_url_placeholder_is_new_for_every_call",
     ),
     # TLS: a weak sslmode for a remote host is refused.
     ("_sa/database.py", "if sslmode in _WEAK_SSLMODES or", "if False and", T + "test_b03_tls_violations"),
@@ -80,7 +119,7 @@ PROBES = [
 
 def test_unmutated_copy_passes(tmp_path: Path) -> None:
     """Positive control: the probed tests pass on an unchanged copy."""
-    result = _run(_copy(tmp_path), sorted({p[3] for p in PROBES}))
+    result = _run(_copy(tmp_path), sorted({p[3] for p in PROBES} - (set() if POSIX else POSIX_ONLY)))
     assert result.returncode == 0, result.stdout[-2000:]
 
 
@@ -90,6 +129,8 @@ def test_unmutated_copy_passes(tmp_path: Path) -> None:
     ids=[p[3].split("::")[1] + f"-{i}" for i, p in enumerate(PROBES)],
 )
 def test_mutation_turns_the_test_red(tmp_path: Path, module: str, anchor: str, replacement: str, test: str) -> None:
+    if not POSIX and test in POSIX_ONLY:
+        pytest.skip("the probed test skips where os.name is not posix")
     copy = _copy(tmp_path)
     target = copy / "tabrion" / module
     text = target.read_text(encoding="utf-8")

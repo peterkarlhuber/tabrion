@@ -1,0 +1,5 @@
+# The Levuvo Database Profile manifest (conformance/MANIFEST.json) hashes the raw bytes of these files, so every
+# checkout must keep LF line endings, also with core.autocrlf=true on Windows (TAB-050, review of #27 H-2).
+conformance/** text eol=lf
+tests/conformance/actions.py text eol=lf
+tests/postgres/test_conformance_vectors.py text eol=lf

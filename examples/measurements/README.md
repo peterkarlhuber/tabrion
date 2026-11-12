@@ -1,6 +1,6 @@
 # Measurements: local capture on SQLite, idempotent transfer to PostgreSQL
 
-Reference application B (TABRION RA-B-1, RA-B-2). An edge device captures readings into a local SQLite file
+Reference application B (TABRION RA-B-1, RA-B-2, RA-B-3). An edge device captures readings into a local SQLite file
 (RA-B-1) and sends them to PostgreSQL in batches, as often as it likes, without losing or duplicating one (RA-B-2).
 The capture uses **layer A only** (`tabrion.sqlite`), so it needs nothing but the standard library and Tabrion;
 the transfer uses **layer B** (`tabrion.Database`, `tabrion.Profile`) and needs the extras `sqlalchemy` and
@@ -14,7 +14,7 @@ From a checkout with Tabrion installed (`pip install -e .`):
 $ cd examples/measurements
 $ python -m measurements --db data.db --backup-dir backups init
 $ python -m measurements --db data.db --backup-dir backups demo 10000
-10000 stored in 0.041 s
+10000 stored in 0.041 s       # example output of one run, not a measurement
 $ printf 'd2,rh,2026-01-01T00:00:00Z,41.5,%%\n' | python -m measurements --db data.db --backup-dir backups capture
 1
 $ python -m measurements --db data.db --backup-dir backups count
@@ -84,13 +84,33 @@ can afford that.
 
 ## Tests
 
-`tests/examples/test_measurements.py` and `tests/examples/test_measurements_transfer.py` run inside the normal suite
-(`pytest`). The transfer tests run against an upstream SQLite file and, with `TABRION_TEST_POSTGRES` set, against a
-PostgreSQL schema of their own (marker `postgres`, fixture `tabrion_postgres_schema`). They cover the RA-B-2
-acceptance criteria: every row once in batches; a repeated transfer (lost mark, a second device file with the same
-readings) changes nothing; at the moment the mark moves, another connection already sees the batch upstream; a
+`tests/examples/test_measurements.py`, `test_measurements_transfer.py` and `test_measurements_faults.py` run inside
+the normal suite (`pytest`), each test against this application and against the plain SQLAlchemy baseline of
+RA-B-4 ([`examples/measurements-baseline`](../measurements-baseline/README.md), fixture `app`). The transfer tests
+run against an upstream SQLite file and, with `TABRION_TEST_POSTGRES` set, against a PostgreSQL schema of their own
+(marker `postgres`, fixture `tabrion_postgres_schema`). They cover the RA-B-2 acceptance criteria: every row once in
+batches; a repeated transfer (lost mark, a second device file with the same readings) changes nothing; at the moment the mark moves, another connection already sees the batch upstream; a
 failed batch keeps the mark and is sent again; a crash between the commit and the mark sends the batch again
-without duplicates. The RA-B-1 criteria:
+without duplicates.
+
+`tests/examples/test_measurements_faults.py` (RA-B-3) injects the failures and counts **losses** (captured readings
+not upstream) and **duplicates** (upstream rows beyond one per natural key) after the transfer has run again:
+
+| Failure | How | Losses / duplicates |
+|---|---|---|
+| Reply lost after the `COMMIT` (committed, the client cannot know) | Tabrion's fault proxy drops the server's answer to the batch's `COMMIT` | 0 / 0 |
+| Network cut while committing, `COMMIT` never sent | proxy faults `inflight` and `request` on the `COMMIT` | 0 / 0 |
+| Network cut around the `INSERT` (reply lost, in flight, never sent) | the same three faults on the `INSERT` | 0 / 0 |
+| Process killed after the server ran the `COMMIT`, before the mark moved | the proxy holds the answer and `SIGKILL`s the CLI | 0 / 0 |
+| Process killed after the `INSERT`, before the `COMMIT` | the same on the `INSERT` | 0 / 0 |
+| Process killed at any moment | five `SIGKILL`s of a running `transfer` at moments drawn with a fixed seed | 0 / 0 |
+| 24 hours offline | a simulated day, two readings a minute, a transfer every 15 minutes, the upstream unreachable from 02:00 to 22:00 and for a flap at 23:00; on SQLite and PostgreSQL upstreams | 0 / 0 |
+
+Each network fault runs three times. The proxy places every cut by the protocol (the batch's `INSERT` or `COMMIT`
+message), never by a timer, and the test checks what the server really holds before the transfer runs again. The
+fault and kill tests need PostgreSQL (markers `postgres`, `slow`) and POSIX for the kills.
+
+The RA-B-1 criteria:
 - 10 000 measurements in one write transaction, checked with a statement trace;
 - migration with mandatory backup;
 - `0600` files;
@@ -107,8 +127,9 @@ The file-mode and kill tests are POSIX only.
   tests (the fixtures `store`, `upstream_url` and `upstream`).
 - **MW-4** (values in errors): `test_invalid_measurement_writes_nothing` checks that a canary value does not
   appear in the message and that the error has no `__context__`.
-- **MW-7** (runtime overhead): `python -m measurements ... demo N` prints the time of one batch of `N` rows.
-  Compare it with the baseline of RA-B-4 on the same machine.
+- **MW-7** (runtime overhead): not measured by a single `demo N` run, whose time includes setup and varies a lot
+  from run to run; RA-EVAL needs the interleaved harness described in the baseline's README.
 - **MW-8** (engine switch): the transfer tests run the same code against SQLite and PostgreSQL; only the URL differs.
-- **MW-2 and MW-6** come with RA-B-3 (the fault tests). MW-3 belongs to the parts application. MW-5 is measured
-  from this README.
+- **MW-6** (fault injection, losses/duplicates): `tests/examples/test_measurements_faults.py`, see the table above;
+  every case asserts `tally(...) == (0, 0)`; the baseline of RA-B-4 runs the same tests.
+- **MW-2** comes with RA-EVAL. MW-3 belongs to the parts application. MW-5 is measured from this README.
