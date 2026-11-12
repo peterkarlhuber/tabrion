@@ -3,15 +3,16 @@
 The suite's ``tests/conftest.py`` loads this plugin; it stays inactive unless ``--skip-guard`` or the variable
 ``TABRION_SKIP_GUARD`` selects a mode:
 
-- ``enforce`` (also ``1``): at the end of the session every skip reason, and every reason of a non-strict ``xfail``,
-  must match a pattern of the reviewed allowlist ``tests/ci/skip-reasons.txt``; any other reason turns a green run
-  red (exit status 1). The CI workflows set ``TABRION_SKIP_GUARD=1``.
+- ``enforce`` (also ``1``): at the end of the session every skip reason, and every ``xfail`` reason outside
+  ``tests/examples``, must match a pattern of the reviewed allowlist ``tests/ci/skip-reasons.txt``; any other reason
+  turns a green run red (exit status 1). The CI workflows set ``TABRION_SKIP_GUARD=1``.
 - ``report``: the same summary, without changing the exit status (to see what a job skips).
 
-Either mode prints the skipped node IDs with their reasons, so each job's log is that job's skip record. A strict
-``xfail`` is listed but not checked: an unexpected pass already fails the run, and its reason lives in the deviation
-table of its own suite (``tests/examples``). Non-strict ``xfail`` is the flaky-test marker of section 4.3, so it is
-checked like a skip.
+Either mode prints the skipped node IDs with their reasons, so each job's log is that job's skip record. Non-strict
+``xfail`` is the flaky-test marker of section 4.3, so it is checked like a skip. A strict ``xfail`` is checked as well
+(it parks a failing test, and the release checklist of section 5 allows no new xfail without an entry), except under
+``tests/examples/``: there it is a measured baseline deviation whose reason lives in the deviation table of that
+suite, so it is listed but not checked.
 
 Allowlist format: one Python regular expression per line, matched against the whole reason (``re.fullmatch``); lines
 starting with ``#`` are comments, and every pattern has a comment above it that says why and in which jobs it skips.
@@ -33,6 +34,11 @@ import pytest
 
 ALLOWLIST = Path(__file__).with_name("skip-reasons.txt")
 ENV = "TABRION_SKIP_GUARD"
+# Node ID prefixes whose strict xfails are listed but not checked (the baseline deviations of the example apps).
+STRICT_XFAIL_EXEMPT = ("tests/examples/",)
+# pytest 8.0 writes ``reason: <msg>`` into ``wasxfail`` for an imperative ``pytest.xfail`` and for ``run=False``;
+# later versions write ``<msg>`` (review of #51, R-3).
+XFAIL_PREFIX = "reason: "
 MODES = {"": "off", "0": "off", "off": "off", "1": "enforce", "enforce": "enforce", "report": "report"}
 
 
@@ -45,12 +51,13 @@ class Pattern:
 @dataclass(frozen=True)
 class Event:
     nodeid: str
-    kind: str  # "skip", "xfail" (non-strict, checked) or "xfail strict" (listed only)
+    kind: str  # "skip", "xfail" (non-strict) or "xfail strict"
     reason: str
 
     @property
     def checked(self) -> bool:
-        return self.kind != "xfail strict"
+        """Whether the reason must match the allowlist: all but a strict xfail under ``STRICT_XFAIL_EXEMPT``."""
+        return self.kind != "xfail strict" or not self.nodeid.startswith(STRICT_XFAIL_EXEMPT)
 
 
 def parse_allowlist(text: str, source: str = "skip-reasons.txt") -> list[Pattern]:
@@ -75,10 +82,10 @@ def parse_allowlist(text: str, source: str = "skip-reasons.txt") -> list[Pattern
 
 
 def reason_of(report: pytest.CollectReport | pytest.TestReport) -> str:
-    """The reason pytest shows for a skip: the message without the ``Skipped: `` prefix."""
+    """The reason pytest shows for a skip or xfail: without the ``Skipped: `` or (pytest 8.0) ``reason: `` prefix."""
     wasxfail = getattr(report, "wasxfail", None)
     if wasxfail is not None:
-        return str(wasxfail)
+        return str(wasxfail).removeprefix(XFAIL_PREFIX)
     longrepr = report.longrepr
     message = longrepr[2] if isinstance(longrepr, tuple) and len(longrepr) == 3 else str(longrepr)
     return message.removeprefix("Skipped: ")
@@ -139,9 +146,10 @@ class SkipGuard:
         wasxfail = getattr(report, "wasxfail", None)
         if wasxfail is not None:
             # An xfail that failed (skipped) or passed (non-strict XPASS); a strict XPASS is a failure already.
+            reason = reason_of(report)
             xfailed = evaluate_xfail_marks(item)
-            strict = xfailed is not None and xfailed.strict and xfailed.reason == wasxfail
-            self.events.append(Event(report.nodeid, "xfail strict" if strict else "xfail", reason_of(report)))
+            strict = xfailed is not None and xfailed.strict and xfailed.reason == reason
+            self.events.append(Event(report.nodeid, "xfail strict" if strict else "xfail", reason))
         elif report.skipped:
             self.events.append(Event(report.nodeid, "skip", reason_of(report)))
         return report
@@ -160,8 +168,8 @@ class SkipGuard:
         tr.section(f"skip guard ({self.mode})", sep="=", bold=True)
         checked = [e for e in self.events if e.checked]
         tr.write_line(
-            f"{len(checked)} skipped or non-strict xfail, {len(self.events) - len(checked)} strict xfail;"
-            f" allowlist {len(self.patterns)} patterns"
+            f"{len(checked)} checked (skip or xfail), {len(self.events) - len(checked)} strict xfail in"
+            f" {', '.join(STRICT_XFAIL_EXEMPT)} (listed only); allowlist {len(self.patterns)} patterns"
         )
         for event in self.events:
             mark = "NOT ALLOWED " if event in violations else ""

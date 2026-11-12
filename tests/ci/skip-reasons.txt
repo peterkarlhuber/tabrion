@@ -1,8 +1,9 @@
 # Skip reasons allowed in CI (planning document 07 section 4.3, G-T2 "skip lists per job", TODO TB-141).
 #
-# Checked by tests/ci/skipguard.py when TABRION_SKIP_GUARD=1 (ci.yml, platforms.yml): a skip, or a non-strict xfail
-# (the flaky marker; see tests/ci/flaky.txt), whose reason matches no pattern below turns the job red. Each job's log
-# lists its skipped node IDs and reasons under "skip guard", which is that job's skip record.
+# Checked by tests/ci/skipguard.py when TABRION_SKIP_GUARD=1 (ci.yml, platforms.yml): a skip, a non-strict xfail
+# (the flaky marker; see tests/ci/flaky.txt) or a strict xfail outside tests/examples/ whose reason matches no
+# pattern below turns the job red. Each job's log lists its skipped node IDs and reasons under "skip guard", which is
+# that job's skip record.
 #
 # One Python regular expression per line, matched against the whole reason (re.fullmatch). Every pattern has a
 # comment above it: why the test skips and in which jobs. A new pattern needs review like a code change; prefer a
@@ -53,7 +54,7 @@ STRICT tables need SQLite 3\.37
 # --- PostgreSQL: jobs without a server, or a server without an optional feature ---
 # Jobs without TABRION_TEST_POSTGRES ("test", platforms); the pg, conformance, golden, examples, mutation probes and
 # coverage jobs set TABRION_REQUIRE_POSTGRES=1, which turns this skip into a failure there.
-PostgreSQL tests need one of .+
+PostgreSQL tests need one of [A-Z0-9_]+(, [A-Z0-9_]+)*
 TABRION_TEST_POSTGRES is not set
 # The fault proxy needs a TCP address; a Unix socket URL (local runs) skips these.
 the (fault )?proxy needs a TCP server address
@@ -61,7 +62,8 @@ the (fault )?proxy needs a TCP server address
 the server has no de_DE\.UTF-8 locale
 # Optional server features: citext (contrib), vector outside the pgvector job, version-bound LDP vectors.
 the server has no citext \(contrib\)
-the PostgreSQL extension '[a-z_]+' is [a-z_ ]+ and could not be activated.*
+# The optional tail is the activation error of src/tabrion/testing/postgres.py: " (<class>, SQLSTATE <code or ->)".
+the PostgreSQL extension '[a-z_]+' is [a-z_ ]+ and could not be activated( \([A-Za-z_][A-Za-z0-9_]*, SQLSTATE ([0-9A-Z]{5}|-)\))?
 LDP-[A-Z0-9-]+ needs server version \d+
 a NOINHERIT admin needs the membership options of PostgreSQL 16 \(contract I-60\)
 # TAB-T-009 restarts the server: nightly job "pg restart" only.

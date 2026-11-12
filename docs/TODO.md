@@ -19,14 +19,15 @@
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
 TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; TAB-040 gap tests pull request: TB-137 (TAB-T-161 and
-TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 done).
+TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 done; TB-141 review follow-up pull
+request: TB-141 done).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 8 |
 | P2 Medium | 16 |
-| P3 Low | 46 |
+| P3 Low | 45 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -769,20 +770,24 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-141 · Skip guard instead of per-job skip lists (planning document 07 section 4.3, deviation D-79)
 
-- **Priority:** P3 Low · **Status:** In progress (pull request from branch `claude/project-thread-rdo6g3-tb141`,
-  workflow change) · **Refs:** planning document 07 section 4.3 (MUP-ONA T-SKIP-1), G-T2 ("flaky list ≤ 2, no
-  reruns, skip lists per job"), TB-017, D-79
+- **Priority:** P3 Low · **Status:** Done (#51, merged as `20b429f`; review findings R-1 to R-4 in the follow-up
+  pull request from branch `claude/project-thread-rdo6g3-tb141-r`) · **Refs:** planning document 07 section 4.3
+  (MUP-ONA T-SKIP-1), G-T2 ("flaky list ≤ 2, no reruns, skip lists per job"), TB-017, D-79
 - **What:** no test may be skipped silently in CI. Instead of an exact list `tests/ci/skipped-<job>.txt` for each of
   the about 25 jobs (each Python, SQLAlchemy, PostgreSQL, platform and packaging variant skips a different set, so
   such lists break on every new or renamed test), the pytest plugin `tests/ci/skipguard.py` (loaded by
   `tests/conftest.py`, active with `TABRION_SKIP_GUARD=1` or `--skip-guard=enforce`) fails a green run when a skip or
   non-strict `xfail` reason matches no pattern of the reviewed allowlist `tests/ci/skip-reasons.txt`, and prints the
   skipped node IDs with their reasons, so each job's log is its skip record (`--skip-guard=report` prints without
-  failing). Strict `xfail` is listed, not checked. Unit tests: `tests/unit/test_skipguard.py`. The pull request sets
-  `TABRION_SKIP_GUARD: "1"` at workflow level in `ci.yml` and `platforms.yml` and adds `tests/ci/**` to the
-  platforms path filter.
-- **Next step:** after the pull request merges and its CI (including macOS and Windows) is green, close this entry.
-  The nightly workflow can set the variable as well in a later workflow change.
+  failing). A strict `xfail` is checked too, except under `tests/examples/` (the baseline deviations), where it is
+  listed, not checked. Unit tests: `tests/unit/test_skipguard.py`. #51 sets `TABRION_SKIP_GUARD: "1"` at workflow
+  level in `ci.yml` and `platforms.yml` and adds `tests/ci/**` to the platforms path filter.
+- **Review of #51 (follow-up pull request):** R-1 strict `xfail` outside `tests/examples/` is checked against the
+  allowlist; R-2 the two open patterns (`PostgreSQL tests need one of ...`, `... could not be activated ...`) are
+  anchored to the formats of `src/tabrion/testing/postgres.py`, and a canary test rejects arbitrary reasons; R-3
+  `reason_of` strips the `reason: ` prefix of pytest 8.0; R-4 D-79 says that G-M(n) and R-01 compare skips from the
+  "skip guard" section of the job logs. Not done (optional): a gated path or CODEOWNERS entry for
+  `tests/ci/skip-reasons.txt`, and `TABRION_SKIP_GUARD` in the nightly workflow's own jobs (a later workflow change).
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 
