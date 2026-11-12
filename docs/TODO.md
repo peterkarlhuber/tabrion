@@ -996,7 +996,14 @@ required (owner decision of 2026-11-08 11:26Z).
   1,000 repetitions, 3 runs plus 4 runs in parallel): all green; of 3,000 swapped connects about 39 % opened the
   checked database, 58 % were refused at the first link check, 1.7 % later (the window between check and open), 0.1 %
   by SQLite itself. TAB-T-123 is Covered in `docs/program/traceability.md`.
-- **Next step:** a `diagnose` field that says whether the descriptor check is active (review F9), and verifying the
+  Finding of the first dispatched nightly (Python 3.11): before Python 3.13, `os.path.realpath` raises
+  `OSError(EINVAL)` when the name it saw as a link is a file again by the time it reads the link. `_same_file` calls
+  it on the name SQLite opened, so `connect` can end with that `OSError` instead of `UnsafePath` (contract I-22): it
+  closes the connection first, so nothing is opened, but the error type is wrong (about 1 in 1,000 swapped connects
+  locally on 3.11 and 3.12; 3.13 and later return the name). The test accepts exactly this case on Python < 3.13.
+- **Next step:** in `_same_file`, treat an `OSError` of `os.path.realpath` as "not the same file" (so `connect`
+  raises `UnsafePath`), with a seam test, then drop the test's Python < 3.13 allowance; a change of
+  `tabrion.sqlite`, so with the TAB-013 review. Also a `diagnose` field that says whether the descriptor check is active (review F9), and verifying the
   descriptor listing on a BSD (unverified there; without a passing probe a BSD gets the name checks only, review
   F15). The aggressive-load false-refusal rate (about 2 %, contract I-22) stays a measurement, not a test. Then
   close.

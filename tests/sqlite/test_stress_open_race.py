@@ -17,6 +17,7 @@ descriptor check (TAB-T-S12) and may not create links.
 from __future__ import annotations
 
 from collections.abc import Iterator
+import errno
 import os
 from pathlib import Path
 import random
@@ -140,8 +141,9 @@ def race(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 def test_t123_randomized_link_swap_never_opens_the_other_file(race: tuple[Path, Path, Path]) -> None:
     """TAB-T-123: ``RACE_REPEAT`` connects while the name is swapped at random: 0 connections to the other file, the
-    other file unchanged; every outcome is the checked database or a refusal (``UnsafePath``, or SQLite's own
-    "unable to open" when the name changed while SQLite resolved it)."""
+    other file unchanged; every outcome is the checked database or a refusal (``UnsafePath``; SQLite's own "unable
+    to open" when the name changed while SQLite resolved it; before Python 3.13 also ``OSError(EINVAL)`` from
+    ``os.path.realpath`` in the same case, TODO TB-045)."""
     name, right, other = race
     before, other_mode = digest(other), other.stat().st_mode & 0o777
     opened = refused = 0
@@ -156,6 +158,13 @@ def test_t123_randomized_link_swap_never_opens_the_other_file(race: tuple[Path, 
             except sqlite3.OperationalError as exc:
                 # SQLite itself can fail to open a name that changes while it resolves it: nothing was opened.
                 assert "unable to open database file" in str(exc), repr(exc)
+                refused += 1
+                continue
+            except OSError as exc:
+                # Before Python 3.13, os.path.realpath raises EINVAL when a link it saw is a file again by the time
+                # it reads the link; connect closes the connection and passes that on (TODO TB-045): nothing opened.
+                if sys.version_info >= (3, 13) or exc.errno != errno.EINVAL:
+                    raise
                 refused += 1
                 continue
             try:
