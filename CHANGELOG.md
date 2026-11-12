@@ -6,7 +6,59 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-12
+
+TABRION TAB-040, gate G-T2: `v0.1.0` final. The release commit is the merge commit of the pull request that sets
+this version: `RELEASE-SHA` (recorded by the follow-up pull request that moves master to `0.1.1.dev0`; ADR 0009,
+amendment of 2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.1.0` on it is an
+optional label. No PyPI upload, no GitHub release and no announcement (G-R). It satisfies the final range
+`tabrion>=0.1,<0.2` (RC-8).
+
 ### Added
+
+- `tabrion.postgres.grant_runtime_role` (TAB-031), unifying Axentra's and Nodestro's: run as the owner role, it grants
+  the runtime role `USAGE` on the schema, `SELECT, INSERT, UPDATE, DELETE` on its tables, `USAGE, SELECT` on its
+  sequences, `EXECUTE` on its functions and the same default privileges, revokes the write privileges on each of
+  `protected_tables` that exists in the schema, all in one transaction, then grants `CONNECT` where the owner may,
+  and returns a fresh `inspect_role`. Idempotent; never `CREATE`. Refuses (`RoleUnsafe`, nothing granted) the owner
+  itself, a role that can become the owner or a superuser or BYPASSRLS role (also as a NOINHERIT member), and a role
+  owning tables of the schema or owning the schema itself (or able to become its owner); refuses a schema that does
+  not exist (`UsageError("postgres.schema_missing")`), names over 63 bytes (`ValueError`) and running inside the
+  caller's transaction (`UsageError("postgres.nested_transaction")`). The catalog afterwards equals the Axentra and Nodestro results
+  (golden files of both reference functions).
+- `tabrion.testing` (TAB-020), activated with `pytest_plugins = ["tabrion.testing"]`: `configure` chooses the
+  environment variable names (`env_prefix`, or the consumers' own names) and the name prefix; `tabrion_postgres_url`
+  skips without a server and fails under the require variable, and masks the password in pytest's reports;
+  `tabrion_postgres_schema` gives every test its own schema and drops it afterwards, also after a failure and with a
+  connection of the same role still holding locks (another role's session is waited for, never ended), but never
+  cascades into an extension; `postgres_server_version`; `require_extension` never moves an extension: it creates a
+  missing one in `public` and makes one in another schema visible through the connection's `search_path`, or skips
+  (fails when required); a require variable counts unless it is empty or `0`; `tabrion_sqlite_path` and
+  `tabrion_sqlite`. Tabrion's own PostgreSQL suites run on it and check after each test that nothing they created is
+  left on the server.
+- Consumer protection (TAB-022): golden files of the consumers' behavior for every category A/B row of contract
+  section 8 (`tests/golden/{axentra,nodestro,nodestro_api,orkexa}.json`, each with the full commit), recorded by
+  `scripts/record_golden.py` from the consumers' own code in throwaway environments and replayed against Tabrion in
+  every test run, each naming the consumer's full 40-character commit; `scripts/downstream.py` runs the consumers'
+  database tests against Tabrion HEAD, which `uv pip install --override` puts in place of any Tabrion requirement
+  the consumer has (a Git commit pin), with all extras, with a timeout on every step; a database that cannot be
+  dropped is a note beside the consumer's result.
+- `tabrion.testing` re-review fixes (#11): `truncate_tables` without `schema=` empties only a schema the plugin created
+  and refuses a `CASCADE` into another schema; a schema teardown that would drop an extension is rolled back; the
+  fixtures work under a `NOINHERIT` admin on PostgreSQL 16+, try every role at the end and drop the roles' grants in
+  the admin's database. `truncate_tables` locks the selected tables before its check and names why a table in
+  another schema would be emptied (foreign key, partition, inheritance child); it checks again after the `TRUNCATE`
+  and rolls it back when a foreign key was added in between (review L-1 of #19).
+- `tabrion.testing` database per session and roles without superuser (TAB-032): `tabrion_postgres_database` creates a
+  throwaway database with an owner and an app role as `tabrion_role_setup` describes (`RoleSetup()`, `split=False`,
+  named roles, or none) and drops database and roles at the end; `tabrion_postgres_roles` gives the same two roles in
+  the existing database; the runtime-role mode of `tabrion_postgres_schema` adds a runtime role per test with the
+  grants of `grant_runtime_role`; `truncate_tables` empties a schema's tables in one `TRUNCATE ... RESTART IDENTITY
+  CASCADE`. Every role is `NOSUPERUSER NOBYPASSRLS` with a random password, and a role the fixtures did not create
+  is never changed or dropped. A golden test checks Axentra's `tests/conftest.py` against the same setup on the
+  plugin.
+- Tests: the PostgreSQL suites carry 101 mutation probes against the server (43 in `0.1.0a1`). The extra `dev` adds
+  `uv` for `scripts/downstream.py`.
 
 - Layer B hint for `:name::type` (planning document 07, probe P5, TAB-T-025; contract I-107, TODO TB-139):
   SQLAlchemy's `text()` leaves a parameter before a `::` cast unbound, so `:x::int` fails with `database.syntax`
@@ -81,6 +133,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   a changed expectation or action handler fails the tests until the manifest is regenerated, the LDP version is
   raised and this file names the new version and digest. `.gitattributes` keeps LF line endings for the hashed files,
   so the manifest also holds on a Windows checkout with `core.autocrlf=true`.
+  This release ships LDP-0.1.1 (see Fixed).
   LDP-0.1.0 digest d70eeb2a7dc5.
 
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
@@ -155,7 +208,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   package's minor is still only `staged`, or when its body, after the docstring, is only
   `raise NotImplementedError`, `pass` or `...`. The body is read with `ast`, so nothing is called.
 - `docs/program/traceability.md` maps each of the 53 numbered plan test IDs (TAB-T-001..300; G-T2, K2, K8) to the
-  tests that cover it, and marks 1 partial ID and 1 gap (TODO TB-045, TB-140).
+  tests that cover it, and marks 1 gap, TAB-T-300 (TODO TB-140); no ID is partial.
   `tests/unit/test_traceability.py` checks that every ID has a row and that every named test exists.
 - TAB-T-009 (K7, TB-136): `tests/postgres/test_restart_postgres.py` restarts the PostgreSQL server between two
   requests and checks that the first request through a pool with `pool_pre_ping` succeeds, with a pool without it as
@@ -210,9 +263,16 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - CI (workflow change, QA-11, K1, K7/K8): `release.yml` takes an annotated tag or a full commit SHA on master,
   requires a final `__version__` and a dated CHANGELOG section (`.github/scripts/release_check.py`), and runs the
   attestation only with the opt-in input `attest`. `ci.yml` has the jobs `coverage` (branch coverage with the whole
-  suite and PostgreSQL; floors: total 93.5 %, `errors` 95 %, `sql` 95 %, `sqlite` 94.9 %) and `mutation probes` (split
+  suite and PostgreSQL; floors: total 93.5 %, `errors` 95 %, `sql` 95 %, `sqlite` 95 %) and `mutation probes` (split
   out of `test`). `tests/ci/flaky.txt` (empty) with its format test; ruff `S` documented as the Bandit substitute and
   run over `examples/` too. The TB-017 guards of `api surface` and `conformance` decide from the base branch.
+- CI (workflow change, TODO TB-141, deviation D-79): no test is skipped silently. `ci.yml` and `platforms.yml` set
+  `TABRION_SKIP_GUARD=1`, which activates the pytest plugin `tests/ci/skipguard.py` (loaded by `tests/conftest.py`):
+  a skip or non-strict `xfail` reason, and a strict `xfail` reason outside `tests/examples/`, that matches no pattern
+  of the reviewed allowlist `tests/ci/skip-reasons.txt` turns the job red, and each job's log lists its skipped node
+  IDs with their reasons (section "skip guard"), which is that job's skip record; `--skip-guard=report` prints the
+  list without failing. One allowlist for all jobs replaces the per-job skip lists of planning document 07
+  section 4.3.
 - CI (workflow change, TODO TB-017): `ci.yml` has the jobs `conformance` (TAB-050), `golden files` (TAB-022) and
   `examples` (RA-A, RA-B), each listed in `.github/ci-manifest.json`; on a pull request the job `api surface` also
   runs `scripts/api_surface.py --base <merge base>` (S-6, TAB-051). `nightly.yml` has the non-blocking job
@@ -374,47 +434,6 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   given connection. Errors are never retried. A key held on a lost connection raises
   `UsageError("postgres.lock_lost")` until `holds` or `release` acknowledges the loss; a forked child gets a fresh
   internal lock; `lock_key` raises `ValueError` for a string without a UTF-8 form.
-- `tabrion.postgres.grant_runtime_role` (TAB-031), unifying Axentra's and Nodestro's: run as the owner role, it grants
-  the runtime role `USAGE` on the schema, `SELECT, INSERT, UPDATE, DELETE` on its tables, `USAGE, SELECT` on its
-  sequences, `EXECUTE` on its functions and the same default privileges, revokes the write privileges on each of
-  `protected_tables` that exists in the schema, all in one transaction, then grants `CONNECT` where the owner may,
-  and returns a fresh `inspect_role`. Idempotent; never `CREATE`. Refuses (`RoleUnsafe`, nothing granted) the owner
-  itself, a role that can become the owner or a superuser or BYPASSRLS role (also as a NOINHERIT member), and a role
-  owning tables of the schema or owning the schema itself (or able to become its owner); refuses a schema that does
-  not exist (`UsageError("postgres.schema_missing")`), names over 63 bytes (`ValueError`) and running inside the
-  caller's transaction (`UsageError("postgres.nested_transaction")`). The catalog afterwards equals the Axentra and Nodestro results
-  (golden files of both reference functions).
-- `tabrion.testing` (TAB-020), activated with `pytest_plugins = ["tabrion.testing"]`: `configure` chooses the
-  environment variable names (`env_prefix`, or the consumers' own names) and the name prefix; `tabrion_postgres_url`
-  skips without a server and fails under the require variable, and masks the password in pytest's reports;
-  `tabrion_postgres_schema` gives every test its own schema and drops it afterwards, also after a failure and with a
-  connection of the same role still holding locks (another role's session is waited for, never ended), but never
-  cascades into an extension; `postgres_server_version`; `require_extension` never moves an extension: it creates a
-  missing one in `public` and makes one in another schema visible through the connection's `search_path`, or skips
-  (fails when required); a require variable counts unless it is empty or `0`; `tabrion_sqlite_path` and
-  `tabrion_sqlite`. Tabrion's own PostgreSQL suites run on it and check after each test that nothing they created is
-  left on the server.
-- Consumer protection (TAB-022): golden files of the consumers' behavior for every category A/B row of contract
-  section 8 (`tests/golden/{axentra,nodestro,nodestro_api,orkexa}.json`, each with the full commit), recorded by
-  `scripts/record_golden.py` from the consumers' own code in throwaway environments and replayed against Tabrion in
-  every test run, each naming the consumer's full 40-character commit; `scripts/downstream.py` runs the consumers'
-  database tests against Tabrion HEAD, which `uv pip install --override` puts in place of any Tabrion requirement
-  the consumer has (a Git commit pin), with all extras, with a timeout on every step; a database that cannot be
-  dropped is a note beside the consumer's result.
-- `tabrion.testing` re-review fixes (#11): `truncate_tables` without `schema=` empties only a schema the plugin created
-  and refuses a `CASCADE` into another schema; a schema teardown that would drop an extension is rolled back; the
-  fixtures work under a `NOINHERIT` admin on PostgreSQL 16+, try every role at the end and drop the roles' grants in
-  the admin's database. `truncate_tables` locks the selected tables before its check and names why a table in
-  another schema would be emptied (foreign key, partition, inheritance child); it checks again after the `TRUNCATE`
-  and rolls it back when a foreign key was added in between (review L-1 of #19).
-- `tabrion.testing` database per session and roles without superuser (TAB-032): `tabrion_postgres_database` creates a
-  throwaway database with an owner and an app role as `tabrion_role_setup` describes (`RoleSetup()`, `split=False`,
-  named roles, or none) and drops database and roles at the end; `tabrion_postgres_roles` gives the same two roles in
-  the existing database; the runtime-role mode of `tabrion_postgres_schema` adds a runtime role per test with the
-  grants of `grant_runtime_role`; `truncate_tables` empties a schema's tables in one `TRUNCATE ... RESTART IDENTITY
-  CASCADE`. Every role is `NOSUPERUSER NOBYPASSRLS` with a random password, and a role the fixtures did not create
-  is never changed or dropped. A golden test checks Axentra's `tests/conftest.py` against the same setup on the
-  plugin.
 - In psycopg pipeline mode every `tabrion.postgres` function syncs the caller's pipeline first, so a failing statement
   no longer aborts the caller's pipeline transaction (review DL-1 of #5); an error of a statement the caller queued
   propagates from every function, `ping` included, and `wait_advisory_lock` syncs each attempt before it sleeps.
@@ -428,8 +447,8 @@ no GitHub release and no announcement (G-R). It satisfies no final range such as
   `SessionLock` and the lock helpers are tested under each fault.
 - Tests: the PostgreSQL suites run as the superuser and as roles without superuser, compare the role and extension
   results with the verbatim Axentra and Nodestro queries, check T-NOTX and R-SET for every function in every
-  transaction state, and carry 101 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
-  pool tests and `uv` for `scripts/downstream.py`.
+  transaction state, and carry 43 mutation probes against the server. The extra `dev` adds `psycopg-pool` for the
+  pool tests.
 
 - Milestone M1 ("foundation"): package skeleton with the extras `postgres`, `sqlalchemy`, `migrations`, `testing`
   and `all`; ruff, mypy `--strict` and import-linter contracts (layers, stdlib-only core, no Levuvo platform).

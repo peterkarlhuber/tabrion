@@ -20,14 +20,14 @@ The counts are the `TB-` entries below whose status is not `Done` (recounted fro
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
 TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; TAB-040 gap tests pull request: TB-137 (TAB-T-161 and
 TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 done; TB-141 review follow-up pull
-request: TB-141 done; LDP-PGL-005 pull request #53: TB-142 new, in progress; fault proxy pull request #55:
-TB-143 new, in progress).
+request: TB-141 done; LDP-PGL-005 pull request #53: TB-142 new; fault proxy pull request #55: TB-143 new;
+TAB-040 version-bump pull request: TB-142 and TB-143 done after their merges, TB-011 in progress).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 8 |
-| P2 Medium | 18 |
+| P2 Medium | 16 |
 | P3 Low | 45 |
 | P4 Optional | 7 |
 
@@ -224,7 +224,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
-- **Priority:** P1 High · **Status:** Blocked · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
+- **Priority:** P1 High · **Status:** In progress (TAB-040 version-bump pull request; release commit `RELEASE-SHA`) ·
+  **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
 - **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001; merged in
   #24, `7c5fc6e`); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); `v0.1.0` final and gate G-T2 (TAB-040).
@@ -792,7 +793,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-142 · LDP-PGL-005 (PGL-4) failed intermittently in the CI `coverage` job
 
-- **Priority:** P2 Medium · **Status:** In progress ([#53](https://github.com/peterkarlhuber/tabrion/pull/53)) ·
+- **Priority:** P2 Medium · **Status:** Done ([#53](https://github.com/peterkarlhuber/tabrion/pull/53), `6fd3d62`) ·
   **Refs:** LDP PGL-4, `conformance/SPEC.md` appendix A (`waiter_state`), K7/K8 zero tolerance for flaky tests,
   `coverage` job of #49 (run 43153168719), review `tab-53-review.md` (C-1, C-2)
 - **What:** the `waiter_state` handler sampled the waiting backend every 0.1 s while the waiter polled every 0.1 s,
@@ -808,11 +809,11 @@ required (owner decision of 2026-11-08 11:26Z).
   `Lock` or `Timeout` wait as busy at once, and requires every sample to be idle without a snapshot (no allowance).
   The vector starts sampling after the waiter's first poll; all three check that the waiter was still waiting at the
   last sample and end the wait by handing the key over instead of a timeout. No expectation changed.
-- **Next step:** close this entry after #53 merges.
+- **Next step:** none; #53 merged at `6fd3d62`.
 
 ### TB-143 · `inflight` fault tests (session lock, ping) failed intermittently under load
 
-- **Priority:** P2 Medium · **Status:** In progress ([#55](https://github.com/peterkarlhuber/tabrion/pull/55)) ·
+- **Priority:** P2 Medium · **Status:** Done ([#55](https://github.com/peterkarlhuber/tabrion/pull/55), `75dbee9`) ·
   **Refs:** TAB-034 / QA-3, contract I-33 and I-32, K7/K8 zero tolerance for flaky tests,
   `tests/postgres/test_faults.py`
 - **What:** one full `pytest tests/postgres` run under four CPU burners (local PostgreSQL 16) failed with "DID NOT
@@ -841,7 +842,7 @@ required (owner decision of 2026-11-08 11:26Z).
   `test_t170_cut_in_flight` 100 of 100 runs, `tests/examples -k cut-while` 20 of 20, all of `test_faults.py` 30 of 30,
   the three unit tests 300 of 300. A mutant `SessionLock` that swallows the error of the attempt still fails all three
   parameters of the session-lock test (10 of 10 runs).
-- **Next step:** close this entry after the pull request merges.
+- **Next step:** none; #55 merged at `75dbee9`.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 
