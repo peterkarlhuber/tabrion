@@ -22,7 +22,19 @@ import pytest
 from tabrion import sqlite as ts
 from tabrion.errors import ConfigurationError, Kind, UnsafePath, classify
 from tabrion.sqlite import JournalMode, SQLiteProfile, Synchronous
-from tests.sqlite.conftest import POSIX, WINDOWS, digest, files, make_database, mode, plain, posix_only, umask
+from tests.sqlite.conftest import (
+    NO_DESCRIPTOR_LINKS,
+    POSIX,
+    WINDOWS,
+    descriptor_links,
+    digest,
+    files,
+    make_database,
+    mode,
+    plain,
+    posix_only,
+    umask,
+)
 
 Opened = Callable[[sqlite3.Connection], sqlite3.Connection]
 
@@ -1116,9 +1128,9 @@ def test_tb045_a_listing_without_links_is_proved_by_open_and_close(monkeypatch: 
 
 
 def _links_listing() -> str:
-    directory = ts._DESCRIPTOR_DIRECTORIES[0]
-    if not os.path.islink(os.path.join(directory, "0")):
-        pytest.skip("the descriptor entries are no links here (macOS)")
+    directory = descriptor_links()
+    if directory is None:
+        pytest.skip(NO_DESCRIPTOR_LINKS)
     return directory
 
 

@@ -10,7 +10,7 @@ import tempfile
 
 import pytest
 
-from tests.sqlite.conftest import POSIX, can_symlink
+from tests.sqlite.conftest import NO_DESCRIPTOR_LINKS, POSIX, can_symlink, descriptor_links
 from tests.unit.test_mutation_probes import _copy, _run
 
 _T = "tests/sqlite/"
@@ -452,17 +452,24 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
 ]
 
 
-def _skip_reason(posix: bool, links: bool) -> str | None:
+DESCRIPTOR_LINKS_ONLY = {_T + "test_connect.py::test_tb045_a_link_entry_must_lead_to_the_probe"}
+"""Probed tests that skip where the descriptor entries are no links (``_links_listing``, macOS): a skipped test
+cannot turn red, so their probes skip there too, on exactly the same condition."""
+
+
+def _skip_reason(posix: bool, links: bool, test: str = "") -> str | None:
     if posix and not POSIX:
         return "the probed test needs POSIX file modes"
     if links and not SYMLINKS:
         return "the probed test needs symbolic links"
+    if test in DESCRIPTOR_LINKS_ONLY and (not POSIX or descriptor_links() is None):
+        return NO_DESCRIPTOR_LINKS
     return None
 
 
 def test_unmutated_copy_passes(tmp_path: Path) -> None:
     """Positive control: the probed tests pass on an unchanged copy."""
-    tests = sorted({p[2] for p in PROBES if _skip_reason(p[3], p[4]) is None})
+    tests = sorted({p[2] for p in PROBES if _skip_reason(p[3], p[4], p[2]) is None})
     result = _run(_copy(tmp_path), tests)
     assert result.returncode == 0, result.stdout[-2000:]
 
@@ -479,7 +486,7 @@ def test_mutation_turns_the_test_red(
     target = copy / "tabrion" / "sqlite.py"
     text = target.read_text(encoding="utf-8")
     assert text.count(anchor) == 1, f"probe anchor not found exactly once: {anchor!r}"
-    reason = _skip_reason(posix, links)
+    reason = _skip_reason(posix, links, test)
     if reason is not None:
         pytest.skip(reason)
     target.write_text(text.replace(anchor, replacement), encoding="utf-8")
