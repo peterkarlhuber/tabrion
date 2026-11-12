@@ -150,6 +150,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Windows (issue #18, TB-134): `scripts/downstream.py` hands uv the interpreter file `Scripts\python.exe` (new
   `venv_python()`), so a downstream run works there; the downstream and golden-replay tests assert the Windows
   behavior (psycopg's `ConnectionTimeout` for a refused local connect, no POSIX mode in the replay).
+- CI (workflow change, TODO TB-017): `ci.yml` has the jobs `conformance` (TAB-050), `golden files` (TAB-022) and
+  `examples` (RA-A, RA-B), each listed in `.github/ci-manifest.json`; on a pull request the job `api surface` also
+  runs `scripts/api_surface.py --base <merge base>` (S-6, TAB-051). `nightly.yml` has the non-blocking job
+  `downstream` (S-7, TAB-022b). `release.yml` has the job `downstream-notice`, a dry run that prints the consumer
+  issues of the release flow and opens none. `platforms.yml` also runs on pull requests that change `conformance/**`,
+  `tests/conformance/**`, `config.py`, `errors.py`, `testing/sqlite.py`, `pyproject.toml`, `scripts/downstream.py`,
+  `tests/unit/test_downstream.py` or `tests/unit/test_golden_consumers.py` (TB-021, TB-134). No new secret, trigger or
+  write permission.
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
   final (TAB-040) is the merge commit of the version-bump pull request that sets `0.1.0`, pinned by full SHA; its
