@@ -19,14 +19,14 @@
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
 TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; TAB-040 gap tests pull request: TB-137 (TAB-T-161 and
-TAB-T-162) and TB-138 done, TB-139 narrowed).
+TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 done).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 8 |
 | P2 Medium | 16 |
-| P3 Low | 47 |
+| P3 Low | 46 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -736,20 +736,21 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-139 · TAB-T-021 DST boundary and TAB-T-025 `:x::int` error hint
 
-- **Priority:** P3 Low · **Status:** Open (narrowed to the TAB-T-025 hint) · **Refs:** planning document 07 DI-08,
-  probe P5; `docs/program/traceability.md`
-- **Done:** TAB-T-021 is covered by `PartsSuite.test_timestamps_round_trip_across_a_dst_boundary`. It runs on both
-  variants and both engines, with values on both sides of the 2026 switches in Vienna (fixed offsets, and
-  `Europe/Vienna` with `fold` where `zoneinfo` has the zone). The `:x::int` error is pinned by
-  `test_t025_double_colon_cast_is_a_syntax_error` (PostgreSQL) and `test_t025_double_colon_cast_on_sqlite`.
-- **What:** TAB-T-025 asks for the error message *with its hint*, and Tabrion gives none.
-  - PostgreSQL: `database.syntax: syntax error (SQLSTATE 42601)`.
-  - SQLite: `database.unknown: database error`. SQLite reads `:x::int` as one parameter name without a value, and
-    the driver's `ProgrammingError` carries no SQLite code.
-  SQLAlchemy's `text()` does not take `:x` before `::` as a parameter, so the value is never bound.
-- **Next step:** an owner decision. Either layer B adds a value-free hint for this case, which is a product change
-  with its own pull request (the tests then assert it), or a deviation row for G-T2 records that the documented
-  `CAST` form is the mitigation.
+- **Priority:** P3 Low · **Status:** Done (TAB-040 gap tests pull request #48, TB-139 pull request #49) · **Refs:**
+  planning document 07 DI-08, probe P5; `docs/program/traceability.md`; contract I-107
+- **Done:**
+  - TAB-T-021 is covered by `PartsSuite.test_timestamps_round_trip_across_a_dst_boundary` (#48). It runs on both
+    variants and both engines, with values on both sides of the 2026 switches in Vienna (fixed offsets, and
+    `Europe/Vienna` with `fold` where `zoneinfo` has the zone).
+  - TAB-T-025 (#49): layer B adds a value-free hint when a statement writes a parameter with a `::` cast.
+    SQLAlchemy's `text()` does not take `:x` before `::` as a parameter, so the value is never bound; a translated
+    error of kind `SYNTAX` or `UNKNOWN` whose statement holds `:name::` carries
+    `details={"hint": "write CAST(:name AS type) instead of :name::type"}` (PostgreSQL `database.syntax`, SQLSTATE
+    42601; SQLite `database.unknown`, since the driver's `ProgrammingError` carries no SQLite code). #48's tests
+    `test_t025_double_colon_cast_is_a_syntax_error` and `test_t025_double_colon_cast_on_sqlite` now expect the
+    hint; #49 adds tests on both engines, a pattern table and a canary case; the guides (`database.md`,
+    `errors.md`) name the hint.
+- **Next step:** none.
 
 ### TB-140 · TAB-T-300: nightly benchmark of layer B against plain SQLAlchemy
 

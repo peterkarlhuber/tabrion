@@ -64,7 +64,8 @@ A `Database` is thread-safe. Close it with `close()` or use it as a context mana
 - `read()` is a read-only transaction: `query_only` on SQLite, `BEGIN READ ONLY` on PostgreSQL. A write in it raises
   `ReadOnlyViolation`.
 - Statements are SQL text with named parameters (`:name`), or any SQLAlchemy Core executable. Write
-  `CAST(:x AS int)` rather than `:x::int` (the `::` cast collides with the parameter syntax).
+  `CAST(:x AS int)` rather than `:x::int` (the `::` cast collides with the parameter syntax; the error then carries
+  a `hint` detail that says so).
 - A sequence of parameter mappings runs the statement once per mapping (`executemany`).
 
 The methods of a `Transaction`:

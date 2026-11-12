@@ -42,6 +42,7 @@ from tabrion.errors import (  # noqa: E402
     StatementTimeout,
     StorageCorrupt,
     TabrionError,
+    UnknownDatabaseError,
     UnsafePath,
     UsageError,
     classify,
@@ -907,6 +908,72 @@ def test_b18_no_parameter_value_in_errors(db: Database) -> None:
         assert error.__cause__ is None and error.__context__ is None
 
 
+PARAMETER_CAST_HINT = "write CAST(:name AS type) instead of :name::type"
+
+
+@pytest.mark.security
+def test_t025_double_colon_cast_carries_a_hint_on_sqlite(db: Database) -> None:
+    """TAB-T-025 (planning document 07, probe P5; contract I-107): ``text()`` leaves ``:amount_7f`` before ``::``
+    unbound, SQLite reads ``:amount_7f::int`` as one parameter without a value, and the driver's error has no SQLite
+    code, so the kind stays ``UNKNOWN``. The error carries a fixed hint in ``details``: it names the pattern, not the
+    parameter, its value or the statement. ``CAST(:x AS int)`` works."""
+    with pytest.raises(UnknownDatabaseError) as info:
+        db.fetch_scalar("SELECT :amount_7f::int", {"amount_7f": SECRET})
+    error = info.value
+    assert error.kind is Kind.UNKNOWN
+    assert error.details == {"hint": PARAMETER_CAST_HINT}
+    assert str(error) == f"database.unknown (hint={PARAMETER_CAST_HINT}): database error"
+    text = str(error) + repr(error) + repr(error.args) + "".join(traceback.format_exception(error))
+    assert SECRET not in text
+    assert "amount_7f" not in str(error) + repr(error)  # the traceback's source lines show the test's own text
+    with db.transaction() as tx, pytest.raises(UnknownDatabaseError) as info:
+        tx.fetch_scalar("SELECT 1 WHERE :a IS NOT NULL AND :b::text IS NULL", {"a": 1, "b": SECRET})
+    assert info.value.details == {"hint": PARAMETER_CAST_HINT}
+    assert db.fetch_scalar("SELECT CAST(:x AS int) + 1", {"x": "41"}) == 42
+
+
+def test_t025_no_hint_without_the_pattern_or_for_other_kinds(db: Database) -> None:
+    """The hint needs both: ``:name::`` in the statement and a syntax or unknown error. Other errors keep empty
+    ``details``, also one whose statement holds the pattern but fails for another reason first."""
+    for statement, kind in (
+        ("SELEC 1", Kind.SYNTAX),
+        ("SELECT nope", Kind.UNDEFINED_OBJECT),
+        ("SELECT :x::int FROM no_such_table", Kind.UNDEFINED_OBJECT),
+    ):
+        with pytest.raises(DatabaseError) as info:
+            db.fetch_scalar(statement, {"x": 1})
+        assert info.value.kind is kind, statement
+        assert info.value.details == {}, statement
+    with pytest.raises(DatabaseError) as literal:
+        db.fetch_scalar("SELECT 'a:b'::int")
+    assert literal.value.details == {}
+
+
+@pytest.mark.parametrize(
+    ("text", "hint"),
+    [
+        ("SELECT :x::int", True),
+        ("SELECT :x_1::numeric(10, 2)", True),
+        ("SELECT 1 WHERE :a = 1 OR :Wert::text = ''", True),
+        ("SELECT CAST(:x AS int)", False),
+        ("SELECT '1'::int", False),
+        ("SELECT a::b::int", False),
+        ("SELECT x::int", False),
+        ("SELECT :x ::int", False),
+        ("SELECT \\:x::int", False),
+        ("SELECT (:x)::int", False),
+    ],
+)
+def test_t025_parameter_cast_pattern(text: str, hint: bool) -> None:
+    """The pattern is SQLAlchemy's own bind name rule with ``::`` after the name (I-107); the kind must be
+    ``SYNTAX`` or ``UNKNOWN``."""
+    found = tabrion._sa.database._parameter_cast_hint(Kind.SYNTAX, text)
+    assert found == ({"hint": PARAMETER_CAST_HINT} if hint else None)
+    assert tabrion._sa.database._parameter_cast_hint(Kind.UNKNOWN, text) == found
+    assert tabrion._sa.database._parameter_cast_hint(Kind.DATA, text) is None
+    assert tabrion._sa.database._parameter_cast_hint(Kind.SYNTAX, None) is None
+
+
 def test_b19_resource_warning_for_a_forgotten_close(path: Path) -> None:
     database = Database.from_url(f"sqlite:///{path}")
     engine = database.engine
@@ -1316,10 +1383,11 @@ def test_b11_a_failing_read_back_does_not_commit(db: Database, monkeypatch: pyte
 def test_t025_double_colon_cast_on_sqlite(db: Database) -> None:
     """Probe P5 on SQLite: SQLAlchemy leaves ``:x::int`` unbound, and SQLite reads ``:x::int`` as one parameter
     name without a value; the driver's ``ProgrammingError`` has no SQLite code, so the error is ``Kind.UNKNOWN``
-    with no hint (TODO TB-139). ``CAST(:x AS int)`` works on SQLite as on PostgreSQL."""
+    with the fixed hint of contract I-107 (TODO TB-139). ``CAST(:x AS int)`` works on SQLite as on PostgreSQL."""
     with pytest.raises(DatabaseError) as info:
         db.fetch_scalar("SELECT :x::int", {"x": "41"})
     assert info.value.kind is Kind.UNKNOWN
-    assert str(info.value) == "database.unknown: database error"
+    assert info.value.details == {"hint": PARAMETER_CAST_HINT}
+    assert str(info.value) == f"database.unknown (hint={PARAMETER_CAST_HINT}): database error"
     assert "41" not in str(info.value) and "41" not in repr(info.value)
     assert db.fetch_scalar("SELECT CAST(:x AS int) + 1", {"x": "41"}) == 42

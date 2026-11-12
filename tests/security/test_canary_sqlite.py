@@ -400,6 +400,8 @@ def test_t110_layer_b_every_entry_point(db: Database, path: str, canary: str) ->
         lambda: db.fetch_one("SELECT * FROM t WHERE v = :v AND nope = 1", params),
         lambda: db.fetch_all("SELECT * FROM t WHERE v = :v AND nope = 1", params),
         lambda: db.fetch_scalar("SELECT nope FROM t WHERE v = :v", params),
+        # TAB-T-025: ``:x::int`` leaves the parameter unbound; the hint the error carries is fixed text (I-107).
+        lambda: db.fetch_scalar("SELECT :v::int", params),
         lambda: db.execute("INSERT INTO t (id, v) VALUES (:id, :v)", [{"id": 7, "v": canary}, {"id": 8, "v": canary}]),
     ]
 
