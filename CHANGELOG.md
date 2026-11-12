@@ -134,6 +134,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   The parts catalog also refuses values that do not fit a column and bill-of-materials totals that would round to
   0 with `InvalidValue`.
 
+- The canary suite (QA-2, TAB-T-110..113): a unique value in parameters, rows, passwords and secret files, through
+  every kind of both engines and both layers; no `str`, `repr`, traceback, stderr output, log record or pytest report
+  may hold it (`tests/canary.py`).
+
 ### Changed
 
 - `Database.safe_url` and `repr(Database)` show a SQLite file path as it is instead of percent-encoded, on every
@@ -162,6 +166,28 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Master builds as `0.1.0a2.dev0` after the `0.1.0a1` commit (TB-053), so later commits never build as the
   internal pre-release. The installation guide pins the a1 commit SHA instead of the tag name and says not to run
   `release.yml` for it (TAB-038 review Info notes).
+
+### Fixed
+
+- `classify` maps a SQLite error whose code the `sqlite3` module does not name (`sqlite_errorname == "unknown"`,
+  for example `SQLITE_CONSTRAINT_DATATYPE` of a STRICT table on Python 3.13) by its number: `DATA` instead of
+  `UNKNOWN` (contract I-75).
+- The PostgreSQL fixtures of `tabrion.testing` no longer print the password when the server is unreachable: pytest
+  showed the conninfo argument of psycopg's frames; the test now fails with the masked URL (contract I-75). A failed
+  `CREATE ROLE` or membership `GRANT` (an admin without `CREATEROLE`) fails the test the same way, without the
+  generated role password. A caller of `truncate_tables` with an unreachable URL gets pytest's `Failed` instead of
+  `psycopg.OperationalError`.
+- Layer B and `tabrion.config` keep values out of the frame locals of their tracebacks, which Sentry, `rich` and
+  `pytest -l` show: the statement parameters and SQL text (`execute`, `fetch_*`, on `Database` and `Transaction`;
+  the staged 0.2 `query` and `stream` with the rows of an earlier batch; also when `Canceled` or a `KeyboardInterrupt`
+  leaves them), the fetched rows of `MultipleRowsError`, the URL and `engine_options` of `from_url` and `from_env` (every
+  exception of `from_url`, also a `TypeError` of `create_engine` for an unknown engine option, is raised without
+  the frames of its helpers), the environment and the file
+  content in `url_from_env`, and the original error of `BackupFailed` and `MigrationFailed` in `tabrion.sqlite.migrate`
+  (contract I-76).
+- `Database.from_url` creates its engine with `hide_parameters=True`: SQLAlchemy's `sqlalchemy.engine` log records
+  and the `[parameters: ...]` part of its error messages leave the values out (`engine_options={"hide_parameters":
+  False}` turns them back on; contract I-76).
 
 ## [0.1.0a1] - internal pre-release, not published
 

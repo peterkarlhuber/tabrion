@@ -16,15 +16,15 @@
 
 ## Summary
 
-The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-11,
-integration branch of the ready pull requests).
+The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
+master merge into #25).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 9 |
 | P2 Medium | 13 |
-| P3 Low | 45 |
+| P3 Low | 46 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -161,10 +161,10 @@ required (owner decision of 2026-11-08 11:26Z).
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
-- **What:** the canary suite (no values in errors or logs, QA-2); concurrency and stress suite, nightly (QA-4);
-  supply chain with SBOM next to the existing `dependency audit` job (QA-8, in review: SBOM script and
-  reproducible-wheel test; the CI step is TB-130); the release workflow is in place but
-  its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
+- **What:** the canary suite (no values in errors or logs, QA-2) is in review (TB-085 has its open points);
+  concurrency and stress suite, nightly (QA-4); supply chain with SBOM next to the existing `dependency audit` job
+  (QA-8, in review: SBOM script and reproducible-wheel test; the CI step is TB-130); the release workflow is in place
+  but its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
   `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`).
 - **QA-22 follow-up (F-1, Low):** tabrion has no `.gitattributes` and no `.editorconfig` (orkexa has both). Nothing
   breaks today (golden files are compared as JSON, the Windows job reads them); add both when a byte-compared
@@ -828,6 +828,47 @@ required (owner decision of 2026-11-08 11:26Z).
   instead of failing (the review counts it as caught, CI times out). `pytest-timeout` is not a development
   dependency. (I-4: review N-3, the double formatting cost, stays TB-039.)
 - **Next step:** add `pytest-timeout` with QA-4 and mark the backup and migration tests with a timeout.
+
+### TB-085 · Canary suite: what it does not cover (TABRION QA-2)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-2, TAB-T-110..113, contract I-39, I-75, I-76,
+  review `qa-2-review.md` of #25
+- **What:** points the canary suite found outside Tabrion's renderings, or covers only partly:
+  1. `Database.engine.url` is SQLAlchemy's `URL`: its `repr` masks the password in the user part only, not a
+     `?password=` query parameter. `repr(Database)` and `Database.safe_url` mask both.
+  2. The caller's own error from `Transaction.connection` stays the suppressed `__context__` of the translated error
+     (I-39); a tool that walks `__context__` despite `__suppress_context__` sees its text (with `hide_parameters`,
+     I-76, no parameters, but a PostgreSQL `DETAIL`). It is also the `value` local of `contextlib`'s `__exit__`
+     frames that threw it into `Database.transaction()`, which tools that capture locals show. The standard
+     traceback, `logging` and the filter do not.
+  3. `tabrion.testing._faults` helpers take a plain conninfo `str`: in a pytest report of a failure inside them, the
+     arguments of their frames can show the password (not a fixture value, so `repr` masking cannot help).
+  4. `SQLITE_NOMEM` (kind `RESOURCE`) and, on layer B, `UNKNOWN`, `CONNECTION` and `RESOURCE` on SQLite are not
+     raised by a real statement: the suite translates real `sqlite3` error objects instead. `DEADLOCK` on layer B and
+     `CORRUPT`, `DISK_FULL`, `RESOURCE` and a server-side `CONNECTION` state on PostgreSQL come from the server
+     through `RAISE ... USING ERRCODE`.
+  5. Paths are logged at DEBUG by `tabrion.sqlite` (by design); the suite checks records at INFO and above for a path
+     canary only. Paths may be frame locals (the path arguments of `connect`).
+  6. `sqlalchemy.engine` at DEBUG logs the fetched rows (like `echo="debug"`), and at INFO the SQL text as written:
+     the suite captures `sqlalchemy` at INFO and leaves the statement records (no arguments) out of the check.
+  7. `SQLITE_IOERR_CORRUPTFS` (8458) is `CONNECTION` through `SQLITE_IOERR*` (contract section 1.3); `CORRUPT` would
+     fit better (review, optional). It changes the documented mapping table, so it waits for a decision.
+  8. The coverage tests `test_t110_every_*_on_both_layers` rely on running last and on `session.items`: under a
+     random-order plugin they fail spuriously, under `pytest-xdist` they skip silently (neither is used today).
+  9. Not exercised by the suite: `logging.captureWarnings` and SQLAlchemy `SAWarning` texts, and the structlog
+     processor (it has its own unit tests).
+  10. A `BaseException` that is no `Exception` (such as `KeyboardInterrupt`) inside `connection.execute` is not
+      translated: Tabrion's frames (`_run`, `_step`, `query`, `stream`) drop the SQL text and the parameters on the
+      way out, SQLAlchemy's frames keep the parameters (review Info-B of #25, I-76). These exits are pinned by
+      `test_t111_frame_locals_hold_no_values_v02_early_exits` (review L-1 of rv-25m). Left open (Info-1 of rv-25m):
+      when `result.close()` raises after `fetchmany` returned, the frame of `query`'s inner `run` keeps `fetched`.
+  11. Tests still missing (review of #25): the `MigrationFailed` frame-local fix of `tabrion.sqlite.migrate` (a step
+      whose error message holds the canary, checked with `assert_clean`; L-B), the `GRANT` failure branch of
+      `_RoleSet.create` (Info-C), and a positive control for the SQLite `test_t110_layer_b_caller_connection`
+      (`canary in repr(info.value.__context__.params)`; Info-D).
+- **Next step:** decide 1, 3 and 7 with the 0.2 surface review (TB-033); 2, 5, 6 and 10 are documented behavior; 8
+  and 9 when such a plugin or path is adopted; 11 in a QA follow-up. The non-`TabrionError` path of `from_url` (review
+  C-1/L-A of #25) is closed: every exception leaves it without the helper frames.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
