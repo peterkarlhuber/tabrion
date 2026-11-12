@@ -13,6 +13,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 from typing import Any
@@ -86,6 +87,7 @@ def test_v02_manifest_matches_and_changelog_names_the_digest() -> None:
 
 
 def test_v02_a_changed_expectation_fails_the_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    version = str(conformance.build_manifest()["standard_version"])  # the current LDP version
     copy_root = tmp_path / "conformance"
     shutil.copytree(conformance.CONFORMANCE, copy_root)
     path = copy_root / "vectors" / "sql-split.json"
@@ -108,13 +110,13 @@ def test_v02_a_changed_expectation_fails_the_manifest(tmp_path: Path, monkeypatc
         conformance.verify_manifest()
     # Naming the new digest under the old version is not enough either: one LDP version has one digest (L-5).
     changelog.write_text(
-        changelog.read_text(encoding="utf-8") + f"\n- LDP-0.1.0 digest {digest[:12]}\n", encoding="utf-8"
+        changelog.read_text(encoding="utf-8") + f"\n- {version} digest {digest[:12]}\n", encoding="utf-8"
     )
-    with pytest.raises(VectorFileError, match=r"more than one digest for LDP-0\.1\.0"):
+    with pytest.raises(VectorFileError, match=f"more than one digest for {re.escape(version)}"):
         conformance.verify_manifest()
     # A new LDP version in SPEC.md (and its Changes entry) and its digest in the CHANGELOG pass.
     spec = copy_root / "SPEC.md"
-    text = spec.read_text(encoding="utf-8").replace("**Version:** LDP-0.1.0", "**Version:** LDP-1.0.0")
+    text = spec.read_text(encoding="utf-8").replace(f"**Version:** {version}", "**Version:** LDP-1.0.0")
     spec.write_text(
         text.replace("## Changes\n\n", "## Changes\n\n- **LDP-1.0.0**: LDP-SPL-001 changed; 33 rules.\n"),
         encoding="utf-8",
@@ -122,7 +124,10 @@ def test_v02_a_changed_expectation_fails_the_manifest(tmp_path: Path, monkeypatc
     for area in AREAS:
         vector_file = copy_root / "vectors" / f"{area}.json"
         vector_file.write_text(
-            vector_file.read_text(encoding="utf-8").replace("LDP-0.1.0", "LDP-1.0.0"), encoding="utf-8"
+            vector_file.read_text(encoding="utf-8").replace(
+                f'"standard_version": "{version}"', '"standard_version": "LDP-1.0.0"'
+            ),
+            encoding="utf-8",
         )
     digest = conformance.write_manifest()
     changelog.write_text(

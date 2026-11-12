@@ -20,13 +20,13 @@ The counts are the `TB-` entries below whose status is not `Done` (recounted fro
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
 TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; TAB-040 gap tests pull request: TB-137 (TAB-T-161 and
 TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 done; TB-141 review follow-up pull
-request: TB-141 done).
+request: TB-141 done; LDP-PGL-005 pull request #53: TB-142 new, in progress).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 8 |
-| P2 Medium | 16 |
+| P2 Medium | 17 |
 | P3 Low | 45 |
 | P4 Optional | 7 |
 
@@ -781,6 +781,26 @@ required (owner decision of 2026-11-08 11:26Z).
   `reason_of` strips the `reason: ` prefix of pytest 8.0; R-4 D-79 says that G-M(n) and R-01 compare skips from the
   "skip guard" section of the job logs. Not done (optional): a gated path or CODEOWNERS entry for
   `tests/ci/skip-reasons.txt`, and `TABRION_SKIP_GUARD` in the nightly workflow's own jobs (a later workflow change).
+
+### TB-142 · LDP-PGL-005 (PGL-4) failed intermittently in the CI `coverage` job
+
+- **Priority:** P2 Medium · **Status:** In progress ([#53](https://github.com/peterkarlhuber/tabrion/pull/53)) ·
+  **Refs:** LDP PGL-4, `conformance/SPEC.md` appendix A (`waiter_state`), K7/K8 zero tolerance for flaky tests,
+  `coverage` job of #49 (run 43153168719), review `tab-53-review.md` (C-1, C-2)
+- **What:** the `waiter_state` handler sampled the waiting backend every 0.1 s while the waiter polled every 0.1 s,
+  and allowed one sample that met a poll. The two loops fell into step: under coverage tracing the waiter thread got
+  the GIL when the sampler's query released it, so its poll (`SELECT 1` liveness check, then
+  `pg_try_advisory_lock`) reached the server while the sampler read `pg_stat_activity`, and two of ten samples
+  showed it `active` ("open in 2 of 10 samples"). No snapshot or statement stayed open between polls.
+  `test_l06_no_statement_and_no_snapshot_while_waiting` and `test_l12_idle_and_no_snapshot_while_waiting` in
+  `tests/postgres/test_locks.py` sampled the same way with an allowance (8 of 10 idle, at most 2 active).
+- **Fix:** LDP-0.1.1: one sampler (`waiter_sample` in `tests/postgres/test_conformance_vectors.py`) for the vector,
+  L06 and L12. It takes a sample that meets a poll in flight again once that state has ended, counts a state that
+  has lasted more than 0.2 s on the server's clock as busy (a CPU-bound statement held while waiting), counts a
+  `Lock` or `Timeout` wait as busy at once, and requires every sample to be idle without a snapshot (no allowance).
+  The vector starts sampling after the waiter's first poll; all three check that the waiter was still waiting at the
+  last sample and end the wait by handing the key over instead of a timeout. No expectation changed.
+- **Next step:** close this entry after #53 merges.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 
