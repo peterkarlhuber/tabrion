@@ -565,7 +565,7 @@ required (owner decision of 2026-11-08 11:26Z).
   - the `sqlite` floor raised to 95 %: the TAB-040 gap tests pull request adds the tests that reach it (branch
     coverage of `src/tabrion/sqlite.py` 96.5 % in the full suite, was 95.37 %), so only the floor in
     `ci.yml` remains (workflow change);
-  - the per-job skip lists (TB-141).
+  - the per-job skip lists (TB-141: skip guard with one reviewed allowlist, D-79).
   The TAB-T traceability check (`tests/unit/test_traceability.py`) runs in the unit jobs and needs no wiring.
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
@@ -759,20 +759,22 @@ required (owner decision of 2026-11-08 11:26Z).
   exist yet. RA-EVAL measures the overhead once.
 - **Next step:** with RA-EVAL, or after 0.1.0.
 
-### TB-141 · Per-job skip lists `tests/ci/skipped-<job>.txt` (planning document 07 section 4.3)
+### TB-141 · Skip guard instead of per-job skip lists (planning document 07 section 4.3, deviation D-79)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 section 4.3 (MUP-ONA T-SKIP-1), G-T2
-  ("flaky list ≤ 2, no reruns, skip lists per job"), TB-017
-- **What:** each CI job should compare the tests it skipped with its own list `tests/ci/skipped-<job>.txt` and fail
-  on any difference. The flaky list exists (`tests/ci/flaky.txt`, #40); the skip lists do not. Left out of the TAB-040
-  workflow pull request on purpose: every one of the about 25 ci-ok jobs (each Python, SQLAlchemy, PostgreSQL and
-  platform variant) skips a different set, so the lists must come from real CI runs, and a wrong list turns a
-  required check red.
-- **Next step:** a pytest plugin under `tests/` (for example `-p tests.ci.skiplist`, active only with
-  `TABRION_SKIP_LIST=<file>`) that collects the skipped node IDs with their reasons at session end and fails on a
-  difference, with a `--write` mode; one run per job with the plugin in report-only mode to record the lists; then
-  the workflow-change pull request that sets the variable per job. Alternatively, a G-T2 deviation row that names
-  `-ra` in every job's log as the skip record.
+- **Priority:** P3 Low · **Status:** In progress (pull request from branch `claude/project-thread-rdo6g3-tb141`,
+  workflow change) · **Refs:** planning document 07 section 4.3 (MUP-ONA T-SKIP-1), G-T2 ("flaky list ≤ 2, no
+  reruns, skip lists per job"), TB-017, D-79
+- **What:** no test may be skipped silently in CI. Instead of an exact list `tests/ci/skipped-<job>.txt` for each of
+  the about 25 jobs (each Python, SQLAlchemy, PostgreSQL, platform and packaging variant skips a different set, so
+  such lists break on every new or renamed test), the pytest plugin `tests/ci/skipguard.py` (loaded by
+  `tests/conftest.py`, active with `TABRION_SKIP_GUARD=1` or `--skip-guard=enforce`) fails a green run when a skip or
+  non-strict `xfail` reason matches no pattern of the reviewed allowlist `tests/ci/skip-reasons.txt`, and prints the
+  skipped node IDs with their reasons, so each job's log is its skip record (`--skip-guard=report` prints without
+  failing). Strict `xfail` is listed, not checked. Unit tests: `tests/unit/test_skipguard.py`. The pull request sets
+  `TABRION_SKIP_GUARD: "1"` at workflow level in `ci.yml` and `platforms.yml` and adds `tests/ci/**` to the
+  platforms path filter.
+- **Next step:** after the pull request merges and its CI (including macOS and Windows) is green, close this entry.
+  The nightly workflow can set the variable as well in a later workflow change.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 
