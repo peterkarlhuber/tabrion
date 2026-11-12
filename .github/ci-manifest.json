@@ -52,6 +52,7 @@
         "src/tabrion/errors.py",
         "src/tabrion/sqlite.py",
         "src/tabrion/testing/sqlite.py",
+        "tests/ci/**",
         "tests/conformance/**",
         "tests/conftest.py",
         "tests/sqlite/**",
