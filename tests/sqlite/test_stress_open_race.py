@@ -19,7 +19,7 @@ descriptor check (TAB-T-S12) and may not create links.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 import contextlib
 import os
 from pathlib import Path
@@ -71,18 +71,22 @@ class _Swapper:
 
     ``os.replace`` never leaves the name missing, so ``connect`` sees either the checked file or a link. ``hold``
     stops the swapping with a chosen state in place, so a test can make one ``connect`` whose outcome does not depend
-    on timing."""
+    on timing. Each hold has its own generation number, and the thread stays held exactly while that generation is
+    held: a hold that follows another at once can never cancel a release the thread has not seen yet.
+    ``after_placed`` (tests of this class only) runs in the thread after it reported a placement."""
 
-    def __init__(self, name: Path, right: Path, other: Path) -> None:
+    def __init__(self, name: Path, right: Path, other: Path, *, after_placed: Callable[[], None] | None = None) -> None:
         self._name = name
         self._staged = name.with_name(name.name + ".staged")
         self._right = right
         self._other = other
         self._stop = threading.Event()
-        self._hold = threading.Event()
-        self._placed = threading.Event()
-        self._release = threading.Event()
+        self._state = threading.Condition()
+        self._holding = False  # the guards of these four: _state
+        self._hold_generation = 0
         self._hold_link = False
+        self._placed_generation = 0
+        self._after_placed = after_placed
         self._random = random.Random()  # noqa: S311 - timing jitter, not security
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._link = False  # the fixture leaves the checked file in place
@@ -102,10 +106,20 @@ class _Swapper:
     def _run(self) -> None:
         try:
             while not self._stop.is_set():
-                if self._hold.is_set():
-                    self._place(self._hold_link)
-                    self._placed.set()
-                    self._release.wait(10)
+                with self._state:
+                    holding, generation, link = self._holding, self._hold_generation, self._hold_link
+                if holding:
+                    self._place(link)
+                    with self._state:
+                        self._placed_generation = generation
+                        self._state.notify_all()
+                    if self._after_placed is not None:
+                        self._after_placed()
+                    with self._state:
+                        self._state.wait_for(
+                            lambda: not (self._holding and self._hold_generation == generation) or self._stop.is_set(),
+                            timeout=10,
+                        )
                     continue
                 self._place(not self._link)
                 self.swaps += 1
@@ -132,16 +146,23 @@ class _Swapper:
     @contextlib.contextmanager
     def hold(self, *, link: bool) -> Iterator[None]:
         """Stop swapping with the link (``link=True``) or the checked file in place until the block ends."""
-        self._hold_link = link
-        self._release.clear()
-        self._placed.clear()
-        self._hold.set()
+        with self._state:
+            self._hold_generation += 1
+            generation = self._hold_generation
+            self._hold_link = link
+            self._holding = True
+            self._state.notify_all()
         try:
-            assert self._placed.wait(10), "the swapping thread did not hold"
+            with self._state:
+                placed = self._state.wait_for(
+                    lambda: self._placed_generation == generation or self.error is not None, timeout=10
+                )
+            assert placed and self.error is None, ("the swapping thread did not hold", self.error)
             yield
         finally:
-            self._hold.clear()
-            self._release.set()
+            with self._state:
+                self._holding = False
+                self._state.notify_all()
 
     def __enter__(self) -> _Swapper:
         self._interval = sys.getswitchinterval()
@@ -151,7 +172,8 @@ class _Swapper:
 
     def __exit__(self, *exc: object) -> None:
         self._stop.set()
-        self._release.set()
+        with self._state:
+            self._state.notify_all()
         self._thread.join(10)
         sys.setswitchinterval(self._interval)
         assert not self._thread.is_alive(), "the swapping thread did not stop"
@@ -253,6 +275,23 @@ def test_t123_control_plain_sqlite_opens_the_other_file(race: tuple[Path, Path, 
                 assert _tag(connection) == "other", seen
             finally:
                 connection.close()
+    assert swapper.error is None, swapper.error
+
+
+def test_back_to_back_holds_do_not_lose_the_release(race: tuple[Path, Path, Path]) -> None:
+    """The harness itself: a hold that follows another at once must not cancel a release the swapping thread has not
+    consumed yet. The thread is slowed after each placement, the window in which a shared release flag was lost;
+    each hold must still take effect at once, never by running into the 10 s timeout."""
+    name, right, other = race
+    with _Swapper(name, right, other, after_placed=lambda: time.sleep(0.05)) as swapper:
+        for _ in range(5):
+            started = time.monotonic()
+            with swapper.hold(link=True):
+                assert name.is_symlink()
+            with swapper.hold(link=False):
+                assert not name.is_symlink()
+                assert os.path.samefile(name, right)
+            assert time.monotonic() - started < 5
     assert swapper.error is None, swapper.error
 
 

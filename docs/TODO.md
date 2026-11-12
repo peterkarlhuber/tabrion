@@ -1020,8 +1020,11 @@ required (owner decision of 2026-11-08 11:26Z).
   - Invariant: no connection to the other file, the other file byte-identical with its mode, and no new file in its
     directory (0 unsafe opens). Each outcome is the checked database, `UnsafePath`, or SQLite's own "unable to open
     database file" when the name changed while SQLite resolved it (rare, nothing opened).
-  - No assertion depends on timing (review of #50, C-1): the swapping thread can be held with a chosen state in
-    place, and two held connects end each run (the link is refused, the checked file opens). The counts of the
+  - No assertion at pull-request scale depends on timing (review of #50, C-1): the swapping thread can be held
+    with a chosen state in place, and two held connects end each run (the link is refused, the checked file opens).
+    Each hold has its own generation number, so a hold that follows another at once cannot cancel a release the
+    thread has not seen (delta review D-1; `test_back_to_back_holds_do_not_lose_the_release` slows the thread after
+    each placement and fails with the earlier shared-flag handshake). The counts of the
     randomized outcomes are checked at the nightly scale only. A negative control shows that a plain read-only
     `sqlite3.connect` follows the link (held, so deterministic).
   - The false-refusal case: per repetition three threads each open, read and close five connections (each opening
