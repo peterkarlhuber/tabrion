@@ -189,7 +189,10 @@ def test_t123_control_plain_sqlite_opens_the_other_file(race: tuple[Path, Path, 
     with _Swapper(name, right, other) as swapper:
         for _ in range(max(RACE_REPEAT, 200)):
             swapper.next_swap()
-            connection = sqlite3.connect(f"file:{name}?mode=ro", uri=True)
+            try:
+                connection = sqlite3.connect(f"file:{name}?mode=ro", uri=True)
+            except sqlite3.OperationalError:
+                continue  # SQLite could not open a name that changed while it resolved it
             try:
                 seen[_tag(connection)] += 1
             except sqlite3.DatabaseError:
