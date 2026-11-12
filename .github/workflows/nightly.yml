@@ -6,7 +6,9 @@ name: Nightly
 # "downstream" (TAB-022b, TODO TB-070) runs the consumers' database tests against this commit and is not blocking.
 # "stress" (K6, QA-4, TODO TB-086) runs the stress suite with 200 repetitions, and "pg restart" (K7, TAB-T-009, TODO
 # TB-136) restarts the PostgreSQL service between two requests; both are nightly only and in the needs of "report".
-# Still to come with a later work package: fault injection 3x (TAB-034).
+# "stress" also runs the randomized open race of TAB-T-123 with 1,000 repetitions (TODO TB-045). Fault injection 3x
+# (K7, TAB-034) needs no job of its own: tests/postgres/test_faults.py runs every fault three times in each "pg" job
+# of ci.yml, which "ci" runs here every night.
 on:
   schedule:
     - cron: "30 3 * * *"
@@ -84,7 +86,8 @@ jobs:
     # K6 (planning document 07 section 4.2, QA-4, TODO TB-086): the concurrency and stress suite (`-m stress`, SQLite
     # and PostgreSQL 17) with 200 repetitions of each scenario. Pull requests run the same tests with 5 repetitions in
     # "test" and "pg"; this job is nightly only and not a ci-ok check. Every wait in the suite is bounded
-    # (tests/stress.py, hang_guard), so a deadlock ends the run with tracebacks long before the job timeout.
+    # (tests/stress.py, hang_guard), so a deadlock ends the run with tracebacks long before the job timeout. The open
+    # race test of TAB-T-123 (tests/sqlite/test_stress_open_race.py) runs 5 times the repetitions, 1,000 here.
     name: stress (200 repetitions)
     runs-on: ubuntu-latest
     timeout-minutes: 90

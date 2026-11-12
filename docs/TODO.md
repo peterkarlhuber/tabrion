@@ -327,7 +327,9 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** after the merge, the QA-11 dry run of `release.yml` on the version-bump merge commit shows the SBOM
   artifact; then set this entry to Done. Follow-up (workflow review of #47, finding 4 and optional condition C-3; a
   workflow change, so not in #47): upload the CI SBOM as its own artifact `sbom`, as `release.yml` does, so that the
-  artifact `dist` keeps the wheel at its root again. The plan as it was carried out: in `ci.yml`, jobs `build and install` and
+  artifact `dist` keeps the wheel at its root again. `release.yml` already uploads `release-dist` and `release-sbom`
+  apart; only `ci.yml` job `build and install` remains. Not in the nightly K7 pull request, which changes only the
+  floor line of `ci.yml` while the TB-141 pull request edits its test steps. The plan as it was carried out: in `ci.yml`, jobs `build and install` and
   `extras matrix`, and in `release.yml`, job `build`, replace
   `- run: python -m build --outdir dist` with
 
@@ -560,12 +562,17 @@ required (owner decision of 2026-11-08 11:26Z).
   nightly jobs `stress (200 repetitions)` (TB-086) and `pg restart` (TB-136), both in the needs of `report`.
 - **Next step:** after that pull request merges and a nightly is green, close TB-070, TB-090, TB-092, TB-086, TB-135,
   TB-136 and this entry's `conformance`, `golden files`, `examples`, `downstream` and `stress` parts. Still open:
-  - fault injection 3x (TAB-034);
   - stress 200x (QA-4, TB-086);
-  - the `sqlite` floor raised to 95 %: the TAB-040 gap tests pull request adds the tests that reach it (branch
-    coverage of `src/tabrion/sqlite.py` 96.5 % in the full suite, was 95.37 %), so only the floor in
-    `ci.yml` remains (workflow change);
   - the per-job skip lists (TB-141).
+- **Status note (2026-11-12, the nightly K7 pull request (branch `claude/project-thread-rdo6g3-nightly-k7`)):**
+  - Fault injection 3x (TAB-034, K7) needs no nightly job of its own: `tests/postgres/test_faults.py` runs every
+    fault scenario three times (`RUNS = range(3)`, TAB-T-170) and is marked `postgres`, so each `pg (...)` job of
+    `ci.yml` (`pytest -m postgres`, eight matrix entries) runs it, and `nightly.yml` calls `ci.yml` every night. The
+    comment "Still to come ... fault injection 3x" in `nightly.yml` now says so; this part is done.
+  - The `sqlite` coverage floor in `ci.yml` is 95 % (was 94.9 %), K1's value. Measured with the `coverage` job's
+    command on this branch: see the pull request. The comment above the `coverage` job still names the old
+    measurements (left alone so as not to collide with the TB-141 edits of `ci.yml`); update it with the next
+    `ci.yml` change.
   The TAB-T traceability check (`tests/unit/test_traceability.py`) runs in the unit jobs and needs no wiring.
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
@@ -966,8 +973,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-045 · SQLite open race: descriptor identity check and randomized race test (TAB-T-123, QA-4)
 
-- **Priority:** P3 Low · **Status:** In progress (hardening in the TB-045 pull request; the randomized test is
-  open) · **Refs:** TABRION TAB-013, QA-4, TM-04, TAB-T-123, contract I-22
+- **Priority:** P3 Low · **Status:** In progress (hardening and the randomized test are in; the `diagnose` field and
+  the BSD check are open) · **Refs:** TABRION TAB-013, QA-4, TM-04, TAB-T-123, contract I-22
 - **What:** planning document 07 asks for a race test with 1,000 repetitions (a link swapped in between the check
   and the open, 0 hits). The pull request tests every window deterministically through seams (TAB-T-S07: before
   creation, after the check, while SQLite opens and swapped back, an inode swap); a randomized repetition test would
@@ -975,13 +982,24 @@ required (owner decision of 2026-11-08 11:26Z).
   which no check of the name sees: on POSIX `connect` now verifies that the descriptor SQLite opened is the checked
   file (I-22 (e), `test_tb045_*` with mutation probes), and the last name check resolves the directory only. On
   Windows the name checks remain the only check (documented and tested as such).
-- **Next step:** add the randomized race test to the nightly stress job with QA-4, including the false-refusal
-  case of the security review (F3: threads opening unrelated files, and other connections opening the `-wal`, while
-  the database is held). Target: no false `UnsafePath` under a realistic pool load (connections opened and closed
-  by a few threads, occasional unrelated file opens); under deliberately aggressive load the rate is measured and
-  reported, not required to be 0. Also open: a `diagnose` field that says whether the descriptor check is active
-  (review F9), and verifying the descriptor listing on a BSD (unverified there; without a passing probe a BSD
-  gets the name checks only, review F15). Then close.
+- **Status note (2026-11-12, the nightly K7 pull request (branch `claude/project-thread-rdo6g3-nightly-k7`)):**
+  `tests/sqlite/test_stress_open_race.py` (marked `stress`, POSIX only) is the randomized test. A thread replaces
+  the database name at random short intervals, by turns with a link to another database (0644, so owner and mode
+  checks pass) and a hard link to the checked one, while `connect` runs; `5 * TABRION_STRESS_REPEAT` repetitions,
+  25 on pull requests and 1,000 in the nightly `stress (200 repetitions)` job. Invariant: no connection to the other
+  file and the other file byte-identical with its mode (0 unsafe opens); each outcome is the checked database,
+  `UnsafePath`, or SQLite's own "unable to open database file" when the name changed while SQLite resolved it (rare,
+  nothing opened). A control with a plain read-only `sqlite3.connect` under the same swapping opens the other file,
+  so the test can fail. The false-refusal case: per repetition three threads each open, read and close five
+  connections (each opening the `-wal` and `-shm`) while another connection holds the database and a thread opens
+  an unrelated file every few milliseconds; 0 `UnsafePath` in 1,000 repetitions. Local runs (Linux, 4 cores,
+  1,000 repetitions, 3 runs plus 4 runs in parallel): all green; of 3,000 swapped connects about 39 % opened the
+  checked database, 58 % were refused at the first link check, 1.7 % later (the window between check and open), 0.1 %
+  by SQLite itself. TAB-T-123 is Covered in `docs/program/traceability.md`.
+- **Next step:** a `diagnose` field that says whether the descriptor check is active (review F9), and verifying the
+  descriptor listing on a BSD (unverified there; without a passing probe a BSD gets the name checks only, review
+  F15). The aggressive-load false-refusal rate (about 2 %, contract I-22) stays a measurement, not a test. Then
+  close.
 
 ### TB-046 · ATTACH on a read-only SQLite connection creates an empty file (review I-1)
 
