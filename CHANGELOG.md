@@ -148,12 +148,23 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   package's minor is still only `staged`, or when its body, after the docstring, is only
   `raise NotImplementedError`, `pass` or `...`. The body is read with `ast`, so nothing is called.
 - `docs/program/traceability.md` maps each of the 53 numbered plan test IDs (TAB-T-001..300; G-T2, K2, K8) to the
-  tests that cover it, and marks 3 partial IDs and 5 gaps (TODO TB-136..TB-140).
+  tests that cover it, and marks 2 partial IDs and 1 gap (TODO TB-045, TB-139, TB-140).
+  `tests/unit/test_traceability.py` checks that every ID has a row and that every named test exists.
 - TAB-T-009 (K7, TB-136): `tests/postgres/test_restart_postgres.py` restarts the PostgreSQL server between two
   requests and checks that the first request through a pool with `pool_pre_ping` succeeds, with a pool without it as
   the control. New marker `restart`; the test runs only when `TABRION_PG_RESTART_COMMAND` is set (the nightly job
   `pg restart`) and is skipped elsewhere.
-  `tests/unit/test_traceability.py` checks that every ID has a row and that every named test exists.
+- Tests for the TAB-040 gaps:
+  - TAB-T-021: timestamps across both 2026 DST switches, on both parts variants and both engines.
+  - TAB-T-025: the `:x::int` error on PostgreSQL and SQLite, and the `CAST(:x AS int)` form. The error has no hint
+    yet (TB-139).
+  - TAB-T-162: row-level security with `FORCE`, a non-owner runtime role, and two tenants through
+    `Database.transaction()` with `set_config(..., true)`.
+  - TAB-T-161: the next checkout after a failed, raised or interrupted transaction is idle.
+  - TAB-T-202: the restore drill of the measurements application.
+  - K1: branch tests for `tabrion.sqlite`, which lift its coverage above 95 %. They cover a failed `fchmod` or
+    `fstat` after the exclusive create, a name `lstat` cannot inspect, a name changed after SQLite opened the
+    file, a failing `ROLLBACK`, and a `COMMIT` that SQLite rolled back itself.
 
 ### Changed
 

@@ -45,11 +45,11 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 | TAB-T-011 | DI-06: a database newer than the code stops without a write | `tests/sqlite/test_migrate.py::test_s23_schema_too_new`, `tests/unit/test_migrations.py::test_m04_unknown_newer_revision` | Covered |
 | TAB-T-012 | DI-06: the Alembic gate `require_current` | `tests/unit/test_migrations.py::test_m08_require_current`, `tests/examples/test_parts.py::test_require_current_under_a_read_only_profile` | Covered |
 | TAB-T-020 | DI-07, probes S2 and S3: a portability table pins the return type per engine | `tests/unit/test_profile_cases.py::test_portability_cases_pass_on_sqlite`, `tests/postgres/test_portability_postgres.py::test_portability_cases_pass_on_postgres`, `tests/unit/test_profile_cases.py::test_sqlite_pitfall_numeric_goes_through_float`, `tests/unit/test_profile_cases.py::test_sqlite_pitfall_datetime_with_timezone_comes_back_naive` | Covered |
-| TAB-T-021 | DI-08: timestamps round-trip (naive and aware, a DST boundary, microseconds) | `tests/examples/parts_suite.py::PartsSuite::test_values_round_trip_exactly`, `tests/examples/parts_suite.py::PartsSuite::test_types_refuse_floats_and_naive_timestamps`, `tests/examples/parts_suite.py::PartsSuite::test_timestamps_order_and_round_trip_before_year_1000`, `tests/examples/test_parts.py::test_postgresql_results_are_utc_under_another_session_timezone`, `tests/examples/test_measurements.py::test_timestamps_are_stored_in_utc_and_read_back_in_order`. No test crosses a DST boundary | Partial (TB-139) |
+| TAB-T-021 | DI-08: timestamps round-trip (naive and aware, a DST boundary, microseconds) | `tests/examples/parts_suite.py::PartsSuite::test_values_round_trip_exactly`, `tests/examples/parts_suite.py::PartsSuite::test_types_refuse_floats_and_naive_timestamps`, `tests/examples/parts_suite.py::PartsSuite::test_timestamps_order_and_round_trip_before_year_1000`, `tests/examples/parts_suite.py::PartsSuite::test_timestamps_round_trip_across_a_dst_boundary`, `tests/examples/test_parts.py::test_postgresql_results_are_utc_under_another_session_timezone`, `tests/examples/test_measurements.py::test_timestamps_are_stored_in_utc_and_read_back_in_order` | Covered |
 | TAB-T-022 | DI-09: decimal amounts round-trip exactly on both engines in the recommended pattern | `tests/examples/parts_suite.py::PartsSuite::test_values_round_trip_exactly`, `tests/examples/parts_suite.py::PartsSuite::test_decimals_order_and_compare_alike_on_both_engines`, `tests/examples/parts_suite.py::PartsSuite::test_decimals_are_stored_scaled_on_sqlite_and_numeric_on_postgresql`, `tests/examples/test_parts.py::test_exact_decimal_precision_limit` | Covered |
 | TAB-T-023 | Probe S2: the reference app's STRICT or CHECK pattern enforces the length and type | `tests/examples/parts_suite.py::PartsSuite::test_constraints_hold_on_both_engines`, `tests/examples/parts_suite.py::PartsSuite::test_every_check_has_a_case`, `tests/examples/test_measurements.py::test_a_constraint_violation_becomes_a_fixed_error` | Covered |
 | TAB-T-024 | Probe S4: `connect` sets `journal_mode=wal` for files | `tests/sqlite/test_connect.py::test_s10_pragmas_after_connect`, `tests/sqlite/test_findings.py::test_k02_journal_mode_not_wal` | Covered |
-| TAB-T-025 | Probe P5 (`:x::int`): a doc example with `CAST`; a test shows the error message with its hint | The guides show `CAST(:x AS int)` (`docs/guides/database.md`, `docs/guides/portability.md`). No test asserts the message or a hint | Gap (TB-139) |
+| TAB-T-025 | Probe P5 (`:x::int`): a doc example with `CAST`; a test shows the error message with its hint | `tests/postgres/test_database.py::test_t025_double_colon_cast_is_a_syntax_error`, `tests/unit/test_database.py::test_t025_double_colon_cast_on_sqlite`; the guides show `CAST(:x AS int)` (`docs/guides/database.md`, `docs/guides/portability.md`). The tests pin the error (PostgreSQL `Kind.SYNTAX`, SQLSTATE 42601; SQLite `Kind.UNKNOWN`) and the `CAST` form; the error carries no hint that names the collision | Partial (TB-139) |
 | TAB-T-101 | TM-01, SR-01: no Bandit or ruff `S608` finding in `src/` and `examples/` | ruff with rule set `S` (`pyproject.toml`), run by the CI jobs `lint` (`ruff check .`) and `security` (`ruff check --select S src examples`); `CONTRIBUTING.md` records ruff `S` as the Bandit substitute. Not a pytest test | Covered |
 | TAB-T-102 | TM-01: an identifier with `"` or `;` is quoted correctly or refused | `tests/postgres/test_grants.py::test_r18_quoted_names_and_a_hostile_search_path`, `tests/postgres/test_session.py::test_p01_search_path_is_quoted`, `tests/postgres/test_health.py::test_p14_command_quotes_the_schema`, `tests/sqlite/test_checks.py::test_s38_table_name_is_quoted` | Covered |
 | TAB-T-110 | TM-02, SR-05: the canary value never appears in `str`, `repr`, a traceback or a log record, for every `Kind` | `tests/security/test_canary_sqlite.py::test_t110_layer_a_statement_errors`, `tests/security/test_canary_sqlite.py::test_t110_layer_b_connection_unknown_resource`, `tests/postgres/test_canary_postgres.py::test_t110_layer_a_serialization`, `tests/postgres/test_canary_postgres.py::test_t110_layer_b_serialization_and_deadlock`, `tests/unit/test_errors.py::test_e10_canary_never_in_safe_message` | Covered |
@@ -70,8 +70,8 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 | TAB-T-151 | TM-07: `BYPASSRLS` is refused | `tests/postgres/test_roles.py::test_r03_bypass_rls`, `tests/postgres/test_roles.py::test_r20_login_role_that_can_become_bypassrls_after_set_role` | Covered |
 | TAB-T-152 | TM-07, SR-03: the catalog after `grant_runtime_role` matches the golden file | `tests/postgres/test_grants.py::test_r11_axentra_golden`, `tests/postgres/test_grants.py::test_r12_nodestro_golden`, `tests/postgres/test_grants.py::test_r12_golden_file_matches_the_oracles` | Covered |
 | TAB-T-160 | TM-08: after a transaction with `set_config(..., true)`, the setting is empty on the same connection | `tests/postgres/test_session.py::test_p16_pool_shared_by_two_consumers`, `tests/postgres/test_contract_rules.py::test_g01_g02_writers`, `tests/postgres/test_v02_postgres.py::test_b37_on_begin_sets_transaction_local_state` | Covered |
-| TAB-T-161 | TM-08: a connection with an open transaction is never reused | `tests/postgres/test_database.py::test_b21_connections_return_after_errors`, `tests/unit/test_database.py::test_b22_failed_reset_invalidates_the_connection`, `tests/unit/test_database.py::test_b09_failed_rollback_invalidates_the_connection`, `tests/postgres/test_session.py::test_p02_session_configurator_commits_and_leaves_idle`. Indirect only: a connection goes back to the pool after an error, and one whose reset or rollback fails is invalidated; no test asserts that the next checkout is idle | Partial (TB-137) |
-| TAB-T-162 | SR-10: an RLS table, two tenants through `transaction()` with `set_config(..., true)`, no access across tenants | none | Gap (TB-137) |
+| TAB-T-161 | TM-08: a connection with an open transaction is never reused | `tests/postgres/test_database.py::test_t161_next_checkout_after_a_failed_transaction_is_idle`, `tests/postgres/test_database.py::test_b21_connections_return_after_errors`, `tests/unit/test_database.py::test_b22_failed_reset_invalidates_the_connection`, `tests/unit/test_database.py::test_b09_failed_rollback_invalidates_the_connection`, `tests/postgres/test_session.py::test_p02_session_configurator_commits_and_leaves_idle` | Covered |
+| TAB-T-162 | SR-10: an RLS table, two tenants through `transaction()` with `set_config(..., true)`, no access across tenants | `tests/postgres/test_database.py::test_t162_rls_two_tenants_through_transaction` | Covered |
 | TAB-T-170 | TM-09: a lost reply is `Kind.CONNECTION`; the statement runs exactly once on the server | `tests/postgres/test_faults.py::test_t170_reply_lost_the_statement_ran_once`, `tests/postgres/test_faults.py::test_t170_reply_lost_during_commit`, `tests/postgres/test_faults.py::test_t170_request_lost_the_statement_never_ran` | Covered |
 | TAB-T-180 | TM-10: the core wheel has no `Requires-Dist` outside an extra | `tests/packaging/test_artifacts.py::test_core_wheel_requires_nothing` | Covered |
 | TAB-T-181 | TM-10: every workflow `uses:` is pinned to a 40-character SHA | `tests/security/test_workflow_pins.py::test_actions_are_pinned_by_commit_sha`, `tests/security/test_workflow_pins.py::test_the_checks_catch_a_tag` | Covered |
@@ -80,7 +80,7 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 | TAB-T-191 | TM-11: an unknown code is `Kind.UNKNOWN`, `retryable=False` | `tests/unit/test_errors.py::test_e01_e09_postgres_mapping` (rows `XX000`, `0A000`), `tests/unit/test_errors.py::test_e13_classify_never_raises` | Covered |
 | TAB-T-200 | TM-12: a backup under parallel writers passes `integrity_check` | `tests/sqlite/test_backup.py::test_s34_backup_while_another_connection_writes`, `tests/sqlite/test_stress_sqlite.py::test_backup_during_writes_is_a_consistent_snapshot` | Covered |
 | TAB-T-201 | TM-12: an abort in the middle of a backup leaves no half target | `tests/sqlite/test_backup.py::test_s32_abort_leaves_no_half_target` | Covered |
-| TAB-T-202 | DI-11: restore drill of reference app B: backup, delete the file, restore, same count | none | Gap (TB-138) |
+| TAB-T-202 | DI-11: restore drill of reference app B: backup, delete the file, restore, same count | `tests/examples/test_measurements.py::test_t202_restore_drill` | Covered |
 | TAB-T-210 | SQ-05 (Studio basis): read-only enforced by the database, not by a text filter | `tests/sqlite/test_connect.py::test_s08_read_only_never_writes`, `tests/unit/test_database.py::test_b11_read_is_enforced_by_sqlite`, `tests/postgres/test_database.py::test_b12_read_is_enforced_by_postgres`, `tests/postgres/test_database.py::test_b12_read_only_profile` | Covered |
 | TAB-T-211 | SQ-06 (Studio basis): time and row limits per query | `tests/unit/test_v02_database.py::test_b27_max_rows_is_enforced`, `tests/postgres/test_v02_postgres.py::test_b27_max_rows`, `tests/postgres/test_v02_postgres.py::test_b30_query_timeout` | Covered (0.2) |
 | TAB-T-212 | SQ-06 (Studio basis): stop through `cancel()` or `interrupt()` | `tests/unit/test_v02_database.py::test_b15_cancel_from_a_second_thread`, `tests/postgres/test_v02_postgres.py::test_b15_cancel_from_a_second_thread`, `tests/postgres/test_v02_postgres.py::test_b35_stream_timeout_and_cancel` | Covered (0.2) |
@@ -88,24 +88,19 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 
 ## Summary
 
-- **Covered:** 46 IDs (two of them, TAB-T-211 and TAB-T-212, on staged 0.2 APIs; TAB-T-009 in the nightly job
+- **Covered:** 50 IDs (two of them, TAB-T-211 and TAB-T-212, on staged 0.2 APIs; TAB-T-009 in the nightly job
   `pg restart` only).
-- **Partial:** 3 IDs.
-  - TAB-T-021: no DST boundary (TB-139).
+- **Partial:** 2 IDs.
+  - TAB-T-025: the error for `:x::int` is tested, but it has no hint (TB-139).
   - TAB-T-123: no randomized 1,000x race (TB-045).
-  - TAB-T-161: covered only indirectly; no test asserts that the next checkout is idle (TB-137).
-- **Gap:** 4 IDs.
-  - TAB-T-025: the error hint for `:x::int` (TB-139).
-  - TAB-T-162: RLS with two tenants (TB-137).
-  - TAB-T-202: restore drill (TB-138).
+- **Gap:** 1 ID.
   - TAB-T-300: benchmark, not a gate (TB-140).
 
-The gaps belong to these categories:
+The open parts belong to these categories:
 
-- Portability: TAB-T-021, TAB-T-025.
-- Pool and RLS compatibility (TM-08, SR-10): TAB-T-161, TAB-T-162.
-- Backup and restore: TAB-T-202.
+- Portability: TAB-T-025 (the hint only).
+- Symbolic-link race: TAB-T-123 (the randomized repetition only).
 - A non-gating benchmark: TAB-T-300.
 
-In K8's TAB-T-101..191, only TAB-T-161 (partial) and TAB-T-162 (gap) are open. The owner decides with TAB-040 whether each gap blocks
+K8's TAB-T-101..191 has no gap; TAB-T-123 is partial. The owner decides with TAB-040 whether each open part blocks
 G-T2 or becomes a deviation.

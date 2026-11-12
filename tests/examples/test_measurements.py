@@ -385,3 +385,50 @@ def test_cli_errors_name_no_values(
     assert captured.err == f"measurements: {message}\n" and "CANARY" not in captured.err + captured.out
     assert app.main([*base, "count"]) == 0
     assert capsys.readouterr().out == "0\n"
+
+
+def test_t202_restore_drill(tmp_path: Path) -> None:
+    """TAB-T-202 (planning document 07, DI-11): the restore drill of reference application B (Tabrion variant).
+
+    Back up the live database with ``tabrion.sqlite.backup``, close it and delete the file with its side files,
+    restore by replacing the file while the database is closed, then ``integrity_check``: the count, the rows and the
+    transfer mark are the same, and a new capture continues after the last ``seq``."""
+    from measurements import Measurement, Store, open_database
+    from measurements.store import synthetic
+
+    from tabrion import sqlite as tsqlite
+
+    path, backups, copy = tmp_path / "m.db", tmp_path / "backups", tmp_path / "drill" / "m-backup.db"
+    copy.parent.mkdir()
+    connection = open_database(path, backup_dir=backups)
+    try:
+        store = Store(connection)
+        assert store.capture(synthetic(2_500)) == 2_500
+        store.advance("upstream", 1_200)
+        count, rows, mark = store.count(), store.after(0, limit=5_000), store.mark("upstream")
+        result = tsqlite.backup(connection, copy)
+        assert result.quick_check == "ok"
+    finally:
+        connection.close()
+
+    for name in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+        name.unlink(missing_ok=True)
+    assert not path.exists()
+
+    tsqlite.create_private_file(path)  # 0600 before a byte of the data is written
+    path.write_bytes(copy.read_bytes())
+    if sys.platform != "win32":
+        assert mode(path) == 0o600
+
+    connection = open_database(path, backup_dir=backups)
+    try:
+        assert tsqlite.integrity_check(connection).ok
+        store = Store(connection)
+        assert (store.count(), store.after(0, limit=5_000), store.mark("upstream")) == (count, rows, mark)
+        late = Measurement("dev-1", "temp", datetime(2027, 1, 1, tzinfo=UTC), 1.0, "degC")
+        assert store.capture([late]) == 1
+        assert [s.seq for s in store.after(count)] == [count + 1]
+    finally:
+        connection.close()
+    assert not backups.exists()  # the restored file is current: no migration, so no migration backup
+    assert user_version(path) == user_version(copy)
