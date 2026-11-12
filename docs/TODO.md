@@ -857,7 +857,9 @@ required (owner decision of 2026-11-08 11:26Z).
      processor (it has its own unit tests).
   10. A `BaseException` that is no `Exception` (such as `KeyboardInterrupt`) inside `connection.execute` is not
       translated: Tabrion's frames (`_run`, `_step`, `query`, `stream`) drop the SQL text and the parameters on the
-      way out, SQLAlchemy's frames keep the parameters (review Info-B of #25, I-76).
+      way out, SQLAlchemy's frames keep the parameters (review Info-B of #25, I-76). These exits are pinned by
+      `test_t111_frame_locals_hold_no_values_v02_early_exits` (review L-1 of rv-25m). Left open (Info-1 of rv-25m):
+      when `result.close()` raises after `fetchmany` returned, the frame of `query`'s inner `run` keeps `fetched`.
   11. Tests still missing (review of #25): the `MigrationFailed` frame-local fix of `tabrion.sqlite.migrate` (a step
       whose error message holds the canary, checked with `assert_clean`; L-B), the `GRANT` failure branch of
       `_RoleSet.create` (Info-C), and a positive control for the SQLite `test_t110_layer_b_caller_connection`

@@ -21,7 +21,9 @@ import os
 from pathlib import Path
 import sqlite3
 import threading
+import traceback
 from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -620,6 +622,109 @@ def test_t111_frame_locals_hold_no_values_v02(path: str, canary: str) -> None:
                 call()
             assert canary in frame_locals(info.value, own=True)  # the capture sees the test's frames
             assert_clean(info.value, canary, text)
+    finally:
+        database.close()
+
+
+def _tabrion_frame_locals(exc: BaseException) -> str:
+    """The locals of the frames of ``exc``'s traceback that belong to the ``tabrion`` package (``capture_locals``)."""
+    import tabrion
+
+    package = str(Path(tabrion.__file__).resolve().parent)
+    summary = traceback.TracebackException.from_exception(exc, capture_locals=True)
+    frames = [frame for frame in summary.stack if str(Path(frame.filename).resolve()).startswith(package)]
+    assert frames, f"no Tabrion frame in the traceback of {exc!r}"
+    return "\n".join(f"{frame.filename}:{frame.lineno} in {frame.name}: {frame.locals!r}" for frame in frames)
+
+
+def test_t111_frame_locals_hold_no_values_v02_early_exits(
+    path: str, canary: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """I-76 (review L-1 of rv-25m, #25): the exits of the 0.2 statement paths that end before or between round
+    trips drop the SQL text, the parameters and fetched rows too: an ended transaction, a refused argument, a
+    refused ``COMMIT``, ``Canceled`` before the statement, a failure after the rows were fetched, and a
+    ``BaseException`` that is no ``Exception`` (``KeyboardInterrupt``) from the driver, which leaves through the
+    outer handler of ``Transaction._step``. SQLAlchemy's own frames keep the parameters then (TB-085 item 10); only
+    Tabrion's frames are checked for it."""
+    import sqlalchemy
+
+    from tabrion._sa import _v02
+    from tabrion._sa._staged import _StagedDatabase, _StagedTransaction
+
+    text = new_canary("sql-")
+    select = f"SELECT v FROM t WHERE v = :v -- {text}"
+    database = _StagedDatabase.from_url(f"sqlite:///{path}")
+    assert isinstance(database, _StagedDatabase)
+
+    def staged(transaction: object) -> _StagedTransaction:
+        assert isinstance(transaction, _StagedTransaction)
+        return transaction
+
+    def ended() -> _StagedTransaction:
+        with database.read() as tx:
+            pass
+        return staged(tx)
+
+    def query_ended() -> None:
+        ended().query(select, {"v": canary})
+
+    def stream_ended() -> None:
+        ended().stream(select, {"v": canary})
+
+    def stream_batch_size_zero() -> None:
+        with database.read() as tx:
+            staged(tx).stream(select, {"v": canary}, batch_size=0)
+
+    def query_commit() -> None:
+        with database.read() as tx:
+            staged(tx).query(f"COMMIT -- {text}", {"v": canary})
+
+    def query_canceled() -> None:
+        with database.read() as tx:
+            staged(tx).cancel()
+            staged(tx).query(select, {"v": canary})
+
+    try:
+        for call in [query_ended, stream_ended, query_commit, query_canceled]:
+            with pytest.raises(TabrionError) as info:
+                call()
+            assert canary in frame_locals(info.value, own=True)  # the capture sees the test's frames
+            assert_clean(info.value, canary, text)
+
+        with pytest.raises(ValueError, match="batch_size") as refused:  # not Tabrion's error: Tabrion's frames only
+            stream_batch_size_zero()
+        assert canary in frame_locals(refused.value, own=True)
+        found = _tabrion_frame_locals(refused.value)
+        assert canary not in found and text not in found, found
+
+        # The rows are fetched (they hold the canary), then the column step fails.
+        def columns_fail(*args: object) -> None:
+            raise RuntimeError("columns")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(_v02, "_columns", columns_fail)
+            with database.read() as tx, pytest.raises(RuntimeError) as failed:
+                staged(tx).query(select, {"v": canary})
+        assert canary in frame_locals(failed.value, own=True)
+        found = _tabrion_frame_locals(failed.value)
+        assert canary not in found and text not in found, found
+
+        # KeyboardInterrupt from the driver: past ``except Exception`` of ``_step``, through its outer handler.
+        def interrupted_query() -> None:
+            database.query(select, {"v": canary})
+
+        def interrupted_stream() -> None:
+            with database.read() as tx:
+                list(staged(tx).stream(select, {"v": canary}))
+
+        for call in [interrupted_query, interrupted_stream]:
+            with monkeypatch.context() as patch:
+                patch.setattr(sqlalchemy.Connection, "execute", mock.Mock(side_effect=KeyboardInterrupt()))
+                with pytest.raises(KeyboardInterrupt) as interrupt:
+                    call()
+            assert canary in frame_locals(interrupt.value, own=True)
+            found = _tabrion_frame_locals(interrupt.value)
+            assert canary not in found and text not in found, found
     finally:
         database.close()
 

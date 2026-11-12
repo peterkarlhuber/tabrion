@@ -170,8 +170,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   generated role password. A caller of `truncate_tables` with an unreachable URL gets pytest's `Failed` instead of
   `psycopg.OperationalError`.
 - Layer B and `tabrion.config` keep values out of the frame locals of their tracebacks, which Sentry, `rich` and
-  `pytest -l` show: the statement parameters and SQL text (`execute`, `fetch_*`, on `Database` and `Transaction`),
-  the fetched rows of `MultipleRowsError`, the URL and `engine_options` of `from_url` and `from_env` (every
+  `pytest -l` show: the statement parameters and SQL text (`execute`, `fetch_*`, on `Database` and `Transaction`;
+  the staged 0.2 `query` and `stream` with the rows of an earlier batch; also when `Canceled` or a `KeyboardInterrupt`
+  leaves them), the fetched rows of `MultipleRowsError`, the URL and `engine_options` of `from_url` and `from_env` (every
   exception of `from_url`, also a `TypeError` of `create_engine` for an unknown engine option, is raised without
   the frames of its helpers), the environment and the file
   content in `url_from_env`, and the original error of `BackupFailed` and `MigrationFailed` in `tabrion.sqlite.migrate`
