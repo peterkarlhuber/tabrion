@@ -4,7 +4,8 @@ The status of every work package of the Tabrion program: the backlog of planning
 M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-12, `0.1.1.dev0` follow-up pull request after the `v0.1.0` release commit `d5821fa` (#56):
+> **Last update:** 2026-11-12, owner decisions of 15:37Z on STU-024 (D-122) and 15:45Z on STU-021 (D-123); the
+> tabrion-studio rows synced to master `34ae38b` (#24, #25, #29, #30, #32, #33, #35, #36). Before: 2026-11-12, `0.1.1.dev0` follow-up pull request after the `v0.1.0` release commit `d5821fa` (#56):
 > TAB-040 and QA-11 done, QA-4 and TAB-022 (b) closed, D-85 closed, D-86 new, G-T2 for 0.1.0 (review of #56, C-4).
 > Then: bookkeeping pull request after `v0.1.0` (reviews of #56 and #57): D-2, D-90 and D-92 closed, the QA-8 row
 > updated, and the tabrion-studio merges of STU-009 (#15), STU-011 (#18) and STU-010 (#19, backend) recorded as
@@ -44,8 +45,8 @@ the owning thread reports it.
 | M3 | Versioning, Axentra security evidence, waves W1 and W2, architecture checks | TAB-040 `v0.1.0` final (RC-8) | G-M per step | Not started |
 | M4 | Tabrion 0.2 (Studio APIs); TAB-CR-1/2 from CR-DB | G-T2 | G-T2 for 0.2 (TAB-042); no PyPI publication planned, one only after G-R | Not started |
 | M5 | Waves W3-W6 | M3 | G-M per step | Not started |
-| M6 | Studio MVP 0.1 | GOV-3, TAB-002 (skeleton), TAB-042 (main part) | G-S1 (STU-016) | In progress (tabrion-studio work packages merged up to STU-011; [M6 table](#m6-studio-mvp-01-g-s1)) |
-| M7 | Studio 1.0 without the data editor | G-S1 | G-R for a public release (STU-028) | Not started |
+| M6 | Studio MVP 0.1 | GOV-3, TAB-002 (skeleton), TAB-042 (main part) | G-S1 (STU-016) | In progress (tabrion-studio master `34ae38b`: STU-015 done, the backends of STU-010, STU-013 and STU-014 merged; [M6 table](#m6-studio-mvp-01-g-s1)) |
+| M7 | Studio 1.0 without the data editor | G-S1 | G-R for a public release (STU-028) | In progress (STU-024 done and STU-021's backend merged before STU-017 by the owner-accepted D-122 and D-123; the other M7 packages wait for STU-017) |
 | M7b | Conditional data editor (STU-026) | G-S2 | outside the 1.0 acceptance | Not started |
 | M8 | Program close | M5, M7 | QA-24 closing record, then M-REV six-month review | Not started |
 | **M9** | **Nodestro database nodes and export (CR-DB)**: database connections, node `database`, agent database tools, export with drivers, E2E, security review | M4 (Tabrion 0.2 final), PIN-W6 (SQLite wave in Nodestro), JQ-3; its own lane in parallel to M6/M7 | Security review of the Nodestro database work before the write operations merge (NOD-CR-15); G-R for any release | Not started |
@@ -195,7 +196,7 @@ Planned effort: 18.85 + 9.2 agent days.
 
 Planned effort: 59 + 18 agent days.
 
-The authoritative Studio status is `docs/TODO.md` in tabrion-studio; the rows below mirror it as of master `144eac7`.
+The authoritative Studio status is `docs/TODO.md` in tabrion-studio; the rows below mirror it as of master `34ae38b` (2026-11-12).
 
 | WP | Title | Repositories | Depends on | Gate | Effort (impl + review) | Lane | Status | Evidence |
 |---|---|---|---|---|---|---|---|---|
@@ -212,12 +213,12 @@ The authoritative Studio status is `docs/TODO.md` in tabrion-studio; the rows be
 | STU-007 | Secret management | tabrion-studio | STU-006 | - | 1.5 + 0.75 | Studio | Done | Merged in tabrion-studio [#10](https://github.com/peterkarlhuber/tabrion-studio/pull/10) (`0af1831`); review accepted with conditions, the rest is Studio TODO TD-010 |
 | STU-009 | Connection registry and read-only enforcement | tabrion-studio | STU-007, TAB-040 | - | 2.5 + 1.25 | Studio | Done | Merged in tabrion-studio [#15](https://github.com/peterkarlhuber/tabrion-studio/pull/15) (`6afe5be`, 2026-11-12); pins tabrion `v0.1.0` by its full SHA `d5821faa8742dea012abda3b663549c038d76543` (`constraints/tabrion-integration.txt`) |
 | STU-008 | Connection manager UI and connection test | tabrion-studio | STU-005, STU-007, STU-009 | - | 3 + 0.75 | Studio | In progress | Main part merged in tabrion-studio [#11](https://github.com/peterkarlhuber/tabrion-studio/pull/11) (`e8b1d05`), follow-ups [#13](https://github.com/peterkarlhuber/tabrion-studio/pull/13) (`dc94f5d`) and [#14](https://github.com/peterkarlhuber/tabrion-studio/pull/14) (`160f60b`); the parts that need STU-009 (connection test and Connect in the page) are Studio TODO TD-011 |
-| STU-014 | Diagnosis (MVP) | tabrion-studio | STU-009 | - | 3 + 0.75 | Studio | Not started |  |
-| STU-015 | Migration status Alembic and SQLite | tabrion-studio | STU-009 | - | 2 + 0.5 | Studio | Not started |  |
+| STU-014 | Diagnosis (MVP) | tabrion-studio | STU-009 | - | 3 + 0.75 | Studio | In progress | Backend merged in tabrion-studio [#25](https://github.com/peterkarlhuber/tabrion-studio/pull/25) (`69b5942`, 2026-11-12; reviews `stu-014-review.md` and delta accepted); the diagnostics view in the page is open (Studio TODO) |
+| STU-015 | Migration status Alembic and SQLite | tabrion-studio | STU-009 | - | 2 + 0.5 | Studio | Done | Backend merged in tabrion-studio [#29](https://github.com/peterkarlhuber/tabrion-studio/pull/29) (`fc34a94`, 2026-11-12; Windows TD-024 done), the page (status view, code-trust dialog) in [#32](https://github.com/peterkarlhuber/tabrion-studio/pull/32) (`2cfb380`; review C-1 and delta checks accepted) |
 | STU-010 | Explorer | tabrion-studio | STU-009, TAB-042 | - | 4 + 1 | Studio | In progress | Backend (catalog, table detail, extensions, SQLite facts) merged in tabrion-studio [#19](https://github.com/peterkarlhuber/tabrion-studio/pull/19) (`144eac7`, 2026-11-12) on the same tabrion `v0.1.0` pin, through `tabrion_compat.inspector` until TAB-042 (TD-013); the page and the E2E test against the reference apps come with STU-012 and STU-050 |
 | STU-011 | Query engine (SSE, caps, cancel) | tabrion-studio | STU-009, TAB-042 | - | 4 + 2 | Studio | Done: conditional | Merged in tabrion-studio [#18](https://github.com/peterkarlhuber/tabrion-studio/pull/18) (`98c4ccd`, 2026-11-12) on the same tabrion `v0.1.0` pin. Condition: built on tabrion 0.1 primitives behind `services/tabrion_compat.py` until TAB-042 (tabrion 0.2) exists; that module and the known gaps are tabrion-studio TODO TD-013 |
 | STU-012 | SQL editor UI (MVP) | tabrion-studio | STU-011 | - | 5 + 1.25 | Studio | Not started |  |
-| STU-013 | Data viewer | tabrion-studio | STU-011 | - | 3 + 0.75 | Studio | Not started |  |
+| STU-013 | Data viewer | tabrion-studio | STU-011 | - | 3 + 0.75 | Studio | In progress | Backend merged in tabrion-studio [#24](https://github.com/peterkarlhuber/tabrion-studio/pull/24) (`43c48d2`, 2026-11-12; review and delta accepted); the grid tab in the page is open (Studio TODO) |
 | STU-050 | UX acceptance MVP | tabrion-studio | STU-008, STU-010, STU-012, STU-013, STU-014, STU-015, STU-051, QA-9 | - | 2 + 0.5 | Studio | Not started |  |
 | STU-052 | Keyboard and command palette | tabrion-studio | STU-012 | - | 2 + 0.5 | Studio | In progress | First part merged in tabrion-studio [#16](https://github.com/peterkarlhuber/tabrion-studio/pull/16) (`b0c9b9c`) and [#22](https://github.com/peterkarlhuber/tabrion-studio/pull/22) (`490f6a7`); the rest waits for STU-012 (Studio TODO TD-020) |
 | STU-053 | Accessibility audit MVP | tabrion-studio | STU-050 | - | 1.5 + 0.5 | Studio | In progress | First part merged in tabrion-studio [#20](https://github.com/peterkarlhuber/tabrion-studio/pull/20) (`79d51dd`); the rest is Studio TODO TD-022 |
@@ -232,10 +233,10 @@ Planned effort: 21 + 5.25 agent days.
 | WP | Title | Repositories | Depends on | Gate | Effort (impl + review) | Lane | Status | Evidence |
 |---|---|---|---|---|---|---|---|---|
 | STU-020 | Favorites, history, scripts, autocomplete | tabrion-studio | STU-017 | - | 5 + 1.25 | Studio | Not started |  |
-| STU-021 | Export CSV/JSON | tabrion-studio | STU-017 | - | 1.5 + 0.5 | Studio | Not started |  |
+| STU-021 | Export CSV/JSON | tabrion-studio | STU-011, STU-013 (before: STU-017; D-123) | - | 1.5 + 0.5 | Studio | In progress | Backend merged in tabrion-studio [#33](https://github.com/peterkarlhuber/tabrion-studio/pull/33) (`92dd95a`, 2026-11-12; review `stu-021-review.md` accepted with conditions, delta accepted; 1 million rows under 100 MB); the export dialog in the page is open; TD-026 (Studio). Started before STU-017 by the owner-accepted change [D-123](#deviation-log) |
 | STU-022 | DDL, policies, row estimates | tabrion-studio | STU-017 | - | 2 + 0.5 | Studio | Not started |  |
 | STU-023 | ER diagram (xyflow and dagre) | tabrion-studio | STU-017 | - | 3 + 0.75 | Studio | Not started |  |
-| STU-024 | Migration status of the Levuvo formats | tabrion-studio | STU-017 | - | 3 + 0.75 | Studio | Not started |  |
+| STU-024 | Migration status of the Levuvo formats | tabrion-studio | STU-015 (before: STU-017; D-122) | - | 3 + 0.75 | Studio | Done | Backend merged in tabrion-studio [#30](https://github.com/peterkarlhuber/tabrion-studio/pull/30) (`21349a2`, 2026-11-12; review `stu-024-review.md` accepted with conditions F-1, F-2 fixed), the page in [#32](https://github.com/peterkarlhuber/tabrion-studio/pull/32) (`2cfb380`); minimal view is Studio TD-025. Done before STU-017 by the owner-accepted change [D-122](#deviation-log) |
 | STU-025 | Diagnosis report and backup hints | tabrion-studio | STU-017 | - | 1.5 + 0.5 | Studio | Not started |  |
 | STU-054 | UX acceptance 1.0 (without data editor) | tabrion-studio | STU-020, STU-021, STU-022, STU-023, STU-024, STU-025 | - | 2 + 0.5 | Studio | Not started |  |
 | STU-028 | 1.0 documentation, clean install, release preparation | tabrion-studio | STU-054 | G-R (release only) | 3 + 0.5 | Studio | Not started |  |
@@ -844,6 +845,8 @@ the plan"; the API deviations were open points of the G-T1 review, which decided
 | D-93 | TAB-050 | "A changed expectation without a CHANGELOG entry fails CI" | `verify_manifest` requires `CHANGELOG.md` to name the manifest digest (`LDP-<version> digest <12 hex>`, one digest per version) instead of diffing against the base branch | Works in every job without git history or a workflow change; any change of a vector, the schema or `SPEC.md` changes the digest |
 | D-120 | TAB-033 | Contract 5.4: `Column.type_name` "SQLite: declared type or None"; `nullable: bool \| None` without a rule | SQLite `type_name` is always `None`; `nullable` is `None` on both engines | Python's `sqlite3` does not expose `sqlite3_column_decltype`; result-set nullability is not known from the result (a `NOT NULL` table column is nullable through an outer join), so a value would mislead (contract I-101) |
 | D-121 | TAB-033 | Contract 5.3: `cancel()` cancels the running operation (`interrupt()`, `cancel_safe()`) | `cancel()` cancels the transaction: the running statement is stopped, later statements raise `Canceled` without being sent, and the block's end rolls back and raises `Canceled` even when the caller caught the error | Both engines leave the transaction unusable or rolled back after an interrupt anyway; a cancel that arrives between two statements, or before the server started one, must still stop the work, and nothing of a canceled transaction may be committed (contract I-102) |
+| D-122 | STU-024 | Planning document 09: STU-024 depends on STU-017 | STU-024 depends on STU-015 only; done before STU-017 (tabrion-studio #30 and #32) | Planning document 03 section 10 names only STU-015, and nothing of STU-017 (MVP docs and tag) is needed. **Accepted by the owner on 2026-11-12 15:37Z**, no rollback. The acceptance covers this dependency only: STU-024 no longer waits for G-S1 through STU-017, and no security or release gate is lifted (G-S1 for the MVP, G-S2, G-R and the human security review before a public Studio release stay as planned). Planning documents 01 section 6 and 09 section 1 are updated |
+| D-123 | STU-021 | Planning document 09: STU-021 depends on STU-017 | STU-021 depends on STU-011 and STU-013; its backend is merged before STU-017 (tabrion-studio #33), the export dialog follows | The export needs only the query engine and the data viewer; nothing of STU-017 is needed. **Accepted by the owner on 2026-11-12 15:45Z** as an approved deviation. With D-122 this means STU-021 and STU-024 no longer wait for G-S1 through STU-017; G-S1 still gates the MVP and STU-017, and G-S2 (STU-026), G-R and the human security review before a public Studio release stay. Planning documents 01 section 6, 03 section 10 and 09 section 1 are updated |
 
 ## Score review
 
