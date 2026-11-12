@@ -18,7 +18,7 @@
 
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
-TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress).
+TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; counts unchanged after the merge of master `3c8eaf9`).
 
 | Priority | Count |
 |---|---|
@@ -324,7 +324,9 @@ required (owner decision of 2026-11-08 11:26Z).
   (`006753a`). `build and install` uploads `dist/` and `sbom/` as the artifact `dist`; the release `build` uploads
   `release-dist` and `release-sbom`; `attest` (opt-in) attests both. Nothing is published.
 - **Next step:** after the merge, the QA-11 dry run of `release.yml` on the version-bump merge commit shows the SBOM
-  artifact; then set this entry to Done. The plan as it was carried out: in `ci.yml`, jobs `build and install` and
+  artifact; then set this entry to Done. Follow-up (workflow review of #47, finding 4 and optional condition C-3; a
+  workflow change, so not in #47): upload the CI SBOM as its own artifact `sbom`, as `release.yml` does, so that the
+  artifact `dist` keeps the wheel at its root again. The plan as it was carried out: in `ci.yml`, jobs `build and install` and
   `extras matrix`, and in `release.yml`, job `build`, replace
   `- run: python -m build --outdir dist` with
 
@@ -700,15 +702,20 @@ required (owner decision of 2026-11-08 11:26Z).
   `pg_ctl restart` (passes; it fails when both pools lack pre_ping).
 - **Next step:** the first green nightly with `pg restart`; then Done.
 
-### TB-137 · TAB-T-162: RLS table with two tenants through `transaction()`
+### TB-137 · TAB-T-162 RLS table with two tenants, TAB-T-161 next checkout is idle
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 SR-10, TM-08; `docs/program/traceability.md`
-- **What:** no test creates a table with `FORCE ROW LEVEL SECURITY` and runs two tenants through
-  `Database.transaction()` with `set_config(..., true)` as a non-owner role, asserting that neither sees the
-  other's rows. TAB-T-160 and TAB-T-161 (transaction-local settings, no reuse of a connection with an open
-  transaction) are covered.
-- **Next step:** one PostgreSQL test in `tests/postgres/test_database.py` with the runtime role of
-  `tabrion_postgres_roles`.
+- **What:** two TM-08 tests are missing.
+  - TAB-T-162: no test creates a table with `FORCE ROW LEVEL SECURITY` and runs two tenants through
+    `Database.transaction()` with `set_config(..., true)` as a non-owner role, asserting that neither sees the other's
+    rows.
+  - TAB-T-161 is covered only indirectly. A connection returns to the pool after an error, and a failed reset or
+    rollback invalidates it, but no test asserts that the next checkout after a failed or interrupted transaction is
+    idle (review L-5 of #46).
+  TAB-T-160 (transaction-local settings) is covered.
+- **Next step:** two PostgreSQL tests in `tests/postgres/test_database.py`. For TAB-T-162, use the runtime role of
+  `tabrion_postgres_roles`. For TAB-T-161, check `pg_stat_activity.state` and `transaction_status` of the next
+  checkout.
 
 ### TB-138 · TAB-T-202: restore drill of reference application B
 
