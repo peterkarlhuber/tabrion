@@ -240,6 +240,11 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Fixed
 
+- `tabrion.sqlite.connect` raises `UnsafePath("sqlite.unsafe_path")` when the database name changes while the name
+  SQLite opened is resolved after the open. Before Python 3.13, `os.path.realpath` raised `OSError(EINVAL)` there,
+  and `connect` passed it on, with the file name in its text, after closing the connection (nothing was opened).
+  Contract I-22, TODO TB-045; found by the randomized open race test of TAB-T-123
+  (`tests/sqlite/test_stress_open_race.py`, 1,000 repetitions in the nightly `stress` job).
 - Conformance vector LDP-PGL-005 (PGL-4) no longer fails intermittently in the `coverage` job (TODO TB-142): the
   `waiter_state` action sampled the waiting backend in step with its 0.1 s polls and, under coverage tracing, met the
   poll in two of ten samples. It now samples from the waiter's first poll on, takes a sample that meets a poll

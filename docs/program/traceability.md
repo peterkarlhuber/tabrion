@@ -59,7 +59,7 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 | TAB-T-120 | TM-03, probe S5: mode 0600, including a simulated umask of 000 | `tests/sqlite/test_connect.py::test_s01_create_private_file_is_0600_whatever_the_umask`, `tests/sqlite/test_connect.py::test_s01_new_database_and_side_files_are_0600` | Covered |
 | TAB-T-121 | TM-03: a link to the main file or to `-wal` is refused; the target is unchanged | `tests/sqlite/test_connect.py::test_s03_s06_symlinks_are_refused` | Covered |
 | TAB-T-122 | TM-03: a backup file has mode 0600 | `tests/sqlite/test_backup.py::test_s31_backup_is_0600`, `tests/sqlite/test_backup.py::test_s31_temporary_file_is_0600_while_copying` | Covered |
-| TAB-T-123 | TM-04: race test, a link set between the check and the open, 1,000 repetitions, 0 hits | `tests/sqlite/test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused`, `tests/sqlite/test_connect.py::test_l3_link_planted_while_the_profile_is_applied`. Each window is tested deterministically; the randomized 1,000x test is open | Partial (TB-045) |
+| TAB-T-123 | TM-04: race test, a link set between the check and the open, 1,000 repetitions, 0 hits | `tests/sqlite/test_stress_open_race.py::test_t123_randomized_link_swap_never_opens_the_other_file`, `tests/sqlite/test_stress_open_race.py::test_t123_control_plain_sqlite_opens_the_other_file`, `tests/sqlite/test_stress_open_race.py::test_tb045_no_false_refusal_under_pool_load`, `tests/sqlite/test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused`, `tests/sqlite/test_connect.py::test_l3_link_planted_while_the_profile_is_applied`. Each window is tested deterministically; the randomized test runs 1,000 repetitions in the nightly job `stress` (25 on pull requests), with a plain-`sqlite3` control and the false-refusal case | Covered |
 | TAB-T-130 | TM-05, probe P1: every timeout is active | `tests/postgres/test_session.py::test_p01_defaults`, `tests/postgres/test_session.py::test_p01_values_through_show`, `tests/postgres/test_session.py::test_p01_transaction_timeout_by_server_version`, `tests/postgres/test_check_findings.py::test_k13_k15_timeouts` | Covered |
 | TAB-T-131 | TM-05: a statement over its timeout is `Kind.TIMEOUT`, and the connection stays usable | `tests/postgres/test_errors_postgres.py::test_e06_statement_timeout_and_cancel`, `tests/postgres/test_database.py::test_b14_timeout_on_postgres` | Covered |
 | TAB-T-132 | TM-05: `SessionLock(timeout=...)` returns or fails instead of hanging | `tests/postgres/test_locks.py::test_l05_polling_timeout`, `tests/postgres/test_locks.py::test_l14_timeout` | Covered |
@@ -88,17 +88,15 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 
 ## Summary
 
-- **Covered:** 51 IDs (two of them, TAB-T-211 and TAB-T-212, on staged 0.2 APIs; TAB-T-009 in the nightly job
-  `pg restart` only).
-- **Partial:** 1 ID.
-  - TAB-T-123: no randomized 1,000x race (TB-045).
+- **Covered:** 52 IDs (two of them, TAB-T-211 and TAB-T-212, on staged 0.2 APIs; TAB-T-009 in the nightly job
+  `pg restart` only; TAB-T-123 at 1,000 repetitions in the nightly job `stress` only).
+- **Partial:** 0 IDs.
 - **Gap:** 1 ID.
   - TAB-T-300: benchmark, not a gate (TB-140).
 
-The open parts belong to these categories:
+The open part belongs to this category:
 
-- Symbolic-link race: TAB-T-123 (the randomized repetition only).
 - A non-gating benchmark: TAB-T-300.
 
-K8's TAB-T-101..191 has no gap; TAB-T-123 is partial. The owner decides with TAB-040 whether each open part blocks
+K8's TAB-T-101..191 has no gap and no partial row. The owner decides with TAB-040 whether each open part blocks
 G-T2 or becomes a deviation.

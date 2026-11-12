@@ -1446,6 +1446,50 @@ def test_tb045_concurrent_connects_are_not_refused(tmp_path: Path) -> None:
     assert errors == []
 
 
+def test_tb045_a_name_that_changes_while_resolved_is_refused_without_its_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TB-045: when resolving the name SQLite opened fails because the name changed meanwhile (before Python 3.13,
+    ``os.path.realpath`` raises ``EINVAL``), ``connect`` closes the connection and raises ``UnsafePath``: no
+    ``OSError`` with the file name leaves it, and no path appears in the error (contract I-22). Forced on every
+    Python version through ``os.path.realpath``."""
+    path = tmp_path / "a.db"
+    make_database(path)
+    real_realpath = os.path.realpath
+    real_open = ts._open
+    seen: list[sqlite3.Connection] = []
+    failed: list[str] = []
+
+    def realpath(name: Any, *args: Any, **kwargs: Any) -> Any:
+        if os.path.basename(os.fspath(name)) == path.name:
+            failed.append(os.fspath(name))
+            raise OSError(errno.EINVAL, os.strerror(errno.EINVAL), os.fspath(name))
+        return real_realpath(name, *args, **kwargs)
+
+    def recording_open(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        connection = real_open(*args, **kwargs)
+        seen.append(connection)
+        return connection
+
+    monkeypatch.setattr(os.path, "realpath", realpath)
+    monkeypatch.setattr(ts, "_open", recording_open)
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path)
+    monkeypatch.undo()
+    assert failed  # the seam was reached
+    assert info.value.code == "sqlite.unsafe_path"
+    assert info.value.__cause__ is None
+    assert info.value.__context__ is None
+    for text in (str(info.value), repr(info.value)):
+        assert str(tmp_path) not in text
+        assert path.name not in text
+    assert seen
+    for connection in seen:
+        with pytest.raises(sqlite3.ProgrammingError):
+            connection.execute("SELECT 1")  # closed
+    ts.connect(path).close()  # the file itself is fine
+
+
 def test_l3_link_planted_while_the_profile_is_applied(
     tmp_path: Path, symlinks: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
