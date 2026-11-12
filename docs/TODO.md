@@ -17,15 +17,15 @@
 ## Summary
 
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
-master merge into #31).
+TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 9 |
-| P2 Medium | 14 |
-| P3 Low | 45 |
-| P4 Optional | 6 |
+| P1 High | 8 |
+| P2 Medium | 16 |
+| P3 Low | 48 |
+| P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
 trademark register check from gate G-T2 (TB-001 closed; a later public marketing under the name needs a new
@@ -155,24 +155,27 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Status note:** TAB-022 part (a) is merged (#19 `4d8e486`, follow-up #33 `5a7bc9e`; contract I-61, D-74, D-75): the
   consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
   The CI jobs are TB-070.
-- **Next step:** TAB-051 is on master (#21; the workflow parts are TB-090). TAB-050 is in review (branch
-  `claude/project-thread-rdo6g3-tab050`; its CI job is TB-092).
+- **Next step:** TAB-051 (#21, `4f777b4`) and TAB-050 (#27, `2e4b888`) are on master, and their CI jobs were wired by
+  #34 (`4cd3d89`; TB-090, TB-092). Still open for TAB-022: one green nightly `downstream` run (TB-070).
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
-- **What:** the canary suite (no values in errors or logs, QA-2) is in review (TB-085 has its open points);
-  the concurrency and stress suite (QA-4) is in review (its nightly 200x job is TB-086); supply chain with SBOM next to the existing `dependency audit` job
-  (QA-8, in review: SBOM script and reproducible-wheel test; the CI step is TB-130); the release workflow is in place
-  but its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
-  `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`). QA-11 status note: the
+- **What:** five quality work packages. Status on master `532da05`:
+  - QA-2, the canary suite (no values in errors or logs): merged (#25, `a1c13cb`). TB-085 has its open points.
+  - QA-4, the concurrency and stress suite: merged (#31, `a1c57a6`). Its nightly 200x job is TB-086.
+  - QA-8, supply chain with SBOM next to the existing `dependency audit` job: merged (#30, `bd8994f`). It has the SBOM script
+    and the reproducible-wheel test; the CI step is TB-130.
+  - QA-11, the release workflow: `release.yml` takes a commit SHA since #40, but its acceptance needs a dry run.
+  - QA-22, the conventions audit: merged (#42, `f5a3285`). See `docs/program/reports/qa-22-conventions.md` and
+    `tests/security/test_conventions.py`. QA-11 status note: the
   workflow-change pull request on branch `claude/project-thread-rdo6g3-ci-release` lets `release.yml` take a full
   commit SHA instead of a tag, checks the version (final) and the dated CHANGELOG section, and makes the attestation
   opt-in; the dry run on a final-version commit is still to do (there is none on master yet).
 - **QA-22 follow-up (F-1, Low):** tabrion has no `.gitattributes` and no `.editorconfig` (orkexa has both). Nothing
   breaks today (golden files are compared as JSON, the Windows job reads them); add both when a byte-compared
   fixture arrives, with `-text` for it.
-- **Next step:** QA-8 and QA-11 can start now (they depend on TAB-004 and TAB-005 only).
+- **Next step:** the QA-11 dry run on the release commit (TAB-040).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
@@ -218,8 +221,8 @@ required (owner decision of 2026-11-08 11:26Z).
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
 - **Priority:** P1 High · **Status:** Blocked · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
-- **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001; in review in
-  the TAB-041 pull request, branch `claude/project-thread-rdo6g3-docs`); the internal
+- **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001; merged in
+  #24, `7c5fc6e`); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); `v0.1.0` final and gate G-T2 (TAB-040).
   `v0.1.0` final is the merge commit of the version-bump pull request that sets `0.1.0` (not a pre-release); TAB-040
   records its full SHA in CHANGELOG `[0.1.0]`, STATUS TAB-040 and `installation.md`, and the next pull request bumps
@@ -228,17 +231,24 @@ required (owner decision of 2026-11-08 11:26Z).
   No GitHub release and no PyPI upload without G-R.
 - **Next step:** TAB-038 is merged (#9, `a463422`, accepted after independent review). The agent created the
   annotated tag `v0.1.0a1` on that commit in its clone; the agent's Git proxy refuses tag pushes, so it is not on
-  GitHub. That is optional: consumers pin the commit SHA and nothing waits on the tag. Then TAB-041 and TAB-040.
+  GitHub. That is optional: consumers pin the commit SHA and nothing waits on the tag. TAB-041 is merged (#24);
+  TAB-040 remains (gap status in the TAB-040 readiness notes; TAB-T traceability in
+  `docs/program/traceability.md`).
 
 ### TB-022 · Release check: no 0.1 name is still a stub (TABRION TAB-040, G-T1 F-08)
 
-- **Priority:** P1 High · **Status:** Open · **Refs:** TABRION TAB-040, TAB-023, G-T2, G-T1 F-08
-- **What:** before the tag `v0.1.0`, a check that no name of `docs/api/surface.json` with `since` at or below the
-  package version raises `NotImplementedError`. On master `5a7bc9e` no 0.1 name does any more: only the staged 0.2
-  names in `tabrion._sa._v02` raise, and `scripts/api_surface.py` keeps names with a newer `since` out of the
-  exported surface. The check is still missing as a mode, so a stub cannot come back unnoticed.
-- **Next step:** the mode goes into the TAB-040 version-bump pull request (branch `claude/project-thread-rdo6g3-v010`);
-  `release.yml` runs it with QA-11.
+- **Priority:** P1 High · **Status:** Done · **Refs:** TABRION TAB-040, TAB-023, G-T2, G-T1 F-08
+- **What:** before `v0.1.0`, a check that no name of `docs/api/surface.json` with `since` at or below the package
+  version is a stub. `scripts/api_surface.py --no-stubs` fails for two kinds of name:
+  - a name that is still only `staged`;
+  - a function, method, property or fixture whose body, after its docstring, is only
+    `raise NotImplementedError(...)`, `pass` or `...`. The body is read with `ast`, so nothing is called.
+  On master no 0.1 name is a stub, and since TAB-033 (#32) the staged 0.2 names in `tabrion._sa._v02` are
+  implemented too. Tests in `tests/unit/test_api_surface.py`:
+  - a positive control;
+  - probes for a function, a method, a property, a classmethod and a fixture turned into stubs;
+  - a 0.1 entry left `staged`.
+- **Next step:** none here. Running the mode in CI and in `release.yml` is TB-135 (workflow change).
 
 ### TB-062 · Checks outside the specification's code table (TAB-017 review Info of #13; 0.2 addendum candidate)
 
@@ -510,9 +520,9 @@ required (owner decision of 2026-11-08 11:26Z).
   `python -m tests.support.conformance` and `pytest -m conformance` with a PostgreSQL 17 service), and rewords the
   stale O-1/O-2 comments of TB-003, and widens the `platforms.yml` path filter (TB-021, TAB-050 review H-1, and the
   workflow file itself). Workflow review conditions: every PostgreSQL service port is bound to `127.0.0.1` (C-3).
-  Until #21 and #27 are on `master`, two transitional guards keep the jobs green:
-  `api surface` falls back to the plain check when the script has no `--base`, and `conformance` runs nothing when
-  `conformance/MANIFEST.json` is missing. Finding: at a tag, `--base <previous tag>` reads `[Unreleased]`, which a
+  Two transitional guards kept the jobs green until #21 and #27 were on `master`; both are merged now (`4f777b4`,
+  `2e4b888`), so the guards are dead code. `api surface` fell back to the plain check when the script had no
+  `--base`, and `conformance` ran nothing while `conformance/MANIFEST.json` was missing. Their removal is TB-135. Finding: at a tag, `--base <previous tag>` reads `[Unreleased]`, which a
   release has already renamed to its version section, so in `release.yml` the check is informational (a warning);
   the binding S-6 check stays the PR job and release-flow step 1 before tagging.
 - **Status note (2026-11-08, stacked workflow-change pull request on branch
@@ -532,11 +542,14 @@ required (owner decision of 2026-11-08 11:26Z).
     `cancel-in-progress` only for `pull_request`; every other run has its own group via `run_id`, so master, nightly
     and dispatch runs are never cancelled). ci-ok judges each head SHA by its own runs (`head_sha` filter), so a
     cancelled old run gives the old SHA a NOT OK status, never success, and leaves the new SHA untouched.
-- **Next step:** after #21 and #27 are merged, remove both guards (a pull request with the label
-  `workflow-change-reviewed`), and close TB-070, TB-090, TB-092 and this entry's `conformance`, `golden files`,
-  `examples` and `downstream` parts. Still open: fault injection 3x (TAB-034), stress 200x (QA-4), the nightly
-  DB-restart case once TAB-T-009 exists, the `sqlite` floor raised to 95 % once tests reach it, and the TAB-T
-  traceability check of lane C, wired into CI once it lands.
+- **Next step:** remove both guards (TB-135, a pull request with the label `workflow-change-reviewed`), and close
+  TB-070, TB-090, TB-092 and this entry's `conformance`, `golden files`, `examples` and `downstream` parts. Still
+  open:
+  - fault injection 3x (TAB-034);
+  - stress 200x (QA-4, TB-086);
+  - the nightly DB-restart case once TAB-T-009 exists (TB-136);
+  - the `sqlite` floor raised to 95 % once tests reach it.
+  The TAB-T traceability check (`tests/unit/test_traceability.py`) runs in the unit jobs and needs no wiring.
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
 
@@ -634,6 +647,71 @@ required (owner decision of 2026-11-08 11:26Z).
     bits), which the test now asserts explicitly.
 - **Next step:** none. The platforms job runs these files on pull requests only once TB-021 widens its path filter;
   the fix was proven by a `workflow_dispatch` run of `platforms.yml` on the fix branch.
+
+### TB-135 · Workflow follow-ups of the TAB-040 readiness pull request: guards, `--no-stubs`
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-040, TB-017, TB-022, QA-11, workflow review C-2
+- **What:** two changes to `.github/`, which need a separate workflow-change pull request with the label
+  `workflow-change-reviewed`. This pull request changes no workflow.
+  - The two transitional guards of `ci.yml` are dead code now, because #21 (`4f777b4`) and #27 (`2e4b888`) are on
+    master and #40 (`532da05`) makes both decide from the base branch:
+    - the `else` branch of `api_surface.py --base` ("no --base option yet ... plain check");
+    - the branch of `conformance` for "`conformance/MANIFEST.json` does not exist on the base nor here yet".
+  - Run `scripts/api_surface.py --no-stubs` (TB-022) in the `api surface` job, or at least in `release.yml` before
+    the release check of QA-11.
+  `tests/unit/test_traceability.py` needs no wiring: it runs in the unit jobs.
+- **Next step:** one workflow-change pull request for both changes. Remove the guards, so `api surface` always runs
+  `--base` and `conformance` always requires the manifest, and add the `--no-stubs` step.
+
+### TB-136 · TAB-T-009: first request after a database restart (K7 nightly case)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** planning document 07 DI-05, K7, probe P3; TAB-034;
+  `docs/program/traceability.md`
+- **What:** no test restarts the PostgreSQL server and checks that the first request through a layer-B `Database`
+  (with `pool_pre_ping`) succeeds. Related tests exist: `test_p07_terminated_backend` ends a session, and
+  `test_k25_pool_without_pre_ping` checks the profile. K7 runs this case nightly, and the nightly workflow has no
+  restart step (TB-017).
+- **Next step:** a test marked for the nightly run that restarts the service (or terminates every backend as a
+  stand-in on PR runs), then the nightly step in a workflow-change pull request. Alternatively, a deviation row for
+  G-T2.
+
+### TB-137 · TAB-T-162: RLS table with two tenants through `transaction()`
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 SR-10, TM-08; `docs/program/traceability.md`
+- **What:** no test creates a table with `FORCE ROW LEVEL SECURITY` and runs two tenants through
+  `Database.transaction()` with `set_config(..., true)` as a non-owner role, asserting that neither sees the
+  other's rows. TAB-T-160 and TAB-T-161 (transaction-local settings, no reuse of a connection with an open
+  transaction) are covered.
+- **Next step:** one PostgreSQL test in `tests/postgres/test_database.py` with the runtime role of
+  `tabrion_postgres_roles`.
+
+### TB-138 · TAB-T-202: restore drill of reference application B
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 DI-11, RA-B; `docs/program/traceability.md`
+- **What:** the measurements application has no restore test: back up, delete the file, restore, and check that the
+  count is the same. `backup()` itself is covered (TAB-T-200/201).
+- **Next step:** a test in `tests/examples/test_measurements.py`. If restoring needs an application function, it
+  belongs in `examples/measurements`.
+
+### TB-139 · TAB-T-021 DST boundary and TAB-T-025 `:x::int` error hint
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 DI-08, probe P5;
+  `docs/program/traceability.md`
+- **What:** two parts of the plan text have no test.
+  - TAB-T-021: the timestamp round trips (aware values, microseconds, a UTC+1 offset, naive values refused) do not
+    cross a DST boundary.
+  - TAB-T-025: the guides recommend `CAST(:x AS int)`, but no test shows what `:x::int` does in layer B. The plan
+    asks for a test of the error message and its hint, and Tabrion gives no hint today.
+- **Next step:** add a DST case to `PartsSuite.test_values_round_trip_exactly`. For TAB-T-025, decide whether
+  layer B adds a hint; if not, add a test that documents the error, with a deviation row.
+
+### TB-140 · TAB-T-300: nightly benchmark of layer B against plain SQLAlchemy
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** planning document 07 probe `s.py`;
+  `docs/program/traceability.md`
+- **What:** the plan asks for a nightly benchmark that warns above 2x the baseline and is not a gate. It does not
+  exist yet. RA-EVAL measures the overhead once.
+- **Next step:** with RA-EVAL, or after 0.1.0.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 

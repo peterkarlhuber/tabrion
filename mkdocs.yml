@@ -101,6 +101,7 @@ nav:
   - Program:
       - Status: program/STATUS.md
       - Risks and rollback: program/risks.md
+      - TAB-T traceability: program/traceability.md
       - "Report: name check": program/reports/name-check.md
       - "Report: QA-22 conventions audit": program/reports/qa-22-conventions.md
       - "Report: QA-8 supply chain": program/reports/qa-8-supply-chain.md

@@ -10,8 +10,8 @@ The 0.2 names (``Result``, ``Column`` and the 0.2 methods of ``Database`` and ``
 
 Status (milestone M2): every 0.1 name is implemented: layer A (``tabrion.errors``, ``tabrion.sql``,
 ``tabrion.config``, ``tabrion.sqlite``, ``tabrion.postgres``, ``tabrion.check``), layer B (TAB-018),
-``tabrion.migrations`` and ``tabrion.testing``. Only the staged 0.2 names in ``tabrion._sa._v02`` raise
-``NotImplementedError`` (TB-022).
+``tabrion.migrations`` and ``tabrion.testing``. The 0.2 names in ``tabrion._sa._v02`` are implemented and staged
+(TAB-033); ``scripts/api_surface.py --no-stubs`` fails if a name of the package's minor is a stub (TB-022).
 """
 
 from __future__ import annotations
