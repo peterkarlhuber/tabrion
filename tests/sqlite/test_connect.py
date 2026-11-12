@@ -1163,7 +1163,12 @@ def test_tb045_exhaustion_while_following_a_link_is_raised(monkeypatch: pytest.M
 @posix_only
 def test_tb045_the_probe_tries_again_when_the_number_is_taken_again(monkeypatch: pytest.MonkeyPatch) -> None:
     """Review F15/F17: a round that cannot decide (the closed copy still listed: its number taken again) is
-    repeated; one such round does not make the process give up the listing."""
+    repeated; one such round does not make the process give up the listing. Only the platform's real listing is a
+    candidate here (``/proc/self/fd`` on Linux, ``/dev/fd`` on macOS), so the rounds counted are its own."""
+    monkeypatch.setattr(ts, "_LISTINGS", {})
+    listing = ts._listing_directory()
+    assert listing is not None
+    monkeypatch.setattr(ts, "_DESCRIPTOR_DIRECTORIES", (listing,))
     monkeypatch.setattr(ts, "_LISTINGS", {})
     original = ts._probe_once
     rounds: list[bool | None] = []
@@ -1173,7 +1178,7 @@ def test_tb045_the_probe_tries_again_when_the_number_is_taken_again(monkeypatch:
         return rounds[-1]
 
     monkeypatch.setattr(ts, "_probe_once", taken_once)
-    assert ts._listing_directory() in ts._DESCRIPTOR_DIRECTORIES
+    assert ts._listing_directory() == listing
     assert rounds == [None, True]
 
 
