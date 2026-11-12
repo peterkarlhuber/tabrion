@@ -243,10 +243,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Conformance vector LDP-PGL-005 (PGL-4) no longer fails intermittently in the `coverage` job (TODO TB-142): the
   `waiter_state` action sampled the waiting backend in step with its 0.1 s polls and, under coverage tracing, met the
   poll in two of ten samples. It now samples from the waiter's first poll on, takes a sample that meets a poll
-  statement in flight again once that statement has ended (bounded; a lock or timeout wait counts at once), requires
-  every sample to be idle without a snapshot (no allowance for one sample any more), and ends the wait by handing the
-  key over. SPEC appendix A describes the new procedure; no expectation changed.
-  LDP-0.1.1 digest 799b9ebe1794.
+  statement in flight again once that statement has ended, counts a statement running for more than 0.2 s on the
+  server's clock and every lock or timeout wait as open, requires every sample to be idle without a snapshot (no
+  allowance for one sample any more), and ends the wait by handing the key over. The lock tests L06 and L12 use the
+  same sampler instead of their allowance of two samples. SPEC appendix A describes the new procedure, and the
+  versioning rule names a changed action procedure without a changed expectation as a PATCH change; no expectation
+  changed.
+  LDP-0.1.1 digest 575fd6b03028.
 - `classify` maps a SQLite error whose code the `sqlite3` module does not name (`sqlite_errorname == "unknown"`,
   for example `SQLITE_CONSTRAINT_DATATYPE` of a STRICT table on Python 3.13) by its number: `DATA` instead of
   `UNKNOWN` (contract I-75).

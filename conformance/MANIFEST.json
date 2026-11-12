@@ -3,7 +3,7 @@
   "format": "ldp-manifest/1",
   "standard_version": "LDP-0.1.1",
   "files": {
-    "conformance/SPEC.md": "c25d6f224c88cffe04f1475426c894ca66aab5e84e08a47c96c679926725b1b9",
+    "conformance/SPEC.md": "c7527ac588ae5bace3940038ff3ceabe84013214e8da7d85c5e1d952762dbbfd",
     "conformance/schema/vector-file.schema.json": "d9ad84c02b7280cc6521abbea0b9e935fc908ddb0ee4faf3b77624cd24d83a1f",
     "conformance/vectors/errors-classification.json": "66c748e5358abaa93381180f8f253fb7e3324ce4624688564f53990105546286",
     "conformance/vectors/errors-redaction.json": "6c322a6e710c1e64cef883dff383a85eb9c7144f93821c68f142298842118dab",
@@ -16,7 +16,7 @@
     "conformance/vectors/sqlite-profile.json": "6417f0f1dafdb76e9b96bb6a3bdae4d91de6dbc84f44bc5d876c1942b3ccce40",
     "conformance/vectors/sqlite-transactions.json": "0ad579ab2098d44ed05f00f68412d09da19b70368e412492252375471e7b45ff",
     "tests/conformance/actions.py": "95607a7e864bc0dba4c47507a33bc681f30c44753e6a3145d0452c5bb2fa19ab",
-    "tests/postgres/test_conformance_vectors.py": "175704e7478ef522a5b4a54d8f85459dfee0b60dbfb3cdb6a21e193e9da79562"
+    "tests/postgres/test_conformance_vectors.py": "790ba2622e856536e2341f355dab725a777979c246674bc374a97ca5149f72cc"
   },
-  "digest": "799b9ebe1794b116f3c0cde6682c662e94360d6302ac6ab313d203519015db89"
+  "digest": "575fd6b03028e3823f063a48960ac26d2b464b39f643ff74d889efe6838f396b"
 }

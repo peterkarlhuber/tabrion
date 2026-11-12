@@ -24,9 +24,10 @@ behavior through the package dependency and test their integration with their ow
 - Vectors contain no real credentials. Redaction vectors use the marker `SECRET-4711` and expect it to be absent.
 - **Versioning:** LDP has a SemVer of its own (`LDP-MAJOR.MINOR.PATCH`), independent of the package version. A
   changed MUST expectation is a MAJOR change. A new rule, area or action is a MINOR change. A new vector for an
-  existing rule is a PATCH change. `MANIFEST.json` holds the SHA-256 of this file, the schema, every vector file and
-  the two action handlers (`tests/conformance/actions.py`, `tests/postgres/test_conformance_vectors.py`, which decide
-  what an `expect` key asserts), and a digest over all of them. The tests fail unless `CHANGELOG.md` names the
+  existing rule, and a changed action procedure or handler without a changed expectation, is a PATCH change.
+  `MANIFEST.json` holds the SHA-256 of this file, the schema, every vector file and the two action handlers
+  (`tests/conformance/actions.py`, `tests/postgres/test_conformance_vectors.py`, which decide what an `expect` key
+  asserts), and a digest over all of them. The tests fail unless `CHANGELOG.md` names the
   current version with the current digest (`LDP-x.y.z digest <first 12 hex digits>`). The CHANGELOG may name only
   one digest per version. So no expectation, and no handler, changes without a CHANGELOG entry and a new LDP version.
 
@@ -91,7 +92,7 @@ databases. Rows that violate a foreign key then make writes fail. Before the swi
 | `session_settings` | postgres | `settings` (`SessionSettings` fields), optional `extra_field` (a subclass with that extra field); `setup` runs first | `show` (GUC to `current_setting` value), `unchanged` (the listed GUCs equal before and after `configure`), `positive` (the listed GUCs whose `pg_settings.setting` is greater than 0), `error` |
 | `role_report` | postgres | `attributes` (role attributes), `owns_rls_table` (bool) | `restricted`, `superuser`, `bypass_rls`, `table_owner` |
 | `grant_runtime_role` | postgres | `tables`, `protected_tables`, `in_transaction` | `privileges` (table to sorted privilege list), `error`, `transaction_status` |
-| `lock_acquire` | postgres | `steps`: a list of `[session, operation]` with the operations `try_acquire`, `acquire_timeout_0.3`, `release`, `holds`, `waiter_state` | `results`: the result of each step (`null` for `release`). `waiter_state` samples the waiting session's backend 10 times while it waits for a lock another session holds, from its first poll on; it is `idle` when every sample is idle without a snapshot (`backend_xmin`). A sample that meets a poll statement in flight (`active`, waiting only for the CPU, the client or an internal latch) is taken again once that statement has ended; a statement still in flight after 1 s, any other wait (such as `Lock` or `Timeout`) and a wait that ends before the last sample are not `idle`. The other session then hands the key over and takes it back, so the step leaves the locks as they were |
+| `lock_acquire` | postgres | `steps`: a list of `[session, operation]` with the operations `try_acquire`, `acquire_timeout_0.3`, `release`, `holds`, `waiter_state` | `results`: the result of each step (`null` for `release`). `waiter_state` samples the waiting session's backend 10 times while it waits for a lock another session holds, from its first poll on; it is `idle` when every sample is idle without a snapshot (`backend_xmin`). A sample that meets a poll statement in flight (`active`, waiting only for the CPU, the client or an internal lightweight lock (`LWLock`)) is taken again once that statement has ended. A statement that has been running for more than 0.2 s on the server's clock (`clock_timestamp() - state_change`), any other wait (such as `Lock` or `Timeout`), 2 s of samples that see only such statements, and a wait that ends before the last sample are not `idle`. The other session then hands the key over and takes it back, so the step leaves the locks as they were |
 | `lock_connection_lost` | postgres | none | `holds_after_loss` |
 | `extension_status` | postgres | `name` | `state`, `command`, `has_installed_version` |
 | `classify_error` | any | `driver` (`psycopg` with `sqlstate` and `message`, or `sqlite3` with `statement` after `setup` on a memory database, or `sqlite3` with `scenario`), `sent`, `during_commit`. The scenarios: `busy` (a second connection with `timeout=0` while another holds `BEGIN IMMEDIATE`), `readonly` (an `INSERT` through a `mode=ro` URI), `notadb` (a file of other bytes), `cantopen` (`mode=rw` in a missing directory), `full` (`max_page_count`), `interrupt` (a progress handler that aborts), `auth` (an authorizer that denies) | the `Classification` fields named (`kind` as its value) |
@@ -105,5 +106,6 @@ reports the expected value, and otherwise the real one.
 
 - **LDP-0.1.1** (TODO TB-142): the `waiter_state` action of LDP-PGL-005 (PGL-4) samples between polls
   instead of tolerating one sample that meets a poll, so its result no longer depends on where the samples fall in
-  the poll cycle; no expectation changed; 33 rules, 115 vectors.
+  the poll cycle; a poll statement running for more than 0.2 s counts as open; no expectation changed; 33 rules, 115
+  vectors.
 - **LDP-0.1.0** (TAB-050): first version: 33 rules in ten areas, 115 vectors.

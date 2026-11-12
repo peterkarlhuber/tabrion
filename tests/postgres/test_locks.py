@@ -7,6 +7,7 @@ an application's workers. Every test uses keys of its own (``lock_key`` of a ran
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Iterator
 import contextlib
 import os
@@ -33,6 +34,7 @@ from tabrion.postgres import (
 )
 
 from .conftest import Role, with_params
+from .test_conformance_vectors import busy_samples, waiter_sample
 
 psycopg = pytest.importorskip("psycopg")
 from psycopg import pq  # noqa: E402
@@ -296,27 +298,27 @@ def test_l06_no_statement_and_no_snapshot_while_waiting(
         done = threading.Event()
 
         def wait() -> None:
-            lock.acquire(key, timeout=3, poll_interval=0.2)
+            lock.acquire(key, timeout=30, poll_interval=0.2)
             done.set()
 
-        waiter = threading.Thread(target=wait)
+        waiter = threading.Thread(target=wait, daemon=True)
         waiter.start()
-        samples = []
+        # Each sample is taken between two attempts (the shared sampler of LDP-PGL-005, TB-142), so every one must
+        # be idle without a snapshot; the waiter has no timeout the samples could outlast.
+        states: Counter[str] = Counter()
         for _ in range(10):
-            samples.append(
-                admin.execute(
-                    "SELECT state, backend_xmin IS NULL, backend_xid IS NULL, application_name"
-                    " FROM pg_stat_activity WHERE pid = %s",
-                    (pid,),
-                ).fetchone()
-            )
             time.sleep(0.11)
+            states[waiter_sample(admin, pid)] += 1
+        still_waiting = waiter.is_alive()
+        names = admin.execute(
+            "SELECT application_name, backend_xid IS NULL FROM pg_stat_activity WHERE pid = %s", (pid,)
+        ).fetchone()
+        holder.stop()  # the waiter takes the key now
         waiter.join(10)
         assert done.is_set()
-        idle = [s for s in samples if s[0] == "idle"]
-        assert len(idle) >= 8, samples  # a sample may meet an attempt in flight
-        assert all(s[1] and s[2] for s in idle), samples
-        assert {s[3] for s in samples} == {"tabrion-l06"}
+        assert still_waiting
+        assert busy_samples(states) == "idle", states
+        assert names == ("tabrion-l06", True)
     finally:
         holder.stop()
 
@@ -544,23 +546,27 @@ def test_l12_idle_and_no_snapshot_while_waiting(
     try:
         conn = connect(url, autocommit=autocommit)
         pid = conn.info.backend_pid
-        waiter = threading.Thread(target=wait_advisory_lock, args=(conn, key), kwargs={"timeout": 2.5})
+        outcome: list[Any] = []
+
+        def wait() -> None:
+            outcome.append(wait_advisory_lock(conn, key, timeout=30))
+
+        waiter = threading.Thread(target=wait, daemon=True)
         waiter.start()
-        samples = []
+        # Each sample is taken between two attempts (the shared sampler of LDP-PGL-005, TB-142). Without autocommit a
+        # sample may meet the moment between an attempt and its rollback (idle in transaction, with the catalog
+        # snapshot); it is taken again once that moment has passed, and counts as busy if it lasts. L13 shows that
+        # such moments do not hold up CREATE INDEX CONCURRENTLY.
+        states: Counter[str] = Counter()
         for _ in range(10):
-            samples.append(
-                admin.execute(
-                    "SELECT state, backend_xmin IS NULL FROM pg_stat_activity WHERE pid = %s", (pid,)
-                ).fetchone()
-            )
             time.sleep(0.1)
+            states[waiter_sample(admin, pid, transient_idle_in_transaction=not autocommit)] += 1
+        still_waiting = waiter.is_alive()
+        holder.stop()  # the waiter takes the key now
         waiter.join(10)
-        # Between attempts the session is idle and holds no snapshot. Without autocommit a sample may meet the moment
-        # between an attempt and its rollback (idle in transaction, with the catalog snapshot); L13 shows that such
-        # moments do not hold up CREATE INDEX CONCURRENTLY.
-        assert all(s[1] for s in samples if s[0] == "idle"), samples
-        assert sum(s[0] == "active" for s in samples) <= 2, samples
-        assert sum(s[0] == "idle" for s in samples) >= 6, samples
+        assert outcome == [True]
+        assert still_waiting
+        assert busy_samples(states) == "idle", states
     finally:
         holder.stop()
 
