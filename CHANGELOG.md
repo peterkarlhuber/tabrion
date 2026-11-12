@@ -8,6 +8,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Layer B hint for `:name::type` (planning document 07, probe P5, TAB-T-025; contract I-107, TODO TB-139):
+  SQLAlchemy's `text()` leaves a parameter before a `::` cast unbound, so `:x::int` fails with `database.syntax`
+  (PostgreSQL, SQLSTATE 42601) or `database.unknown` (SQLite). Such an error now carries
+  `details={"hint": "write CAST(:name AS type) instead of :name::type"}`, and its text shows the hint. The hint is
+  fixed text without the parameter's name, its value or the statement; kinds and classes are unchanged, and errors
+  without the pattern keep empty `details`.
+
 - Dependency policy (TABRION QA-17, AC-2): `dependency-policy.json` is this repository's copy of the dependency policy
   K-33 from nodestro-studio (only its outgoing edges: none, tabrion depends on no Levuvo package, P6), and
   `scripts/check_dependency_policy.py` is the unchanged checker from there; `scripts/DEPENDENCY_POLICY_SOURCE.md`
@@ -148,7 +155,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   package's minor is still only `staged`, or when its body, after the docstring, is only
   `raise NotImplementedError`, `pass` or `...`. The body is read with `ast`, so nothing is called.
 - `docs/program/traceability.md` maps each of the 53 numbered plan test IDs (TAB-T-001..300; G-T2, K2, K8) to the
-  tests that cover it, and marks 2 partial IDs and 1 gap (TODO TB-045, TB-139, TB-140).
+  tests that cover it, and marks 1 partial ID and 1 gap (TODO TB-045, TB-140).
   `tests/unit/test_traceability.py` checks that every ID has a row and that every named test exists.
 - TAB-T-009 (K7, TB-136): `tests/postgres/test_restart_postgres.py` restarts the PostgreSQL server between two
   requests and checks that the first request through a pool with `pool_pre_ping` succeeds, with a pool without it as
@@ -156,8 +163,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `pg restart`) and is skipped elsewhere.
 - Tests for the TAB-040 gaps:
   - TAB-T-021: timestamps across both 2026 DST switches, on both parts variants and both engines.
-  - TAB-T-025: the `:x::int` error on PostgreSQL and SQLite, and the `CAST(:x AS int)` form. The error has no hint
-    yet (TB-139).
+  - TAB-T-025: the `:x::int` error on PostgreSQL and SQLite, and the `CAST(:x AS int)` form. The error carries the
+    hint of contract I-107 (TB-139).
   - TAB-T-162: row-level security with `FORCE`, a non-owner runtime role, and two tenants through
     `Database.transaction()` with `set_config(..., true)`.
   - TAB-T-161: the next checkout after a failed, raised or interrupted transaction is idle.

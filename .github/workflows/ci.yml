@@ -15,6 +15,12 @@ on:
 permissions:
   contents: read
 
+# TB-141 (07 section 4.3, G-T2): every pytest run fails on a skip or non-strict xfail reason that is not in the
+# reviewed allowlist tests/ci/skip-reasons.txt and lists its skipped node IDs (tests/ci/skipguard.py, loaded by
+# tests/conftest.py).
+env:
+  TABRION_SKIP_GUARD: "1"
+
 concurrency:
   # A new push to a pull request cancels the older run of that pull request; every other run gets its own group.
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}

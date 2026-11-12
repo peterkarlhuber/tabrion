@@ -78,6 +78,14 @@ _CANCEL_RETRY_SECONDS = 0.2
 _CANCEL_TIMEOUT_SECONDS = 2.0
 """psycopg ``cancel_safe(timeout=...)``: how long one request to the server may take."""
 
+_PARAMETER_CAST = re.compile(r"(?<![:\w\\]):\w+::")
+"""``:name::type`` in the statement as sent (contract I-107, plan TAB-T-025). SQLAlchemy's ``text()`` binds ``:name``
+only when neither ``:`` nor a word character follows it, so before ``::`` the name stays in the text, unbound:
+PostgreSQL reports a syntax error, SQLite a parameter without a value. The look-behind is SQLAlchemy's own."""
+_PARAMETER_CAST_KINDS = frozenset({Kind.SYNTAX, Kind.UNKNOWN})
+_PARAMETER_CAST_HINT = "write CAST(:name AS type) instead of :name::type"
+"""The fixed text of ``details["hint"]``: it names the pattern, never the parameter, its value or the statement."""
+
 _NEW_MESSAGE = "tabrion.{name} is created by its factory, not called directly: {hint}"
 
 
@@ -165,12 +173,25 @@ def _translate(
     if not isinstance(original, BaseException):
         original = exc
     error_class = _error_class(classification.kind)
+    text = _statement_text(exc, statement)
     return error_class(
         f"database.{classification.kind.value}",
         classification=classification,
         original=original,
-        statement=_statement_text(exc, statement),
+        statement=text,
+        details=_parameter_cast_hint(classification.kind, text),
     )
+
+
+def _parameter_cast_hint(kind: Kind, text: str | None) -> dict[str, str | int | None] | None:
+    """``{"hint": ...}`` when a syntax or unknown error's statement holds ``:name::type`` (I-107), else ``None``.
+
+    The match is textual, as SQLAlchemy's own bind rule is: string literals and comments count too, so a statement
+    that failed for an unrelated reason can carry the hint when such text appears in a literal or a comment
+    (review L-1 of #49). The hint is fixed text, so this costs no value, only a possibly misleading hint."""
+    if kind in _PARAMETER_CAST_KINDS and text is not None and _PARAMETER_CAST.search(text) is not None:
+        return {"hint": _PARAMETER_CAST_HINT}
+    return None
 
 
 def _is_database_error(exc: BaseException) -> bool:

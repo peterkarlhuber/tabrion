@@ -19,14 +19,14 @@
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
 TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; TAB-040 gap tests pull request: TB-137 (TAB-T-161 and
-TAB-T-162) and TB-138 done, TB-139 narrowed).
+TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 done).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 8 |
 | P2 Medium | 16 |
-| P3 Low | 47 |
+| P3 Low | 46 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -563,7 +563,7 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** after that pull request merges and a nightly is green, close TB-070, TB-090, TB-092, TB-086, TB-135,
   TB-136 and this entry's `conformance`, `golden files`, `examples`, `downstream` and `stress` parts. Still open:
   - stress 200x (QA-4, TB-086);
-  - the per-job skip lists (TB-141).
+  - the per-job skip lists (TB-141: skip guard with one reviewed allowlist, D-79).
 - **Status note (2026-11-12, the nightly K7 pull request (branch `claude/project-thread-rdo6g3-nightly-k7`)):**
   - Fault injection 3x (TAB-034, K7) needs no nightly job of its own: `tests/postgres/test_faults.py` runs every
     fault scenario three times (`RUNS = range(3)`, TAB-T-170) and is marked `postgres`, so each `pg (...)` job of
@@ -743,20 +743,21 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-139 · TAB-T-021 DST boundary and TAB-T-025 `:x::int` error hint
 
-- **Priority:** P3 Low · **Status:** Open (narrowed to the TAB-T-025 hint) · **Refs:** planning document 07 DI-08,
-  probe P5; `docs/program/traceability.md`
-- **Done:** TAB-T-021 is covered by `PartsSuite.test_timestamps_round_trip_across_a_dst_boundary`. It runs on both
-  variants and both engines, with values on both sides of the 2026 switches in Vienna (fixed offsets, and
-  `Europe/Vienna` with `fold` where `zoneinfo` has the zone). The `:x::int` error is pinned by
-  `test_t025_double_colon_cast_is_a_syntax_error` (PostgreSQL) and `test_t025_double_colon_cast_on_sqlite`.
-- **What:** TAB-T-025 asks for the error message *with its hint*, and Tabrion gives none.
-  - PostgreSQL: `database.syntax: syntax error (SQLSTATE 42601)`.
-  - SQLite: `database.unknown: database error`. SQLite reads `:x::int` as one parameter name without a value, and
-    the driver's `ProgrammingError` carries no SQLite code.
-  SQLAlchemy's `text()` does not take `:x` before `::` as a parameter, so the value is never bound.
-- **Next step:** an owner decision. Either layer B adds a value-free hint for this case, which is a product change
-  with its own pull request (the tests then assert it), or a deviation row for G-T2 records that the documented
-  `CAST` form is the mitigation.
+- **Priority:** P3 Low · **Status:** Done (TAB-040 gap tests pull request #48, TB-139 pull request #49) · **Refs:**
+  planning document 07 DI-08, probe P5; `docs/program/traceability.md`; contract I-107
+- **Done:**
+  - TAB-T-021 is covered by `PartsSuite.test_timestamps_round_trip_across_a_dst_boundary` (#48). It runs on both
+    variants and both engines, with values on both sides of the 2026 switches in Vienna (fixed offsets, and
+    `Europe/Vienna` with `fold` where `zoneinfo` has the zone).
+  - TAB-T-025 (#49): layer B adds a value-free hint when a statement writes a parameter with a `::` cast.
+    SQLAlchemy's `text()` does not take `:x` before `::` as a parameter, so the value is never bound; a translated
+    error of kind `SYNTAX` or `UNKNOWN` whose statement holds `:name::` carries
+    `details={"hint": "write CAST(:name AS type) instead of :name::type"}` (PostgreSQL `database.syntax`, SQLSTATE
+    42601; SQLite `database.unknown`, since the driver's `ProgrammingError` carries no SQLite code). #48's tests
+    `test_t025_double_colon_cast_is_a_syntax_error` and `test_t025_double_colon_cast_on_sqlite` now expect the
+    hint; #49 adds tests on both engines, a pattern table and a canary case; the guides (`database.md`,
+    `errors.md`) name the hint.
+- **Next step:** none.
 
 ### TB-140 · TAB-T-300: nightly benchmark of layer B against plain SQLAlchemy
 
@@ -766,20 +767,22 @@ required (owner decision of 2026-11-08 11:26Z).
   exist yet. RA-EVAL measures the overhead once.
 - **Next step:** with RA-EVAL, or after 0.1.0.
 
-### TB-141 · Per-job skip lists `tests/ci/skipped-<job>.txt` (planning document 07 section 4.3)
+### TB-141 · Skip guard instead of per-job skip lists (planning document 07 section 4.3, deviation D-79)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 section 4.3 (MUP-ONA T-SKIP-1), G-T2
-  ("flaky list ≤ 2, no reruns, skip lists per job"), TB-017
-- **What:** each CI job should compare the tests it skipped with its own list `tests/ci/skipped-<job>.txt` and fail
-  on any difference. The flaky list exists (`tests/ci/flaky.txt`, #40); the skip lists do not. Left out of the TAB-040
-  workflow pull request on purpose: every one of the about 25 ci-ok jobs (each Python, SQLAlchemy, PostgreSQL and
-  platform variant) skips a different set, so the lists must come from real CI runs, and a wrong list turns a
-  required check red.
-- **Next step:** a pytest plugin under `tests/` (for example `-p tests.ci.skiplist`, active only with
-  `TABRION_SKIP_LIST=<file>`) that collects the skipped node IDs with their reasons at session end and fails on a
-  difference, with a `--write` mode; one run per job with the plugin in report-only mode to record the lists; then
-  the workflow-change pull request that sets the variable per job. Alternatively, a G-T2 deviation row that names
-  `-ra` in every job's log as the skip record.
+- **Priority:** P3 Low · **Status:** In progress (pull request from branch `claude/project-thread-rdo6g3-tb141`,
+  workflow change) · **Refs:** planning document 07 section 4.3 (MUP-ONA T-SKIP-1), G-T2 ("flaky list ≤ 2, no
+  reruns, skip lists per job"), TB-017, D-79
+- **What:** no test may be skipped silently in CI. Instead of an exact list `tests/ci/skipped-<job>.txt` for each of
+  the about 25 jobs (each Python, SQLAlchemy, PostgreSQL, platform and packaging variant skips a different set, so
+  such lists break on every new or renamed test), the pytest plugin `tests/ci/skipguard.py` (loaded by
+  `tests/conftest.py`, active with `TABRION_SKIP_GUARD=1` or `--skip-guard=enforce`) fails a green run when a skip or
+  non-strict `xfail` reason matches no pattern of the reviewed allowlist `tests/ci/skip-reasons.txt`, and prints the
+  skipped node IDs with their reasons, so each job's log is its skip record (`--skip-guard=report` prints without
+  failing). Strict `xfail` is listed, not checked. Unit tests: `tests/unit/test_skipguard.py`. The pull request sets
+  `TABRION_SKIP_GUARD: "1"` at workflow level in `ci.yml` and `platforms.yml` and adds `tests/ci/**` to the
+  platforms path filter.
+- **Next step:** after the pull request merges and its CI (including macOS and Windows) is green, close this entry.
+  The nightly workflow can set the variable as well in a later workflow change.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 
