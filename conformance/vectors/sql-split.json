@@ -1,0 +1,183 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.0",
+  "area": "sql-split",
+  "vectors": [
+    {
+      "id": "LDP-SPL-001",
+      "level": "MUST",
+      "rule": "SPL-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "split_sql",
+        "args": {
+          "sql": "SELECT 1; SELECT 2;"
+        }
+      },
+      "expect": {
+        "statements": [
+          "SELECT 1",
+          "SELECT 2"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
+    },
+    {
+      "id": "LDP-SPL-002",
+      "level": "MUST",
+      "rule": "SPL-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "split_sql",
+        "args": {
+          "sql": "INSERT INTO t VALUES ('a;b'); SELECT 2"
+        }
+      },
+      "expect": {
+        "statements": [
+          "INSERT INTO t VALUES ('a;b')",
+          "SELECT 2"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
+    },
+    {
+      "id": "LDP-SPL-003",
+      "level": "MUST",
+      "rule": "SPL-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "split_sql",
+        "args": {
+          "sql": "SELECT 1 AS \"x;y\"; SELECT 2"
+        }
+      },
+      "expect": {
+        "statements": [
+          "SELECT 1 AS \"x;y\"",
+          "SELECT 2"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
+    },
+    {
+      "id": "LDP-SPL-004",
+      "level": "MUST",
+      "rule": "SPL-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "split_sql",
+        "args": {
+          "sql": "-- comment; here\nSELECT 1;"
+        }
+      },
+      "expect": {
+        "statements": [
+          "-- comment; here\nSELECT 1"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
+    },
+    {
+      "id": "LDP-SPL-005",
+      "level": "MUST",
+      "rule": "SPL-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "split_sql",
+        "args": {
+          "sql": "/* a; b */ SELECT 1; SELECT 2"
+        }
+      },
+      "expect": {
+        "statements": [
+          "/* a; b */ SELECT 1",
+          "SELECT 2"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
+    },
+    {
+      "id": "LDP-SPL-006",
+      "level": "MUST",
+      "rule": "SPL-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "split_sql",
+        "args": {
+          "sql": "CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql; SELECT 2"
+        }
+      },
+      "expect": {
+        "statements": [
+          "CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql",
+          "SELECT 2"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
+    },
+    {
+      "id": "LDP-SPL-007",
+      "level": "MUST",
+      "rule": "SPL-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "split_sql",
+        "args": {
+          "sql": "DO $body$ BEGIN PERFORM 1; END $body$; SELECT 3"
+        }
+      },
+      "expect": {
+        "statements": [
+          "DO $body$ BEGIN PERFORM 1; END $body$",
+          "SELECT 3"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
+    },
+    {
+      "id": "LDP-SPL-008",
+      "level": "MUST",
+      "rule": "SPL-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "split_sql",
+        "args": {
+          "sql": ";; -- only a comment\n;"
+        }
+      },
+      "expect": {
+        "statements": []
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
+    },
+    {
+      "id": "LDP-SPL-009",
+      "level": "MUST",
+      "rule": "SPL-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "split_sql",
+        "args": {
+          "sql": "SELECT 'it''s; fine'; SELECT 2"
+        }
+      },
+      "expect": {
+        "statements": [
+          "SELECT 'it''s; fine'",
+          "SELECT 2"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:125-178"
+    }
+  ]
+}
