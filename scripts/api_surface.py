@@ -23,19 +23,27 @@ the path without ``tabrion.`` (``sqlite.connect``; not for root names such as ``
 backticks. Only the surface body is compared, not ``since``, ``stability`` or ``staged``; a name staged at the base
 was not public there, so its promotion is an addition and needs no section.
 
+``--no-stubs`` (TB-022, release check of TAB-040 and G-T2) also fails when a name the package version exports is a
+stub: an entry with ``since`` at or below the package version that still carries ``staged`` (only a frozen stub, not
+promoted), or a function, method, property or fixture whose body, after its docstring, is only
+``raise NotImplementedError(...)``, ``pass`` or ``...``. The body is read from the source (``ast``), so nothing is
+called; a name without Python source (a C function) is not a stub.
+
 ``--write`` regenerates the file from the code and keeps ``since``, ``stability`` and ``staged`` of every existing
 entry; a new name gets the current minor version and ``S``. Review the diff: a changed signature after the API freeze
 is an API change and needs the contract updated in the same pull request.
 
-Usage: ``python scripts/api_surface.py [--write] [--base REF] [--surface docs/api/surface.json]``. Needs every extra
-installed (``pip install -e ".[dev]"``), because it imports every public module.
+Usage: ``python scripts/api_surface.py [--write] [--base REF] [--no-stubs] [--surface docs/api/surface.json]``.
+Needs every extra installed (``pip install -e ".[dev]"``), because it imports every public module.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import dataclasses
 import enum
+import functools
 import importlib
 import inspect
 import json
@@ -439,6 +447,109 @@ def check_changelog(base: dict[str, Entry], recorded: dict[str, Entry], changelo
     return problems
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Stubs (TB-022: no name of the released minor may still be a stub)
+# ---------------------------------------------------------------------------------------------------------------------
+
+CALLABLE_KINDS = ("function", "method", "classmethod", "staticmethod", "property", "fixture")
+
+
+def _is_stub_statement(node: ast.stmt) -> bool:
+    if isinstance(node, ast.Pass):
+        return True
+    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and node.value.value is Ellipsis:
+        return True
+    if isinstance(node, ast.Raise) and node.exc is not None:
+        exc = node.exc.func if isinstance(node.exc, ast.Call) else node.exc
+        return isinstance(exc, ast.Name) and exc.id == "NotImplementedError"
+    return False
+
+
+@functools.cache
+def _module_tree(filename: str) -> ast.Module:
+    return ast.parse(Path(filename).read_text(encoding="utf-8"), filename=filename)
+
+
+def _definition(fn: Any) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    """The ``def`` of ``fn`` in the parsed module (review L-1 of #46: a method is never dedented and parsed alone,
+    because a triple-quoted string with flush-left lines cannot be dedented)."""
+    code = getattr(fn, "__code__", None)
+    try:
+        filename = inspect.getsourcefile(fn)
+    except TypeError:
+        return None
+    if code is None or filename is None or not Path(filename).is_file():
+        return None
+    for node in ast.walk(_module_tree(filename)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fn.__name__:
+            first = min([node.lineno, *(decorator.lineno for decorator in node.decorator_list)])
+            if code.co_firstlineno in (first, node.lineno):
+                return node
+    return None
+
+
+def stub_kind(fn: Any) -> str | None:
+    """How ``fn`` is a stub, or ``None`` when it is not one.
+
+    A stub's body, after its docstring, holds only ``raise NotImplementedError``, ``pass`` or ``...``, or nothing
+    at all. ``fn`` is unwrapped first (``functools.wraps``); without Python source it is not a stub.
+    """
+    node = _definition(inspect.unwrap(fn))
+    if node is None:
+        return None
+    body = node.body
+    first = body[0] if body else None
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+        body = body[1:]
+    if not all(_is_stub_statement(statement) for statement in body):
+        return None
+    if any(isinstance(statement, ast.Raise) for statement in body):
+        return "its body only raises NotImplementedError"
+    if body:
+        return "its body is only pass or ..."
+    return "its body is only a docstring"
+
+
+def is_stub(fn: Any) -> bool:
+    """True when ``fn`` is a stub (:func:`stub_kind`)."""
+    return stub_kind(fn) is not None
+
+
+def _function_of(path: str, kind: str) -> Any:
+    """The function behind a public callable path (the getter of a property, the function of a fixture)."""
+    obj = resolve(path)
+    if kind == "fixture":
+        fixture = _fixture(obj)
+        return fixture[0] if fixture is not None else obj
+    if kind == "property":
+        owner, _, name = path.rpartition(".")
+        raw = inspect.getattr_static(resolve(owner), name)
+        return raw.fget if isinstance(raw, property) else raw
+    return getattr(obj, "__func__", obj)
+
+
+def check_stubs(recorded: dict[str, Entry], current: tuple[int, int]) -> list[str]:
+    """TB-022: every name the package version exports is implemented, not a stub and not only staged."""
+    problems: list[str] = []
+    for path, entry in sorted(recorded.items()):
+        since = entry.get("since", "")
+        if not re.fullmatch(r"\d+\.\d+", since) or minor(since) > current:
+            continue
+        if "staged" in entry:
+            problems.append(f"{path}: since {since}, but only staged ({entry['staged']}); promote it or move 'since'")
+            continue
+        if entry.get("kind") not in CALLABLE_KINDS:
+            continue
+        try:
+            fn = _function_of(path, entry["kind"])
+        except LookupError:
+            continue  # reported by check() as no longer public
+        kind = stub_kind(fn)
+        if kind is not None:
+            problems.append(f"{path}: since {since}, but it is a stub ({kind})")
+    return problems
+
+
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
     """``git -C ROOT <args>`` with the C locale (messages are never parsed, but stay readable in the error)."""
     env = {**os.environ, "LC_ALL": "C"}
@@ -502,6 +613,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--surface", type=Path, default=SURFACE, help="default: docs/api/surface.json")
     parser.add_argument("--changelog", type=Path, default=CHANGELOG, help="default: CHANGELOG.md")
     parser.add_argument("--base", help="git revision: every surface change since it must be in the CHANGELOG (S-6)")
+    parser.add_argument(
+        "--no-stubs", action="store_true", help="release check (TB-022): no name of this minor may be a stub"
+    )
     args = parser.parse_args(argv)
     recorded = load(args.surface)
     actual = collect()
@@ -518,12 +632,15 @@ def main(argv: list[str] | None = None) -> int:
     problems = check(recorded, actual, current) + check_deprecations(recorded, registered, changelog, current)
     if args.base:
         problems += check_changelog(load_base(args.base, args.surface), recorded, changelog)
+    if args.no_stubs:
+        problems += check_stubs(recorded, current)
     for problem in problems:
         print(f"api surface: {problem}", file=sys.stderr)
     staged = sum(1 for e in recorded.values() if minor(e.get("since", "0.0")) > current)
     print(
         f"api surface: {len(recorded)} names ({staged} staged for a later minor), package {current[0]}.{current[1]}: "
         + ("consistent" if not problems else f"{len(problems)} problem(s)")
+        + (", no stubs" if args.no_stubs and not problems else "")
     )
     return 1 if problems else 0
 
