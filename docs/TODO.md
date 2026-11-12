@@ -623,10 +623,13 @@ required (owner decision of 2026-11-08 11:26Z).
   `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms, and so do the Windows-specific
   paths of `scripts/downstream.py`, `tests/unit/test_downstream.py` and `tests/unit/test_golden_consumers.py`
   (TB-134: those failed on Windows in the nightly only).
-- **Next step:** the workflow-change pull request of TB-017 adds `config.py`, `errors.py`, `testing/sqlite.py`,
+- **Next step:** the workflow-change pull request of TB-017 (#34) adds `config.py`, `errors.py`, `testing/sqlite.py`,
   `pyproject.toml`, for the LDP vectors (TAB-050 review H-1) `conformance/**` and `tests/conformance/**`, and the
   three TB-134 paths to `platforms.yml` and the manifest's `path_filters` (ci-ok judges by the default branch's
-  manifest, so it takes effect once merged); close this entry then.
+  manifest, so it takes effect once merged). The TB-130 pull request adds `src/tabrion/__init__.py`,
+  `src/tabrion/check.py`, `tests/conftest.py` and `tests/unit/test_mutation_probes.py` (workflow review of #34/#40,
+  finding 4). The filter is still a list, while the platforms job runs the whole non-PostgreSQL suite; the nightly
+  runs it on every platform, so a miss shows within a day. Close this entry when both are merged.
 
 ### TB-134 · Windows: downstream runner and golden replay failed in the platforms job (issue #18)
 

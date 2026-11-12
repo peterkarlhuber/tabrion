@@ -127,7 +127,11 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: pip install "build==1.6.1" "pytest==9.2.0"
+      # TB-130 (QA-8, TM-10): the build backend from the hashed pins of build-constraints.txt.
       - run: python -m build --outdir dist
+        env:
+          PIP_CONSTRAINT: build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
       # TAB-005: every extras combination in a fresh virtual environment from the built wheel.
       - run: pytest -m packaging tests/packaging/test_extras_matrix.py -v -p no:cacheprovider
         env:
@@ -236,15 +240,23 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install "build==1.6.1" "pytest==9.2.0" "twine==7.0.0"
+      # TB-130 (QA-8, TM-10): the build backend from the hashed pins of build-constraints.txt.
       - run: python -m build --outdir dist
+        env:
+          PIP_CONSTRAINT: build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
       - run: twine check --strict dist/*
+      # The CycloneDX SBOM of the wheel (QA-8), outside dist/ so that `twine check dist/*` never sees it.
+      - run: mkdir -p sbom && python -I scripts/sbom.py dist/tabrion-*.whl --vcs-ref "$GITHUB_SHA" -o sbom/tabrion.cdx.json
       - run: pytest -m packaging tests/packaging/test_artifacts.py -v -p no:cacheprovider
         env:
           TABRION_DIST: dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
-          path: dist/
+          path: |
+            dist/
+            sbom/
 
   docs:
     name: docs
@@ -289,20 +301,7 @@ jobs:
           set -euo pipefail
           base=$(git merge-base "$BASE_SHA" HEAD)
           echo "merge base with the base branch: $base"
-          # Transitional until TAB-051 (#21) is on master (TODO TB-017, workflow review C-2). The decision comes from
-          # the BASE branch: once its api_surface.py has --base, the check is required, so a pull request that drops
-          # the option fails (argparse refuses --base). Only while the base lacks it may the PR's own script decide.
-          # Captured first: with pipefail, `grep -q` closing a pipe early would make the test fail open.
-          base_script=$(git show "$base:scripts/api_surface.py" 2>/dev/null || true)
-          head_help=$(python scripts/api_surface.py --help)
-          if grep -q -- '"--base"' <<<"$base_script"; then
-            python scripts/api_surface.py --base "$base"
-          elif grep -q -- '--base' <<<"$head_help"; then
-            python scripts/api_surface.py --base "$base"
-          else
-            echo "::notice::scripts/api_surface.py has no --base option yet, on the base nor here (TAB-051); plain check"
-            python scripts/api_surface.py
-          fi
+          python scripts/api_surface.py --base "$base"
 
   audit:
     name: dependency audit
@@ -477,7 +476,14 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: pip install -e ".[dev]"
-      - run: pytest tests/unit/test_mutation_probes.py tests/unit/test_mutation_probes_layer_b.py tests/sqlite/test_mutation_probes_sqlite.py tests/postgres/test_postgres_mutation_probes.py -p no:cacheprovider
+      # The same pattern that "test" and "coverage" ignore, so a new probe file cannot fall between the jobs (workflow
+      # review of #34/#40, C-4); git's pathspec `*` crosses `/` like pytest's --ignore-glob.
+      - run: |
+          set -euo pipefail
+          mapfile -t probes < <(git ls-files 'tests/*/test_*mutation_probes*.py')
+          test "${#probes[@]}" -gt 0 || { echo "::error::no mutation probe files found"; exit 1; }
+          printf '%s\n' "${probes[@]}"
+          pytest "${probes[@]}" -p no:cacheprovider
 
   coverage:
     # K1 (planning document 07): branch coverage of the whole suite with PostgreSQL, the total and per-module floors.

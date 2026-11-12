@@ -46,14 +46,18 @@
         "conformance/**",
         "pyproject.toml",
         "scripts/downstream.py",
+        "src/tabrion/__init__.py",
+        "src/tabrion/check.py",
         "src/tabrion/config.py",
         "src/tabrion/errors.py",
         "src/tabrion/sqlite.py",
         "src/tabrion/testing/sqlite.py",
         "tests/conformance/**",
+        "tests/conftest.py",
         "tests/sqlite/**",
         "tests/unit/test_downstream.py",
-        "tests/unit/test_golden_consumers.py"
+        "tests/unit/test_golden_consumers.py",
+        "tests/unit/test_mutation_probes.py"
       ]
     }
   },

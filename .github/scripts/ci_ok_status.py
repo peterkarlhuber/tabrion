@@ -43,7 +43,8 @@ STATES = {"OK": "success", "PENDING": "pending", "NOT OK": "failure"}
 SEVERITY = ("error", "failure", "pending", "success")  # worst first
 DESCRIPTION_MAX = 140  # GitHub truncates longer descriptions
 REVIEWED_LABEL = "workflow-change-reviewed"
-GATED_PREFIXES = (".github/workflows/", ".github/scripts/")
+# The manifest too (workflow review of #34/#40, finding 2): dropping a required job from it loosens ci-ok.
+GATED_PREFIXES = (".github/workflows/", ".github/scripts/", ".github/ci-manifest.json")
 RETRY_DELAYS = (2, 4, 8, 16)
 API = "https://api.github.com"
 
