@@ -468,10 +468,11 @@ jobs:
 
   coverage:
     # K1 (planning document 07): branch coverage of the whole suite with PostgreSQL, the total and per-module floors.
-    # The floors follow the measured values (2026-11-08: total 94.05 %; 2026-11-11 after master cf815fd: 93.99 %;
-    # errors 95.00 %, sql 100 %, sqlite 94.94 %): the total has half a point of headroom, because unrelated merges move
-    # it by hundredths, and K1 asks only 90 %; the module floors sit at the K1 value or just below it (sqlite is 0.06
-    # points short of 95 %, TODO TB-017). Lowering a floor changes this file, so it needs the workflow-change review.
+    # The floors: total 93.5 %, errors, sql and sqlite 95 % each, K1's module value (sqlite was raised from 94.9 % in
+    # #50, TODO TB-017). Measured in the master CI run 43187196995 on 75dbee9 (2026-11-12): total 95.14 %, errors
+    # 95.05 %, sql 100 %, sqlite 96.55 %. The total floor stays below the measurement, because unrelated merges move it
+    # by hundredths, and K1 asks only 90 %; errors has the least headroom. Lowering a floor changes this file, so it
+    # needs the workflow-change review.
     # Mutation probes add no coverage and run apart.
     name: coverage
     runs-on: ubuntu-latest
