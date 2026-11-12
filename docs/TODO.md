@@ -19,13 +19,13 @@
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
 TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; TAB-040 gap tests pull request: TB-137 (TAB-T-161 and
-TAB-T-162) and TB-138 done, TB-139 narrowed).
+TAB-T-162) and TB-138 done, TB-139 narrowed; LDP-PGL-005 pull request: TB-142 new, in progress).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 8 |
-| P2 Medium | 16 |
+| P2 Medium | 17 |
 | P3 Low | 47 |
 | P4 Optional | 7 |
 
@@ -773,6 +773,26 @@ required (owner decision of 2026-11-08 11:26Z).
   difference, with a `--write` mode; one run per job with the plugin in report-only mode to record the lists; then
   the workflow-change pull request that sets the variable per job. Alternatively, a G-T2 deviation row that names
   `-ra` in every job's log as the skip record.
+
+### TB-142 · LDP-PGL-005 (PGL-4) failed intermittently in the CI `coverage` job
+
+- **Priority:** P2 Medium · **Status:** In progress (branch `claude/project-thread-rdo6g3-pgl005`) · **Refs:** LDP
+  PGL-4, `conformance/SPEC.md` appendix A (`waiter_state`), K7/K8 zero tolerance for flaky tests, `coverage` job of
+  #49 (run 43153168719)
+- **What:** the `waiter_state` handler sampled the waiting backend every 0.1 s while the waiter polled every 0.1 s,
+  and allowed one sample that met a poll. The two loops fell into step: under coverage tracing the waiter thread got
+  the GIL when the sampler's query released it, so its poll (`SELECT 1` liveness check, then
+  `pg_try_advisory_lock`) reached the server while the sampler read `pg_stat_activity`, and two of ten samples
+  showed it `active` ("open in 2 of 10 samples"). No snapshot or statement stayed open between polls.
+- **Fix:** LDP-0.1.1: the handler starts sampling after the waiter's first poll, takes a sample that meets a poll
+  statement in flight again once the statement has ended (bounded to 1 s; a `Lock` or `Timeout` wait counts as busy
+  at once), requires every sample to be idle without a snapshot (no allowance any more), checks that the waiter was
+  still waiting at the last sample, and ends the wait by handing the key over instead of a 3 s timeout. No
+  expectation changed.
+- **Next step:** after the merge, close this entry. `test_l06_no_statement_and_no_snapshot_while_waiting` and
+  `test_l12_idle_and_no_snapshot_while_waiting` in `tests/postgres/test_locks.py` sample the same way with an
+  allowance (8 of 10 idle, at most 2 active) and could flake for the same reason; they have not failed yet, so they
+  were left unchanged.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 

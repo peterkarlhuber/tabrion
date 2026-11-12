@@ -1404,8 +1404,9 @@ The same example under SQLite (`sqlite:///parts.db`) and PostgreSQL is the accep
 
 The vectors are **internal** Tabrion regression and behavior contracts. Other repositories do **not** vendor or load
 them; integration runs through the package dependency (K-30..K-32). The field `vendored` and `vendor_check.py` are
-dropped. The directory `conformance/` holds LDP-0.1.0 since TAB-050 (`SPEC.md`, the schema below, ten vector
-files, `MANIFEST.json`; implementation note I-82).
+dropped. The directory `conformance/` holds the LDP since TAB-050 (LDP-0.1.0; LDP-0.1.1 since TODO TB-142: a
+deterministic `waiter_state` action, no changed expectation) (`SPEC.md`, the schema below, ten vector files,
+`MANIFEST.json`; implementation note I-82).
 
 ### 10.1 JSON Schema (`conformance/schema/vector-file.schema.json`, draft 2020-12)
 

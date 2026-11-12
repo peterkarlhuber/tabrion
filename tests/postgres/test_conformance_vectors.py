@@ -157,6 +157,93 @@ def _lock(ctx: Context, application_name: str) -> SessionLock:
     return SessionLock(ctx.admin_url, configure=lambda conn: configure(conn, settings))
 
 
+WAITER_SAMPLES = 10
+IN_FLIGHT_LIMIT = 1.0
+"""Seconds one statement of the waiter may stay in flight before its sample counts as busy (a poll takes ms)."""
+IN_FLIGHT_WAITS = (None, "Client", "LWLock")
+"""``wait_event_type`` of a running poll statement: on the CPU, reading the rest of the client's message, or an internal
+latch. A blocking lock wait (``Lock``), a server-side sleep (``Timeout``) and every other wait count as busy at once."""
+
+
+def _waiter_row(admin: Any, application_name: str) -> tuple[str, bool, str | None, Any]:
+    row = admin.execute(
+        "SELECT state, backend_xmin IS NOT NULL, wait_event_type, query_start"
+        " FROM pg_stat_activity WHERE application_name = %s",
+        (application_name,),
+    ).fetchone()
+    assert row is not None, "the lock session is not connected"
+    return str(row[0]), bool(row[1]), row[2], row[3]
+
+
+def _waiter_sample(admin: Any, application_name: str) -> str:
+    """One sample of the waiting backend between two polls: ``idle``, ``snapshot`` or the other ``state``.
+
+    A sample that meets a poll statement in flight (``active``, waiting for nothing but the CPU, the client or an
+    internal latch) is taken again once that statement has ended, so the samples never depend on where the sampler
+    falls in the poll cycle (the CI flake of LDP-PGL-005: sampler and poller both slept 0.1 s and fell into step). A
+    statement still in flight after ``IN_FLIGHT_LIMIT`` seconds counts as busy.
+    """
+    deadline = time.monotonic() + IN_FLIGHT_LIMIT
+    while True:
+        state, snapshot, wait_type, _ = _waiter_row(admin, application_name)
+        if state == "active" and wait_type in IN_FLIGHT_WAITS and time.monotonic() < deadline:
+            time.sleep(0.002)
+            continue
+        if snapshot:
+            return "snapshot"
+        return state
+
+
+def _waiter_state(admin: Any, lock: SessionLock, application_name: str, key: int, holders: list[SessionLock]) -> str:
+    """SPEC appendix A ``waiter_state``: sample the backend of ``lock`` while it waits for ``key``, which a holder has.
+
+    Deterministic (bounded waits only): the samples start once the waiter's first poll has reached the server, each
+    sample is taken between two polls (``_waiter_sample``), and the waiter is still waiting at the last sample. It
+    waits without a timeout of its own that the samples could outlast; afterwards the holder hands the key over to end
+    the wait and takes it back, so the sessions hold what they held before the step.
+    """
+    lock.try_acquire(key + 1)  # open the session's connection before it waits
+    lock.release(key + 1)
+    _, _, _, before = _waiter_row(admin, application_name)
+    outcome: list[Any] = []
+
+    def wait() -> None:
+        try:
+            outcome.append(lock.acquire(key, timeout=30.0, poll_interval=0.1))
+        except BaseException as exc:  # reported below, never lost in the thread
+            outcome.append(exc)
+
+    waiter = threading.Thread(target=wait, daemon=True)
+    waiter.start()
+    states: Counter[str] = Counter()
+    try:
+        deadline = time.monotonic() + 10
+        while _waiter_row(admin, application_name)[3] == before:  # the first poll has not reached the server yet
+            assert waiter.is_alive() and time.monotonic() < deadline, f"the waiter did not poll: {outcome}"
+            time.sleep(0.01)
+        for _ in range(WAITER_SAMPLES):
+            time.sleep(0.1)
+            states[_waiter_sample(admin, application_name)] += 1
+        still_waiting = waiter.is_alive()
+    finally:
+        # End the wait: the holder releases, the waiter takes the key and gives it back, the holder takes it again.
+        held = [h for h in holders if h.holds(key)]
+        for holder in held:
+            holder.release(key)
+        waiter.join(timeout=10)
+        if outcome == [True]:
+            lock.release(key)
+        for holder in held:
+            assert holder.try_acquire(key), "the holder could not take the key back"
+    assert not waiter.is_alive(), "the waiter did not end"
+    if not still_waiting:
+        return f"the wait ended before the last sample: {outcome}"
+    # Every sample must be idle without a snapshot. A blocking wait, an open transaction or snapshot, or a statement
+    # that stays open between polls shows in every sample.
+    busy = sum(count for state, count in states.items() if state != "idle")
+    return "idle" if busy == 0 else f"open in {busy} of {sum(states.values())} samples: {dict(states)}"
+
+
 def lock_acquire(vector: Vector, ctx: Context) -> Observed:
     key = uuid.uuid4().int % (2**62)
     names = {s: f"ldp-{s}-{uuid.uuid4().hex[:12]}" for s in ("a", "b")}
@@ -176,22 +263,8 @@ def lock_acquire(vector: Vector, ctx: Context) -> Observed:
             elif operation == "holds":
                 results.append(lock.holds(key))
             elif operation == "waiter_state":
-                lock.try_acquire(key + 1)  # open the session's connection before it waits
-                lock.release(key + 1)
-                waiter = threading.Thread(
-                    target=lock.acquire, args=(key,), kwargs={"timeout": 3.0, "poll_interval": 0.1}
-                )
-                waiter.start()
-                states: Counter[str] = Counter()
-                for _ in range(10):
-                    time.sleep(0.1)
-                    _, state, snapshot = _activity(admin, names[session])
-                    states["snapshot" if snapshot else state] += 1
-                waiter.join(timeout=10)
-                # Every sample must be idle without a snapshot, except at most one that catches the poll itself
-                # (SPEC appendix A, review L-3); a blocking wait or an open snapshot shows in (nearly) all of them.
-                busy = sum(count for key, count in states.items() if key != "idle")
-                results.append("idle" if busy <= 1 else f"open in {busy} of {sum(states.values())} samples")
+                holders = [lock_ for s, lock_ in sessions.items() if s != session]
+                results.append(_waiter_state(admin, lock, names[session], key, holders))
             else:
                 raise AssertionError(f"{vector.id}: unknown lock operation {operation!r}")
     finally:

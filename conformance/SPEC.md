@@ -1,6 +1,6 @@
 # Levuvo Database Profile (LDP)
 
-**Version:** LDP-0.1.0 · **Status:** internal test asset of Tabrion (K-35, [ADR 0011](../docs/adr/0011-ldp-internal-and-t-notx.md))
+**Version:** LDP-0.1.1 · **Status:** internal test asset of Tabrion (K-35, [ADR 0011](../docs/adr/0011-ldp-internal-and-t-notx.md))
 
 The Levuvo Database Profile describes the **observable target behavior** of Tabrion. The machine-readable vectors in
 `vectors/*.json` (format `ldp-vectors/1`, schema `schema/vector-file.schema.json`, API contract section 10) check it as
@@ -91,7 +91,7 @@ databases. Rows that violate a foreign key then make writes fail. Before the swi
 | `session_settings` | postgres | `settings` (`SessionSettings` fields), optional `extra_field` (a subclass with that extra field); `setup` runs first | `show` (GUC to `current_setting` value), `unchanged` (the listed GUCs equal before and after `configure`), `positive` (the listed GUCs whose `pg_settings.setting` is greater than 0), `error` |
 | `role_report` | postgres | `attributes` (role attributes), `owns_rls_table` (bool) | `restricted`, `superuser`, `bypass_rls`, `table_owner` |
 | `grant_runtime_role` | postgres | `tables`, `protected_tables`, `in_transaction` | `privileges` (table to sorted privilege list), `error`, `transaction_status` |
-| `lock_acquire` | postgres | `steps`: a list of `[session, operation]` with the operations `try_acquire`, `acquire_timeout_0.3`, `release`, `holds`, `waiter_state` | `results`: the result of each step (`null` for `release`). `waiter_state` samples the waiting session's backend 10 times while it waits for a lock another session holds; it is `idle` when every sample is idle without a snapshot (`backend_xmin`), allowing one sample that catches the poll itself |
+| `lock_acquire` | postgres | `steps`: a list of `[session, operation]` with the operations `try_acquire`, `acquire_timeout_0.3`, `release`, `holds`, `waiter_state` | `results`: the result of each step (`null` for `release`). `waiter_state` samples the waiting session's backend 10 times while it waits for a lock another session holds, from its first poll on; it is `idle` when every sample is idle without a snapshot (`backend_xmin`). A sample that meets a poll statement in flight (`active`, waiting only for the CPU, the client or an internal latch) is taken again once that statement has ended; a statement still in flight after 1 s, any other wait (such as `Lock` or `Timeout`) and a wait that ends before the last sample are not `idle`. The other session then hands the key over and takes it back, so the step leaves the locks as they were |
 | `lock_connection_lost` | postgres | none | `holds_after_loss` |
 | `extension_status` | postgres | `name` | `state`, `command`, `has_installed_version` |
 | `classify_error` | any | `driver` (`psycopg` with `sqlstate` and `message`, or `sqlite3` with `statement` after `setup` on a memory database, or `sqlite3` with `scenario`), `sent`, `during_commit`. The scenarios: `busy` (a second connection with `timeout=0` while another holds `BEGIN IMMEDIATE`), `readonly` (an `INSERT` through a `mode=ro` URI), `notadb` (a file of other bytes), `cantopen` (`mode=rw` in a missing directory), `full` (`max_page_count`), `interrupt` (a progress handler that aborts), `auth` (an authorizer that denies) | the `Classification` fields named (`kind` as its value) |
@@ -103,4 +103,7 @@ reports the expected value, and otherwise the real one.
 
 ## Changes
 
+- **LDP-0.1.1** (TODO TB-142): the `waiter_state` action of LDP-PGL-005 (PGL-4) samples between polls
+  instead of tolerating one sample that meets a poll, so its result no longer depends on where the samples fall in
+  the poll cycle; no expectation changed; 33 rules, 115 vectors.
 - **LDP-0.1.0** (TAB-050): first version: 33 rules in ten areas, 115 vectors.
