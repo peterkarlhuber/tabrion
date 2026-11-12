@@ -5,8 +5,11 @@ seams. These tests do the same without seams: a thread keeps replacing the datab
 either the checked database or a link to another file, while ``connect`` runs. Each repetition is one ``connect``;
 the test repeats ``RACE_REPEAT`` times, that is ``5 * TABRION_STRESS_REPEAT``: 25 on pull requests, 1,000 in the
 nightly ``stress`` job (``tests/stress.py``). The invariant: no ``connect`` ever returns a connection to the other
-file, and the other file is never changed (0 unsafe opens). A control shows that a plain ``sqlite3.connect`` does
-open the other file under the same load, so the race is real.
+file, and the other file is never changed (0 unsafe opens). A control shows that a plain ``sqlite3.connect`` follows
+the link to the other file, so the test can fail. Only a few of the 25 connects of a pull request land between the
+check and the open, so that run is a smoke run; the nightly 1,000 carry the detection, and the deterministic tests in
+``test_connect.py`` cover each window on every pull request. No assertion depends on timing: the liveness checks use
+connects with the swapping held, and the counts of the randomized outcomes are checked at the nightly scale only.
 
 The second test is the other side (TODO TB-045, false refusals): under a realistic pool load (a few threads opening
 and closing connections while another connection holds the database, and an occasional unrelated file open), a
@@ -17,7 +20,7 @@ descriptor check (TAB-T-S12) and may not create links.
 from __future__ import annotations
 
 from collections.abc import Iterator
-import errno
+import contextlib
 import os
 from pathlib import Path
 import random
@@ -66,30 +69,48 @@ class _Swapper:
     """Replaces ``name`` atomically, at random short intervals, by turns with a link to ``other`` and a hard link to
     ``right``.
 
-    ``os.replace`` never leaves the name missing, so ``connect`` sees either the checked file or a link."""
+    ``os.replace`` never leaves the name missing, so ``connect`` sees either the checked file or a link. ``hold``
+    stops the swapping with a chosen state in place, so a test can make one ``connect`` whose outcome does not depend
+    on timing."""
 
     def __init__(self, name: Path, right: Path, other: Path) -> None:
         self._name = name
+        self._staged = name.with_name(name.name + ".staged")
         self._right = right
         self._other = other
         self._stop = threading.Event()
+        self._hold = threading.Event()
+        self._placed = threading.Event()
+        self._release = threading.Event()
+        self._hold_link = False
         self._random = random.Random()  # noqa: S311 - timing jitter, not security
         self._thread = threading.Thread(target=self._run, daemon=True)
+        self._link = False  # the fixture leaves the checked file in place
         self.swaps = 0
         self.error: BaseException | None = None
 
+    def _place(self, link: bool) -> None:
+        if link:
+            os.symlink(self._other, self._staged)
+        else:
+            os.link(self._right, self._staged)
+        os.replace(self._staged, self._name)
+        if os.path.lexists(self._staged):  # a rename onto another link of the same file does nothing (POSIX)
+            os.unlink(self._staged)
+        self._link = link
+
     def _run(self) -> None:
-        staged = self._name.with_name(self._name.name + ".staged")
         try:
             while not self._stop.is_set():
-                if self.swaps % 2:
-                    os.link(self._right, staged)
-                else:
-                    os.symlink(self._other, staged)
-                os.replace(staged, self._name)
+                if self._hold.is_set():
+                    self._place(self._hold_link)
+                    self._placed.set()
+                    self._release.wait(10)
+                    continue
+                self._place(not self._link)
                 self.swaps += 1
                 pause = self._random.choice((0.0, 0.00002, 0.0001, 0.0005))
-                if self.swaps % 2 == 0 and self._random.random() < 0.5:
+                if not self._link and self._random.random() < 0.5:
                     # the checked file stays in place now and then for as long as a whole connect may take on a
                     # loaded runner, so the run sees opens as well as refusals
                     pause = self._random.choice((0.002, 0.005, 0.01))
@@ -103,9 +124,24 @@ class _Swapper:
         point of the swapping."""
         seen = self.swaps
         deadline = time.monotonic() + 10
-        while self.swaps == seen and self.error is None and time.monotonic() < deadline:
+        while self.swaps == seen and self.error is None:
+            assert time.monotonic() < deadline, "the swapping thread made no progress"
             time.sleep(0)
         time.sleep(self._random.choice((0.0, 0.00001, 0.00005, 0.0002)))
+
+    @contextlib.contextmanager
+    def hold(self, *, link: bool) -> Iterator[None]:
+        """Stop swapping with the link (``link=True``) or the checked file in place until the block ends."""
+        self._hold_link = link
+        self._release.clear()
+        self._placed.clear()
+        self._hold.set()
+        try:
+            assert self._placed.wait(10), "the swapping thread did not hold"
+            yield
+        finally:
+            self._hold.clear()
+            self._release.set()
 
     def __enter__(self) -> _Swapper:
         self._interval = sys.getswitchinterval()
@@ -115,6 +151,7 @@ class _Swapper:
 
     def __exit__(self, *exc: object) -> None:
         self._stop.set()
+        self._release.set()
         self._thread.join(10)
         sys.setswitchinterval(self._interval)
         assert not self._thread.is_alive(), "the swapping thread did not stop"
@@ -145,9 +182,9 @@ def race(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 def test_t123_randomized_link_swap_never_opens_the_other_file(race: tuple[Path, Path, Path]) -> None:
     """TAB-T-123: ``RACE_REPEAT`` connects while the name is swapped at random: 0 connections to the other file, the
-    other file unchanged; every outcome is the checked database or a refusal (``UnsafePath``; SQLite's own "unable
-    to open" when the name changed while SQLite resolved it; before Python 3.13 also ``OSError(EINVAL)`` from
-    ``os.path.realpath`` in the same case, TODO TB-045)."""
+    other file and its directory unchanged; every outcome is the checked database or a refusal (``UnsafePath``, or
+    SQLite's own "unable to open" when the name changed while SQLite resolved it). Two connects with the swapping held
+    end the run deterministically: the link is refused, the checked file opens."""
     name, right, other = race
     before, other_mode = digest(other), other.stat().st_mode & 0o777
     opened = refused = 0
@@ -164,34 +201,41 @@ def test_t123_randomized_link_swap_never_opens_the_other_file(race: tuple[Path, 
                 assert "unable to open database file" in str(exc), repr(exc)
                 refused += 1
                 continue
-            except OSError as exc:
-                # Before Python 3.13, os.path.realpath raises EINVAL when a link it saw is a file again by the time
-                # it reads the link; connect closes the connection and passes that on (TODO TB-045): nothing opened.
-                if sys.version_info >= (3, 13) or exc.errno != errno.EINVAL:
-                    raise
-                refused += 1
-                continue
             try:
                 assert _tag(connection) == "right", repetition
             finally:
                 connection.close()
             opened += 1
+        with swapper.hold(link=True), pytest.raises(UnsafePath) as info:
+            ts.connect(name)
+        assert info.value.code == "sqlite.symlink"
+        with swapper.hold(link=False):
+            connection = ts.connect(name)
+            try:
+                assert _tag(connection) == "right"
+            finally:
+                connection.close()
     assert swapper.error is None, swapper.error
     assert digest(other) == before
     assert other.stat().st_mode & 0o777 == other_mode
+    assert sorted(p.name for p in other.parent.iterdir()) == ["other.db"]  # no side files next to it either
     assert opened + refused == RACE_REPEAT
-    assert swapper.swaps > RACE_REPEAT  # the name changed before and while each connect ran
-    assert refused > 0, (opened, refused, swapper.swaps)  # the links were seen, so the race was exercised
-    assert opened > 0, (opened, refused, swapper.swaps)
+    assert swapper.swaps >= RACE_REPEAT  # the name changed before each connect
+    if RACE_REPEAT >= 1000:
+        # The nightly scale: the randomized connects themselves saw both outcomes. Pull requests run a smoke run;
+        # detection of a broken check is the nightly's job (and the deterministic tests' in test_connect.py).
+        assert refused > 0, (opened, refused, swapper.swaps)
+        assert opened > 0, (opened, refused, swapper.swaps)
 
 
 def test_t123_control_plain_sqlite_opens_the_other_file(race: tuple[Path, Path, Path]) -> None:
-    """Negative control: without the checks, the same swapping makes a plain read-only ``sqlite3.connect`` open the
-    other file, so the test above can fail."""
+    """Negative control: without the checks, a plain read-only ``sqlite3.connect`` follows the link to the other
+    file, so the test above can fail. The random part counts what the same swapping gives; the held connect makes the
+    result deterministic."""
     name, right, other = race
     seen = {"right": 0, "other": 0}
     with _Swapper(name, right, other) as swapper:
-        for _ in range(max(RACE_REPEAT, 200)):
+        for _ in range(RACE_REPEAT):
             swapper.next_swap()
             try:
                 connection = sqlite3.connect(f"file:{name}?mode=ro", uri=True)
@@ -203,10 +247,13 @@ def test_t123_control_plain_sqlite_opens_the_other_file(race: tuple[Path, Path, 
                 pass  # a swap during the read: neither file decided
             finally:
                 connection.close()
-            if seen["other"] and seen["right"]:
-                break
+        with swapper.hold(link=True):
+            connection = sqlite3.connect(f"file:{name}?mode=ro", uri=True)
+            try:
+                assert _tag(connection) == "other", seen
+            finally:
+                connection.close()
     assert swapper.error is None, swapper.error
-    assert seen["other"] > 0, seen
 
 
 def test_tb045_no_false_refusal_under_pool_load(tmp_path: Path) -> None:

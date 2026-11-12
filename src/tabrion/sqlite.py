@@ -345,6 +345,18 @@ def _same_file(path: str, expected: tuple[int, int], connection: sqlite3.Connect
     opened = _main_file(connection)
     if not opened:
         return True
+    try:
+        return _opened_is_checked(path, opened)
+    except OSError:  # a name that changed while it was resolved
+        # Before Python 3.13, ``os.path.realpath`` raises EINVAL when a link it saw is a file again by the time it
+        # reads the link. That is no proof of the checked file: the caller refuses, and the error with its file name
+        # never leaves ``connect`` (TB-045).
+        _log.debug("the database file %s changed while its name was resolved", path)
+        return False
+
+
+def _opened_is_checked(path: str, opened: str) -> bool:
+    """Whether the name SQLite opened (``opened``) is ``path``; raises ``OSError`` if a name changes meanwhile."""
     # SQLite's unix VFS resolves links in the name it opens; a link followed at open time shows up here even when
     # it was swapped back before the check above. Only the directory of ``path`` is resolved: its last component was
     # checked above, and resolving it again would follow a link put there since (TB-045).

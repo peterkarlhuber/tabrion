@@ -65,6 +65,14 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         True,
         True,
     ),
+    # TB-045: a name that changed while it was resolved is refused as UnsafePath, never passed on as an OSError.
+    (
+        "    except OSError:  # a name that changed while it was resolved\n",
+        "    except ValueError:  # a name that changed while it was resolved\n",
+        _T + "test_connect.py::test_tb045_a_name_that_changes_while_resolved_is_refused_without_its_path",
+        False,
+        False,
+    ),
     # TM-04, TB-045: the descriptor SQLite opened is the checked file.
     (
         "        if after is not None and _opened_checked_file(before, after, expected, sides):\n",

@@ -990,29 +990,32 @@ required (owner decision of 2026-11-08 11:26Z).
   which no check of the name sees: on POSIX `connect` now verifies that the descriptor SQLite opened is the checked
   file (I-22 (e), `test_tb045_*` with mutation probes), and the last name check resolves the directory only. On
   Windows the name checks remain the only check (documented and tested as such).
-- **Status note (2026-11-12, the nightly K7 pull request (branch `claude/project-thread-rdo6g3-nightly-k7`)):**
-  `tests/sqlite/test_stress_open_race.py` (marked `stress`, POSIX only) is the randomized test. A thread replaces
-  the database name at random short intervals, by turns with a link to another database (0644, so owner and mode
-  checks pass) and a hard link to the checked one, while `connect` runs; `5 * TABRION_STRESS_REPEAT` repetitions,
-  25 on pull requests and 1,000 in the nightly `stress (200 repetitions)` job. Invariant: no connection to the other
-  file and the other file byte-identical with its mode (0 unsafe opens); each outcome is the checked database,
-  `UnsafePath`, or SQLite's own "unable to open database file" when the name changed while SQLite resolved it (rare,
-  nothing opened). A control with a plain read-only `sqlite3.connect` under the same swapping opens the other file,
-  so the test can fail. The false-refusal case: per repetition three threads each open, read and close five
-  connections (each opening the `-wal` and `-shm`) while another connection holds the database and a thread opens
-  an unrelated file every few milliseconds; 0 `UnsafePath` in 1,000 repetitions. Local runs (Linux, 4 cores,
-  1,000 repetitions, Python 3.11, 3.12 and 3.13, also on two cores under CPU load): all green; of 3,000 swapped
-  connects about 53 % opened the checked database, 46 % were refused at the first link check, 1.5 % later (the window
-  between check and open), 0.3 % by SQLite itself. The swapping keeps the checked file in place now and then for a
-  few milliseconds, so a slow runner also sees opens (a nightly run on Python 3.12 had refused all 25 connects). TAB-T-123 is Covered in `docs/program/traceability.md`.
-  Finding of the first dispatched nightly (Python 3.11): before Python 3.13, `os.path.realpath` raises
-  `OSError(EINVAL)` when the name it saw as a link is a file again by the time it reads the link. `_same_file` calls
-  it on the name SQLite opened, so `connect` can end with that `OSError` instead of `UnsafePath` (contract I-22): it
-  closes the connection first, so nothing is opened, but the error type is wrong (about 1 in 1,000 swapped connects
-  locally on 3.11 and 3.12; 3.13 and later return the name). The test accepts exactly this case on Python < 3.13.
-- **Next step:** in `_same_file`, treat an `OSError` of `os.path.realpath` as "not the same file" (so `connect`
-  raises `UnsafePath`), with a seam test, then drop the test's Python < 3.13 allowance; a change of
-  `tabrion.sqlite`, so with the TAB-013 review. Also a `diagnose` field that says whether the descriptor check is active (review F9), and verifying the
+- **Status note (2026-11-12, the nightly K7 pull request #50 (branch `claude/project-thread-rdo6g3-nightly-k7`)):**
+  - `tests/sqlite/test_stress_open_race.py` (marked `stress`, POSIX only) is the randomized test. A thread replaces
+    the database name at random short intervals, by turns with a link to another database (0644, so the owner and
+    mode checks pass) and a hard link to the checked one, while `connect` runs. It runs `5 * TABRION_STRESS_REPEAT`
+    repetitions: 25 on pull requests (a smoke run) and 1,000 in the nightly `stress (200 repetitions)` job, which
+    carries the detection; the deterministic `test_tb045_*`, `test_s07_*` and `test_l3_*` tests cover each window on
+    every pull request.
+  - Invariant: no connection to the other file, the other file byte-identical with its mode, and no new file in its
+    directory (0 unsafe opens). Each outcome is the checked database, `UnsafePath`, or SQLite's own "unable to open
+    database file" when the name changed while SQLite resolved it (rare, nothing opened).
+  - No assertion depends on timing (review of #50, C-1): the swapping thread can be held with a chosen state in
+    place, and two held connects end each run (the link is refused, the checked file opens). The counts of the
+    randomized outcomes are checked at the nightly scale only. A negative control shows that a plain read-only
+    `sqlite3.connect` follows the link (held, so deterministic).
+  - The false-refusal case: per repetition three threads each open, read and close five connections (each opening
+    the `-wal` and `-shm`) while another connection holds the database and a thread opens an unrelated file every
+    few milliseconds; 0 `UnsafePath` in 1,000 repetitions.
+  - Fixed with it (found by the first dispatched nightly on Python 3.11): before Python 3.13, `os.path.realpath`
+    raises `OSError(EINVAL)` when a name changes while it is resolved. `connect` passed that `OSError`, with the
+    file name in its text, on instead of `UnsafePath` (it had closed the connection, so nothing was opened). Now the
+    post-open check counts any `OSError` while resolving the opened name as "not the checked file", so `connect`
+    raises `UnsafePath("sqlite.unsafe_path")` without a path and without a chained `OSError`
+    (`test_tb045_a_name_that_changes_while_resolved_is_refused_without_its_path`, forced on every Python version,
+    with a mutation probe); the race test has no version allowance any more.
+  - TAB-T-123 is Covered in `docs/program/traceability.md`.
+- **Next step:** a `diagnose` field that says whether the descriptor check is active (review F9), and verifying the
   descriptor listing on a BSD (unverified there; without a passing probe a BSD gets the name checks only, review
   F15). The aggressive-load false-refusal rate (about 2 %, contract I-22) stays a measurement, not a test. Then
   close.

@@ -240,6 +240,11 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Fixed
 
+- `tabrion.sqlite.connect` raises `UnsafePath("sqlite.unsafe_path")` when the database name changes while the name
+  SQLite opened is resolved after the open. Before Python 3.13, `os.path.realpath` raised `OSError(EINVAL)` there,
+  and `connect` passed it on, with the file name in its text, after closing the connection (nothing was opened).
+  Contract I-22, TODO TB-045; found by the randomized open race test of TAB-T-123
+  (`tests/sqlite/test_stress_open_race.py`, 1,000 repetitions in the nightly `stress` job).
 - `classify` maps a SQLite error whose code the `sqlite3` module does not name (`sqlite_errorname == "unknown"`,
   for example `SQLITE_CONSTRAINT_DATATYPE` of a STRICT table on Python 3.13) by its number: `DATA` instead of
   `UNKNOWN` (contract I-75).
