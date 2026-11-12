@@ -95,6 +95,7 @@ markers = [
     "pgvector: needs the vector extension (image pgvector/pgvector)",
     "slow: concurrency and fault-injection tests (> 2 s)",
     "stress: concurrency and stress suite (QA-4); TABRION_STRESS_REPEAT repetitions, 5 by default, 200 nightly",
+    "restart: restarts the PostgreSQL server (TAB-T-009); needs TABRION_PG_RESTART_COMMAND, nightly job 'pg restart' only",
     "conformance: runs the Levuvo Database Profile vectors",
     "security: leak, permission and symlink regressions",
     "packaging: builds wheels and creates fresh virtual environments (slow)",

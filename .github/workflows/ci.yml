@@ -291,17 +291,18 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: pip install -e ".[dev]"
+      # --no-stubs (TB-022, TODO TB-135): no name the package version exports may still be a stub.
       - if: github.event_name != 'pull_request'
-        run: python scripts/api_surface.py
+        run: python scripts/api_surface.py --no-stubs
       - if: github.event_name == 'pull_request'
-        name: api_surface.py --base <merge base with the base branch>
+        name: api_surface.py --base <merge base with the base branch> --no-stubs
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           base=$(git merge-base "$BASE_SHA" HEAD)
           echo "merge base with the base branch: $base"
-          python scripts/api_surface.py --base "$base"
+          python scripts/api_surface.py --base "$base" --no-stubs
 
   audit:
     name: dependency audit
@@ -344,42 +345,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The whole history, so that the guard below can read the base branch's tree.
-          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
           cache: pip
-      - name: The vectors exist on this commit (required once they exist on the base)
-        id: vectors
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-        run: |
-          set -euo pipefail
-          # Transitional until TAB-050 (#27) is on master (TODO TB-017, workflow review C-2). The decision comes from
-          # the base: when the base has conformance/MANIFEST.json, this commit must have it too, so a pull request
-          # that deletes it fails instead of skipping. Without a base (dispatch, nightly) only this commit counts.
-          on_base=false
-          if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null \
-              && git cat-file -e "$BASE_SHA:conformance/MANIFEST.json" 2>/dev/null; then
-            on_base=true
-          fi
-          if [ -f conformance/MANIFEST.json ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          elif [ "$on_base" = true ]; then
-            echo "::error::conformance/MANIFEST.json exists on the base $BASE_SHA but not on this commit"
-            exit 1
-          else
-            echo "::notice::conformance/MANIFEST.json does not exist on the base nor here yet (TAB-050); nothing to run"
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.vectors.outputs.present == 'true'
-        run: pip install -e ".[dev]"
-      - if: steps.vectors.outputs.present == 'true'
-        run: python -m tests.support.conformance
-      - if: steps.vectors.outputs.present == 'true'
-        run: pytest -m conformance -v -p no:cacheprovider
+      # No guard any more (TODO TB-135, workflow review C-3b): TAB-050 is on master, so a missing
+      # conformance/MANIFEST.json fails the checker below instead of skipping the job.
+      - run: pip install -e ".[dev]"
+      - run: python -m tests.support.conformance
+      - run: pytest -m conformance -v -p no:cacheprovider
 
   golden:
     # TAB-022a (TODO TB-070, specification S-7, contract I-61): the consumers' golden files, replayed without and

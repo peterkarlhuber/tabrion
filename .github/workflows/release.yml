@@ -24,6 +24,8 @@
 # * The job "downstream-notice" (TAB-051, TODO TB-090) runs `scripts/api_surface.py --base <previous tag>` and prints
 #   the downstream issues of the release flow (docs/development/api-stability.md) as a checklist. It opens no issue
 #   and holds no write permission: sending them is a manual step after G-R.
+# * The job "surface" runs `scripts/api_surface.py --no-stubs` on the release commit (TB-022, TODO TB-135); "build"
+#   needs it, so no release is built while a name of its version is still a stub.
 name: Release
 
 on:
@@ -158,8 +160,28 @@ jobs:
             for repo in nodestro-api nodestro-sdk tabrion-studio; do echo "- [ ] peterkarlhuber/$repo (where it uses the name)"; done
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
+  surface:
+    # TB-022 (TODO TB-135): the release commit's surface is consistent and no name its version exports is a stub
+    # (`api_surface.py --no-stubs`). Binding: "build" needs this job. Runs pip with `contents: read` only, no cache.
+    name: api surface (no stubs)
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: python scripts/api_surface.py --no-stubs
+
   build:
-    needs: [nightly-gate, resolve]
+    needs: [nightly-gate, resolve, surface]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

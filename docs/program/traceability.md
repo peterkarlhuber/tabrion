@@ -40,7 +40,7 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 | TAB-T-006 | DI-03: `SessionLock`: a second holder waits or fails; a lost connection frees the lock | `tests/postgres/test_stress_postgres.py::test_t006_session_locks_exclude_each_other`, `tests/postgres/test_stress_postgres.py::test_t006_second_holder_fails_or_waits`, `tests/postgres/test_stress_postgres.py::test_t006_connection_loss_releases_the_lock`, `tests/postgres/test_locks.py::test_l01_two_processes_compete`, `tests/postgres/test_locks.py::test_l04_connection_loss_clears_every_count`, `tests/postgres/test_locks.py::test_l11_two_processes_one_waits` | Covered |
 | TAB-T-007 | DI-04: a provoked serialization conflict is `Kind.SERIALIZATION`, `retryable=True` | `tests/postgres/test_errors_postgres.py::test_e07_lock_deadlock_serialization`, `tests/postgres/test_stress_postgres.py::test_t007_serializable_transfers_with_application_retry`, `tests/postgres/test_canary_postgres.py::test_t110_layer_a_serialization` | Covered |
 | TAB-T-008 | DI-04: a deadlock is `Kind.DEADLOCK` | `tests/postgres/test_errors_postgres.py::test_e07_lock_deadlock_serialization`, `tests/postgres/test_canary_postgres.py::test_t110_layer_a_deadlock` | Covered |
-| TAB-T-009 | DI-05, K7, probe P3: after a database restart, the first request succeeds (`pool_pre_ping`) | Related, but not the restart itself: `tests/postgres/test_health.py::test_p07_terminated_backend`, `tests/postgres/test_check_layer_b.py::test_k25_pool_without_pre_ping` | Gap (TB-136) |
+| TAB-T-009 | DI-05, K7, probe P3: after a database restart, the first request succeeds (`pool_pre_ping`) | `tests/postgres/test_restart_postgres.py::test_t009_first_request_after_a_restart` (restarts the server, so it runs only in the nightly job `pg restart`, which sets `TABRION_PG_RESTART_COMMAND`; skipped elsewhere); related: `tests/postgres/test_health.py::test_p07_terminated_backend`, `tests/postgres/test_check_layer_b.py::test_k25_pool_without_pre_ping` | Covered |
 | TAB-T-010 | DI-06: step 3 of 4 fails; the file's SHA-256 is unchanged; a backup exists | `tests/sqlite/test_migrate.py::test_s28_failing_step_leaves_the_file_unchanged` | Covered |
 | TAB-T-011 | DI-06: a database newer than the code stops without a write | `tests/sqlite/test_migrate.py::test_s23_schema_too_new`, `tests/unit/test_migrations.py::test_m04_unknown_newer_revision` | Covered |
 | TAB-T-012 | DI-06: the Alembic gate `require_current` | `tests/unit/test_migrations.py::test_m08_require_current`, `tests/examples/test_parts.py::test_require_current_under_a_read_only_profile` | Covered |
@@ -88,12 +88,12 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 
 ## Summary
 
-- **Covered:** 46 IDs (two of them, TAB-T-211 and TAB-T-212, on staged 0.2 APIs).
+- **Covered:** 47 IDs (two of them, TAB-T-211 and TAB-T-212, on staged 0.2 APIs; TAB-T-009 in the nightly job
+  `pg restart` only).
 - **Partial:** 2 IDs.
   - TAB-T-021: no DST boundary (TB-139).
   - TAB-T-123: no randomized 1,000x race (TB-045).
-- **Gap:** 5 IDs.
-  - TAB-T-009: database restart, the K7 nightly case (TB-136).
+- **Gap:** 4 IDs.
   - TAB-T-025: the error hint for `:x::int` (TB-139).
   - TAB-T-162: RLS with two tenants (TB-137).
   - TAB-T-202: restore drill (TB-138).
@@ -101,7 +101,6 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 
 The gaps belong to these categories:
 
-- K7: TAB-T-009.
 - Portability: TAB-T-021, TAB-T-025.
 - RLS compatibility (SR-10): TAB-T-162.
 - Backup and restore: TAB-T-202.

@@ -17,14 +17,15 @@
 ## Summary
 
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
-TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new).
+TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
+TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 8 |
 | P2 Medium | 16 |
-| P3 Low | 48 |
+| P3 Low | 49 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -163,9 +164,9 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
 - **What:** five quality work packages. Status on master `532da05`:
   - QA-2, the canary suite (no values in errors or logs): merged (#25, `a1c13cb`). TB-085 has its open points.
-  - QA-4, the concurrency and stress suite: merged (#31, `a1c57a6`). Its nightly 200x job is TB-086.
+  - QA-4, the concurrency and stress suite: merged (#31, `a1c57a6`). Its nightly 200x job is TB-086 (in progress).
   - QA-8, supply chain with SBOM next to the existing `dependency audit` job: merged (#30, `bd8994f`). It has the SBOM script
-    and the reproducible-wheel test; the CI step is TB-130.
+    and the reproducible-wheel test; the CI step is TB-130 (in progress).
   - QA-11, the release workflow: `release.yml` takes a commit SHA since #40, but its acceptance needs a dry run.
   - QA-22, the conventions audit: merged (#42, `f5a3285`). See `docs/program/reports/qa-22-conventions.md` and
     `tests/security/test_conventions.py`. QA-11 status note: the
@@ -314,11 +315,17 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-130 · Hashed build and SBOM step in CI and in the release workflow (TABRION QA-8)
 
-- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8, QA-11,
+- **Priority:** P2 Medium · **Status:** In progress (the TAB-040 workflow pull request) · **Refs:** TABRION QA-8, QA-11,
   07 TM-10, review of PR #30 (M-1)
 - **What:** `scripts/sbom.py` writes the CycloneDX SBOM of a wheel and is tested on the CI build's wheel, and
   `build-constraints.txt` pins the build backend with hashes, but no workflow uses either yet.
-- **Next step:** in `ci.yml`, jobs `build and install` and `extras matrix`, and in `release.yml`, job `build`, replace
+- **Status note (2026-11-12, the TAB-040 workflow pull request (branch `claude/project-thread-rdo6g3-ci-tab040`), stacked on the TAB-040 readiness pull request #46):**
+  the steps below are in place, taken over from the paused branch `claude/project-thread-rdo6g3-ci-sbom-wip`
+  (`006753a`). `build and install` uploads `dist/` and `sbom/` as the artifact `dist`; the release `build` uploads
+  `release-dist` and `release-sbom`; `attest` (opt-in) attests both. Nothing is published.
+- **Next step:** after the merge, the QA-11 dry run of `release.yml` on the version-bump merge commit shows the SBOM
+  artifact; then set this entry to Done. The plan as it was carried out: in `ci.yml`, jobs `build and install` and
+  `extras matrix`, and in `release.yml`, job `build`, replace
   `- run: python -m build --outdir dist` with
 
   ```yaml
@@ -542,13 +549,17 @@ required (owner decision of 2026-11-08 11:26Z).
     `cancel-in-progress` only for `pull_request`; every other run has its own group via `run_id`, so master, nightly
     and dispatch runs are never cancelled). ci-ok judges each head SHA by its own runs (`head_sha` filter), so a
     cancelled old run gives the old SHA a NOT OK status, never success, and leaves the new SHA untouched.
-- **Next step:** remove both guards (TB-135, a pull request with the label `workflow-change-reviewed`), and close
-  TB-070, TB-090, TB-092 and this entry's `conformance`, `golden files`, `examples` and `downstream` parts. Still
-  open:
+- **Status note (2026-11-12, the TAB-040 workflow pull request (branch `claude/project-thread-rdo6g3-ci-tab040`)):** it merges the paused
+  branch `claude/project-thread-rdo6g3-ci-sbom-wip` (`006753a`, review conditions C-3a and C-4: `api surface` always
+  runs `--base`, `mutation probes` selects its files with `git ls-files 'tests/*/test_*mutation_probes*.py'`,
+  `ci_ok_status.py` gates `.github/ci-manifest.json`, wider platforms filter) and adds: C-3b, the `conformance`
+  guard removed (TB-135); `--no-stubs` in `api surface` and in the new `release.yml` job `surface` (TB-135); the
+  nightly jobs `stress (200 repetitions)` (TB-086) and `pg restart` (TB-136), both in the needs of `report`.
+- **Next step:** after that pull request merges and a nightly is green, close TB-070, TB-090, TB-092, TB-086, TB-135,
+  TB-136 and this entry's `conformance`, `golden files`, `examples`, `downstream` and `stress` parts. Still open:
   - fault injection 3x (TAB-034);
-  - stress 200x (QA-4, TB-086);
-  - the nightly DB-restart case once TAB-T-009 exists (TB-136);
-  - the `sqlite` floor raised to 95 % once tests reach it.
+  - the `sqlite` floor raised to 95 % once tests reach it;
+  - the per-job skip lists (TB-141).
   The TAB-T traceability check (`tests/unit/test_traceability.py`) runs in the unit jobs and needs no wiring.
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
@@ -626,7 +637,7 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** the workflow-change pull request of TB-017 (#34) adds `config.py`, `errors.py`, `testing/sqlite.py`,
   `pyproject.toml`, for the LDP vectors (TAB-050 review H-1) `conformance/**` and `tests/conformance/**`, and the
   three TB-134 paths to `platforms.yml` and the manifest's `path_filters` (ci-ok judges by the default branch's
-  manifest, so it takes effect once merged). The TB-130 pull request adds `src/tabrion/__init__.py`,
+  manifest, so it takes effect once merged). The TAB-040 workflow pull request (with TB-130) adds `src/tabrion/__init__.py`,
   `src/tabrion/check.py`, `tests/conftest.py` and `tests/unit/test_mutation_probes.py` (workflow review of #34/#40,
   finding 4). The filter is still a list, while the platforms job runs the whole non-PostgreSQL suite; the nightly
   runs it on every platform, so a miss shows within a day. Close this entry when both are merged.
@@ -653,7 +664,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-135 · Workflow follow-ups of the TAB-040 readiness pull request: guards, `--no-stubs`
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-040, TB-017, TB-022, QA-11, workflow review C-2
+- **Priority:** P2 Medium · **Status:** In progress (the TAB-040 workflow pull request) · **Refs:** TABRION TAB-040, TB-017, TB-022, QA-11, workflow review C-2
 - **What:** two changes to `.github/`, which need a separate workflow-change pull request with the label
   `workflow-change-reviewed`. This pull request changes no workflow.
   - The two transitional guards of `ci.yml` are dead code now, because #21 (`4f777b4`) and #27 (`2e4b888`) are on
@@ -663,20 +674,31 @@ required (owner decision of 2026-11-08 11:26Z).
   - Run `scripts/api_surface.py --no-stubs` (TB-022) in the `api surface` job, or at least in `release.yml` before
     the release check of QA-11.
   `tests/unit/test_traceability.py` needs no wiring: it runs in the unit jobs.
-- **Next step:** one workflow-change pull request for both changes. Remove the guards, so `api surface` always runs
-  `--base` and `conformance` always requires the manifest, and add the `--no-stubs` step.
+- **Status note (2026-11-12, the TAB-040 workflow pull request (branch `claude/project-thread-rdo6g3-ci-tab040`)):** both guards are gone. `api surface` always runs
+  `--base <merge base>` on pull requests, and `conformance` always runs `python -m tests.support.conformance`, which
+  fails without `conformance/MANIFEST.json` ("not readable JSON", checked). `api surface` adds `--no-stubs` on every
+  event; `release.yml` has the job `surface` (`api_surface.py --no-stubs` on the resolved release commit), and
+  `build` needs it.
+- **Next step:** Done once that pull request merges.
 
 ### TB-136 · TAB-T-009: first request after a database restart (K7 nightly case)
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** planning document 07 DI-05, K7, probe P3; TAB-034;
+- **Priority:** P2 Medium · **Status:** In progress (the TAB-040 workflow pull request) · **Refs:** planning document 07 DI-05, K7, probe P3; TAB-034;
   `docs/program/traceability.md`
 - **What:** no test restarts the PostgreSQL server and checks that the first request through a layer-B `Database`
   (with `pool_pre_ping`) succeeds. Related tests exist: `test_p07_terminated_backend` ends a session, and
   `test_k25_pool_without_pre_ping` checks the profile. K7 runs this case nightly, and the nightly workflow has no
   restart step (TB-017).
-- **Next step:** a test marked for the nightly run that restarts the service (or terminates every backend as a
-  stand-in on PR runs), then the nightly step in a workflow-change pull request. Alternatively, a deviation row for
-  G-T2.
+- **Status note (2026-11-12, the TAB-040 workflow pull request (branch `claude/project-thread-rdo6g3-ci-tab040`)):** `tests/postgres/test_restart_postgres.py::
+  test_t009_first_request_after_a_restart` (markers `postgres` and the new `restart`) runs the command in
+  `TABRION_PG_RESTART_COMMAND` (split with `shlex`, no shell) and is skipped without it, so the `pg` jobs never
+  restart a server. Two layer-B databases hold a pooled connection across one restart; the one with `pool_pre_ping`
+  answers the first request on a new backend, the one without fails with `ConnectionFailed` (`Kind.CONNECTION`) as
+  the control, and `pg_postmaster_start_time()` proves the restart. The nightly job `pg restart` sets the command to
+  `docker restart <service container ID>` (`job.services.postgres.id`); GitHub service containers keep their port
+  binding and data across a restart. Checked locally on a private PostgreSQL 16 cluster with
+  `pg_ctl restart` (passes; it fails when both pools lack pre_ping).
+- **Next step:** the first green nightly with `pg restart`; then Done.
 
 ### TB-137 · TAB-T-162: RLS table with two tenants through `transaction()`
 
@@ -715,6 +737,21 @@ required (owner decision of 2026-11-08 11:26Z).
 - **What:** the plan asks for a nightly benchmark that warns above 2x the baseline and is not a gate. It does not
   exist yet. RA-EVAL measures the overhead once.
 - **Next step:** with RA-EVAL, or after 0.1.0.
+
+### TB-141 · Per-job skip lists `tests/ci/skipped-<job>.txt` (planning document 07 section 4.3)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 section 4.3 (MUP-ONA T-SKIP-1), G-T2
+  ("flaky list ≤ 2, no reruns, skip lists per job"), TB-017
+- **What:** each CI job should compare the tests it skipped with its own list `tests/ci/skipped-<job>.txt` and fail
+  on any difference. The flaky list exists (`tests/ci/flaky.txt`, #40); the skip lists do not. Left out of the TAB-040
+  workflow pull request on purpose: every one of the about 25 ci-ok jobs (each Python, SQLAlchemy, PostgreSQL and
+  platform variant) skips a different set, so the lists must come from real CI runs, and a wrong list turns a
+  required check red.
+- **Next step:** a pytest plugin under `tests/` (for example `-p tests.ci.skiplist`, active only with
+  `TABRION_SKIP_LIST=<file>`) that collects the skipped node IDs with their reasons at session end and fails on a
+  difference, with a `--write` mode; one run per job with the plugin in report-only mode to record the lists; then
+  the workflow-change pull request that sets the variable per job. Alternatively, a G-T2 deviation row that names
+  `-ra` in every job's log as the skip record.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 
@@ -996,7 +1033,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-086 · Nightly `stress` job: 200 repetitions (TABRION QA-4)
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-4, planning document 07 K6 and section 4.3,
+- **Priority:** P2 Medium · **Status:** In progress (the TAB-040 workflow pull request) · **Refs:** TABRION QA-4, planning document 07 K6 and section 4.3,
   deviations D-2, D-85
 - **What:** the stress suite (`pytest -m stress`, `tests/stress.py`) repeats each scenario `TABRION_STRESS_REPEAT`
   times: 5 by default, so it runs on every pull request in the `test` and `pg (...)` jobs. The nightly run with 200
@@ -1006,8 +1043,11 @@ required (owner decision of 2026-11-08 11:26Z).
   `TABRION_STRESS_REPEAT=200 pytest -m stress -v -p no:cacheprovider` with `TABRION_TEST_POSTGRES` and
   `TABRION_REQUIRE_POSTGRES=1`, `timeout-minutes: 90` (40 repetitions took about 2 minutes locally, so 200 take about
   10 to 15 minutes).
-- **Next step:** a workflow pull request adds the job; QA-4's "nightly `stress` 200 repetitions without loss" is then
-  checked on the first nightly.
+- **Status note (2026-11-12, the TAB-040 workflow pull request (branch `claude/project-thread-rdo6g3-ci-tab040`)):** `nightly.yml` has the job `stress (200 repetitions)`
+  as described, without a pip cache, in the needs of `report` (a red run opens the nightly issue, and the release
+  gate waits for a green nightly). Not a ci-ok check.
+- **Next step:** QA-4's "nightly `stress` 200 repetitions without loss" is checked on the first nightly; then Done and
+  D-85 closed.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 

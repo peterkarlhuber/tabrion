@@ -149,6 +149,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `raise NotImplementedError`, `pass` or `...`. The body is read with `ast`, so nothing is called.
 - `docs/program/traceability.md` maps each of the 53 numbered plan test IDs (TAB-T-001..300; G-T2, K2, K8) to the
   tests that cover it, and marks 2 partial IDs and 5 gaps (TODO TB-136..TB-140).
+- TAB-T-009 (K7, TB-136): `tests/postgres/test_restart_postgres.py` restarts the PostgreSQL server between two
+  requests and checks that the first request through a pool with `pool_pre_ping` succeeds, with a pool without it as
+  the control. New marker `restart`; the test runs only when `TABRION_PG_RESTART_COMMAND` is set (the nightly job
+  `pg restart`) and is skipped elsewhere.
   `tests/unit/test_traceability.py` checks that every ID has a row and that every named test exists.
 
 ### Changed
@@ -179,6 +183,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   surface` always runs `--base <merge base>` on pull requests; `mutation probes` selects its files by the pattern the
   other jobs ignore; ci-ok's workflow-change gate also covers `.github/ci-manifest.json`; the `platforms.yml` filter
   adds `__init__.py`, `check.py`, `tests/conftest.py` and `tests/unit/test_mutation_probes.py`.
+- CI (workflow change, TAB-040 gaps): `nightly.yml` has the jobs `stress (200 repetitions)` (K6, QA-4, TB-086:
+  `pytest -m stress` with `TABRION_STRESS_REPEAT=200`, SQLite and PostgreSQL 17) and `pg restart` (K7, TB-136:
+  `docker restart` of the job's PostgreSQL service container inside the TAB-T-009 test); both are nightly only and
+  in the needs of the nightly report. The dead transitional guard of `conformance` is removed (TB-135, review C-3b),
+  and `api surface` runs `scripts/api_surface.py --no-stubs` (TB-022) in `ci.yml` and in the new `release.yml` job
+  `surface`, which `build` needs.
 - CI (workflow change, QA-11, K1, K7/K8): `release.yml` takes an annotated tag or a full commit SHA on master,
   requires a final `__version__` and a dated CHANGELOG section (`.github/scripts/release_check.py`), and runs the
   attestation only with the opt-in input `attest`. `ci.yml` has the jobs `coverage` (branch coverage with the whole
