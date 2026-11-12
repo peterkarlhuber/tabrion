@@ -116,9 +116,13 @@ def test_the_summary_counts_match_the_table() -> None:
     statuses = [TODO_REF.sub("", row[3]).strip() for row in _rows()]
     summary = PAGE.read_text(encoding="utf-8").split("## Summary", 1)[1]
     covered = statuses.count("Covered") + statuses.count("Covered (0.2)")
-    assert f"**Covered:** {covered} IDs" in summary
-    assert f"**Partial:** {statuses.count('Partial')} IDs" in summary
-    assert f"**Gap:** {statuses.count('Gap')} IDs" in summary
+
+    def ids(count: int) -> str:
+        return f"{count} ID" if count == 1 else f"{count} IDs"
+
+    # The noun must end where the count's word ends: "1 ID" is not the start of "1 IDs".
+    for label, count in (("Covered", covered), ("Partial", statuses.count("Partial")), ("Gap", statuses.count("Gap"))):
+        assert re.search(rf"\*\*{label}:\*\* {ids(count)}\b", summary), (label, count)
 
 
 def test_the_page_is_in_the_documentation_site() -> None:
