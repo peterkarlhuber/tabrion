@@ -8,13 +8,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
-- Dependency policy (TABRION QA-17, AC-2): `dependency-policy.json` is this repository's copy of the dependency policy K-33 from nodestro-studio (only its
-  outgoing edges: none, tabrion depends on no Levuvo package, P6), and `scripts/check_dependency_policy.py` is the unchanged checker from there;
-  `scripts/DEPENDENCY_POLICY_SOURCE.md` records their origin and SHA-256. `python scripts/check_dependency_policy.py`
-  checks `pyproject.toml` (core, every extra and dependency group) against the copy.
-  `tests/architecture/test_dependency_policy.py` checks the checksums, runs the checker and probes forbidden
-  requirements (a platform, a library, a studio, an unknown Levuvo package). Ruff skips the vendored script (it is linted in nodestro-studio). The sdist
-  ships the three files, since it ships the tests.
+- Dependency policy (TABRION QA-17, AC-2): `dependency-policy.json` is this repository's copy of the dependency policy
+  K-33 from nodestro-studio (only its outgoing edges: none, tabrion depends on no Levuvo package, P6), and
+  `scripts/check_dependency_policy.py` is the unchanged checker from there; `scripts/DEPENDENCY_POLICY_SOURCE.md`
+  records their origin and SHA-256. `python scripts/check_dependency_policy.py` checks `pyproject.toml` (core, every
+  extra and dependency group) against the copy. `tests/architecture/test_dependency_policy.py` checks the checksums,
+  runs the checker and probes forbidden requirements (a platform, a library, a studio, an unknown Levuvo package).
+  Ruff skips the vendored script (it is linted in nodestro-studio). The sdist ships the three files, since it ships
+  the tests.
 - Conventions audit (QA-22): report `docs/program/reports/qa-22-conventions.md` (both new repositories against the
   checklist and against orkexa and axentra) and `tests/security/test_conventions.py` (license, security policy,
   community files, Dependabot policy with a red-tested no-auto-merge check, CI manifest).
