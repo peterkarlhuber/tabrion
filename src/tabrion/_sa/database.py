@@ -184,7 +184,11 @@ def _translate(
 
 
 def _parameter_cast_hint(kind: Kind, text: str | None) -> dict[str, str | int | None] | None:
-    """``{"hint": ...}`` when a syntax or unknown error's statement holds ``:name::type`` (I-107), else ``None``."""
+    """``{"hint": ...}`` when a syntax or unknown error's statement holds ``:name::type`` (I-107), else ``None``.
+
+    The match is textual, as SQLAlchemy's own bind rule is: string literals and comments count too, so a statement
+    that failed for an unrelated reason can carry the hint when such text appears in a literal or a comment
+    (review L-1 of #49). The hint is fixed text, so this costs no value, only a possibly misleading hint."""
     if kind in _PARAMETER_CAST_KINDS and text is not None and _PARAMETER_CAST.search(text) is not None:
         return {"hint": _PARAMETER_CAST_HINT}
     return None

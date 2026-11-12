@@ -417,6 +417,51 @@ class PartsSuite:
         assert ordered == [earliest, early, NOW]
         assert sorted(before) == ["B", "C"]
 
+    def test_timestamps_round_trip_across_a_dst_boundary(self, app: App, db: Any) -> None:
+        """TAB-T-021 (planning document 07, DI-08): aware values on both sides of the 2026 switches in Vienna.
+
+        On 2026-10-25 the wall clock runs 02:00..02:59:59.999999 twice (CEST, UTC+2, then CET, UTC+1); on 2026-03-29
+        it jumps from 02:00 CET to 03:00 CEST. Each value comes back as the same instant in UTC, with its
+        microseconds, and the order is the order of the instants, not of the wall clock. With the time zone database
+        (``zoneinfo``), the same instants as ``Europe/Vienna`` values with ``fold`` come back the same."""
+        app.db.upgrade(db)
+        cest, cet = timezone(timedelta(hours=2)), timezone(timedelta(hours=1))
+        cases = {
+            "spring-last-cet": datetime(2026, 3, 29, 1, 59, 59, 999999, tzinfo=cet),
+            "spring-first-cest": datetime(2026, 3, 29, 3, 0, 0, 1, tzinfo=cest),
+            "fall-first-0230": datetime(2026, 10, 25, 2, 30, 0, 250000, tzinfo=cest),
+            "fall-last-cest": datetime(2026, 10, 25, 2, 59, 59, 999999, tzinfo=cest),
+            "fall-first-cet": datetime(2026, 10, 25, 2, 0, 0, 0, tzinfo=cet),
+            "fall-second-0230": datetime(2026, 10, 25, 2, 30, 0, 250000, tzinfo=cet),
+        }
+        try:
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+            vienna = ZoneInfo("Europe/Vienna")
+        except (ImportError, ZoneInfoNotFoundError):  # pragma: no cover - Windows without the tzdata package
+            pass
+        else:
+            first = datetime(2026, 10, 25, 2, 30, 0, 250000, tzinfo=vienna, fold=0)
+            second = datetime(2026, 10, 25, 2, 30, 0, 250000, tzinfo=vienna, fold=1)
+            assert (first.utcoffset(), second.utcoffset()) == (timedelta(hours=2), timedelta(hours=1))
+            cases |= {"zone-fold-0": first, "zone-fold-1": second}
+        material = app.schema.material
+        with app.write(db) as connection:
+            for code, moment in cases.items():
+                connection.execute(sa.insert(material).values(code=code, name="x", created_at=moment))
+        created = material.c.created_at
+        with app.read(db) as connection:
+            rows = connection.execute(sa.select(material.c.code, created).order_by(created, material.c.code)).all()
+        back = {row.code: row.created_at for row in rows}
+        assert back == {code: moment.astimezone(UTC) for code, moment in cases.items()}
+        assert all(value.utcoffset() == timedelta(0) for value in back.values())
+        # The same wall clock 02:30 twice in October: one hour apart, the CEST one first.
+        assert back["fall-second-0230"] - back["fall-first-0230"] == timedelta(hours=1)
+        assert back["fall-first-cet"] - back["fall-last-cest"] == timedelta(microseconds=1)
+        assert back["spring-first-cest"] - back["spring-last-cet"] == timedelta(microseconds=2)
+        expected = sorted(cases, key=lambda code: (cases[code].astimezone(UTC), code))
+        assert [row.code for row in rows] == expected
+
     # --- the shared domain code: schema and types (RA-A-1) ------------------------------------------------------
 
     def test_values_round_trip_exactly(self, app: App, db: Any) -> None:

@@ -130,6 +130,26 @@ def test_s02_create_private_file_leaves_an_existing_file(tmp_path: Path) -> None
     assert path.read_bytes() == b"content"
 
 
+@posix_only
+@pytest.mark.parametrize("failing", ["fchmod", "fstat"])
+def test_create_private_file_removes_a_file_it_could_not_finish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: str
+) -> None:
+    """A failure after the exclusive create (setting the mode, reading the identity) raises and removes the new
+    file, so no file with an unchecked mode is left behind under the database's name."""
+    path = tmp_path / "a.db"
+
+    def fail(*args: Any) -> Any:
+        raise OSError(errno.EIO, "injected")
+
+    monkeypatch.setattr(os, failing, fail)
+    with pytest.raises(OSError, match="injected"):
+        ts.create_private_file(path)
+    monkeypatch.undo()
+    assert not os.path.lexists(path)
+    assert files(tmp_path) == []
+
+
 def test_create_private_file_ignores_memory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     ts.create_private_file(":memory:")
@@ -1487,3 +1507,58 @@ def test_s12_without_o_nofollow_a_dangling_link_is_not_followed(
     link.symlink_to(tmp_path / "nowhere")
     assert ts._create(str(link), 0o600) is None
     assert not (tmp_path / "nowhere").exists()
+
+
+# --- connect: the name changes after SQLite opened the checked file (contract I-22, TM-04) ---------------------------
+
+
+def test_check_path_accepts_a_name_it_cannot_inspect(tmp_path: Path) -> None:
+    """``lstat`` failing for another reason than a missing file (here a name too long for the file system) is no
+    link: ``check_path`` accepts it and leaves the error to the open that follows, which fails and creates nothing."""
+    name = str(tmp_path / ("x" * 4096))
+    with pytest.raises(OSError) as info:
+        os.lstat(name)
+    assert not isinstance(info.value, FileNotFoundError)
+    ts.check_path(name)  # no UnsafePath
+    with pytest.raises((OSError, sqlite3.Error)):
+        ts.connect(name)
+    assert files(tmp_path) == []
+
+
+@pytest.mark.parametrize("change", ["replaced", "removed"])
+def test_name_changed_after_sqlite_opened_the_file_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    """SQLite opened the checked file, but before the profile writes anything the name leads to another file
+    (``replaced``) or to none (``removed``): ``connect`` refuses with ``sqlite.unsafe_path``, closes the connection
+    and writes nothing to either file."""
+    path, other = tmp_path / "a.db", tmp_path / "other.db"
+    make_database(path)
+    make_database(other)
+    before = {p.name: digest(p) for p in (path, other)}
+    original = ts._open
+    opened: list[sqlite3.Connection] = []
+
+    def open_then_change(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        connection = original(*args, **kwargs)
+        opened.append(connection)
+        moved = tmp_path / "moved.db"
+        os.replace(path, moved)  # SQLite keeps the checked file open under its new name
+        if change == "replaced":
+            os.replace(other, path)
+        return connection
+
+    monkeypatch.setattr(ts, "_open", open_then_change)
+    if WINDOWS:
+        pytest.skip("Windows does not rename a file that SQLite holds open")
+    with pytest.raises(UnsafePath) as info:
+        ts.connect(path)
+    assert info.value.code == "sqlite.unsafe_path"
+    assert len(opened) == 1
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened[0].execute("SELECT 1")  # closed
+    assert digest(tmp_path / "moved.db") == before["a.db"]
+    if change == "replaced":
+        assert digest(path) == before["other.db"]
+    else:
+        assert not os.path.lexists(path)
