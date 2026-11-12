@@ -43,6 +43,7 @@ import argparse
 import ast
 import dataclasses
 import enum
+import functools
 import importlib
 import inspect
 import json
@@ -51,7 +52,6 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import textwrap
 from types import ModuleType
 from typing import Any
 import warnings
@@ -465,25 +465,54 @@ def _is_stub_statement(node: ast.stmt) -> bool:
     return False
 
 
-def is_stub(fn: Any) -> bool:
-    """True when the body of ``fn`` (after its docstring) is only ``raise NotImplementedError``, ``pass`` or ``...``.
+@functools.cache
+def _module_tree(filename: str) -> ast.Module:
+    return ast.parse(Path(filename).read_text(encoding="utf-8"), filename=filename)
 
-    ``fn`` is unwrapped first (``functools.wraps``); without Python source it is not a stub.
-    """
-    fn = inspect.unwrap(fn)
+
+def _definition(fn: Any) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    """The ``def`` of ``fn`` in the parsed module (review L-1 of #46: a method is never dedented and parsed alone,
+    because a triple-quoted string with flush-left lines cannot be dedented)."""
+    code = getattr(fn, "__code__", None)
     try:
-        source = textwrap.dedent(inspect.getsource(fn))
-    except (OSError, TypeError):
-        return False
-    tree = ast.parse(source)
-    node = next((n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))), None)
+        filename = inspect.getsourcefile(fn)
+    except TypeError:
+        return None
+    if code is None or filename is None or not Path(filename).is_file():
+        return None
+    for node in ast.walk(_module_tree(filename)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fn.__name__:
+            first = min([node.lineno, *(decorator.lineno for decorator in node.decorator_list)])
+            if code.co_firstlineno in (first, node.lineno):
+                return node
+    return None
+
+
+def stub_kind(fn: Any) -> str | None:
+    """How ``fn`` is a stub, or ``None`` when it is not one.
+
+    A stub's body, after its docstring, holds only ``raise NotImplementedError``, ``pass`` or ``...``, or nothing
+    at all. ``fn`` is unwrapped first (``functools.wraps``); without Python source it is not a stub.
+    """
+    node = _definition(inspect.unwrap(fn))
     if node is None:
-        return False
+        return None
     body = node.body
     first = body[0] if body else None
     if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
         body = body[1:]
-    return all(_is_stub_statement(statement) for statement in body)
+    if not all(_is_stub_statement(statement) for statement in body):
+        return None
+    if any(isinstance(statement, ast.Raise) for statement in body):
+        return "its body only raises NotImplementedError"
+    if body:
+        return "its body is only pass or ..."
+    return "its body is only a docstring"
+
+
+def is_stub(fn: Any) -> bool:
+    """True when ``fn`` is a stub (:func:`stub_kind`)."""
+    return stub_kind(fn) is not None
 
 
 def _function_of(path: str, kind: str) -> Any:
@@ -515,8 +544,9 @@ def check_stubs(recorded: dict[str, Entry], current: tuple[int, int]) -> list[st
             fn = _function_of(path, entry["kind"])
         except LookupError:
             continue  # reported by check() as no longer public
-        if is_stub(fn):
-            problems.append(f"{path}: since {since}, but it is a stub (its body only raises NotImplementedError)")
+        kind = stub_kind(fn)
+        if kind is not None:
+            problems.append(f"{path}: since {since}, but it is a stub ({kind})")
     return problems
 
 

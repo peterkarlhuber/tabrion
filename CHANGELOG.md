@@ -156,6 +156,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
     yet (TB-139).
   - TAB-T-162: row-level security with `FORCE`, a non-owner runtime role, and two tenants through
     `Database.transaction()` with `set_config(..., true)`.
+  - TAB-T-161: the next checkout after a failed, raised or interrupted transaction is idle.
   - TAB-T-202: the restore drill of the measurements application.
   - K1: branch tests for `tabrion.sqlite`, which lift its coverage above 95 %. They cover a failed `fchmod` or
     `fstat` after the exclusive create, a name `lstat` cannot inspect, a name changed after SQLite opened the

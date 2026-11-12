@@ -463,6 +463,50 @@ def test_b12_a_failing_read_back_does_not_commit(db: Database, monkeypatch: pyte
     assert db.fetch_scalar("SELECT 1") == 1  # the pool hands out a working connection again
 
 
+# --- TAB-T-161 (planning document 07, TM-08): a connection with an open transaction is never reused ----------------
+
+
+@pytest.mark.parametrize("failure", ["statement", "exception", "interrupt", "after-a-savepoint"])
+def test_t161_next_checkout_after_a_failed_transaction_is_idle(
+    open_db: Callable[..., Database], schema: str, admin: Any, failure: str
+) -> None:
+    """TM-08: a transaction that ends with a statement error, an exception, a ``KeyboardInterrupt`` or a block that
+    breaks off after a write never leaves its transaction to the next user of the pooled connection. With one pooled
+    connection, the backend is ``idle`` on the server (or gone, when the connection was discarded), and the next
+    transaction starts fresh: no transaction ID assigned, no tenant setting, no uncommitted row."""
+    database = open_db(pool_size=1, max_overflow=0)
+    database.execute(f"CREATE TABLE {schema}.items (id int PRIMARY KEY)")
+    errors: dict[str, type[BaseException]] = {
+        "statement": StatementError,
+        "exception": RuntimeError,
+        "interrupt": KeyboardInterrupt,
+        "after-a-savepoint": RuntimeError,
+    }
+    backend: list[int] = []
+    with pytest.raises(errors[failure]), database.transaction() as tx:
+        backend.append(int(tx.fetch_scalar("SELECT pg_backend_pid()")))
+        tx.execute("SELECT set_config('app.tenant_id', 'tenant-a', true)")
+        tx.execute(f"INSERT INTO {schema}.items VALUES (1)")
+        if failure == "statement":
+            tx.execute("SELECT * FROM t_does_not_exist")
+        elif failure == "interrupt":
+            raise KeyboardInterrupt
+        else:
+            if failure == "after-a-savepoint":
+                tx.execute("SAVEPOINT s")
+            raise RuntimeError("the block broke off")
+    state = admin.execute("SELECT state FROM pg_stat_activity WHERE pid = %s", (backend[0],)).fetchone()
+    assert state is None or state[0] == "idle"
+    assert database.engine.pool.checkedout() == 0  # type: ignore[attr-defined]
+    with database.transaction() as tx:
+        pid = int(tx.fetch_scalar("SELECT pg_backend_pid()"))
+        assert pid == backend[0] or state is None
+        assert tx.fetch_scalar("SELECT pg_current_xact_id_if_assigned()") is None
+        assert tx.fetch_scalar("SELECT current_setting('app.tenant_id', true)") in (None, "")
+        assert tx.fetch_scalar(f"SELECT count(*) FROM {schema}.items") == 0
+    assert admin.execute(f"SELECT count(*) FROM {schema}.items").fetchone() == (0,)
+
+
 # --- TAB-T-162 (planning document 07, SR-10): row-level security, two tenants through transaction() ----------------
 
 

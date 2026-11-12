@@ -174,9 +174,14 @@ def _stub_body(tmp_path: Path, module: str, header: str, body: str) -> Path:
             "sql.py",
             "def split_statements(",
             'raise NotImplementedError("tabrion.sql.split_statements: implemented in TAB-011")',
-            "tabrion.sql.split_statements: since 0.1, but it is a stub",
+            "tabrion.sql.split_statements: since 0.1, but it is a stub (its body only raises NotImplementedError)",
         ),
-        ("_sa/database.py", "def health(", "...", "tabrion.Database.health: since 0.1, but it is a stub"),
+        (
+            "_sa/database.py",
+            "def health(",
+            "...",
+            "tabrion.Database.health: since 0.1, but it is a stub (its body is only pass or ...)",
+        ),
         (
             "_sa/database.py",
             "def dialect(",
@@ -215,3 +220,23 @@ def test_no_stubs_turns_red_for_a_staged_name_of_this_minor(tmp_path: Path) -> N
     result = _run(SRC, "--no-stubs", "--surface", str(surface))
     assert result.returncode == 1, result.stdout + result.stderr
     assert "tabrion.sql.split_statements: since 0.1, but only staged" in result.stderr, result.stderr
+
+
+def test_no_stubs_reads_a_method_with_a_flush_left_string(tmp_path: Path) -> None:
+    """Review L-1 of #46: a method holding a triple-quoted string with flush-left lines cannot be dedented alone; the
+    check parses the whole module, so it neither crashes nor calls the method a stub."""
+    header = "    def health(self, *, timeout: float = 5.0, deep: bool = False) -> Health:\n"
+    flush_left = header + '        _sql = """\nSELECT 1\n"""\n'
+    src = _mutated(tmp_path, [("_sa/database.py", header, flush_left)])
+    result = _run(src, "--no-stubs")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "consistent, no stubs" in result.stdout
+
+
+def test_no_stubs_names_a_method_with_a_flush_left_string_that_is_a_stub(tmp_path: Path) -> None:
+    header = "    def health(self, *, timeout: float = 5.0, deep: bool = False) -> Health:\n"
+    stub = header + '        """Stub.\n\nflush-left line\n"""\n        raise NotImplementedError\n'
+    src = _mutated(tmp_path, [("_sa/database.py", header, stub + "\n    def _old_health(self) -> None:\n")])
+    result = _run(src, "--no-stubs")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "tabrion.Database.health: since 0.1, but it is a stub (its body only raises" in result.stderr

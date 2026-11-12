@@ -18,7 +18,7 @@
 
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 gap tests pull
-request: TB-137 and TB-138 done, TB-139 narrowed).
+request: TB-137 (TAB-T-161 and TAB-T-162) and TB-138 done, TB-139 narrowed).
 
 | Priority | Count |
 |---|---|
@@ -678,7 +678,7 @@ required (owner decision of 2026-11-08 11:26Z).
   stand-in on PR runs), then the nightly step in a workflow-change pull request. Alternatively, a deviation row for
   G-T2.
 
-### TB-137 · TAB-T-162: RLS table with two tenants through `transaction()`
+### TB-137 · TAB-T-162 RLS table with two tenants, TAB-T-161 next checkout is idle
 
 - **Priority:** P3 Low · **Status:** Done (TAB-040 gap tests pull request) · **Refs:** planning document 07 SR-10,
   TM-08; `docs/program/traceability.md`
@@ -689,6 +689,10 @@ required (owner decision of 2026-11-08 11:26Z).
   the other tenant is `Kind.PERMISSION`. The next transaction on the same backend starts without a tenant and sees
   nothing, and the owner sees nothing under `FORCE` either. The roles come from the suite's `make_role`, not from
   `tabrion_postgres_roles`: that fixture is session-scoped, and the per-test leak check would report its roles.
+  TAB-T-161: `tests/postgres/test_database.py::test_t161_next_checkout_after_a_failed_transaction_is_idle` ends a
+  transaction with a statement error, an exception, a `KeyboardInterrupt` and a break after a savepoint, on one
+  pooled connection. Each time the backend is `idle` on the server (or gone when the connection was discarded), and
+  the next transaction has no transaction ID, no tenant setting and no uncommitted row (review L-5 of #46).
 - **Next step:** none.
 
 ### TB-138 · TAB-T-202: restore drill of reference application B

@@ -22,7 +22,9 @@ PLAN_IDS = (
 A new ID in the plan needs a row on the page and an entry here."""
 
 STATUSES = ("Covered", "Covered (0.2)", "Partial", "Gap")
-REFERENCE = re.compile(r"`(tests/[\w/]+\.py)(?:::(\w+))?(?:::(\w+))?`")
+REFERENCE = re.compile(r"(tests/[\w/]+\.py)(?:::(\w+))?(?:::(\w+))?(?:\[[^\]`]*\])?")
+"""A file, ``file::test``, or ``file::Class::test``; a parametrized ID (``[...]``) is checked by its function."""
+CODE_SPAN = re.compile(r"`([^`]*)`")
 TODO_REF = re.compile(r"\((TB-\d{3})\)$")
 
 
@@ -60,10 +62,24 @@ def test_every_status_is_known() -> None:
         assert TODO_REF.sub("", status).strip() in STATUSES, (plan_id, status)
 
 
+def _references(plan_id: str, tests: str) -> list[tuple[str, str, str]]:
+    """Every test reference of a Tests cell; anything that looks like one but does not parse fails (review L-2)."""
+    outside = CODE_SPAN.sub("", tests)
+    assert "tests/" not in outside and "::" not in outside, f"{plan_id}: a reference outside backticks: {tests}"
+    references = []
+    for span in CODE_SPAN.findall(tests):
+        if not (span.startswith("tests/") or "::" in span or span.endswith(".py")):
+            continue  # a name, a setting or a file outside tests/ (TAB-T-101)
+        match = REFERENCE.fullmatch(span)
+        assert match, f"{plan_id}: unreadable reference `{span}`"
+        references.append((match.group(1), match.group(2) or "", match.group(3) or ""))
+    return references
+
+
 def test_every_reference_resolves() -> None:
     problems = []
     for plan_id, _, tests, _ in _rows():
-        for path, first, second in REFERENCE.findall(tests):
+        for path, first, second in _references(plan_id, tests):
             file = ROOT / path
             if not file.is_file():
                 problems.append(f"{plan_id}: {path} does not exist")
@@ -77,7 +93,7 @@ def test_every_reference_resolves() -> None:
 def test_covered_and_partial_rows_name_a_test() -> None:
     for plan_id, _, tests, status in _rows():
         if not status.startswith("Gap"):
-            named = [match for match in REFERENCE.findall(tests) if match[1]]
+            named = [reference for reference in _references(plan_id, tests) if reference[1]]
             # TAB-T-101 is a lint rule, not a test: it names the configuration and the CI jobs instead.
             assert named or plan_id == "TAB-T-101", (plan_id, tests)
 
@@ -88,7 +104,10 @@ def test_partial_and_gap_rows_name_an_open_todo_entry() -> None:
         if status.startswith(("Partial", "Gap")):
             match = TODO_REF.search(status)
             assert match, (plan_id, status)
-            assert re.search(rf"^### {match.group(1)} ·", todo, re.M), (plan_id, match.group(1))
+            entry = re.search(rf"^### {match.group(1)} ·(?:(?!^### ).)*?\*\*Status:\*\* ([^·\n]*)", todo, re.M | re.S)
+            assert entry, (plan_id, match.group(1))
+            # Review L-3: the entry must still be open, or the row should not be a gap any more.
+            assert not entry.group(1).strip().startswith("Done"), (plan_id, match.group(1), entry.group(1))
         else:
             assert not TODO_REF.search(status), (plan_id, status)
 
