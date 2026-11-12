@@ -165,7 +165,10 @@ required (owner decision of 2026-11-08 11:26Z).
   the concurrency and stress suite (QA-4) is in review (its nightly 200x job is TB-086); supply chain with SBOM next to the existing `dependency audit` job
   (QA-8, in review: SBOM script and reproducible-wheel test; the CI step is TB-130); the release workflow is in place
   but its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
-  `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`).
+  `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`). QA-11 status note: the
+  workflow-change pull request on branch `claude/project-thread-rdo6g3-ci-release` lets `release.yml` take a full
+  commit SHA instead of a tag, checks the version (final) and the dated CHANGELOG section, and makes the attestation
+  opt-in; the dry run on a final-version commit is still to do (there is none on master yet).
 - **QA-22 follow-up (F-1, Low):** tabrion has no `.gitattributes` and no `.editorconfig` (orkexa has both). Nothing
   breaks today (golden files are compared as JSON, the Windows job reads them); add both when a byte-compared
   fixture arrives, with `-text` for it.
@@ -506,14 +509,34 @@ required (owner decision of 2026-11-08 11:26Z).
   issues as a dry run and opens none) and TB-092 (TAB-050, #27: the `conformance` job runs
   `python -m tests.support.conformance` and `pytest -m conformance` with a PostgreSQL 17 service), and rewords the
   stale O-1/O-2 comments of TB-003, and widens the `platforms.yml` path filter (TB-021, TAB-050 review H-1, and the
-  workflow file itself). Workflow review conditions: every PostgreSQL service port is bound to `127.0.0.1` (C-3). Until #21 and #27 are on `master`, two transitional guards keep the jobs green:
+  workflow file itself). Workflow review conditions: every PostgreSQL service port is bound to `127.0.0.1` (C-3).
+  Until #21 and #27 are on `master`, two transitional guards keep the jobs green:
   `api surface` falls back to the plain check when the script has no `--base`, and `conformance` runs nothing when
   `conformance/MANIFEST.json` is missing. Finding: at a tag, `--base <previous tag>` reads `[Unreleased]`, which a
   release has already renamed to its version section, so in `release.yml` the check is informational (a warning);
   the binding S-6 check stays the PR job and release-flow step 1 before tagging.
-- **Next step:** after #21 and #27 are merged, remove both transitional guards (a pull request with the label
+- **Status note (2026-11-08, stacked workflow-change pull request on branch
+  `claude/project-thread-rdo6g3-ci-release`):**
+  - Review condition C-2: both guards now decide from the base branch. `api surface` requires `--base` once the base's
+    `api_surface.py` has it, and `conformance` fails when the base has `conformance/MANIFEST.json` but the head does
+    not, so a pull request that deletes either cannot pass.
+  - K1: job `coverage` (the whole suite with PostgreSQL 17, branch coverage) with floors: total 93.5 % (measured
+    94.05 % on 2026-11-08 and 93.99 % after the merge of master `cf815fd`, so half a point of headroom; K1 asks
+    90 %), `errors.py` 95 %, `sql.py` 95 %, `sqlite.py` 94.9 %. K1 asks 95 % for `sqlite`; it is 0.06 points short. The floors live in `ci.yml`, so lowering one needs the
+    workflow-change review. Job `mutation probes` runs the four mutation-probe modules. `test` skips them, so the
+    unit run takes about 56 s locally (K1: under 60 s); the PostgreSQL probes still run in every `pg` job.
+  - K7/K8: `tests/ci/flaky.txt` (empty) with `tests/unit/test_flaky_list.py`; ruff `S` is the documented Bandit
+    substitute (CONTRIBUTING.md) and now also runs over `examples/`. The nightly DB-restart case (TAB-T-009,
+    planning document 07 DI-05, K7) is not wired, because the test does not exist yet.
+  - Concurrency: `ci.yml` and `platforms.yml` already cancel a superseded pull-request run (group per PR number,
+    `cancel-in-progress` only for `pull_request`; every other run has its own group via `run_id`, so master, nightly
+    and dispatch runs are never cancelled). ci-ok judges each head SHA by its own runs (`head_sha` filter), so a
+    cancelled old run gives the old SHA a NOT OK status, never success, and leaves the new SHA untouched.
+- **Next step:** after #21 and #27 are merged, remove both guards (a pull request with the label
   `workflow-change-reviewed`), and close TB-070, TB-090, TB-092 and this entry's `conformance`, `golden files`,
-  `examples` and `downstream` parts. Fault injection 3x (TAB-034) and stress 200x (QA-4) remain.
+  `examples` and `downstream` parts. Still open: fault injection 3x (TAB-034), stress 200x (QA-4), the nightly
+  DB-restart case once TAB-T-009 exists, the `sqlite` floor raised to 95 % once tests reach it, and the TAB-T
+  traceability check of lane C, wired into CI once it lands.
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
 

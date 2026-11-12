@@ -1,0 +1,9 @@
+# Flaky tests (planning document 07 section 4.3, K7/K8; checked by tests/unit/test_flaky_list.py).
+#
+# Zero tolerance: a test that is red once and green once without a code change is fixed within one working day, or
+# marked `xfail(strict=False)` with an issue link AND listed here. More than 2 entries block the next release (G-T2).
+# CI never re-runs failed tests automatically (pytest-rerunfailures is not allowed).
+#
+# One entry per line: <pytest node ID> | <issue URL> | <date listed, YYYY-MM-DD>
+# Example (not an entry):
+#   tests/unit/test_example.py::test_name | https://github.com/peterkarlhuber/tabrion/issues/1 | 2026-11-08

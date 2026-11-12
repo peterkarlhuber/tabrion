@@ -42,7 +42,8 @@ pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@a4634222064
 ```
 
 Master moved on to `0.1.0a2.dev0` right after that commit (TB-053), so a pin on a later master commit never looks
-like the tag. Do not run `release.yml` for `v0.1.0a1`: its attest job would write a public build-provenance entry.
+like the tag. `release.yml` refuses `v0.1.0a1` (it builds final versions only), and its attest job, which would write a
+public build-provenance entry, runs only with the input `attest` (off by default, G-R).
 
 A library on such a branch declares a pre-release range, which pip needs to accept an alpha:
 

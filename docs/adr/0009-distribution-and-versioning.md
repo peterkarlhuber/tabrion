@@ -115,8 +115,11 @@ pre-releases (`0.1.0rc1`) are allowed. GitHub releases, PyPI and announcements c
   pip 25.0 and current.
 - S-6: API surface check.
 - AC-5: consumer compat.
-- QA-11: the release workflow without publishing. In M1 the workflow `.github/workflows/release.yml` builds and
-  attests only; its publish job is gated by the protected environment `pypi` and uploads nothing.
+- QA-11: the release workflow without publishing. The workflow `.github/workflows/release.yml` takes an annotated
+  tag or a full commit SHA on master (the agent's Git proxy refuses tag pushes), checks that `__version__` there is
+  final and that `CHANGELOG.md` has its dated section (`.github/scripts/release_check.py`), and builds and tests the
+  artifacts. Attestation is opt-in (input `attest`, off by default: the Sigstore log is public, G-R); the publish
+  job needs it, is gated by the protected environment `pypi` and uploads nothing.
 
 ### Release environment (G-T1 condition C-8)
 
