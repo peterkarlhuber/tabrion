@@ -20,7 +20,7 @@ The counts are the `TB-` entries below whose status is not `Done` (recounted fro
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
 TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; TAB-040 gap tests pull request: TB-137 (TAB-T-161 and
 TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 done; TB-141 review follow-up pull
-request: TB-141 done; fault proxy pull request: TB-143 new, in progress).
+request: TB-141 done; fault proxy pull request #55: TB-143 new, in progress).
 
 | Priority | Count |
 |---|---|
@@ -784,7 +784,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-143 · `test_session_lock_raises_and_forgets[inflight]` failed intermittently under load
 
-- **Priority:** P2 Medium · **Status:** In progress (PR_LINK) · **Refs:** TAB-034 / QA-3, contract I-33 and I-32,
+- **Priority:** P2 Medium · **Status:** In progress ([#55](https://github.com/peterkarlhuber/tabrion/pull/55)) · **Refs:** TAB-034 / QA-3, contract I-33 and I-32,
   K7/K8 zero tolerance for flaky tests, `tests/postgres/test_faults.py`
 - **What:** one full `pytest tests/postgres` run under four CPU burners (local PostgreSQL 16) failed with "DID NOT
   RAISE OperationalError". Cause: the fault proxy, not `SessionLock`. For `inflight` the proxy forwarded the batch and
