@@ -17,15 +17,15 @@
 ## Summary
 
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-11,
-master merge into #41).
+integration branch of the ready pull requests).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 10 |
-| P2 Medium | 12 |
-| P3 Low | 31 |
-| P4 Optional | 5 |
+| P1 High | 9 |
+| P2 Medium | 13 |
+| P3 Low | 45 |
+| P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
 trademark register check from gate G-T2 (TB-001 closed; a later public marketing under the name needs a new
@@ -41,7 +41,7 @@ lane B pull request implements `tabrion.sqlite` (TABRION TAB-013, TAB-014,
 TAB-030 and completed by TAB-031 in the third lane C pull request; `tabrion.check` (TAB-017) is merged, without
 its layer-B part (TB-060); the layer-B pull request implements the layer-B core (TABRION TAB-018,
 [M2 lane B2 evidence](program/STATUS.md#m2-lane-b2-evidence-tab-018)); `tabrion.migrations` and
-`tabrion.testing` still raise `NotImplementedError`.
+`tabrion.testing` still raise `NotImplementedError`. The 0.2 Studio APIs (TABRION TAB-033) are implemented and staged until 0.2 (TB-013).
 
 ## Priorities and statuses
 
@@ -115,8 +115,8 @@ required (owner decision of 2026-11-08 11:26Z).
   `backup` and checks (TAB-014), `tabrion.postgres` configure, ping, diagnose, extension status (TAB-015), roles
   (TAB-016), `tabrion.check` and finding codes (TAB-017), `SessionLock` and advisory helpers (TAB-030),
   `grant_runtime_role` (TAB-031). Each with the TAB-T test IDs of the contract.
-- **Next step:** TAB-010..TAB-012 are merged (independent review accepted at `ece7572`). TAB-013 and TAB-014 are in
-  review (independent review TB-044). `test_stubs_raise_not_implemented` shrinks module by module as stubs are
+- **Next step:** TAB-010..TAB-012 are merged (independent review accepted at `ece7572`). TAB-013 and TAB-014 are
+  merged (#4, `af0f3dc`; independent review TB-044 accepted). `test_stubs_raise_not_implemented` shrinks module by module as stubs are
   replaced (`errors`, `sql`, `config`, `sqlite` have left it); every change to a signature also runs
   `scripts/api_surface.py --write` and updates the contract. TAB-017 follows the dispatch of C-1 (contract section
   7). TAB-015 and TAB-016 are merged (contract I-14..I-20, [M2 lane C evidence](program/STATUS.md#m2-lane-c-evidence),
@@ -152,24 +152,30 @@ required (owner decision of 2026-11-08 11:26Z).
   and the nightly `downstream` job (TAB-022); the internal "Levuvo Database Profile" with `conformance/SPEC.md`,
   vectors, manifest and the job `conformance` (TAB-050); the API stability policy and a deprecation helper
   (TAB-051).
-- **Status note:** TAB-022 is in the fifth lane C pull request (on master after #11; contract I-61, D-74, D-75): the
+- **Status note:** TAB-022 part (a) is merged (#19 `4d8e486`, follow-up #33 `5a7bc9e`; contract I-61, D-74, D-75): the
   consumer golden files, their replay and coverage tests, `scripts/record_golden.py` and `scripts/downstream.py`.
   The CI jobs are TB-070.
-- **Next step:** TAB-050 after TAB-016. TAB-051 is in review (branch `claude/project-thread-rdo6g3-tab051`; the
-  workflow parts are TB-090).
+- **Next step:** TAB-051 is on master (#21; the workflow parts are TB-090). TAB-050 is in review (branch
+  `claude/project-thread-rdo6g3-tab050`; its CI job is TB-092).
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
 - **What:** the canary suite (no values in errors or logs, QA-2); concurrency and stress suite, nightly (QA-4);
-  supply chain with SBOM next to the existing `dependency audit` job (QA-8); the release workflow is in place but
-  its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22).
+  supply chain with SBOM next to the existing `dependency audit` job (QA-8, in review: SBOM script and
+  reproducible-wheel test; the CI step is TB-130); the release workflow is in place but
+  its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
+  `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`).
+- **QA-22 follow-up (F-1, Low):** tabrion has no `.gitattributes` and no `.editorconfig` (orkexa has both). Nothing
+  breaks today (golden files are compared as JSON, the Windows job reads them); add both when a byte-compared
+  fixture arrives, with `-text` for it.
 - **Next step:** QA-8 and QA-11 can start now (they depend on TAB-004 and TAB-005 only).
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
-- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 merged in #22; RA-B-2 in review,
-  #23) · **Refs:** TABRION RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
+- **Priority:** P2 Medium · **Status:** In progress (RA-B-1 merged in #16; RA-A-1 merged in #22; RA-B-2 merged in
+  #23; RA-A-2 in review, #29; RA-A-3 in review, #35; RA-B-3 and RA-B-4 in review, #26 and #28) · **Refs:** TABRION
+  RA-A-1, RA-A-2, RA-A-3, RA-B-1, RA-B-2, RA-B-3, RA-B-4, RA-EVAL
 - **What:** the parts application (portable schema with Alembic, functions and tests on SQLite and PostgreSQL, a plain
   SQLAlchemy baseline) and the measurements application (local capture, idempotent transfer, offline and failure
   tests, baseline) under `examples/`, then the value report against plain SQLAlchemy. RA-B-1 is
@@ -182,17 +188,35 @@ required (owner decision of 2026-11-08 11:26Z).
   The tests live in `tests/examples/` and run inside the normal suite: `tests/examples/conftest.py` puts each
   application on `sys.path`, and `mypy_path` in `pyproject.toml` names it for `mypy --strict src tests scripts`. The
   transfer tests run against an upstream SQLite file in the core jobs and against PostgreSQL (marker `postgres`) in
-  the `pg (...)` jobs.
+  the `pg (...)` jobs. RA-A-3 is `examples/parts-baseline` (package `parts_baseline`, plain
+  SQLAlchemy); `tests/examples/parts_suite.py` is the suite both parts variants run, and a baseline deviation is a
+  strict `xfail` with its reason. "Plain SQLAlchemy" is defined as in RA-B-4: the documented pysqlite recipe
+  (`isolation_level = None`, a `begin` event, `BEGIN IMMEDIATE` for writes) is part of the baseline; one deviation
+  remains, the constraint's name in a violation (review H-1 and L-2 of #35). MW-1 leaves out test setup: both
+  variants share `tabrion.testing`'s PostgreSQL fixtures (review L-3 of #35).
+  RA-B-3 adds `tests/examples/test_measurements_faults.py`: network faults through the internal
+  fault proxy (TB-033), `SIGKILL` of the CLI placed by the proxy and at drawn moments, and 24 hours offline
+  simulated; each counts losses and duplicates (metric MW-6: 0/0). Open before RA-EVAL relies on them (review of
+  #26): L-4, the offline day swaps in an unreachable handle instead of taking the real upstream away; drive it
+  through the fault proxy against one `Database` and add a server restart (`pg_terminate_backend`) between two
+  batches. L-5, no server-side fault yet: a lock wait past `lock_timeout` (a second connection holding `SELECT ...
+  FOR UPDATE`) and a serialization failure or deadlock, each with an unchanged mark, a classified error and 0/0.
+  RA-B-4 adds `examples/measurements-baseline` (package `measurements_baseline`, plain SQLAlchemy, same layout and
+  features); the fixture `app` of `tests/examples/measurements_variants.py` runs the whole measurements suite
+  against both variants, and the baseline's probe hits (`DEVIATIONS`: file modes, error classification, capture
+  without SQLAlchemy) are strict `xfail`, the input of RA-EVAL.
 - **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. One
   job `examples` (all of `tests/examples`, with a PostgreSQL 17 service) is in the workflow-change pull request of
   TB-017; a split per application can follow when the suites grow.
-- **Next step:** RA-A-2 (#29) and RA-A-3 (baseline); RA-B-3 (offline and failure tests with the fault proxy of
-  TAB-034, #26) and RA-B-4 (plain SQLAlchemy baseline, #28) after RA-B-2 (lane H).
+- **Next step:** RA-A-2 (#29) and RA-A-3 (#35, stacked on #29); RA-EVAL after RA-A-3 (the measurement report from
+  both baselines). The dedicated `examples` job should also run the measurements suite against PostgreSQL 16, 17 and
+  18 for both variants (today the `pg (...)` jobs do).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
 - **Priority:** P1 High · **Status:** Blocked · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
-- **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001); the internal
+- **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001; in review in
+  the TAB-041 pull request, branch `claude/project-thread-rdo6g3-docs`); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); `v0.1.0` final and gate G-T2 (TAB-040).
   `v0.1.0` final is the merge commit of the version-bump pull request that sets `0.1.0` (not a pre-release); TAB-040
   records its full SHA in CHANGELOG `[0.1.0]`, STATUS TAB-040 and `installation.md`, and the next pull request bumps
@@ -207,9 +231,11 @@ required (owner decision of 2026-11-08 11:26Z).
 
 - **Priority:** P1 High · **Status:** Open · **Refs:** TABRION TAB-040, TAB-023, G-T2, G-T1 F-08
 - **What:** before the tag `v0.1.0`, a check that no name of `docs/api/surface.json` with `since` at or below the
-  package version raises `NotImplementedError` (today every name does, by design). `scripts/api_surface.py` already
-  keeps names with a newer `since` out of the exported surface.
-- **Next step:** with TAB-040, as a mode of `scripts/api_surface.py` run by `release.yml`.
+  package version raises `NotImplementedError`. On master `5a7bc9e` no 0.1 name does any more: only the staged 0.2
+  names in `tabrion._sa._v02` raise, and `scripts/api_surface.py` keeps names with a newer `since` out of the
+  exported surface. The check is still missing as a mode, so a stub cannot come back unnoticed.
+- **Next step:** the mode goes into the TAB-040 version-bump pull request (branch `claude/project-thread-rdo6g3-v010`);
+  `release.yml` runs it with QA-11.
 
 ### TB-062 · Checks outside the specification's code table (TAB-017 review Info of #13; 0.2 addendum candidate)
 
@@ -242,6 +268,18 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** in 0.2, keyword arguments `version_locations` and `recursive_version_locations` passed through to
   `ScriptDirectory` (a contract addendum, as `surface.json` is frozen for 0.1); until then I-57 documents the rule.
 
+### TB-110 · SQLite: an `ON DELETE RESTRICT` violation is classified as unknown (RA-A-2)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION RA-A-2, TAB-031, `tabrion.errors`
+- **What:** SQLite reports a violated `ON DELETE RESTRICT` foreign key with the extended code
+  `SQLITE_CONSTRAINT_TRIGGER` (message `FOREIGN KEY constraint failed`), not `SQLITE_CONSTRAINT_FOREIGNKEY`.
+  `tabrion.errors` maps it to `UnknownDatabaseError` instead of `IntegrityViolation(kind=FOREIGN_KEY)`; PostgreSQL
+  (SQLSTATE 23001) is classified correctly. `examples/parts` therefore declares its foreign keys with the default
+  `NO ACTION`, which behaves the same for a plain delete and is classified as `FOREIGN_KEY` on both engines.
+- **Next step:** lane C to classify `SQLITE_CONSTRAINT_TRIGGER` with that message as `FOREIGN_KEY` (with a test on
+  both engines); then `examples/parts` may go back to `RESTRICT`, which needs a migration `0002` once #22 (with
+  `0001`) is merged (review I-2 of #29).
+
 ### TB-060 · Layer-B checks: `Database` targets, TAB-PG-012, TAB-B-001/002 (TABRION TAB-017, TAB-018)
 
 - **Priority:** P1 High · **Status:** Done (merged in #17, `a9ec3b8`; review L-1 with RA-A-1) · **Refs:** TABRION TAB-017,
@@ -261,14 +299,128 @@ required (owner decision of 2026-11-08 11:26Z).
 - **0.2 addendum candidate:** TAB-B-002 as the specified `error`, through a `script_location` (and version-table
   options) for `check()`/`Database.check()`; a surface change, so a contract and specification addendum first.
 
+### TB-130 · Hashed build and SBOM step in CI and in the release workflow (TABRION QA-8)
+
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8, QA-11,
+  07 TM-10, review of PR #30 (M-1)
+- **What:** `scripts/sbom.py` writes the CycloneDX SBOM of a wheel and is tested on the CI build's wheel, and
+  `build-constraints.txt` pins the build backend with hashes, but no workflow uses either yet.
+- **Next step:** in `ci.yml`, jobs `build and install` and `extras matrix`, and in `release.yml`, job `build`, replace
+  `- run: python -m build --outdir dist` with
+
+  ```yaml
+      - run: python -m build --outdir dist
+        env:
+          PIP_CONSTRAINT: build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
+  ```
+
+  In `build and install` and in the release `build`, add after `twine check --strict dist/*`
+  `- run: mkdir -p sbom && python -I scripts/sbom.py dist/tabrion-*.whl --vcs-ref "$GITHUB_SHA" -o sbom/tabrion.cdx.json`
+  and upload `sbom/` with `dist/` (`path: |` with both lines). In `release.yml`, add `sbom/tabrion.cdx.json` to the
+  files attested by job `attest`. The SBOM stays outside `dist/`, because `twine check dist/*` checks every file.
+
+### TB-133 · QA-8 follow-ups: backend pins in step, SBOM extras per Tabrion extra, purl of local installs
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-8, review of PR #30 (M-1; delta review L-5, L-6),
+  `build-constraints.txt`, `.github/dependabot.yml`, `scripts/sbom.py`
+- **What:**
+  - Backend pins: `pyproject.toml` (`requires = ["hatchling==1.33.0"]`) and the hashed `build-constraints.txt` must
+    name the same hatchling; `tests/unit/test_build_constraints.py` fails when they differ. Whether Dependabot's pip
+    updater proposes both files in one pull request is not verified.
+  - L-5: `tabrion:requested-extra` is merged over every Tabrion extra of a dependency. Only `extra == "dev"` asks
+    for `psycopg[binary]`, but the `psycopg` component carries the extras all, dev and postgres **and**
+    `requested-extra` binary, so a reader could conclude that `tabrion[postgres]` pulls in the binary wheel
+    (bundled libpq and OpenSSL), which it does not.
+  - L-6: with `--environment`, a local-path or editable install (`direct_url.json` with `dir_info`) and a URL
+    archive (`archive_info`) still get `pkg:pypi/<name>@<v>`, although they did not come from PyPI; the common case
+    is a Git-pinned sibling installed from a local checkout (`pip install -e ../axentra`).
+- **Next step:** after the first hatchling release, check the Dependabot pull request; if it updates only one file,
+  regenerate the other by the recipe in `build-constraints.txt` in the same pull request. In `scripts/sbom.py`:
+  emit the requested extra per Tabrion extra (`tabrion:requested-extra` = `dev:binary`), and give `archive_info`
+  installs `pkg:generic/<name>@<v>?download_url=<url>` and `dir_info` installs `pkg:generic` (or no purl); each
+  with a unit test.
+
+### TB-080 · `Transaction.execute` returns 0 for every Core insert on PostgreSQL (TABRION TAB-041, contract I-70)
+
+- **Priority:** P3 Low · **Status:** Open (0.2 decision, lane B/C) · **Refs:** TABRION TAB-018, TAB-041, contract 5.3,
+  I-70, review of PR #24 (M-1)
+- **What:** found while testing the guides and corrected in the review: `execute(table.insert(), params)` returns `0`
+  on PostgreSQL and `1` on SQLite. The cause is SQLAlchemy's rowcount rule, not `RETURNING`: since SQLAlchemy 2.0.28
+  a result keeps the driver's `rowcount` only for `UPDATE`/`DELETE` unless the statement carries the
+  `preserve_rowcount=True` execution option. SQLAlchemy then reports `-1` for every Core `insert()` on PostgreSQL
+  (also without a generated key, without a primary key, and for executemany; raw psycopg reports `1`), and Tabrion
+  maps -1 to 0 (contract 5.3). Core `update()`/`delete()` and SQL text inserts report the true count. Measured with
+  SQLAlchemy 2.1.8 and psycopg 3.3.8 on PostgreSQL 16; `insert().execution_options(preserve_rowcount=True)` makes
+  `execute` return `1`. The rule and the workaround are documented (I-70, `docs/guides/portability.md`, tested on
+  both engines).
+- **Fix option:** `execute` sets `preserve_rowcount=True` on the statements it runs (no signature change). That
+  changes the value a stable method returns on PostgreSQL, so it needs a contract addendum to 5.3 and a CHANGELOG
+  `Changed` entry; not done in the docs PR.
+- **Next step:** lane B/C decides for 0.2 between setting `preserve_rowcount` in `execute` and keeping the documented
+  rule.
+
+### TB-081 · Align the infrastructure baseline with the kit text (TABRION TAB-041, ADR 0001)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-041, ADR 0001, specification 5.4 and 8
+- **What:** `docs/guides/infrastructure-baseline.md` condenses the kit baseline from the specification (role model,
+  session limits, TLS, backup/PITR, the restore version rule). Planning document 02 section 8 names the longer kit
+  text `architekturbewertung-datenbankplattform.md` as its source; it is not in the planning folder the TAB-041 lane
+  could read, so the page was not checked against it.
+- **Next step:** the owner or the reviewer compares the page with that text and lists what is missing.
+
+### TB-082 · Run the guide examples on macOS and Windows on pull requests (TABRION TAB-041)
+
+- **Priority:** P3 Low · **Status:** Open (needs a `.github/` pull request) · **Refs:** TABRION TAB-041, 05 section 2.5
+- **What:** `tests/docs/test_guides.py` runs in every unit job (Linux, Python 3.11..3.14, lowest versions) and in the
+  nightly platform runs; `platforms.yml` runs on pull requests only for `src/tabrion/sqlite.py` and `tests/sqlite/**`,
+  so a guide change is checked on macOS and Windows only at night. POSIX-only examples (file modes, symlinks) are
+  marked `<!-- docs-test: posix -->`.
+- **Next step:** add `docs/guides/**`, `docs/getting-started/quickstart.md` and `tests/docs/**` to the path filter of
+  `platforms.yml` and the manifest's `path_filters` in a reviewed workflow pull request.
+
+### TB-083 · `tabrion.testing` URLs are conninfo strings; layer B needs a URL (TABRION TAB-041, TAB-020)
+
+- **Priority:** P3 Low · **Status:** Open (0.2 candidate) · **Refs:** TABRION TAB-020, TAB-032, TAB-041, contract 6
+- **What:** `PostgresSchema.owner_url` and the other fixture URLs are libpq conninfo strings (`host=... options=...`),
+  which psycopg takes but `tabrion.Database.from_url` does not. A consumer that runs layer-B tests on the fixtures
+  converts them itself (`tests/postgres/test_guides_postgres.py`, `as_url`); `options=-c search_path=...` needs care
+  in URL form, because libpq does not read `+` as a space.
+- **Next step:** for 0.2, decide on a documented helper or fixtures that also give a `postgresql://` URL (a new
+  public name: contract addendum).
+
+### TB-131 · Write the planned operations pages `backup-restore.md` and `roles.md` (TABRION TAB-041, D-83)
+
+- **Priority:** P3 Low · **Status:** Planned · **Refs:** TABRION TAB-041, TAB-040, planning document 05 section 2.1,
+  ADR 0001, deviation D-83
+- **What:** planning document 05 section 2.1 lists `docs/operations/backup-restore.md` and `docs/operations/roles.md`.
+  TAB-041 decided the 0.1 document set itself (D-83, no owner question): it follows ADR 0001 and keeps the
+  infrastructure baseline at `docs/guides/infrastructure-baseline.md`, whose sections cover backup and restore and the
+  roles for 0.1. The two operations pages are planned, not written.
+- **Next step:** write them when the kit content (TB-081) is aligned, moving the long sections out of the baseline
+  page and linking back; until then the baseline page is the reference.
+
+### TB-132 · The `ImportError` install hint names the PyPI form (TABRION TAB-041 review L-6)
+
+- **Priority:** P3 Low · **Status:** Open (lane B/C) · **Refs:** TABRION TAB-041, ADR 0009 amendment, D-67,
+  `docs/getting-started/installation.md`
+- **What:** the `ImportError` of a missing extra suggests `pip install "tabrion[sqlalchemy]"`, which resolves from
+  PyPI, where Tabrion is not published (dependency-confusion risk). The troubleshooting guide now says to use the
+  Git-pin form instead.
+- **Next step:** change the hint text in `src` to point to the installation page (message text only, no API change;
+  a bug fix for lane B/C, not part of the docs PR).
+
 ## M3, M5 and M8: work in this repository
 
 ### TB-012 · Architecture checks and ecosystem documentation (TABRION QA-16, QA-17, QA-18, QA-19, QA-21, QA-23, QA-24)
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-16, QA-17, QA-18, QA-19, QA-21, QA-23, QA-24
 - **What:** the Tabrion part of QA-16 is in the M1 pull request; the orkexa, axentra and tabrion-studio parts are
-  open there. Tabrion's copy of its outgoing edges (empty) for the dependency policy (QA-17); blocked-module tests per
-  optional edge beyond the core (QA-18); the Tabrion rows of the clean-install matrix with pip 25.0 and the current
+  open there. Tabrion's copy of its outgoing edges (empty) for the dependency policy (QA-17); QA-18 is done here
+  (2026-11-08): one blocked-module test per extra (`tests/packaging/edges.py`, `tests/unit/test_optional_edges.py`,
+  a meta test keeps the list equal to the extras, a mutation probe per edge) and the forbidden-edge test
+  `tests/packaging/test_independent.py` (every module imports with orkexa, axentra, nodestro_*, tabrion_studio
+  blocked), both in the default test job; the Tabrion rows of the clean-install matrix with pip 25.0 and the current
   pip (QA-19); `docs/api-consumers.md` as the export target of the consumers' API check (QA-21); the ecosystem
   migration documentation under `docs/ecosystem/` (QA-23) and the closing record (QA-24).
 - **Next step:** QA-17 after QA-16 is done in every repository.
@@ -277,12 +429,18 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-013 · Studio APIs and release 0.2.0 (TABRION TAB-033, TAB-042)
 
-- **Priority:** P1 High · **Status:** Blocked (TAB-040) · **Refs:** TABRION TAB-033, TAB-042
-- **What:** `query`/`Result`, `stream`, `cancel`, `inspector` (TAB-033), then the release 0.2.0 with the 0.2
-  documentation (TAB-042). The critical path to Studio runs through these. The frozen 0.2 stubs are staged in
-  `tabrion._sa._v02`; TAB-033 mixes them into `Database` and `Transaction`, exports `Result` and `Column` from
-  `tabrion` and drops the `staged` keys from `surface.json` when the version becomes 0.2.
-- **Next step:** after G-T2 for 0.1.
+- **Priority:** P1 High · **Status:** In progress (TAB-033 in review; TAB-042 blocked by TAB-040) · **Refs:** TABRION
+  TAB-033, TAB-042, contract I-100..I-106
+- **What:** TAB-033 implemented `query`/`Result`, `stream`, `cancel`, `inspector` and the experimental `on_begin`,
+  `run_transaction`, `savepoint` in the mixins of `tabrion._sa._v02`, tested on both engines through the private
+  `tabrion._sa._staged` classes; they stay staged while the version is 0.1 (G-T1 condition C-6). TAB-042 is the
+  release 0.2.0 with the 0.2 documentation.
+- **Next step:** with TAB-042, when the version becomes 0.2: `class Transaction(_TransactionV02)` and `class
+  Database(_DatabaseV02)` in `tabrion._sa.database` (the import at the top works, TB-024), export `Result` and
+  `Column` from `tabrion` (`__all__`, `_LAYER_B`, `tests/unit/test_public_api.py`), drop the `staged` keys of
+  `surface.json` and delete `_staged.py`; the tests switch from `_StagedDatabase` to `tabrion.Database`. Studio
+  STU-010 and STU-011 then replace their workaround (`fetch_all` with `prepare_threshold=0`) with `inspector`,
+  `query`, `stream` and `cancel`.
 
 ### TB-014 · Connection profile format v1 (TABRION TAB-CR-1)
 
@@ -374,6 +532,36 @@ required (owner decision of 2026-11-08 11:26Z).
   codes are string literals at the raise sites and not in `surface.json`.
 - **Next step:** decide with TAB-040 whether to collect the codes (for example from the contract tables or an
   internal registry) into a `codes` section of `surface.json`.
+
+### TB-092 · CI job `conformance` (TABRION TAB-050, deviation D-92)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-050, TB-017, contract I-82
+- **What:** the LDP vectors run inside the jobs `test (...)` and `pg (...)`; planning document 02 names a job
+  `conformance` of its own (`pytest -m conformance` with and without PostgreSQL, `python -m tests.support.conformance`),
+  listed in `.github/ci-manifest.json`; and `conformance/**` and `tests/conformance/**` in the path filter of
+  `platforms.yml`, so a vector change runs on Windows and macOS (the POSIX-only vectors skip there; review H-1).
+- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml`, `platforms.yml` and
+  `ci-manifest.json` (lane J has the `platforms.yml` filter).
+
+### TB-093 · Foreign keys turn on when Nodestro and Orkexa switch to Tabrion (TABRION TAB-050 review M-1)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-050, LDP SQP-1, SQP-3, MIG-NOD, MIG-ORK
+- **What:** LDP SQP-3 (every connection has `foreign_keys` on) is a tightening: Nodestro `storage.py` and Orkexa
+  `_storage.py` open SQLite without it at the pinned commits, and Nodestro sets no file mode (SQP-1). After the switch,
+  writes that touch a row violating a foreign key, or its parent row, fail; other writes are not affected.
+- **Next step:** the MIG-NOD and MIG-ORK SQLite steps run `tabrion.sqlite.foreign_key_check` on existing databases
+  before the switch and record the result (conformance/SPEC.md, migration note). The note in SPEC says more broadly
+  that such rows "make writes fail"; SPEC.md is hashed, so the narrower wording waits for the next LDP version.
+
+### TB-094 · A stability downgrade from S to X passes `api_surface.py --base` (review of #21, L-6)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-051, S-3, S-6, contract I-81
+- **What:** `body()` leaves `stability` out of the compare, so `check_changelog(base, recorded)` reports nothing when
+  a stable name changes from `S` to `X`, and the run without `--base` does not catch a hand edit of `surface.json`
+  either. Promoting `X` to `S` needs no section, but a downgrade removes the S-3 guarantee from a stable name, and
+  consumers must be told.
+- **Next step:** in `check_changelog`, report a name with `base.stability == "S"` and another recorded stability
+  unless the name is under `### Changed` or `### Removed`, with a test. No current change downgrades a name.
 
 ### TB-018 · PostgreSQL matrix cost on pull requests
 
@@ -495,8 +683,9 @@ required (owner decision of 2026-11-08 11:26Z).
 - **What:** planning documents 07 (K7: `tabrion.testing.faults.DropReplyProxy`) and 09 (TAB-034) made the
   fault-injection proxy a public module, while the frozen contract has no `tabrion.testing.faults`. Decision
   (coordinator, 2026-11-08): do not extend the frozen surface now. TAB-034 ships the proxy as the internal, unstable
-  `tabrion.testing._faults` (not in `surface.json`, not exported), used by Tabrion's own tests.
-- **Next step:** making it public (for RA-B-3 and Axentra's MIG-T-AXE-8) is a 0.2 surface decision: a contract
+  `tabrion.testing._faults` (not in `surface.json`, not exported), used by Tabrion's own tests, including the
+  in-repository RA-B-3 tests of `examples/measurements`, which therefore need no public module.
+- **Next step:** making it public (for Axentra's MIG-T-AXE-8 and other consumers) is a 0.2 surface decision: a contract
   addendum with `surface.json` entries and a review.
 
 ### TB-034 · `ping` has no client-side deadline (TABRION TAB-015)
@@ -603,13 +792,13 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-044 · Independent review of TAB-013 and TAB-014 (planning document 07 section 6)
 
-- **Priority:** P1 High · **Status:** In progress (fix round in pull request #4) · **Refs:** TABRION TAB-013, TAB-014,
+- **Priority:** P1 High · **Status:** Done (accepted after the delta re-review at `6c131b6`; #4 merged as `af0f3dc`) · **Refs:** TABRION TAB-013, TAB-014,
   B-06-3, B-06-5, MIG-NOD-6, `reviews/tab-013-014-review.md`
 - **What:** the review model requires an independent review agent for TAB packages in `sqlite` (file permissions,
   transactions). The review at `8e78e9c` is ACCEPTED WITH CONDITIONS (M-1..M-3); the fix round fixes M-1..M-3 and
   L-1..L-3 in the same pull request ([STATUS.md](program/STATUS.md#review-fix-round-tab-013-tab-014)); the Info
   items are TB-046..TB-049.
-- **Next step:** delta re-review of the fix round, then merge.
+- **Next step:** none; the Info items continue as TB-046..TB-049.
 
 ### TB-045 · Randomized symlink race (TAB-T-123) in the nightly stress suite (QA-4)
 
@@ -680,14 +869,6 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** decide with TB-050 whether 0.2 exports it (contract addendum, `surface.json`); until then consumers
   that use native structlog keep Axentra's processor or render no tracebacks.
 
-### TB-024 · Circular import of the staged 0.2 mixins (G-T1 condition check CC-2)
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** CC-2, TABRION TAB-033, TB-013
-- **What:** `tabrion._sa._v02` imports `Isolation`, `Statement` and `Transaction` from `tabrion._sa.database`. When
-  TAB-033 lets `Database` and `Transaction` inherit from the `_v02` mixins, the two modules import each other.
-- **Next step:** before TAB-033, move the type aliases to `tabrion._sa._types`, type `run_transaction`'s `fn` against
-  a forward reference, and keep `surface.json` unchanged.
-
 ### TB-061 · Read-only is a guard, not a boundary: optional hardening (TABRION TAB-018 review H-1)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, contract I-56, SECURITY.md, plan 03:245-247,
@@ -702,17 +883,67 @@ required (owner decision of 2026-11-08 11:26Z).
   `test_b12_documents_the_gap_session_default_restored_locally` and
   `test_b12_documents_the_gap_transaction_control_in_read`. A server cannot refuse transaction control; the hard
   boundary is a role without write rights (or SQLite file permissions).
+- **TAB-033:** `query` and `stream` close the multi-statement and the transaction-control variants for their own
+  calls: the server refuses several commands (I-104), a transaction-control statement of the caller (`COMMIT`,
+  `ROLLBACK`, also `... AND CHAIN`, `END`, `ABORT`, `PREPARE TRANSACTION`) is refused before it is sent, and one
+  that still ended the transaction ends the call with `UsageError("database.transaction_ended")` and keeps the
+  connection out of the pool (review L-1 and re-review N-1 of #32).
+  The gap stays for the 0.1 methods (TB-121) and for lift-write-restore inside one statement's functions.
 - **Next step:** Studio and TAB-032 (runtime-role mode) run untrusted SQL only under such a role. Optional: a
   `checkin` check of `default_transaction_read_only` under `Profile.read_only` that invalidates the connection, and
-  a snapshot-taking statement after `BEGIN READ ONLY` (review H-1); decide with TAB-041.
+  a snapshot-taking statement after `BEGIN READ ONLY` (review H-1). TAB-041 documents the guard as it is
+  (`docs/guides/security.md`, `docs/guides/database.md`) and adds no hardening in 0.1; the decision moves to 0.2.
+
+### TB-120 · `query` on PostgreSQL receives the whole result before `max_rows` cuts it (TABRION TAB-033)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-033, STU-011, contract 5.4, I-100
+- **What:** as contract section 5.4 specifies, `query` uses no server cursor: libpq receives every row of the result,
+  and only then are `max_rows + 1` rows taken. `SELECT * FROM big` with `max_rows=1000` costs the whole table in
+  client memory and transfer time. `stream` uses a server cursor and holds one batch.
+- **Next step:** Studio's query engine (STU-011) streams with its row, byte and cell caps instead of calling `query`
+  for user SQL; a named cursor for `query` stays a 1.x option (contract 5.4), for row-returning statements only.
+
+### TB-121 · The 0.1 methods send a statement without parameters as a simple query (TABRION TAB-033, TB-061)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, TAB-033, contract I-56, I-104, TB-061
+- **What:** `query` and `stream` force the extended query protocol on PostgreSQL, so the server refuses a text with
+  several commands (I-104). `execute`, `fetch_one`, `fetch_all` and `fetch_scalar` keep psycopg's default: without
+  parameters a text goes as a simple query, and `COMMIT; BEGIN READ WRITE; ...` inside `read()` writes (pinned by
+  the `documents_the_gap` tests of TB-061). An engine whose `connect_args` set `prepare_threshold=0` (Studio) is
+  covered for every method. The transaction-status check after each statement (I-104) runs for `query`
+  and `stream` only.
+- **Next step:** decide with TAB-042 whether `read()` statements always use the extended protocol (a behavior
+  change of 0.1 methods, no signature change); until then tools that run user SQL use `query` or `stream`.
+
+### TB-122 · Result details the drivers do not give (TABRION TAB-033, D-120)
+
+- **Priority:** P4 Optional · **Status:** Optional · **Refs:** TABRION TAB-033, contract I-100, I-101, D-120
+- **What:** `Column.type_name` is `None` on SQLite (Python's `sqlite3` has no `sqlite3_column_decltype`),
+  `Column.nullable` is `None` on both engines, and `statement_kind` reads the first keyword, so a `WITH` that
+  writes counts as `select`.
+- **Next step:** none required; revisit if Python's `sqlite3` exposes declared types, or if Studio needs the
+  nullability of plain table columns (it can read it through `inspector`).
+
+### TB-123 · The transaction-control pre-check of `query` and `stream` sees only text statements (TABRION TAB-033, review of #32 C-1)
+
+- **Priority:** P3 Low · **Status:** Open (before TAB-042) · **Refs:** TABRION TAB-033, TAB-042, contract I-104,
+  review of #32 (P-1, condition C-1)
+- **What:** the check that refuses `COMMIT`, `ROLLBACK` and the like before they are sent looks only at a
+  `TextClause`. Other executables, such as `sqlalchemy.DDL(...)` and `text(...).columns()` (a `TextualSelect`), skip
+  it, and the check after the statement cannot see every form, so the I-104 sentence "the caller's SQL cannot end
+  the transaction" does not hold for them yet. The 0.2 names are staged and not public, so 0.1 is not affected.
+- **Next step:** before TAB-042 switches the 0.2 mixins on, lex the compiled SQL of every executable
+  (`str(executable.compile(dialect=connection.dialect))`), or at least unwrap `TextualSelect.element.text` and
+  `DDL.statement`, and add both forms to the `test_n1_*` tests; otherwise narrow the I-104 sentence to text
+  statements.
 
 ### TB-056 · Layer-B waits outside `timeout` (TABRION TAB-018, TAB-041)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, TAB-041, contract I-40, I-44
 - **What:** a statement `timeout` on SQLite counts VM steps, so a wait for a lock is bounded by the busy timeout, not
   by `timeout`; `Database.health(timeout=...)` waits for a pool connection up to `pool_timeout`, not `timeout`.
-- **Next step:** document both in the layer-B guide (TAB-041); decide for 0.2 whether `health` checks out with
-  `min(timeout, pool_timeout)` (needs no API change).
+- **Next step:** documented in the guides (`docs/guides/database.md`, section "Timeouts", TABRION TAB-041); decide
+  for 0.2 whether `health` checks out with `min(timeout, pool_timeout)` (needs no API change).
 
 ### TB-065 · F05 refusal for connection factories other than Tabrion's (TABRION TAB-021)
 
@@ -723,18 +954,6 @@ required (owner decision of 2026-11-08 11:26Z).
   the cases work for any connection factory. The strictness keeps sqlite3's own `OperationalError` from passing.
 - **Next step:** let the caller name the refusal exception (`sqlite_profile_cases(refusal=...)`, a 0.2 addendum
   candidate), or record a deviation before MIG-ORK uses the cases.
-
-### TB-064 · Portable UUID and timestamp columns in the guides (TABRION TAB-021, TAB-041)
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-021, TAB-041, contract I-58, deviations D-62 and
-  D-63, planning folder `reviews/tab-021-review.md` (L-1, L-2)
-- **What:** the SQLite mappings of TAB-T-D01 and D04 follow the stored formats of specification section 6 (UTC text
-  with `Z`, 36-character UUID text), so an application gets a `str` on SQLite and a `datetime` or `uuid.UUID` on
-  PostgreSQL. On SQLite, the cases D01, D02, D04, D07 and D09 document the mapping and cannot fail for an engine
-  setting; the SQLite pitfalls behind D01 and D02 are pinned by repository tests only.
-- **Next step:** the layer-B guide (TAB-041) shows a `TypeDecorator` for each of the two columns (UTC text, UUID
-  text) and says which portability cases check the engine; Tabrion ships no type library (specification section 6),
-  so the decorators stay examples unless a reference application needs them in the package.
 
 ### TB-052 · MIG-NOD note: one `lock_lost` in the scheduler pattern after a loss (delta re-review of #6)
 
@@ -811,11 +1030,68 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Decision:** keep it (deviation D-76): `url_from_env` is a frozen a1 function and returns the value as given;
   Nodestro's wrapper strips at adoption (MIG-NOD). Nothing left to do here.
 
+### TB-074 · Windows: `safe_url` percent-encoded a SQLite path (TABRION TAB-040 readiness gap 2)
+
+- **Priority:** P2 Medium · **Status:** Done (this pull request) · **Refs:** TABRION TAB-040, TAB-018, K3, nightly
+  issue #18
+- **What:** the nightly of `546d254` failed on `windows-latest`: `Database.safe_url` showed `C%3A%5C...` for a
+  Windows path (SQLAlchemy percent-encodes the path when it renders a URL), and layer-B mutation probe 7 could not
+  turn its test red because `test_b04_sqlite_path_checks_run_in_from_url` skips on Windows.
+- **Fix:** `safe_url` shows the SQLite path as it is (`test_b01_safe_url_shows_the_sqlite_path_as_it_is`, a
+  Windows-style path on every OS, with its own mutation probe); probes whose test skips on Windows skip there too.
+- **Review of #37:** what is not printable in the path is percent-encoded (M-1); the URL is masked before the path
+  goes in, through a per-call placeholder (M-2, L-1; `test_b01_safe_url_masks_first_and_then_shows_the_path`,
+  `test_b01_safe_url_placeholder_is_new_for_every_call`); `test_b04` is split into a portable half
+  (`test_b04_from_url_opens_the_file`, probed on every OS) and the POSIX-only half, and the probe file imports the
+  test's own `POSIX` predicate (L-3); CHANGELOG and contract I-37 name the POSIX changes (L-2).
+- **CI of `1146bbc`:** the probe of `test_b01_safe_url_shows_the_sqlite_path_as_it_is` survived in the
+  SQLAlchemy 2.0 jobs (Python 3.12 and lowest versions): SQLAlchemy 2.0 does not percent-encode the path, so the
+  old rendering already passed the three original cases. The `:`/`@`, `?password=` and control-character cases
+  added for M-1 and M-2 fail under the old rendering on both 2.0 and 2.1; checked locally with 2.0.57 and 2.1.8.
+- **CI of `42b59fe`:** with the probe 10 mutant (`ch if True else`), a lone surrogate in a test path reaches the
+  output of the child pytest raw, and pytest 8.0.0 (lowest versions job) writes it as a byte that is not UTF-8, so
+  the probe failed with `UnicodeDecodeError` before it read the return code. The probe runner now decodes the
+  child's output with `errors="backslashreplace"`; checked locally with the lowest versions.
+
+### TB-075 · Core size: what could still shrink the stdlib core (TABRION TAB-040 T-9, deviation D-78)
+
+- **Priority:** P3 Low · **Status:** Open (0.2) · **Refs:** TABRION TAB-040, plan 07 section 5 (T-9), plan 01 ST-7,
+  STATUS D-78, TB-050, TB-051
+- **What:** the stdlib-only core has 2 128 code lines against the guideline of 1 500; D-78 justifies it, and the
+  justification stays in force after 0.1.0. Small 0.2 changes: the SQLSTATE and SQLite code tables as one data table
+  (a few lines) and more shared path checks in `sqlite` (little). The log redaction of `tabrion.errors` (326 code
+  lines) leaves the count only behind an extra (for example `tabrion[logging]`) or by an owner decision to count
+  opt-in logging integration outside the core; a stdlib module of its own is still core. Even then the core stays at
+  about 1 800 lines, over 1 500.
+- **Next step:** with TB-050 and TB-051 in 0.2, without changing a public name or a behavior; the extra or the owner
+  decision first, if the redaction is to move.
+
+### TB-076 · K11 consumer coverage list `docs/api-consumers.md` (TABRION TAB-040 readiness gap 6)
+
+- **Priority:** P3 Low · **Status:** Open (kept current) · **Refs:** TABRION TAB-040, plan 07 K11, contract 8, I-61
+- **What:** `docs/api-consumers.md` lists every public function a consumer uses with its golden record and replay
+  test. `tests/unit/test_api_consumers.py` requires the following:
+  - every category A/B row of contract section 8 is quoted by a row whose API cells name the contract's Tabrion
+    functions;
+  - every golden key exists;
+  - every consumer of a coverage row has a replay test;
+  - every named test exists in the strict form.
+
+  Three uses have no consumer record yet: Axentra's `advisory_unlock` (raw SQL at `migrations.py:511`), Orkexa's
+  error texts, and Orkexa's `check_database_path` outside `connect`.
+- **Next step:** each MIG-AXE, MIG-NOD and MIG-ORK step adds the consumer's own test of the adopted function to the
+  page. MIG-AXE closes the `advisory_unlock` row; MIG-ORK-2 closes the Orkexa error-text row. The governance lane
+  refreshes the stale line numbers of contract section 8 (review of #39, L-3): Axentra `Database._configure`, the
+  Nodestro `storage_postgres.py` cells for `_configure`, the session locks, `role_info`, `grant_runtime_role`,
+  `inspect_role` and `pgvector_status`, and the Axentra worker lock (`LeaderLock` in `events/schedules.py:72`, not
+  `events/worker.py`). The page lists the lines at the golden commits; the same PR updates its verbatim quotes.
+
 ## Cross-repository dependencies
 
 | This repo item | Other repo | Other item | Relation |
 |---|---|---|---|
 | TB-012 | orkexa, axentra, tabrion-studio | TABRION QA-16 | Their AC-1 contracts and mutation probes |
+| TB-013 | tabrion-studio | TABRION STU-010, STU-011 | Use `inspector`, `query`, `stream` and `cancel` once 0.2 makes them public; until then Studio keeps its `fetch_all` workaround with `prepare_threshold=0` |
 | TB-014 | tabrion-studio, nodestro-runtime | TABRION STU-006, NOD-CR-3 | Use the profile format |
 | TB-015 | nodestro-runtime | TABRION NOD-CR-5 | Uses the schema fingerprint |
 | TB-011 | axentra, orkexa, nodestro-runtime | TABRION VER-1, MIG-* | Need the SHA of the `v0.1.0` final commit (RC-8) |

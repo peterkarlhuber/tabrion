@@ -1,0 +1,1262 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.0",
+  "area": "errors-classification",
+  "vectors": [
+    {
+      "id": "LDP-ERC-001",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "23505",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "unique",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "23505",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3; axentra@ea7aa9f src/axentra/tenancy/service.py:212"
+    },
+    {
+      "id": "LDP-ERC-002",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "23503",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "foreign_key",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "23503",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-003",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "23502",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "not_null",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "23502",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-004",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "23514",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "check",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "23514",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-005",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "23P01",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "exclusion",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "23P01",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-006",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "40001",
+          "message": "could not serialize access",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "serialization",
+        "retryable": true,
+        "outcome_unknown": false,
+        "sqlstate": "40001",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-007",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "40P01",
+          "message": "deadlock detected",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "deadlock",
+        "retryable": true,
+        "outcome_unknown": false,
+        "sqlstate": "40P01",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-008",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "55P03",
+          "message": "canceling statement due to lock timeout",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "locked",
+        "retryable": true,
+        "outcome_unknown": false,
+        "sqlstate": "55P03",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-009",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "57014",
+          "message": "canceling statement due to statement timeout",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "timeout",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "57014",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-010",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "57014",
+          "message": "canceling statement due to user request",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "canceled",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "57014",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-011",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "22012",
+          "message": "division by zero",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "data",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "22012",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-012",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "42P01",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "undefined_object",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "42P01",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-013",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "42601",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "syntax",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "42601",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-014",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "42501",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "permission",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "42501",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-015",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "25006",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "read_only",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "25006",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-016",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "XX001",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "corrupt",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "XX001",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-017",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "53100",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "disk_full",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "53100",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-018",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "53200",
+          "message": "",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "resource",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "53200",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-019",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "XX000",
+          "message": "internal error",
+          "sent": true
+        }
+      },
+      "expect": {
+        "kind": "unknown",
+        "retryable": false,
+        "outcome_unknown": false,
+        "sqlstate": "XX000",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-020",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "statement": "INSERT INTO u VALUES ('a')"
+        }
+      },
+      "expect": {
+        "kind": "unique",
+        "retryable": false,
+        "outcome_unknown": false,
+        "driver": "sqlite3",
+        "sqlite_code": "SQLITE_CONSTRAINT_UNIQUE"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3",
+      "setup": [
+        "CREATE TABLE u (e TEXT UNIQUE)",
+        "INSERT INTO u VALUES ('a')"
+      ]
+    },
+    {
+      "id": "LDP-ERC-021",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "statement": "INSERT INTO c VALUES (7)"
+        }
+      },
+      "expect": {
+        "kind": "foreign_key",
+        "retryable": false,
+        "outcome_unknown": false,
+        "driver": "sqlite3",
+        "sqlite_code": "SQLITE_CONSTRAINT_FOREIGNKEY"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3",
+      "setup": [
+        "CREATE TABLE p (id INTEGER PRIMARY KEY)",
+        "CREATE TABLE c (p INTEGER REFERENCES p (id))",
+        "PRAGMA foreign_keys = ON"
+      ]
+    },
+    {
+      "id": "LDP-ERC-022",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "statement": "INSERT INTO n VALUES (NULL)"
+        }
+      },
+      "expect": {
+        "kind": "not_null",
+        "retryable": false,
+        "outcome_unknown": false,
+        "driver": "sqlite3",
+        "sqlite_code": "SQLITE_CONSTRAINT_NOTNULL"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3",
+      "setup": [
+        "CREATE TABLE n (a TEXT NOT NULL)"
+      ]
+    },
+    {
+      "id": "LDP-ERC-023",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "statement": "INSERT INTO k VALUES (0)"
+        }
+      },
+      "expect": {
+        "kind": "check",
+        "retryable": false,
+        "outcome_unknown": false,
+        "driver": "sqlite3",
+        "sqlite_code": "SQLITE_CONSTRAINT_CHECK"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3",
+      "setup": [
+        "CREATE TABLE k (a INTEGER CHECK (a > 0))"
+      ]
+    },
+    {
+      "id": "LDP-ERC-024",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "statement": "SELECT * FROM ldp_missing_table"
+        }
+      },
+      "expect": {
+        "kind": "undefined_object",
+        "retryable": false,
+        "outcome_unknown": false,
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-025",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "statement": "SELEC 1"
+        }
+      },
+      "expect": {
+        "kind": "syntax",
+        "retryable": false,
+        "outcome_unknown": false,
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3"
+    },
+    {
+      "id": "LDP-ERC-026",
+      "level": "MUST",
+      "rule": "ERC-2",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "08006",
+          "message": "",
+          "sent": true,
+          "during_commit": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "outcome_unknown": true,
+        "retryable": false,
+        "connection_usable": false
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (F-02, I-2)"
+    },
+    {
+      "id": "LDP-ERC-027",
+      "level": "MUST",
+      "rule": "ERC-2",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "08006",
+          "message": "",
+          "sent": false,
+          "during_commit": true
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "outcome_unknown": true,
+        "retryable": false
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (F-02, I-2)"
+    },
+    {
+      "id": "LDP-ERC-028",
+      "level": "MUST",
+      "rule": "ERC-2",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "08006",
+          "message": "",
+          "sent": false,
+          "during_commit": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "outcome_unknown": false,
+        "retryable": true
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (F-02, I-2)"
+    },
+    {
+      "id": "LDP-ERC-029",
+      "level": "MUST",
+      "rule": "ERC-2",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "57P01",
+          "message": "",
+          "sent": true,
+          "during_commit": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "outcome_unknown": true,
+        "retryable": false
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (F-02, I-2)"
+    },
+    {
+      "id": "LDP-ERC-030",
+      "level": "MUST",
+      "rule": "ERC-2",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "53300",
+          "message": "",
+          "sent": true,
+          "during_commit": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "outcome_unknown": false,
+        "retryable": true
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (F-02, I-2)"
+    },
+    {
+      "id": "LDP-ERC-031",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "25P03",
+          "message": "terminating connection due to idle-in-transaction timeout",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "timeout",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": false,
+        "sqlstate": "25P03",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-032",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "57P02",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "retryable": true,
+        "outcome_unknown": false,
+        "connection_usable": false,
+        "sqlstate": "57P02",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-033",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "57P03",
+          "message": "the database system is starting up",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "retryable": true,
+        "outcome_unknown": false,
+        "connection_usable": false,
+        "sqlstate": "57P03",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-034",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "08000",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "retryable": true,
+        "outcome_unknown": false,
+        "connection_usable": false,
+        "sqlstate": "08000",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-035",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "08001",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "retryable": true,
+        "outcome_unknown": false,
+        "connection_usable": false,
+        "sqlstate": "08001",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-036",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "08003",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "retryable": true,
+        "outcome_unknown": false,
+        "connection_usable": false,
+        "sqlstate": "08003",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-037",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "08004",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "retryable": true,
+        "outcome_unknown": false,
+        "connection_usable": false,
+        "sqlstate": "08004",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-038",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "42703",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "undefined_object",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlstate": "42703",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-039",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "42883",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "undefined_object",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlstate": "42883",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-040",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "42704",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "undefined_object",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlstate": "42704",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-041",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "3F000",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "undefined_object",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlstate": "3F000",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-042",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "XX002",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "corrupt",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlstate": "XX002",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-043",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "54000",
+          "message": "",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "resource",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlstate": "54000",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-044",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "54001",
+          "message": "statement too complex",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "resource",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlstate": "54001",
+        "driver": "psycopg"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-045",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "scenario": "busy"
+        }
+      },
+      "expect": {
+        "kind": "locked",
+        "retryable": true,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlite_code": "SQLITE_BUSY",
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-046",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "scenario": "readonly"
+        }
+      },
+      "expect": {
+        "kind": "read_only",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlite_code": "SQLITE_READONLY",
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-047",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "scenario": "notadb"
+        }
+      },
+      "expect": {
+        "kind": "corrupt",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": false,
+        "sqlite_code": "SQLITE_NOTADB",
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-048",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "scenario": "cantopen",
+          "sent": false
+        }
+      },
+      "expect": {
+        "kind": "connection",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": false,
+        "sqlite_code": "SQLITE_CANTOPEN",
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-049",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "scenario": "full"
+        }
+      },
+      "expect": {
+        "kind": "disk_full",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlite_code": "SQLITE_FULL",
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-050",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "scenario": "interrupt"
+        }
+      },
+      "expect": {
+        "kind": "canceled",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlite_code": "SQLITE_INTERRUPT",
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-051",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "scenario": "auth"
+        }
+      },
+      "expect": {
+        "kind": "permission",
+        "retryable": false,
+        "outcome_unknown": false,
+        "connection_usable": true,
+        "sqlite_code": "SQLITE_AUTH",
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)"
+    },
+    {
+      "id": "LDP-ERC-052",
+      "level": "MUST",
+      "rule": "ERC-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "classify_error",
+        "args": {
+          "driver": "sqlite3",
+          "statement": "INSERT INTO t VALUES (1)"
+        }
+      },
+      "expect": {
+        "kind": "unique",
+        "retryable": false,
+        "connection_usable": true,
+        "sqlite_code": "SQLITE_CONSTRAINT_PRIMARYKEY",
+        "driver": "sqlite3"
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (mapping table)",
+      "setup": [
+        "CREATE TABLE t (id INTEGER PRIMARY KEY)",
+        "INSERT INTO t VALUES (1)"
+      ]
+    }
+  ]
+}

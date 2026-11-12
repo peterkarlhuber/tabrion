@@ -4,8 +4,13 @@ Contract: ``docs/api/contract.md`` sections 5.2, 5.3 and 5.5, implementation not
 The 0.2 methods (TAB-033) are staged in ``tabrion._sa._v02`` and are not part of these classes before 0.2 (G-T1
 condition C-6, ``docs/api/surface.json``).
 
-``Statement``, ``Params`` and ``Isolation`` are documentation-only aliases: they name the types in the signatures and
-are not exported from ``tabrion`` (G-T1 F-11, TODO TB-020).
+``Statement``, ``Params`` and ``Isolation`` are documentation-only aliases (``tabrion._sa._types``): they name the types
+in the signatures and are not exported from ``tabrion`` (G-T1 F-11, TODO TB-020).
+
+The machinery the 0.2 methods need lives here, private, so their public part in ``tabrion._sa._v02`` stays small:
+the cancel bookkeeping of every statement (``Transaction._step``, ``_request_cancel``), clean-up callbacks run when a
+transaction ends (open streams), the ``on_begin`` callbacks and the transaction class a ``Database`` creates (contract
+implementation notes I-100..I-106, TAB-033).
 """
 
 from __future__ import annotations
@@ -21,7 +26,8 @@ import re
 import sqlite3
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NoReturn, TypeVar
+import uuid
 import warnings
 
 import sqlalchemy
@@ -30,6 +36,7 @@ from sqlalchemy.pool import QueuePool, StaticPool
 from tabrion import config as _config
 from tabrion import sqlite as _sqlite
 from tabrion._sa import events as _events
+from tabrion._sa._types import Isolation, Params, Statement
 from tabrion._sa.profile import Profile, TLSMode
 from tabrion.errors import (
     Classification,
@@ -50,12 +57,6 @@ if TYPE_CHECKING:
 
 __all__ = ["Database", "Health", "Transaction"]
 
-Statement: TypeAlias = str | sqlalchemy.sql.Executable
-"""A ``str`` becomes ``sqlalchemy.text()`` with named parameters (``:name``)."""
-Params: TypeAlias = Mapping[str, Any] | Sequence[Mapping[str, Any]] | None
-"""A sequence of mappings runs ``executemany``."""
-Isolation: TypeAlias = Literal["read_committed", "repeatable_read", "serializable"]
-
 _T = TypeVar("_T")
 
 _ISOLATION_LEVELS: dict[str, str] = {
@@ -70,6 +71,12 @@ _MAX_TIMEOUT_MS = 2_147_483_647
 _PG_TIMEOUT_SETTING = re.compile(r"[0-9]{1,10}(?:us|ms|s|min|h|d)?")
 _PROGRESS_STEPS = 1_000
 """``set_progress_handler`` calls the deadline check every 1 000 SQLite VM steps (contract section 5.3)."""
+
+_CANCEL_ATTEMPTS = 4
+"""``cancel()`` sends at most this many requests while the same statement keeps running (I-102)."""
+_CANCEL_RETRY_SECONDS = 0.2
+_CANCEL_TIMEOUT_SECONDS = 2.0
+"""psycopg ``cancel_safe(timeout=...)``: how long one request to the server may take."""
 
 _NEW_MESSAGE = "tabrion.{name} is created by its factory, not called directly: {hint}"
 
@@ -189,13 +196,28 @@ class Transaction:
     _default_timeout: float | None
     _pg_timeout: float | None
     _pg_saved: str | None
+    _max_rows: int
+    _dbapi: Any
+    _state: threading.Condition
+    _running: bool
+    _canceled: bool
+    _sending: bool
+    _cancel_sent: bool
+    _broken: bool
+    _cleanups: list[Callable[[], None]]
 
     def __new__(cls, *args: object, **kwargs: object) -> Transaction:
         _no_constructor("Transaction", "Database.transaction() or Database.read()")
 
     @classmethod
     def _open(
-        cls, connection: sqlalchemy.Connection, *, read_only: bool, dialect: str, timeout: float | None
+        cls,
+        connection: sqlalchemy.Connection,
+        *,
+        read_only: bool,
+        dialect: str,
+        timeout: float | None,
+        max_rows: int = 10_000,
     ) -> Transaction:
         self = object.__new__(cls)
         self._connection = connection
@@ -206,6 +228,16 @@ class Transaction:
         self._default_timeout = timeout
         self._pg_timeout = None
         self._pg_saved = None
+        self._max_rows = max_rows
+        # The DBAPI connection of this transaction, for cancel() from another thread (I-102).
+        self._dbapi = connection.connection.dbapi_connection
+        self._state = threading.Condition(threading.Lock())
+        self._running = False
+        self._canceled = False
+        self._sending = False
+        self._cancel_sent = False
+        self._broken = False
+        self._cleanups = []
         return self
 
     def __repr__(self) -> str:
@@ -228,7 +260,7 @@ class Transaction:
         self._check()
         return self._connection
 
-    # The statement runner: timeout, execution and error translation in one place.
+    # The statement runner: timeout, cancel bookkeeping, execution and error translation in one place.
 
     def _run(
         self,
@@ -239,22 +271,37 @@ class Transaction:
     ) -> _T:
         self._check()
         executable = _statement(statement)
+        connection = self._connection
+        return self._step(statement, timeout, lambda: consume(connection.execute(executable, params)))
+
+    def _step(self, statement: object, timeout: float | None, call: Callable[[], _T]) -> _T:
+        """One round trip of a statement (its execution, or one fetch of a stream) under the transaction's rules.
+
+        Checks the thread and the state, refuses to start after ``cancel()`` (``Canceled``), marks the statement as
+        running for ``cancel()``, applies the timeout (PostgreSQL ``SET LOCAL statement_timeout``, SQLite the deadline
+        of the progress handler, which also stops the statement once ``cancel()`` was called) and translates errors.
+        """
+        self._check()
         seconds = _optional_seconds(timeout)
         if seconds is None:
             seconds = self._default_timeout
         connection = self._connection
         error: TabrionError
+        self._statement_started()
         try:
-            if self._dialect == "postgresql":
-                self._pg_statement_timeout(seconds)
-                return consume(connection.execute(executable, params))
-            return _with_deadline(connection, seconds, lambda: consume(connection.execute(executable, params)))
-        except _SQLiteDeadline as expired:
-            error = _timeout_error(expired.cause, statement)
-        except Exception as exc:
-            if not _is_database_error(exc):
-                raise
-            error = _translate(exc, statement)
+            try:
+                if self._dialect == "postgresql":
+                    self._pg_statement_timeout(seconds)
+                    return call()
+                return _with_deadline(connection, seconds, call, stop=self._cancel_requested)
+            except _SQLiteDeadline as expired:
+                error = _timeout_error(expired.cause, statement)
+            except Exception as exc:
+                if not _is_database_error(exc):
+                    raise
+                error = _translate(exc, statement)
+        finally:
+            self._statement_ended()
         # Raised outside the except block: no __context__ that holds the SQLAlchemy error and its parameters (I-39).
         raise error from None
 
@@ -278,6 +325,69 @@ class Transaction:
             value = f"'{saved}'" if _PG_TIMEOUT_SETTING.fullmatch(saved) else "DEFAULT"
             connection.exec_driver_sql(f"SET LOCAL statement_timeout = {value}")
         self._pg_timeout = seconds
+
+    # Cancel bookkeeping (I-102). ``_state`` guards ``_running``, ``_canceled``, ``_sending`` and ``_active``. A request
+    # is sent only while a statement of this transaction runs, never after the transaction's block ended; the block's
+    # end waits for a request still being sent, and on PostgreSQL a transaction that sent one never returns its
+    # connection to the pool (a request the server acts on late would hit the next user of that server session).
+
+    def _cancel_requested(self) -> bool:
+        return self._canceled
+
+    def _statement_started(self) -> None:
+        with self._state:
+            if self._broken:
+                raise UsageError("database.transaction_ended")
+            if self._canceled:
+                raise _canceled_error()
+            self._running = True
+
+    def _statement_ended(self) -> None:
+        with self._state:
+            self._running = False
+            self._state.notify_all()
+
+    def _request_cancel(self) -> None:
+        """Mark the transaction canceled and stop the running statement; callable from any thread, never raises."""
+        with self._state:
+            if not self._active:
+                return  # ended (or ending): the connection may already belong to someone else
+            self._canceled = True
+        for _attempt in range(_CANCEL_ATTEMPTS):
+            with self._state:
+                if not (self._active and self._running) or self._sending:
+                    return
+                self._sending = True
+                if self._dialect == "postgresql":
+                    self._cancel_sent = True  # set before sending: the end of the block must see it
+            try:
+                # Sent without the lock, so the owner's statement can end meanwhile (I-102, review L-2 of #32);
+                # _finish waits for _sending, so the connection is not closed under the request.
+                _send_cancel(self._dialect, self._dbapi)
+            finally:
+                with self._state:
+                    self._sending = False
+                    self._state.notify_all()
+                    # A request that arrives before the server started the statement is ignored by the server; send
+                    # it again while the statement still runs (wait releases the lock, so the statement can end).
+                    if self._active and self._running:
+                        self._state.wait(_CANCEL_RETRY_SECONDS)
+
+    def _finish(self) -> None:
+        """End of the transaction block: no cancel from now on; open streams are closed (I-103)."""
+        with self._state:
+            while self._sending:
+                self._state.wait()
+            self._active = False
+            cleanups, self._cleanups = self._cleanups, []
+        for cleanup in reversed(cleanups):
+            with contextlib.suppress(Exception):  # the transaction ends either way; its rollback reports the state
+                cleanup()
+
+    def _must_not_return_to_pool(self) -> bool:
+        """A PostgreSQL cancel request was sent (it may still reach the server session), or the caller's SQL ended the
+        transaction (I-102, I-104; review H-1 and L-1 of #32)."""
+        return self._cancel_sent or self._broken
 
     def execute(self, statement: Statement, params: Params = None, *, timeout: float | None = None) -> int:
         """Row count (``-1`` becomes ``0`` for DDL)."""
@@ -321,19 +431,31 @@ class _SQLiteDeadline(Exception):
         self.cause = cause
 
 
-def _with_deadline(connection: sqlalchemy.Connection, seconds: float | None, call: Callable[[], _T]) -> _T:
-    """SQLite: run ``call`` under a deadline checked every 1 000 VM steps (``set_progress_handler``, I-40)."""
-    if seconds is None:
+def _with_deadline(
+    connection: sqlalchemy.Connection,
+    seconds: float | None,
+    call: Callable[[], _T],
+    *,
+    stop: Callable[[], bool] | None = None,
+) -> _T:
+    """SQLite: run ``call`` under a deadline checked every 1 000 VM steps (``set_progress_handler``, I-40).
+
+    ``stop`` (a transaction's cancel flag) is checked by the same handler, so a ``cancel()`` that came before SQLite
+    started the statement still stops it (``sqlite3.Connection.interrupt`` alone would be lost then, I-102).
+    """
+    if seconds is None and stop is None:
         return call()
     dbapi = connection.connection.dbapi_connection
     if not isinstance(dbapi, sqlite3.Connection):
         return call()
-    deadline = time.monotonic() + seconds
+    deadline = None if seconds is None else time.monotonic() + seconds
     expired = False
 
     def progress() -> int:
         nonlocal expired
-        if time.monotonic() >= deadline:
+        if stop is not None and stop():
+            return 1  # SQLITE_INTERRUPT, classified as CANCELED
+        if deadline is not None and time.monotonic() >= deadline:
             expired = True
             return 1
         return 0
@@ -347,6 +469,21 @@ def _with_deadline(connection: sqlalchemy.Connection, seconds: float | None, cal
         raise
     finally:
         dbapi.set_progress_handler(None, _PROGRESS_STEPS)
+
+
+def _canceled_error() -> TabrionError:
+    """``Canceled`` for a statement refused after ``cancel()`` (I-102); nothing was sent."""
+    classification = replace(classify(Exception()), kind=Kind.CANCELED, connection_usable=True)
+    return _error_class(Kind.CANCELED)("database.canceled", classification=classification)
+
+
+def _send_cancel(dialect: str, dbapi: Any) -> None:
+    """``sqlite3.Connection.interrupt()`` or psycopg ``cancel_safe()``; best effort, never raises (I-102)."""
+    with contextlib.suppress(Exception):
+        if dialect == "postgresql":
+            dbapi.cancel_safe(timeout=_CANCEL_TIMEOUT_SECONDS)
+        else:
+            dbapi.interrupt()
 
 
 def _timeout_error(cause: BaseException, statement: object = None) -> StatementTimeout:
@@ -555,12 +692,33 @@ def _postgres_engine(url: sqlalchemy.URL, profile: Profile, options: dict[str, A
     return sqlalchemy.create_engine(url, **kwargs)
 
 
+def _printable_path(path: str) -> str:
+    """The path as it is, except that a character that is not printable (a newline, ESC, BEL, DEL, a bidi override,
+    a lone surrogate) is percent-encoded as its UTF-8 bytes, so a file name cannot forge a log line or recolour a
+    terminal. ``\\``, ``:``, ``@``, ``%`` and spaces stay as they are."""
+    return "".join(
+        ch if ch.isprintable() else "".join(f"%{byte:02X}" for byte in ch.encode("utf-8", "surrogatepass"))
+        for ch in path
+    )
+
+
 def _safe_url(url: sqlalchemy.URL) -> str:
+    """The URL with its password masked. A SQLite file path is shown as it is (with :func:`_printable_path`):
+    SQLAlchemy percent-encodes it when it renders the URL (``C%3A%5C...`` for ``C:\\...`` on Windows), which no
+    reader of a log recognizes. The URL is masked with a placeholder for the path, and the path goes in only
+    afterwards, so ``:``, ``@`` or ``?password=`` in a path are never read as credentials or a query."""
     try:
-        rendered = url.render_as_string(hide_password=True)
+        database = url.database
+        if url.get_backend_name() != "sqlite" or not database:
+            return _config.safe_url(url.render_as_string(hide_password=True))
+        slot = f"tabrion{uuid.uuid4().hex}"  # letters and digits only: masking leaves it alone
+        masked = _config.safe_url(url.set(database=slot).render_as_string(hide_password=True))
+        before, found, after = masked.partition(slot)
+        if not found or slot in after:
+            return _config.safe_url(url.render_as_string(hide_password=True))
+        return before + _printable_path(database) + after
     except Exception:
         return "<unparseable url>"
-    return _config.safe_url(rendered)
 
 
 def _pool_status(engine: sqlalchemy.Engine) -> dict[str, int] | None:
@@ -607,6 +765,12 @@ class Database:
     _local: threading.local
     _serial: threading.RLock | None
     _profile_applied: bool
+    _begin_callbacks: list[tuple[object, Callable[[sqlalchemy.Connection, bool], None]]]
+    """Replaced, never changed in place, under ``_callbacks_lock`` (copy on write; review Info I-1 of #32)."""
+    _callbacks_lock: threading.Lock
+
+    _transaction_class: ClassVar[type[Transaction]] = Transaction
+    """What ``transaction()`` and ``read()`` yield (the staged 0.2 classes of ``tabrion._sa._staged`` set their own)."""
 
     def __new__(cls, *args: object, **kwargs: object) -> Database:
         _no_constructor("Database", "Database.from_url(), Database.from_env() or Database.from_engine()")
@@ -636,6 +800,8 @@ class Database:
         self._serial = threading.RLock() if serial else None
         self._listeners = _events.install(engine, profile, owned=owned, apply=install_listeners)
         self._profile_applied = install_listeners
+        self._begin_callbacks = []
+        self._callbacks_lock = threading.Lock()
         self._closed = False
         return self
 
@@ -805,15 +971,26 @@ class Database:
                 error = None
             if error is not None:
                 raise error from None
-            transaction = Transaction._open(connection, read_only=read, dialect=self._dialect, timeout=timeout)
+            transaction = self._transaction_class._open(
+                connection, read_only=read, dialect=self._dialect, timeout=timeout, max_rows=self._profile.max_rows
+            )
             failure: BaseException | None = None
             try:
+                for _token, callback in self._begin_callbacks:
+                    callback(connection, read)  # on_begin (I-105): inside the transaction, before the caller's block
                 yield transaction
             except BaseException as exc:
                 failure = exc
-            transaction._active = False
+            transaction._finish()
+            if failure is None and transaction._canceled:
+                failure = _canceled_error()  # a canceled transaction is never committed (I-102)
+            if failure is None and transaction._broken:
+                failure = UsageError("database.transaction_ended")  # the caller's SQL ended it (I-104)
             if failure is not None:
                 _rollback(connection)
+                if transaction._must_not_return_to_pool() and (postgres or _sqlite_file_backed(connection)):
+                    with contextlib.suppress(Exception):  # the pool opens a fresh connection instead
+                        connection.invalidate()
                 if isinstance(failure, Exception) and _is_database_error(failure):
                     # The caller used transaction.connection directly: translated like Tabrion's own calls.
                     error = _translate(failure)
