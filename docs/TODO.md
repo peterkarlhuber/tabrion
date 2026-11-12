@@ -996,9 +996,10 @@ required (owner decision of 2026-11-08 11:26Z).
   so the test can fail. The false-refusal case: per repetition three threads each open, read and close five
   connections (each opening the `-wal` and `-shm`) while another connection holds the database and a thread opens
   an unrelated file every few milliseconds; 0 `UnsafePath` in 1,000 repetitions. Local runs (Linux, 4 cores,
-  1,000 repetitions, 3 runs plus 4 runs in parallel): all green; of 3,000 swapped connects about 39 % opened the
-  checked database, 58 % were refused at the first link check, 1.7 % later (the window between check and open), 0.1 %
-  by SQLite itself. TAB-T-123 is Covered in `docs/program/traceability.md`.
+  1,000 repetitions, Python 3.11, 3.12 and 3.13, also on two cores under CPU load): all green; of 3,000 swapped
+  connects about 53 % opened the checked database, 46 % were refused at the first link check, 1.5 % later (the window
+  between check and open), 0.3 % by SQLite itself. The swapping keeps the checked file in place now and then for a
+  few milliseconds, so a slow runner also sees opens (a nightly run on Python 3.12 had refused all 25 connects). TAB-T-123 is Covered in `docs/program/traceability.md`.
   Finding of the first dispatched nightly (Python 3.11): before Python 3.13, `os.path.realpath` raises
   `OSError(EINVAL)` when the name it saw as a link is a file again by the time it reads the link. `_same_file` calls
   it on the name SQLite opened, so `connect` can end with that `OSError` instead of `UnsafePath` (contract I-22): it

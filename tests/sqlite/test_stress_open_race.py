@@ -89,6 +89,10 @@ class _Swapper:
                 os.replace(staged, self._name)
                 self.swaps += 1
                 pause = self._random.choice((0.0, 0.00002, 0.0001, 0.0005))
+                if self.swaps % 2 == 0 and self._random.random() < 0.5:
+                    # the checked file stays in place now and then for as long as a whole connect may take on a
+                    # loaded runner, so the run sees opens as well as refusals
+                    pause = self._random.choice((0.002, 0.005, 0.01))
                 if pause:
                     time.sleep(pause)
         except BaseException as exc:  # reported by the test
