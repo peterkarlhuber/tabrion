@@ -27,7 +27,7 @@ def test_page_parses_and_is_in_nav(page: Path) -> None:
     """Every guide has at least one executed example and is listed in the MkDocs navigation."""
     assert any(step.lang in {"python", "pycon"} and step.file is None for step in parse(page)), page.name
     nav = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
-    assert str(page.relative_to(DOCS)) in nav, f"{page.name} is not in mkdocs.yml nav"
+    assert page.relative_to(DOCS).as_posix() in nav, f"{page.name} is not in mkdocs.yml nav"
 
 
 def test_unknown_language_and_directive_fail(tmp_path: Path) -> None:
