@@ -16,6 +16,8 @@ import sys
 
 import pytest
 
+from tests.stress import hang_guard
+
 POSIX = os.name == "posix"
 posix_only = pytest.mark.skipif(not POSIX, reason="POSIX file modes and O_NOFOLLOW (Windows: TAB-T-S12)")
 CANARY = "SECRET-4711"
@@ -57,6 +59,14 @@ def digest(path: Path) -> str:
 
 def files(directory: Path) -> list[str]:
     return sorted(p.name for p in directory.iterdir())
+
+
+@pytest.fixture
+def hang_limit(request: pytest.FixtureRequest) -> Iterator[None]:
+    """TB-049: a test that hangs (a backup that blocks on its own lock) ends the run after 120 s with every thread's
+    traceback, instead of running into the CI job timeout (``tests/stress.py``)."""
+    with hang_guard(request.config, 120):
+        yield
 
 
 @pytest.fixture

@@ -17,14 +17,14 @@
 ## Summary
 
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
-master merge into #25).
+master merge into #31).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 9 |
-| P2 Medium | 13 |
-| P3 Low | 46 |
+| P2 Medium | 14 |
+| P3 Low | 45 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -162,7 +162,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
 - **What:** the canary suite (no values in errors or logs, QA-2) is in review (TB-085 has its open points);
-  concurrency and stress suite, nightly (QA-4); supply chain with SBOM next to the existing `dependency audit` job
+  the concurrency and stress suite (QA-4) is in review (its nightly 200x job is TB-086); supply chain with SBOM next to the existing `dependency audit` job
   (QA-8, in review: SBOM script and reproducible-wheel test; the CI step is TB-130); the release workflow is in place
   but its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
   `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`).
@@ -849,14 +849,6 @@ required (owner decision of 2026-11-08 11:26Z).
   `sqlite3` has no getter. Documented in the docstring and I-23 in the fix round.
 - **Next step:** none unless a consumer needs it; then track the state on the connection in a `WeakKeyDictionary`.
 
-### TB-049 · Backup tests have no explicit timeout (review L-3, mutant 8; I-4)
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-014, QA-4, review L-3, I-4
-- **What:** removing the `in_transaction` guard of `backup` makes the backup block on its own lock: the suite hangs
-  instead of failing (the review counts it as caught, CI times out). `pytest-timeout` is not a development
-  dependency. (I-4: review N-3, the double formatting cost, stays TB-039.)
-- **Next step:** add `pytest-timeout` with QA-4 and mark the backup and migration tests with a timeout.
-
 ### TB-085 · Canary suite: what it does not cover (TABRION QA-2)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-2, TAB-T-110..113, contract I-39, I-75, I-76,
@@ -897,6 +889,21 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** decide 1, 3 and 7 with the 0.2 surface review (TB-033); 2, 5, 6 and 10 are documented behavior; 8
   and 9 when such a plugin or path is adopted; 11 in a QA follow-up. The non-`TabrionError` path of `from_url` (review
   C-1/L-A of #25) is closed: every exception leaves it without the helper frames.
+
+### TB-086 · Nightly `stress` job: 200 repetitions (TABRION QA-4)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-4, planning document 07 K6 and section 4.3,
+  deviations D-2, D-85
+- **What:** the stress suite (`pytest -m stress`, `tests/stress.py`) repeats each scenario `TABRION_STRESS_REPEAT`
+  times: 5 by default, so it runs on every pull request in the `test` and `pg (...)` jobs. The nightly run with 200
+  repetitions needs a job in `.github/workflows/nightly.yml` and its entry in `.github/ci-manifest.json`; workflow
+  changes go through a separate reviewed pull request, so this one changes no workflow. The job: Python 3.13, a
+  PostgreSQL 17 service as in `ci.yml`, `pip install -e ".[dev]"`, then
+  `TABRION_STRESS_REPEAT=200 pytest -m stress -v -p no:cacheprovider` with `TABRION_TEST_POSTGRES` and
+  `TABRION_REQUIRE_POSTGRES=1`, `timeout-minutes: 90` (40 repetitions took about 2 minutes locally, so 200 take about
+  10 to 15 minutes).
+- **Next step:** a workflow pull request adds the job; QA-4's "nightly `stress` 200 repetitions without loss" is then
+  checked on the first nightly.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 

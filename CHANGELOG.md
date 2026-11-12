@@ -138,6 +138,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   every kind of both engines and both layers; no `str`, `repr`, traceback, stderr output, log record or pytest report
   may hold it (`tests/canary.py`).
 
+- The concurrency and stress suite (QA-4, `pytest -m stress`): SQLite read-then-write threads and two processes x 500
+  write transactions without a lost update or a lock error, WAL readers, busy timeouts, `backup` during writes; PostgreSQL `SessionLock` and advisory-lock exclusion, connection loss, layer-B
+  transactions, pool exhaustion and serializable retries. `TABRION_STRESS_REPEAT` sets the repetitions (5 by
+  default); a hanging test ends the run with every thread's traceback. The backup and migration tests got the same
+  time bound (TB-049).
+
 ### Changed
 
 - `tabrion.sqlite.connect` hardens its open against a time-of-check to time-of-use race (TB-045, contract I-22,
