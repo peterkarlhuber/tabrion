@@ -2,8 +2,8 @@ name: CI
 
 # TAB-004 (05 section 2.5, 07 section 4.2). Every job name below is a mandatory check in .github/ci-manifest.json;
 # ci-ok.yml aggregates them. Actions are pinned by commit SHA and images by digest (TAB-T-181,
-# tests/security/test_workflow_pins.py). Jobs whose content arrives with later work packages are added by them:
-# "conformance" (TAB-050), "golden files" (TAB-022) and "examples" (RA-A, RA-B).
+# tests/security/test_workflow_pins.py). "conformance" (TAB-050), "golden files" (TAB-022) and "examples" (RA-A,
+# RA-B) run their suites in a job of their own (TODO TB-092, TB-070, TB-010); the same tests also run in "test" and "pg".
 on:
   push:
     branches: [master]
@@ -161,7 +161,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: tabrion-ci
         ports:
-          - 5432:5432
+          - 127.0.0.1:5432:5432
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 2s
@@ -258,20 +258,39 @@ jobs:
 
   api-surface:
     # TAB-023 (G-T1 condition C-6): every public signature equals docs/api/surface.json, and no name whose `since` is
-    # newer than the package version is exported.
+    # newer than the package version is exported. On a pull request also S-6 of the API stability policy (TAB-051,
+    # TODO TB-090): every surface change since the merge base with the base branch is named in the CHANGELOG.
     name: api surface
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The whole history, so that the merge base with the base branch exists locally.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
           cache: pip
       - run: pip install -e ".[dev]"
-      - run: python scripts/api_surface.py
+      - if: github.event_name != 'pull_request'
+        run: python scripts/api_surface.py
+      - if: github.event_name == 'pull_request'
+        name: api_surface.py --base <merge base with the base branch>
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          base=$(git merge-base "$BASE_SHA" HEAD)
+          echo "merge base with the base branch: $base"
+          # Transitional until TAB-051 (#21) is on master: an api_surface.py without --base runs the plain check.
+          if python scripts/api_surface.py --help | grep -q -- '--base'; then
+            python scripts/api_surface.py --base "$base"
+          else
+            echo "::notice::scripts/api_surface.py has no --base option yet (TAB-051); running the plain check"
+            python scripts/api_surface.py
+          fi
 
   audit:
     name: dependency audit
@@ -289,3 +308,113 @@ jobs:
       # Every optional extra and the development toolchain.
       - run: pip install "pip-audit==2.10.1" -e ".[dev]"
       - run: pip-audit --skip-editable --progress-spinner off
+
+  conformance:
+    # TAB-050 (TODO TB-092, deviation D-92): the Levuvo Database Profile vectors, local and against PostgreSQL, and
+    # the check of conformance/MANIFEST.json (file hashes, digest named in CHANGELOG.md).
+    name: conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 # postgres:17
+        env:
+          POSTGRES_PASSWORD: tabrion-ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TABRION_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=tabrion-ci dbname=postgres
+      TABRION_REQUIRE_POSTGRES: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: The vectors exist on this commit
+        id: vectors
+        run: |
+          # Transitional until TAB-050 (#27) is on master: without conformance/ the job has nothing to run.
+          if [ -f conformance/MANIFEST.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::conformance/MANIFEST.json does not exist on this commit yet (TAB-050); nothing to run"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.vectors.outputs.present == 'true'
+        run: pip install -e ".[dev]"
+      - if: steps.vectors.outputs.present == 'true'
+        run: python -m tests.support.conformance
+      - if: steps.vectors.outputs.present == 'true'
+        run: pytest -m conformance -v -p no:cacheprovider
+
+  golden:
+    # TAB-022a (TODO TB-070, specification S-7, contract I-61): the consumers' golden files, replayed without and
+    # with a server.
+    name: golden files
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 # postgres:17
+        env:
+          POSTGRES_PASSWORD: tabrion-ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TABRION_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=tabrion-ci dbname=postgres
+      TABRION_REQUIRE_POSTGRES: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/unit/test_golden_consumers.py tests/postgres/test_golden_consumers.py -v -p no:cacheprovider
+
+  examples:
+    # RA-A, RA-B (TODO TB-010): the reference applications under examples/ and their tests in tests/examples, with a
+    # server for the PostgreSQL parts (RA-B-2, RA-A-*).
+    name: examples
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 # postgres:17
+        env:
+          POSTGRES_PASSWORD: tabrion-ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TABRION_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=tabrion-ci dbname=postgres
+      TABRION_REQUIRE_POSTGRES: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/examples -v -p no:cacheprovider

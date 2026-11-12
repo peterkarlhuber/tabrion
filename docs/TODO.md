@@ -83,8 +83,8 @@ required (owner decision of 2026-11-08 11:26Z).
   `assets/branding/social-preview.png` as the repository's social preview (O-9).
 - **Next step:** none required. When the owner sets one, record it in STATUS.md. Stale comments: the header of
   `.github/workflows/release.yml` still calls the environment `pypi` owner action O-2 as if it were required, and
-  `.github/workflows/ci-ok.yml` says branch protection requires `ci-ok` (O-1); reword both in a later pull request
-  with the label `workflow-change-reviewed` (ADR 0012).
+  `.github/workflows/ci-ok.yml` says branch protection requires `ci-ok` (O-1); both are reworded in the
+  workflow-change pull request of TB-017 (label `workflow-change-reviewed`, ADR 0012).
 
 ### TB-004 · Confirm the CR-DB decisions E-CR-1..E-CR-7
 
@@ -205,8 +205,9 @@ required (owner decision of 2026-11-08 11:26Z).
   features); the fixture `app` of `tests/examples/measurements_variants.py` runs the whole measurements suite
   against both variants, and the baseline's probe hits (`DEVIATIONS`: file modes, error classification, capture
   without SQLAlchemy) are strict `xfail`, the input of RA-EVAL.
-- **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
-  a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
+- **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. One
+  job `examples` (all of `tests/examples`, with a PostgreSQL 17 service) is in the workflow-change pull request of
+  TB-017; a split per application can follow when the suites grow.
 - **Next step:** RA-A-2 (#29) and RA-A-3 (#35, stacked on #29); RA-EVAL after RA-A-3 (the measurement report from
   both baselines). The dedicated `examples` job should also run the measurements suite against PostgreSQL 16, 17 and
   18 for both variants (today the `pg (...)` jobs do).
@@ -498,7 +499,21 @@ required (owner decision of 2026-11-08 11:26Z).
   deviation D-2
 - **What:** `conformance`, `golden files` and `examples` in `ci.yml` (`api surface` arrived with TAB-023); fault injection, stress and
   `downstream` in `nightly.yml`. Each is added with its work package and listed in `.github/ci-manifest.json`.
-- **Next step:** with each work package.
+- **Status note (2026-11-08, workflow-change pull request on branch `claude/project-thread-rdo6g3-ci-wiring`):**
+  `conformance`, `golden files` and `examples` are in `ci.yml` and the manifest; the nightly `downstream` job is in
+  `nightly.yml`, not blocking (TB-070). The same pull request wires TB-090 (TAB-051, #21: `api surface` runs
+  `api_surface.py --base <merge base>` on pull requests; `release.yml` job `downstream-notice` prints the consumer
+  issues as a dry run and opens none) and TB-092 (TAB-050, #27: the `conformance` job runs
+  `python -m tests.support.conformance` and `pytest -m conformance` with a PostgreSQL 17 service), and rewords the
+  stale O-1/O-2 comments of TB-003, and widens the `platforms.yml` path filter (TB-021, TAB-050 review H-1, and the
+  workflow file itself). Workflow review conditions: every PostgreSQL service port is bound to `127.0.0.1` (C-3). Until #21 and #27 are on `master`, two transitional guards keep the jobs green:
+  `api surface` falls back to the plain check when the script has no `--base`, and `conformance` runs nothing when
+  `conformance/MANIFEST.json` is missing. Finding: at a tag, `--base <previous tag>` reads `[Unreleased]`, which a
+  release has already renamed to its version section, so in `release.yml` the check is informational (a warning);
+  the binding S-6 check stays the PR job and release-flow step 1 before tagging.
+- **Next step:** after #21 and #27 are merged, remove both transitional guards (a pull request with the label
+  `workflow-change-reviewed`), and close TB-070, TB-090, TB-092 and this entry's `conformance`, `golden files`,
+  `examples` and `downstream` parts. Fault injection 3x (TAB-034) and stress 200x (QA-4) remain.
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
 
@@ -508,8 +523,9 @@ required (owner decision of 2026-11-08 11:26Z).
   `fetch-depth: 0` and `--base ${{ github.event.pull_request.base.sha }}`). `release.yml` has no gate that runs
   `--base <previous release SHA>` and checks the `downstream` result (S-7). The downstream issues of the release
   flow stay manual: the owner, or the coordinator on the owner's go, opens them (`docs/development/api-stability.md`).
-- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml` and `release.yml`; until then the
-  release checklist runs both steps by hand.
+- **Next step:** the workflow-change pull request of TB-017 (branch `claude/project-thread-rdo6g3-ci-wiring`) adds
+  `--base <merge base>` to `api surface` and the dry-run job `downstream-notice` to `release.yml`; close this entry
+  when it merges. Until then the release checklist runs both steps by hand.
 
 ### TB-091 · Error codes in `surface.json` (TABRION TAB-051, deviation D-91)
 
@@ -571,8 +587,10 @@ required (owner decision of 2026-11-08 11:26Z).
   `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms, and so do the Windows-specific
   paths of `scripts/downstream.py`, `tests/unit/test_downstream.py` and `tests/unit/test_golden_consumers.py`
   (TB-134: those failed on Windows in the nightly only).
-- **Next step:** add the paths to `platforms.yml` and to the manifest's `path_filters` in one pull request merged
-  before the change that needs them (ci-ok judges by the default branch's manifest).
+- **Next step:** the workflow-change pull request of TB-017 adds `config.py`, `errors.py`, `testing/sqlite.py`,
+  `pyproject.toml`, for the LDP vectors (TAB-050 review H-1) `conformance/**` and `tests/conformance/**`, and the
+  three TB-134 paths to `platforms.yml` and the manifest's `path_filters` (ci-ok judges by the default branch's
+  manifest, so it takes effect once merged); close this entry then.
 
 ### TB-134 · Windows: downstream runner and golden replay failed in the platforms job (issue #18)
 
@@ -1029,8 +1047,9 @@ required (owner decision of 2026-11-08 11:26Z).
   so HEAD replaces the consumer's Tabrion requirement (a Git commit pin; Tabrion is not published to an index),
   and checks that it did (review M-1 of #19, fixed); the override names `tabrion[all]`, so a consumer keeps the
   extras it asks for (N-1 of the delta re-review, fixed). The job needs network access for the clones and installs.
-- **Next step:** whoever may change `.github/` adds both jobs (with the label `workflow-change-reviewed`) and lists
-  them in `.github/ci-manifest.json`; the release gate reads the last nightly result.
+- **Next step:** both jobs are in the workflow-change pull request of TB-017 (`golden files` in `ci.yml` and the
+  manifest; `downstream (not blocking)` in `nightly.yml`, `continue-on-error`, not in the needs of `report`); close
+  this entry when it is merged. Release-flow step 2 reads the nightly summary by hand.
 
 ### TB-071 · Record `pgvector_status` on a server with pgvector (TABRION TAB-022)
 
