@@ -596,10 +596,11 @@ required (owner decision of 2026-11-08 11:26Z).
   The TAB-T traceability check (`tests/unit/test_traceability.py`) runs in the unit jobs and needs no wiring.
 - **Closed (2026-11-12, the `0.1.1.dev0` follow-up pull request, review of #56, L-3):** every job of this entry is on
   master: `conformance`, `golden files`, `examples` (#34, `4cd3d89`; guards removed in #47, `8af5f8b`, TB-135),
-  `downstream` (TB-070), `stress (200 repetitions)` (TB-086) and `pg restart` (TB-136), with fault injection 3x in
-  the `pg` jobs (#50, `a0d935d`) and the skip guard instead of per-job skip lists (#51, TB-141, D-79). The master
-  nightly 43187265178 on `75dbee9` was green in every job. The comment above the `coverage` job in `ci.yml` now names
-  the current floors and the measurement of the master CI run 43187196995 (comment-only workflow change).
+  `downstream` (TB-070), `stress (200 repetitions)` (TB-086) and `pg restart` (TB-136), with fault injection 3x in the
+  `pg` jobs (#6, `b274d89`, TAB-034; documented in `nightly.yml` by #50) and the skip guard instead of per-job skip
+  lists (#51, TB-141, D-79). The master nightly 43187265178 on `75dbee9` was green in every job. The comment above the
+  `coverage` job in `ci.yml` now names the current floors and the measurement of the master CI run 43187196995
+  (comment-only workflow change).
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
 
@@ -616,7 +617,9 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Closed (2026-11-12, bookkeeping after `v0.1.0`):** #34 (`4cd3d89`) merged both parts. On pull requests the job
   `api surface` checks out the whole history (`fetch-depth: 0`) and runs `api_surface.py --base <merge base>`; since
   #47 (`8af5f8b`) with `--no-stubs` as well. The `release.yml` job `downstream-notice` runs `--base <previous tag>` as
-  a warning and prints the consumer issues as a checklist; it ran green in the QA-11 dry run 43191784224. Unchanged by
+  a warning and prints the consumer issues as a checklist; it ran green in the QA-11 dry run 43191784224. No release
+  tag exists (tags are optional, D-67), so from 0.1.x on the release checklist passes the input `previous` = the full
+  SHA of the previous release commit; without it the job compares nothing ("no earlier tag", as for 0.1.0). Unchanged by
   design: release-flow step 2 (the `downstream` result, S-7) stays a manual check of the release checklist, because
   the nightly `downstream` job is not blocking (planning document 04), and the issues of step 3 are opened by hand
   after G-R (`docs/development/api-stability.md`, deviation D-90).
