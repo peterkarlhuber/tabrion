@@ -255,6 +255,17 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   versioning rule names a changed action procedure without a changed expectation as a PATCH change; no expectation
   changed.
   LDP-0.1.1 digest 575fd6b03028.
+- The internal fault proxy `tabrion.testing._faults` (contract I-33) no longer lets the server's answer through an
+  `inflight` cut (TODO TB-143). It forwarded the batch and only then closed both sides; under CPU load the forwarding
+  thread could be descheduled in between, the other thread relayed a fast answer, and the client saw the statement
+  succeed: `test_session_lock_raises_and_forgets[inflight]` failed with "DID NOT RAISE OperationalError" (16 of 300
+  runs, 5 of 100 with `--cov`, under load), and `test_ping_reports_a_lost_connection[inflight]` reported
+  `PingResult(ok=True)` (6 of 1000 runs in the review of #55). The proxy now mutes the connection before it forwards
+  the batch, forwards the batch through its `Sync` (also when it arrives in several reads), and then closes both
+  sides; a server message at the moment of the cut can no longer keep the batch from the server. `SessionLock` was not
+  at fault and is unchanged. Unit tests: `test_fault_proxy_inflight_lets_no_answer_through`,
+  `test_fault_proxy_inflight_forwards_the_batch_when_the_server_writes_at_the_cut` and
+  `test_fault_proxy_inflight_forwards_a_batch_split_across_reads`.
 - `classify` maps a SQLite error whose code the `sqlite3` module does not name (`sqlite_errorname == "unknown"`,
   for example `SQLITE_CONSTRAINT_DATATYPE` of a STRICT table on Python 3.13) by its number: `DATA` instead of
   `UNKNOWN` (contract I-75).
