@@ -854,6 +854,13 @@ def test_b13_no_deadline_stays_behind(path: Path) -> None:
             "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 200000) SELECT count(*) FROM c"
         )
         assert database.fetch_scalar(counted) == 200000
+        # Every Tabrion statement installs a handler of its own (cancel, I-102), so a statement outside Tabrion on
+        # the same pooled connection, right after one with a deadline, shows whether that one stayed behind.
+        assert database.fetch_scalar("SELECT 1", timeout=0.05) == 1
+        time.sleep(0.1)
+        with database.engine.connect() as connection:
+            assert connection.exec_driver_sql(counted).scalar() == 200000
+            connection.rollback()
 
 
 def test_b16_executemany(db: Database) -> None:
