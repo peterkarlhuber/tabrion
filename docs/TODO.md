@@ -17,14 +17,15 @@
 ## Summary
 
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
-TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new).
+TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 gap tests pull
+request: TB-137 and TB-138 done, TB-139 narrowed).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 8 |
 | P2 Medium | 16 |
-| P3 Low | 48 |
+| P3 Low | 46 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -548,7 +549,9 @@ required (owner decision of 2026-11-08 11:26Z).
   - fault injection 3x (TAB-034);
   - stress 200x (QA-4, TB-086);
   - the nightly DB-restart case once TAB-T-009 exists (TB-136);
-  - the `sqlite` floor raised to 95 % once tests reach it.
+  - the `sqlite` floor raised to 95 %: the TAB-040 gap tests pull request adds the tests that reach it (branch
+    coverage of `src/tabrion/sqlite.py` 96.5 % in the full suite, was 95.37 %), so only the floor in
+    `ci.yml` remains (workflow change).
   The TAB-T traceability check (`tests/unit/test_traceability.py`) runs in the unit jobs and needs no wiring.
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
@@ -677,33 +680,44 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-137 · TAB-T-162: RLS table with two tenants through `transaction()`
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 SR-10, TM-08; `docs/program/traceability.md`
-- **What:** no test creates a table with `FORCE ROW LEVEL SECURITY` and runs two tenants through
-  `Database.transaction()` with `set_config(..., true)` as a non-owner role, asserting that neither sees the
-  other's rows. TAB-T-160 and TAB-T-161 (transaction-local settings, no reuse of a connection with an open
-  transaction) are covered.
-- **Next step:** one PostgreSQL test in `tests/postgres/test_database.py` with the runtime role of
-  `tabrion_postgres_roles`.
+- **Priority:** P3 Low · **Status:** Done (TAB-040 gap tests pull request) · **Refs:** planning document 07 SR-10,
+  TM-08; `docs/program/traceability.md`
+- **What:** `tests/postgres/test_database.py::test_t162_rls_two_tenants_through_transaction`. A role without
+  superuser owns a table with `FORCE ROW LEVEL SECURITY` and a tenant policy. It grants the runtime role with
+  `grant_runtime_role`, and the runtime role uses one pooled layer-B connection. Two tenants each see, change and
+  add only their own rows through `Database.transaction()` with `set_config('app.tenant_id', ..., true)`. A row for
+  the other tenant is `Kind.PERMISSION`. The next transaction on the same backend starts without a tenant and sees
+  nothing, and the owner sees nothing under `FORCE` either. The roles come from the suite's `make_role`, not from
+  `tabrion_postgres_roles`: that fixture is session-scoped, and the per-test leak check would report its roles.
+- **Next step:** none.
 
 ### TB-138 · TAB-T-202: restore drill of reference application B
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 DI-11, RA-B; `docs/program/traceability.md`
-- **What:** the measurements application has no restore test: back up, delete the file, restore, and check that the
-  count is the same. `backup()` itself is covered (TAB-T-200/201).
-- **Next step:** a test in `tests/examples/test_measurements.py`. If restoring needs an application function, it
-  belongs in `examples/measurements`.
+- **Priority:** P3 Low · **Status:** Done (TAB-040 gap tests pull request) · **Refs:** planning document 07 DI-11,
+  RA-B; `docs/program/traceability.md`
+- **What:** `tests/examples/test_measurements.py::test_t202_restore_drill` backs up the live measurements database
+  with `tabrion.sqlite.backup`, closes it, and deletes the file and its side files. It restores by replacing the
+  file while the database is closed (DI-11), created `0600` with `create_private_file` first. After
+  `integrity_check`, the count, the rows and the transfer mark are the same, and a new capture continues after the
+  last `seq`. Restoring needs no application function.
+- **Next step:** none.
 
 ### TB-139 · TAB-T-021 DST boundary and TAB-T-025 `:x::int` error hint
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 DI-08, probe P5;
-  `docs/program/traceability.md`
-- **What:** two parts of the plan text have no test.
-  - TAB-T-021: the timestamp round trips (aware values, microseconds, a UTC+1 offset, naive values refused) do not
-    cross a DST boundary.
-  - TAB-T-025: the guides recommend `CAST(:x AS int)`, but no test shows what `:x::int` does in layer B. The plan
-    asks for a test of the error message and its hint, and Tabrion gives no hint today.
-- **Next step:** add a DST case to `PartsSuite.test_values_round_trip_exactly`. For TAB-T-025, decide whether
-  layer B adds a hint; if not, add a test that documents the error, with a deviation row.
+- **Priority:** P3 Low · **Status:** Open (narrowed to the TAB-T-025 hint) · **Refs:** planning document 07 DI-08,
+  probe P5; `docs/program/traceability.md`
+- **Done:** TAB-T-021 is covered by `PartsSuite.test_timestamps_round_trip_across_a_dst_boundary`. It runs on both
+  variants and both engines, with values on both sides of the 2026 switches in Vienna (fixed offsets, and
+  `Europe/Vienna` with `fold` where `zoneinfo` has the zone). The `:x::int` error is pinned by
+  `test_t025_double_colon_cast_is_a_syntax_error` (PostgreSQL) and `test_t025_double_colon_cast_on_sqlite`.
+- **What:** TAB-T-025 asks for the error message *with its hint*, and Tabrion gives none.
+  - PostgreSQL: `database.syntax: syntax error (SQLSTATE 42601)`.
+  - SQLite: `database.unknown: database error`. SQLite reads `:x::int` as one parameter name without a value, and
+    the driver's `ProgrammingError` carries no SQLite code.
+  SQLAlchemy's `text()` does not take `:x` before `::` as a parameter, so the value is never bound.
+- **Next step:** an owner decision. Either layer B adds a value-free hint for this case, which is a product change
+  with its own pull request (the tests then assert it), or a deviation row for G-T2 records that the documented
+  `CAST` form is the mitigation.
 
 ### TB-140 · TAB-T-300: nightly benchmark of layer B against plain SQLAlchemy
 

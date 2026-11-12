@@ -234,3 +234,62 @@ def test_plain_connection_works(tmp_path: Path, opened: Opened) -> None:
         connection.execute("CREATE TABLE t (x)")
     with ts.read_transaction(connection):
         assert connection.execute("SELECT count(*) FROM t").fetchone()[0] == 0
+
+
+class _Failing(sqlite3.Connection):
+    """A connection whose ``ROLLBACK`` or ``COMMIT`` fails as an I/O error would (fault injection, contract 3.4)."""
+
+    fail: str = ""
+    """``"ROLLBACK"`` (fails, the transaction stays open) or ``"COMMIT"`` (SQLite rolls back, then fails)."""
+    statements: list[str]
+
+    def execute(self, sql: str, *args: Any) -> sqlite3.Cursor:
+        self.statements.append(sql)
+        if sql == self.fail == "ROLLBACK":
+            raise sqlite3.OperationalError("injected rollback failure")
+        if sql == self.fail == "COMMIT":
+            super().execute("ROLLBACK")  # as SQLite does after SQLITE_FULL or SQLITE_IOERR during COMMIT
+            raise sqlite3.OperationalError("injected commit failure")
+        return super().execute(sql, *args)
+
+
+def _failing(path: Path, fail: str) -> _Failing:
+    connection = sqlite3.connect(path, isolation_level=None, factory=_Failing)
+    assert isinstance(connection, _Failing)
+    connection.fail, connection.statements = "", []
+    connection.execute("CREATE TABLE counter (id INTEGER PRIMARY KEY, n INTEGER NOT NULL)")
+    connection.execute("INSERT INTO counter VALUES (1, 0)")
+    connection.fail = fail
+    return connection
+
+
+def test_a_failing_rollback_with_the_transaction_still_open_is_raised(tmp_path: Path) -> None:
+    """Contract 3.4: a ROLLBACK error is suppressed only when no transaction is open any more. Here it is still
+    open, so the ROLLBACK error is raised (chained to the block's error) rather than leaving it open silently."""
+    connection = _failing(tmp_path / "a.db", "ROLLBACK")
+    try:
+        with (
+            pytest.raises(sqlite3.OperationalError, match="injected rollback") as info,
+            ts.write_transaction(connection),
+        ):
+            connection.execute("UPDATE counter SET n = 1")
+            raise ValueError("original")
+        assert isinstance(info.value.__context__, ValueError)
+        assert connection.in_transaction
+    finally:
+        sqlite3.Connection.execute(connection, "ROLLBACK")
+        connection.close()
+
+
+def test_a_commit_that_failed_and_rolled_back_is_raised_without_a_second_rollback(tmp_path: Path) -> None:
+    """Contract I-24: when SQLite ended the transaction itself while COMMIT failed, the COMMIT error is raised as it
+    is, no ROLLBACK follows, and the connection is idle with nothing written."""
+    connection = _failing(tmp_path / "a.db", "COMMIT")
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="injected commit"), ts.write_transaction(connection):
+            connection.execute("UPDATE counter SET n = 1")
+        assert not connection.in_transaction
+        assert connection.statements[-1] == "COMMIT"
+        assert _n(connection) == 0
+    finally:
+        connection.close()

@@ -33,6 +33,7 @@ from tabrion.errors import (  # noqa: E402
     Classification,
     ConfigurationError,
     ConnectionFailed,
+    DatabaseError,
     IntegrityViolation,
     Kind,
     MultipleRowsError,
@@ -1310,3 +1311,15 @@ def test_b11_a_failing_read_back_does_not_commit(db: Database, monkeypatch: pyte
     with pytest.raises(UsageError, match=r"database\.read_only"), db.read() as tx:
         assert tx.fetch_scalar("SELECT count(*) FROM items") == 0
     assert checked_out(db) == 0
+
+
+def test_t025_double_colon_cast_on_sqlite(db: Database) -> None:
+    """Probe P5 on SQLite: SQLAlchemy leaves ``:x::int`` unbound, and SQLite reads ``:x::int`` as one parameter
+    name without a value; the driver's ``ProgrammingError`` has no SQLite code, so the error is ``Kind.UNKNOWN``
+    with no hint (TODO TB-139). ``CAST(:x AS int)`` works on SQLite as on PostgreSQL."""
+    with pytest.raises(DatabaseError) as info:
+        db.fetch_scalar("SELECT :x::int", {"x": "41"})
+    assert info.value.kind is Kind.UNKNOWN
+    assert str(info.value) == "database.unknown: database error"
+    assert "41" not in str(info.value) and "41" not in repr(info.value)
+    assert db.fetch_scalar("SELECT CAST(:x AS int) + 1", {"x": "41"}) == 42

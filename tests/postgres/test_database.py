@@ -28,7 +28,9 @@ from tabrion.errors import (  # noqa: E402
     ConnectionFailed,
     IntegrityViolation,
     Kind,
+    PermissionDenied,
     ReadOnlyViolation,
+    StatementError,
     StatementTimeout,
     TabrionError,
     UsageError,
@@ -459,3 +461,98 @@ def test_b12_a_failing_read_back_does_not_commit(db: Database, monkeypatch: pyte
         assert tx.fetch_scalar("SELECT 1") == 1
     monkeypatch.undo()
     assert db.fetch_scalar("SELECT 1") == 1  # the pool hands out a working connection again
+
+
+# --- TAB-T-162 (planning document 07, SR-10): row-level security, two tenants through transaction() ----------------
+
+
+@pytest.mark.security
+def test_t162_rls_two_tenants_through_transaction(
+    admin: Any, tabrion_postgres_schema: Any, make_role: Callable[..., Any]
+) -> None:
+    """SR-10: a table with ``FORCE ROW LEVEL SECURITY`` owned by a role without superuser; the runtime role (granted
+    with ``grant_runtime_role``, not the owner, ``NOBYPASSRLS``) works through ``Database.transaction()`` with
+    ``set_config('app.tenant_id', ..., true)``. Each tenant sees, changes and adds only its own rows; the next
+    transaction on the same pooled connection starts without a tenant and sees nothing (TM-08)."""
+    from tabrion.postgres import grant_runtime_role
+
+    schema = tabrion_postgres_schema.name
+    owner = make_role()
+    app = make_role()
+    admin.execute(f'ALTER SCHEMA {schema} OWNER TO "{owner.name}"')
+    with psycopg.connect(owner.url, autocommit=True, connect_timeout=10) as conn:
+        conn.execute(f"CREATE TABLE {schema}.notes (id int PRIMARY KEY, tenant text NOT NULL, body text NOT NULL)")
+        conn.execute(f"ALTER TABLE {schema}.notes ENABLE ROW LEVEL SECURITY")
+        conn.execute(f"ALTER TABLE {schema}.notes FORCE ROW LEVEL SECURITY")
+        conn.execute(
+            f"CREATE POLICY tenant_isolation ON {schema}.notes"
+            " USING (tenant = current_setting('app.tenant_id', true))"
+            " WITH CHECK (tenant = current_setting('app.tenant_id', true))"
+        )
+        report = grant_runtime_role(conn, app.name, schema=schema)
+    assert report.restricted  # row-level security fully applies to the runtime role
+
+    def as_tenant(tx: Any, tenant: str) -> None:
+        tx.execute("SELECT set_config('app.tenant_id', :t, true)", {"t": tenant})
+
+    # One pooled connection: every transaction below runs on the same backend.
+    with Database.from_url(
+        sa_url(app.url),
+        profile=Profile(application_name=new_name("t_rls_")),
+        engine_options={"pool_size": 1, "max_overflow": 0},
+    ) as database:
+        with database.transaction() as tx:
+            assert tx.fetch_scalar("SELECT current_user") == app.name
+            backend = tx.fetch_scalar("SELECT pg_backend_pid()")
+            as_tenant(tx, "tenant-a")
+            tx.execute(f"INSERT INTO {schema}.notes VALUES (1, 'tenant-a', 'a1'), (2, 'tenant-a', 'a2')")
+        with database.transaction() as tx:
+            as_tenant(tx, "tenant-b")
+            tx.execute(f"INSERT INTO {schema}.notes VALUES (3, 'tenant-b', 'b1')")
+
+        for tenant, ids in (("tenant-a", [1, 2]), ("tenant-b", [3])):
+            with database.transaction() as tx:
+                assert tx.fetch_scalar("SELECT current_setting('app.tenant_id', true)") in (None, "")
+                as_tenant(tx, tenant)
+                assert tx.fetch_scalar("SELECT pg_backend_pid()") == backend
+                assert [row.id for row in tx.fetch_all(f"SELECT id FROM {schema}.notes ORDER BY id")] == ids
+                # The other tenant's rows can be neither changed nor deleted.
+                assert tx.execute(f"UPDATE {schema}.notes SET body = 'x' WHERE tenant <> :t", {"t": tenant}) == 0
+                assert tx.execute(f"DELETE FROM {schema}.notes WHERE tenant <> :t", {"t": tenant}) == 0
+
+        # A row for the other tenant is refused by WITH CHECK, and the transaction rolls back.
+        with pytest.raises(PermissionDenied) as refused, database.transaction() as tx:
+            as_tenant(tx, "tenant-a")
+            tx.execute(f"INSERT INTO {schema}.notes VALUES (4, 'tenant-b', 'planted')")
+        assert refused.value.kind is Kind.PERMISSION
+
+        # Without a tenant (the setting ended with the previous transaction), nothing is visible.
+        with database.transaction() as tx:
+            assert tx.fetch_scalar("SELECT pg_backend_pid()") == backend
+            assert tx.fetch_scalar(f"SELECT count(*) FROM {schema}.notes") == 0
+
+    # FORCE applies to the owner too; the superuser sees every row, and none was changed or planted.
+    with psycopg.connect(owner.url, autocommit=True, connect_timeout=10) as conn:
+        assert conn.execute(f"SELECT count(*) FROM {schema}.notes").fetchone() == (0,)
+    rows = admin.execute(f"SELECT id, tenant, body FROM {schema}.notes ORDER BY id").fetchall()
+    assert rows == [(1, "tenant-a", "a1"), (2, "tenant-a", "a2"), (3, "tenant-b", "b1")]
+
+
+# --- TAB-T-025 (planning document 07, probe P5): ``:x::int`` collides with the parameter syntax ---------------------
+
+
+def test_t025_double_colon_cast_is_a_syntax_error(db: Database) -> None:
+    """Probe P5: SQLAlchemy's ``text()`` does not read ``:x`` before ``::`` as a parameter, so ``:x::int`` reaches the
+    server as written and fails with ``Kind.SYNTAX`` (SQLSTATE 42601); the value is never bound. The form the guides
+    recommend, ``CAST(:x AS int)``, works. Tabrion adds no hint that names the collision (TODO TB-139): the message
+    is the classification only, without the server's text."""
+    with pytest.raises(StatementError) as info:
+        db.fetch_scalar("SELECT :x::int", {"x": "41"})
+    error = info.value
+    assert error.kind is Kind.SYNTAX
+    assert error.classification is not None and error.classification.sqlstate == "42601"
+    assert str(error) == "database.syntax: syntax error (SQLSTATE 42601)"
+    assert "41" not in str(error) and "41" not in repr(error)
+    assert db.fetch_scalar("SELECT CAST(:x AS int) + 1", {"x": "41"}) == 42
+    # The connection is usable after the error; a literal cast without a parameter is unaffected.
+    assert db.fetch_scalar("SELECT '41'::int + 1") == 42
