@@ -5,6 +5,9 @@ compare them with ``alembic.autogenerate.compare_metadata`` on SQLite and Postgr
 keys included, and every index has a name of its own, so both engines carry the same names. Mappings (specification
 section 6): integer IDs ``BigInteger().with_variant(Integer, "sqlite")`` with ``Identity(always=True)``, text with a
 ``CHECK`` on its length, UTC timestamps and exact decimals through ``parts.types``, foreign keys always declared.
+A reference that must block a delete uses the default ``NO ACTION``, not ``RESTRICT``: SQLite reports a
+``RESTRICT`` violation as ``SQLITE_CONSTRAINT_TRIGGER``, which ``tabrion.errors`` does not classify as a foreign key
+(TODO TB-110); ``NO ACTION`` gives ``SQLITE_CONSTRAINT_FOREIGNKEY`` and the same refusal on both engines.
 """
 
 from __future__ import annotations
@@ -60,7 +63,7 @@ part = Table(
     _id(),
     Column("part_number", String(40), nullable=False),
     Column("name", String(200), nullable=False),
-    Column("material_id", ID, ForeignKey("material.id", name="fk_part_material", ondelete="RESTRICT"), nullable=False),
+    Column("material_id", ID, ForeignKey("material.id", name="fk_part_material"), nullable=False),
     Column("status", String(16), nullable=False, server_default=text("'draft'")),
     Column("version", Integer, nullable=False, server_default=text("1")),
     Column("created_at", UtcDateTime(), nullable=False),
@@ -97,7 +100,7 @@ part_relation = Table(
     Column(
         "component_id",
         ID,
-        ForeignKey("part.id", name="fk_part_relation_component", ondelete="RESTRICT"),
+        ForeignKey("part.id", name="fk_part_relation_component"),
         nullable=False,
     ),
     Column("quantity", ExactDecimal(12, 3), nullable=False),

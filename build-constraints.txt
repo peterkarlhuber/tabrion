@@ -1,0 +1,19 @@
+# Build backend for `python -m build`, pinned with hashes (QA-8 review M-1, plan document 07 TM-10).
+#
+# The wheel's bytes depend on the backend version (its WHEEL file names the generator), so a wheel is
+# reproducible only for the same pins. pyproject.toml pins hatchling to the same version.
+#
+#   PIP_CONSTRAINT=build-constraints.txt PIP_REQUIRE_HASHES=1 python -m build
+#
+# Offline, from a local wheel cache filled once with `pip download -d wheelhouse -c build-constraints.txt hatchling`:
+#
+#   PIP_CONSTRAINT=build-constraints.txt PIP_REQUIRE_HASHES=1 PIP_NO_INDEX=1 PIP_FIND_LINKS=wheelhouse python -m build
+#
+# To update: change both pins, `pip download` the new hatchling with its dependencies, and write each file's
+# SHA-256 here (tests/unit/test_build_constraints.py checks that both pins agree).
+hatchling==1.33.0 --hash=sha256:415290b84f464d2884303fca8974d38e7b85579069fab02a15db0828fbb1446d
+packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pathspec==1.1.1 --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189
+pluggy==1.7.0 --hash=sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec
+tomlkit==0.15.2 --hash=sha256:05562412163a3037b94497385fb7f9204c637bc605af7a48199e41cf2272f437
+trove-classifiers==2026.9.21.13 --hash=sha256:8b1ff4f9c191b1040b71c37f1e445ab99732911e3cd91de52838453a854d7a17

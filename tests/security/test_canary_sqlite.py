@@ -574,6 +574,56 @@ def test_t111_frame_locals_hold_no_values(db: Database, canary: str) -> None:
         assert_clean(info.value, canary, text)
 
 
+def test_t111_frame_locals_hold_no_values_v02(path: str, canary: str) -> None:
+    """I-76 for the 0.2 statement paths (``query``, ``stream``; I-103) that run through ``Transaction._step``: no
+    parameter, no SQL text and no row of an earlier stream batch among the frame locals of the traceback."""
+    from tabrion._sa._staged import _StagedDatabase, _StagedTransaction
+
+    text = new_canary("sql-")
+    # Row 4 overflows: the first batch (rows 1 and 2, each holding the canary) is fetched, the second fails.
+    overflow = (
+        "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 9) "
+        f"SELECT :v || i, CASE WHEN i > 3 THEN abs(-9223372036854775808) END FROM r -- {text}"
+    )
+    database = _StagedDatabase.from_url(f"sqlite:///{path}")
+    assert isinstance(database, _StagedDatabase)
+
+    def staged(transaction: object) -> _StagedTransaction:
+        assert isinstance(transaction, _StagedTransaction)
+        return transaction
+
+    def query_missing() -> None:
+        database.query(f"SELECT missing FROM t WHERE v = :v -- {text}", {"v": canary})
+
+    def query_in_read() -> None:
+        with database.read() as tx:
+            staged(tx).query(f"SELECT missing FROM t WHERE v = :v -- {text}", {"v": canary})
+
+    def stream_missing() -> None:
+        with database.read() as tx:
+            list(staged(tx).stream(f"SELECT missing FROM t WHERE v = :v -- {text}", {"v": canary}))
+
+    def stream_second_batch() -> None:
+        with database.read() as tx:
+            batches = staged(tx).stream(overflow, {"v": canary}, batch_size=2)
+            assert canary in str(next(batches)[0][0])
+            next(batches)
+
+    def stream_timed_out() -> None:
+        recursive = "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r) SELECT count(*) FROM r"
+        with database.read() as tx:
+            list(staged(tx).stream(f"{recursive} WHERE :v <> ''", {"v": canary}, timeout=0.05))
+
+    try:
+        for call in [query_missing, query_in_read, stream_missing, stream_second_batch, stream_timed_out]:
+            with pytest.raises(TabrionError) as info:
+                call()
+            assert canary in frame_locals(info.value, own=True)  # the capture sees the test's frames
+            assert_clean(info.value, canary, text)
+    finally:
+        database.close()
+
+
 def test_t113_sqlalchemy_engine_log_has_no_parameters(path: str, canary: str, caplog: pytest.LogCaptureFixture) -> None:
     """I-76 (review L-1 of #25): ``sqlalchemy.engine`` at INFO (a common debugging step) logs every statement;
     ``Database.from_url`` sets ``hide_parameters``, so its records carry no value. The positive control turns it

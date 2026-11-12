@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterkarlhuber/tabrion/conformance/schema/vector-file.schema.json",
+  "type": "object",
+  "required": [
+    "format",
+    "standard_version",
+    "area",
+    "vectors"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": "ldp-vectors/1"
+    },
+    "standard_version": {
+      "type": "string",
+      "pattern": "^LDP-\\d+\\.\\d+\\.\\d+$"
+    },
+    "area": {
+      "enum": [
+        "sqlite-profile",
+        "sqlite-transactions",
+        "sqlite-migrate",
+        "postgres-session",
+        "postgres-roles",
+        "postgres-locks",
+        "postgres-extensions",
+        "errors-classification",
+        "errors-redaction",
+        "sql-split"
+      ]
+    },
+    "vectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "level",
+          "rule",
+          "engine",
+          "action",
+          "expect"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^LDP-[A-Z]{2,4}-\\d{3}$"
+          },
+          "level": {
+            "enum": [
+              "MUST",
+              "SHOULD",
+              "INFO"
+            ]
+          },
+          "rule": {
+            "type": "string",
+            "description": "Reference to a section of SPEC.md, e.g. 'SQ-2.1'"
+          },
+          "engine": {
+            "enum": [
+              "sqlite",
+              "postgres",
+              "any"
+            ]
+          },
+          "min_server_version": {
+            "type": "integer"
+          },
+          "since": {
+            "type": "string"
+          },
+          "setup": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "SQL statements or file state instructions"
+          },
+          "action": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "enum": [
+                  "open_new_file",
+                  "open_existing",
+                  "inspect_pragmas",
+                  "concurrent_read_modify_write",
+                  "write_in_read_transaction",
+                  "migrate",
+                  "session_settings",
+                  "role_report",
+                  "grant_runtime_role",
+                  "lock_acquire",
+                  "lock_connection_lost",
+                  "extension_status",
+                  "classify_error",
+                  "redact_error",
+                  "split_sql"
+                ]
+              },
+              "args": {
+                "type": "object"
+              }
+            }
+          },
+          "expect": {
+            "type": "object",
+            "description": "action-specific; e.g. {'file_mode': '0600'}, {'kind': 'unique', 'retryable': false}, {'statements': [...]}"
+          },
+          "provenance": {
+            "type": "string",
+            "description": "Where the reference behavior lives, e.g. 'nodestro-runtime@816b3bc storage_postgres.py:808-864'"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
