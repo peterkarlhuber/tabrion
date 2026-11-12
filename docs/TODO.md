@@ -14,7 +14,7 @@
 > TB-014, TB-016, new TB-067, TB-068) updated 2026-11-08 on branch `claude/project-thread-rdo6g3` for the owner decision of 2026-11-08
 > 11:26Z.
 > Program status 2026-11-12 (branch `claude/project-thread-rdo6g3-status-stu024`): the owner accepted STU-024 before
-> STU-017 (STATUS.md D-122); STU-021's order is D-123; no item of this file changes.
+> STU-017 (STATUS.md D-122) and STU-021 before STU-017 (D-123); no item of this file changes.
 
 ## Summary
 
