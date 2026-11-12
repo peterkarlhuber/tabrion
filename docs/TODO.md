@@ -784,8 +784,9 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-143 · `test_session_lock_raises_and_forgets[inflight]` failed intermittently under load
 
-- **Priority:** P2 Medium · **Status:** In progress ([#55](https://github.com/peterkarlhuber/tabrion/pull/55)) · **Refs:** TAB-034 / QA-3, contract I-33 and I-32,
-  K7/K8 zero tolerance for flaky tests, `tests/postgres/test_faults.py`
+- **Priority:** P2 Medium · **Status:** In progress ([#55](https://github.com/peterkarlhuber/tabrion/pull/55)) ·
+  **Refs:** TAB-034 / QA-3, contract I-33 and I-32, K7/K8 zero tolerance for flaky tests,
+  `tests/postgres/test_faults.py`
 - **What:** one full `pytest tests/postgres` run under four CPU burners (local PostgreSQL 16) failed with "DID NOT
   RAISE OperationalError". Cause: the fault proxy, not `SessionLock`. For `inflight` the proxy forwarded the batch and
   only then closed both sides; when the forwarding thread was descheduled in between, the other proxy thread relayed
