@@ -1,0 +1,113 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.1",
+  "area": "errors-redaction",
+  "vectors": [
+    {
+      "id": "LDP-ERR-001",
+      "level": "MUST",
+      "rule": "ERR-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "redact_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "23505",
+          "message": "duplicate key value violates unique constraint \"u_e_key\"",
+          "detail": "Key (e)=(SECRET-4711) already exists."
+        }
+      },
+      "expect": {
+        "absent": [
+          "SECRET-4711",
+          "DETAIL"
+        ],
+        "contains": [
+          "SQLSTATE 23505"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/core/db_errors.py:585 (DbErrorRedactionFilter), :790 (install_db_error_redaction)"
+    },
+    {
+      "id": "LDP-ERR-002",
+      "level": "MUST",
+      "rule": "ERR-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "redact_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "23503",
+          "message": "insert or update on table \"c\" violates foreign key",
+          "detail": "Key (p)=(SECRET-4711) is not present in table \"p\"."
+        }
+      },
+      "expect": {
+        "absent": [
+          "SECRET-4711",
+          "DETAIL"
+        ],
+        "contains": [
+          "SQLSTATE 23503"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/core/db_errors.py:585 (DbErrorRedactionFilter), :790 (install_db_error_redaction)"
+    },
+    {
+      "id": "LDP-ERR-003",
+      "level": "MUST",
+      "rule": "ERR-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "redact_error",
+        "args": {
+          "driver": "psycopg",
+          "sqlstate": "22P02",
+          "message": "invalid input syntax for type integer: \"SECRET-4711\""
+        }
+      },
+      "expect": {
+        "absent": [
+          "SECRET-4711"
+        ],
+        "contains": [
+          "SQLSTATE 22P02"
+        ]
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3 (I-4)"
+    },
+    {
+      "id": "LDP-ERR-004",
+      "level": "MUST",
+      "rule": "ERR-1",
+      "engine": "any",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "redact_error",
+        "args": {
+          "driver": "sqlite3",
+          "statement": "INSERT INTO u VALUES (?)",
+          "params": [
+            "SECRET-4711"
+          ]
+        }
+      },
+      "expect": {
+        "absent": [
+          "SECRET-4711"
+        ],
+        "contains": [
+          "SQLITE_CONSTRAINT_UNIQUE"
+        ]
+      },
+      "provenance": "tabrion docs/api/contract.md section 1.3",
+      "setup": [
+        "CREATE TABLE u (e TEXT UNIQUE)",
+        "INSERT INTO u VALUES ('SECRET-4711')"
+      ]
+    }
+  ]
+}

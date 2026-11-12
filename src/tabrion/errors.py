@@ -227,6 +227,27 @@ _SQLITE_TEXTS: tuple[tuple[str, Kind], ...] = (
     ("not null constraint failed", Kind.NOT_NULL),
     ("check constraint failed", Kind.CHECK),
 )
+_SQLITE_EXTENDED_NUMBERS: dict[int, str] = {3091: "SQLITE_CONSTRAINT_DATATYPE"}
+"""Extended result codes that ``sqlite_errorname`` may call "unknown" (SQLite 3.37 or later)."""
+_SQLITE_PRIMARY_NUMBERS: dict[int, str] = {
+    1: "SQLITE_ERROR",
+    3: "SQLITE_PERM",
+    5: "SQLITE_BUSY",
+    6: "SQLITE_LOCKED",
+    7: "SQLITE_NOMEM",
+    8: "SQLITE_READONLY",
+    9: "SQLITE_INTERRUPT",
+    10: "SQLITE_IOERR",
+    11: "SQLITE_CORRUPT",
+    13: "SQLITE_FULL",
+    14: "SQLITE_CANTOPEN",
+    18: "SQLITE_TOOBIG",
+    19: "SQLITE_CONSTRAINT",
+    20: "SQLITE_MISMATCH",
+    23: "SQLITE_AUTH",
+    26: "SQLITE_NOTADB",
+}
+"""Primary result codes (the low byte of an extended code) for a code without a name."""
 _SQLITE_TEXT_SCOPE: dict[str, frozenset[Kind]] = {
     "SQLITE_ERROR": frozenset({Kind.UNDEFINED_OBJECT, Kind.SYNTAX}),
     "SQLITE_CONSTRAINT": frozenset({Kind.UNIQUE, Kind.FOREIGN_KEY, Kind.NOT_NULL, Kind.CHECK}),
@@ -295,7 +316,12 @@ def _sqlite_code(exc: BaseException) -> str | None:
     value = _plain(_attr(exc, "sqlite_errorname"))
     if value is not None and _SQLITE_CODE.fullmatch(value):
         return value
-    return None
+    # The sqlite3 module names only the codes its build knows and says "unknown" for newer ones (Python 3.13 and
+    # SQLITE_CONSTRAINT_DATATYPE of a STRICT table): the number decides then (contract I-75).
+    number = _attr(exc, "sqlite_errorcode")
+    if type(number) is not int:
+        return None
+    return _SQLITE_EXTENDED_NUMBERS.get(number) or _SQLITE_PRIMARY_NUMBERS.get(number & 0xFF)
 
 
 def _plain(value: object) -> str | None:

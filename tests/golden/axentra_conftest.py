@@ -1,13 +1,13 @@
 """Axentra's ``tests/conftest.py`` fixtures, verbatim, as the oracle of TAB-032 (TAB-T-X17).
 
 Copied from peterkarlhuber/axentra ``tests/conftest.py`` (``_with_db``, ``pg_urls``, ``truncate_all``) at commit
-1a59c84 (MIT, Copyright (c) 2026 Peter Karlhuber), in the split-roles variant (``AXENTRA_TEST_SPLIT_ROLES=1``, the
-production layout). The SQL and the order of the statements are unchanged. Only the plumbing changed: ``pg_urls`` is
-a generator taking the admin URL, the two role names and the migration as arguments (Axentra's are module constants
-and ``MigrationRunner``), the grant is the verbatim Axentra ``grant_runtime_role`` of ``role_grants.py`` (its
-connection form), and at the end it also drops the two roles it created: on a shared server the fixed names
-``axentra_test_app``/``axentra_test_owner`` would collide with other runs, so the test passes names with the run's
-prefix. ``state`` reads what a test sees of the result; ``axentra_conftest.json`` holds it for the copy, and the
+1a59c84237f77bf9b699187e25005b1fe28f2a2f (MIT, Copyright (c) 2026 Peter Karlhuber), in the split-roles variant
+(``AXENTRA_TEST_SPLIT_ROLES=1``, the production layout). The SQL and the order of the statements are unchanged. Only the
+plumbing changed: ``pg_urls`` is a generator taking the admin URL, the two role names and the migration as arguments
+(Axentra's are module constants and ``MigrationRunner``), the grant is the verbatim Axentra ``grant_runtime_role`` of
+``role_grants.py`` (its connection form), and at the end it also drops the two roles it created: on a shared server the
+fixed names ``axentra_test_app``/``axentra_test_owner`` would collide with other runs, so the test passes names with the
+run's prefix. ``state`` reads what a test sees of the result; ``axentra_conftest.json`` holds it for the copy, and the
 plugin version (``tests/postgres/test_testing_database.py``) must produce the same.
 """
 

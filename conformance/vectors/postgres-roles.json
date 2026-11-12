@@ -1,0 +1,142 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.1",
+  "area": "postgres-roles",
+  "vectors": [
+    {
+      "id": "LDP-PGR-001",
+      "level": "MUST",
+      "rule": "PGR-1",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "role_report",
+        "args": {
+          "attributes": "SUPERUSER",
+          "owns_rls_table": false
+        }
+      },
+      "expect": {
+        "restricted": false,
+        "superuser": true
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/roles.py:72-104; nodestro-runtime@463e0d9 src/nodestro_runtime/storage_postgres.py:757-800"
+    },
+    {
+      "id": "LDP-PGR-002",
+      "level": "MUST",
+      "rule": "PGR-1",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "role_report",
+        "args": {
+          "attributes": "BYPASSRLS",
+          "owns_rls_table": false
+        }
+      },
+      "expect": {
+        "restricted": false,
+        "bypass_rls": true,
+        "superuser": false
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/roles.py:72-104; nodestro-runtime@463e0d9 src/nodestro_runtime/storage_postgres.py:757-800"
+    },
+    {
+      "id": "LDP-PGR-003",
+      "level": "MUST",
+      "rule": "PGR-1",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "role_report",
+        "args": {
+          "attributes": "NOBYPASSRLS",
+          "owns_rls_table": true
+        }
+      },
+      "expect": {
+        "restricted": false,
+        "table_owner": true
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/roles.py:72-104; nodestro-runtime@463e0d9 src/nodestro_runtime/storage_postgres.py:757-800"
+    },
+    {
+      "id": "LDP-PGR-004",
+      "level": "MUST",
+      "rule": "PGR-1",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "role_report",
+        "args": {
+          "attributes": "NOBYPASSRLS",
+          "owns_rls_table": false
+        }
+      },
+      "expect": {
+        "restricted": true,
+        "superuser": false,
+        "bypass_rls": false,
+        "table_owner": false
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/roles.py:72-104; nodestro-runtime@463e0d9 src/nodestro_runtime/storage_postgres.py:757-800"
+    },
+    {
+      "id": "LDP-PGR-005",
+      "level": "MUST",
+      "rule": "PGR-2",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "grant_runtime_role",
+        "args": {
+          "tables": [
+            "parts",
+            "schema_migrations"
+          ],
+          "protected_tables": [
+            "schema_migrations"
+          ],
+          "in_transaction": false
+        }
+      },
+      "expect": {
+        "privileges": {
+          "parts": [
+            "DELETE",
+            "INSERT",
+            "SELECT",
+            "UPDATE"
+          ],
+          "schema_migrations": [
+            "SELECT"
+          ]
+        }
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/roles.py:107-190; nodestro-runtime@463e0d9 src/nodestro_runtime/storage_postgres.py:888-946"
+    },
+    {
+      "id": "LDP-PGR-006",
+      "level": "MUST",
+      "rule": "PGR-3",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "grant_runtime_role",
+        "args": {
+          "tables": [
+            "parts"
+          ],
+          "protected_tables": [],
+          "in_transaction": true
+        }
+      },
+      "expect": {
+        "error": "postgres.nested_transaction",
+        "transaction_status": "INTRANS"
+      },
+      "provenance": "tabrion docs/adr/0011-ldp-internal-and-t-notx.md (T-NOTX)"
+    }
+  ]
+}

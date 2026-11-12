@@ -1,0 +1,114 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.1",
+  "area": "sqlite-transactions",
+  "vectors": [
+    {
+      "id": "LDP-SQT-001",
+      "level": "MUST",
+      "rule": "SQT-1",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "concurrent_read_modify_write",
+        "args": {
+          "threads": 5
+        }
+      },
+      "expect": {
+        "final": 5,
+        "lock_errors": 0
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:321",
+      "note": "the q.py lost-update scenario (specification section 11)"
+    },
+    {
+      "id": "LDP-SQT-002",
+      "level": "MUST",
+      "rule": "SQT-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "write_in_read_transaction",
+        "args": {
+          "statement": "INSERT INTO t (a) VALUES (2)"
+        }
+      },
+      "expect": {
+        "kind": "read_only",
+        "rows": 1
+      },
+      "provenance": "tabrion docs/api/contract.md section 3 (read_transaction)",
+      "setup": [
+        "CREATE TABLE t (a INTEGER)",
+        "INSERT INTO t (a) VALUES (1)"
+      ]
+    },
+    {
+      "id": "LDP-SQT-003",
+      "level": "MUST",
+      "rule": "SQT-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "write_in_read_transaction",
+        "args": {
+          "statement": "UPDATE t SET a = 3"
+        }
+      },
+      "expect": {
+        "kind": "read_only",
+        "rows": 1
+      },
+      "provenance": "tabrion docs/api/contract.md section 3 (read_transaction)",
+      "setup": [
+        "CREATE TABLE t (a INTEGER)",
+        "INSERT INTO t (a) VALUES (1)"
+      ]
+    },
+    {
+      "id": "LDP-SQT-004",
+      "level": "MUST",
+      "rule": "SQT-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "write_in_read_transaction",
+        "args": {
+          "statement": "DELETE FROM t"
+        }
+      },
+      "expect": {
+        "kind": "read_only",
+        "rows": 1
+      },
+      "provenance": "tabrion docs/api/contract.md section 3 (read_transaction)",
+      "setup": [
+        "CREATE TABLE t (a INTEGER)",
+        "INSERT INTO t (a) VALUES (1)"
+      ]
+    },
+    {
+      "id": "LDP-SQT-005",
+      "level": "MUST",
+      "rule": "SQT-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "write_in_read_transaction",
+        "args": {
+          "statement": "CREATE TABLE u (a INTEGER)"
+        }
+      },
+      "expect": {
+        "kind": "read_only",
+        "rows": 1
+      },
+      "provenance": "tabrion docs/api/contract.md section 3 (read_transaction)",
+      "setup": [
+        "CREATE TABLE t (a INTEGER)",
+        "INSERT INTO t (a) VALUES (1)"
+      ]
+    }
+  ]
+}

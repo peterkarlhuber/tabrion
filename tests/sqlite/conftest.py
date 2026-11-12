@@ -16,6 +16,8 @@ import sys
 
 import pytest
 
+from tests.stress import hang_guard
+
 POSIX = os.name == "posix"
 posix_only = pytest.mark.skipif(not POSIX, reason="POSIX file modes and O_NOFOLLOW (Windows: TAB-T-S12)")
 CANARY = "SECRET-4711"
@@ -60,6 +62,14 @@ def files(directory: Path) -> list[str]:
 
 
 @pytest.fixture
+def hang_limit(request: pytest.FixtureRequest) -> Iterator[None]:
+    """TB-049: a test that hangs (a backup that blocks on its own lock) ends the run after 120 s with every thread's
+    traceback, instead of running into the CI job timeout (``tests/stress.py``)."""
+    with hang_guard(request.config, 120):
+        yield
+
+
+@pytest.fixture
 def opened() -> Iterator[Callable[[sqlite3.Connection], sqlite3.Connection]]:
     """Register connections so they are closed after the test (an unclosed one is a ResourceWarning, an error)."""
     connections: list[sqlite3.Connection] = []
@@ -93,3 +103,15 @@ def make_database(path: Path, rows: int = 3) -> None:
 
 
 WINDOWS = sys.platform == "win32"
+
+
+NO_DESCRIPTOR_LINKS = "the descriptor entries are no links here (macOS)"
+
+
+def descriptor_links() -> str | None:
+    """The first descriptor directory of ``tabrion.sqlite`` when its entries are links (``/proc/self/fd`` on Linux),
+    else ``None`` (macOS ``/dev/fd``). The one condition for the link tests and for the probes that target them."""
+    from tabrion import sqlite as ts  # imported when asked, after the test session set up its paths
+
+    directory = ts._DESCRIPTOR_DIRECTORIES[0]
+    return directory if os.path.islink(os.path.join(directory, "0")) else None

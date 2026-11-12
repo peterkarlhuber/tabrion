@@ -146,12 +146,17 @@ def _read_file(variable: str, path: str) -> str:
         except UnicodeDecodeError:
             code = "config.unreadable"
     if text is None:
+        del data, path  # no content or path in the frame locals (I-76)
         raise ConfigurationError(code or "config.unreadable", details={"name": variable})
     if text.endswith("\n"):
         text = text[:-1]
         if text.endswith("\r"):
             text = text[:-1]
     return text
+
+
+def _lookup(env: Mapping[str, str], name: str, file_variable: str) -> tuple[str | None, str | None]:
+    return env.get(name) or None, env.get(file_variable) or None
 
 
 def url_from_env(name: str, *, environ: Mapping[str, str] | None = None, required: bool = True) -> str | None:
@@ -166,13 +171,19 @@ def url_from_env(name: str, *, environ: Mapping[str, str] | None = None, require
     device) ``ConfigurationError("config.not_regular_file")``, one larger than 64 KiB
     ``ConfigurationError("config.too_large")``. The details name the variable, never its value or the path.
     """
-    env = os.environ if environ is None else environ
     file_variable = name + "_FILE"
-    direct = env.get(name) or None
-    path = env.get(file_variable) or None
+    direct, path = _lookup(os.environ if environ is None else environ, name, file_variable)
+    # The frames of a traceback keep their locals, which Sentry, ``rich`` or ``pytest -l`` show: neither the
+    # environment nor a value stays in them when an error is raised (I-76).
+    del environ
     if direct is not None and path is not None:
+        direct = path = None
         raise ConfigurationError("config.ambiguous", details={"name": name})
-    value = direct if direct is not None else _read_file(file_variable, path) if path is not None else None
+    try:
+        value = direct if direct is not None else _read_file(file_variable, path) if path is not None else None
+    except BaseException:
+        direct = path = None
+        raise
     if not value:
         if required:
             raise ConfigurationError("config.missing", details={"name": name})

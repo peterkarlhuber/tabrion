@@ -6,11 +6,16 @@
       "api surface",
       "architecture",
       "build and install (fresh virtual environments)",
+      "conformance",
       "core without extras",
+      "coverage",
       "dependency audit",
       "docs",
+      "examples",
       "extras matrix",
+      "golden files",
       "lint",
+      "mutation probes",
       "pg (PostgreSQL 16, Python 3.11)",
       "pg (PostgreSQL 16, Python 3.14)",
       "pg (PostgreSQL 17, Python 3.11)",
@@ -37,8 +42,23 @@
   "path_filters": {
     "platforms.yml": {
       "paths": [
+        ".github/workflows/platforms.yml",
+        "conformance/**",
+        "pyproject.toml",
+        "scripts/downstream.py",
+        "src/tabrion/__init__.py",
+        "src/tabrion/check.py",
+        "src/tabrion/config.py",
+        "src/tabrion/errors.py",
         "src/tabrion/sqlite.py",
-        "tests/sqlite/**"
+        "src/tabrion/testing/sqlite.py",
+        "tests/ci/**",
+        "tests/conformance/**",
+        "tests/conftest.py",
+        "tests/sqlite/**",
+        "tests/unit/test_downstream.py",
+        "tests/unit/test_golden_consumers.py",
+        "tests/unit/test_mutation_probes.py"
       ]
     }
   },

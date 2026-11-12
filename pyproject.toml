@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.26"]
+requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -43,6 +43,8 @@ dev = [
     "psycopg-pool>=3.2,<4",
     "pytest-cov>=5",
     "hypothesis>=6",
+    # The full JSON Schema check of the internal LDP vectors (TAB-050, API contract section 11).
+    "jsonschema>=4.18",
     "ruff>=0.8",
     "mypy>=1.13",
     "import-linter>=2.1",
@@ -67,7 +69,23 @@ path = "src/tabrion/_version.py"
 packages = ["src/tabrion"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/tabrion", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "TRADEMARKS.md", "mkdocs.yml", "pyproject.toml"]
+# tests/architecture/test_dependency_policy.py needs the policy copy and the vendored checker (TABRION QA-17).
+include = [
+    "src/tabrion",
+    "tests",
+    "conformance",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "TRADEMARKS.md",
+    "mkdocs.yml",
+    "pyproject.toml",
+    "build-constraints.txt",
+    "dependency-policy.json",
+    "scripts/check_dependency_policy.py",
+    "scripts/DEPENDENCY_POLICY_SOURCE.md",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -76,6 +94,8 @@ markers = [
     "postgres: needs TABRION_TEST_POSTGRES",
     "pgvector: needs the vector extension (image pgvector/pgvector)",
     "slow: concurrency and fault-injection tests (> 2 s)",
+    "stress: concurrency and stress suite (QA-4); TABRION_STRESS_REPEAT repetitions, 5 by default, 200 nightly",
+    "restart: restarts the PostgreSQL server (TAB-T-009); needs TABRION_PG_RESTART_COMMAND, nightly job 'pg restart' only",
     "conformance: runs the Levuvo Database Profile vectors",
     "security: leak, permission and symlink regressions",
     "packaging: builds wheels and creates fresh virtual environments (slow)",
@@ -92,6 +112,8 @@ show_missing = true
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+# scripts/check_dependency_policy.py is an unchanged, checksummed copy from nodestro-studio (TABRION QA-17), linted there.
+extend-exclude = ["scripts/check_dependency_policy.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
@@ -111,12 +133,15 @@ extend-immutable-calls = [
 [tool.ruff.lint.per-file-ignores]
 # Tests assert, start subprocesses with fixed arguments and use throwaway credentials.
 "tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+# The stress suites define their thread bodies inside the repetition loop; each runs and is joined within its own
+# repetition, so the late binding B023 warns about cannot happen.
+"tests/**/test_stress_*.py" = ["B023"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 packages = ["tabrion"]
-mypy_path = "src:examples/measurements:examples/parts"
+mypy_path = "src:examples/measurements:examples/measurements-baseline:examples/parts:examples/parts-baseline"
 warn_unused_ignores = true
 
 # The consumer recorders (tests/golden/consumers/record_*.py) import the consumers, which are installed only in
@@ -141,7 +166,14 @@ exclude_type_checking_imports = true
 id = "core-stdlib-only"
 name = "Driver core is stdlib-only"
 type = "forbidden"
-source_modules = ["tabrion.errors", "tabrion.sql", "tabrion.config", "tabrion.sqlite", "tabrion.check"]
+source_modules = [
+    "tabrion.errors",
+    "tabrion.sql",
+    "tabrion.config",
+    "tabrion.sqlite",
+    "tabrion.check",
+    "tabrion._deprecated",
+]
 forbidden_modules = [
     "psycopg",
     "psycopg_pool",
@@ -200,6 +232,8 @@ layers = [
     "tabrion.sql | tabrion.config",
     # The foundation: every layer-A module raises or classifies with it (config raises ConfigurationError, TAB-012).
     "tabrion.errors",
+    # The deprecation helper (TAB-051): standard library only, so every module can deprecate a name with it.
+    "tabrion._deprecated",
 ]
 
 [[tool.importlinter.contracts]]

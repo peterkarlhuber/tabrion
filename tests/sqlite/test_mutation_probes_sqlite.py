@@ -10,7 +10,7 @@ import tempfile
 
 import pytest
 
-from tests.sqlite.conftest import POSIX, can_symlink
+from tests.sqlite.conftest import NO_DESCRIPTOR_LINKS, POSIX, can_symlink, descriptor_links
 from tests.unit.test_mutation_probes import _copy, _run
 
 _T = "tests/sqlite/"
@@ -49,13 +49,229 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
         False,
         True,
     ),
+    # TB-045: the last check resolves the directory only, never the checked name again.
+    (
+        "    checked = os.path.join(os.path.realpath(directory), base)\n",
+        "    checked = os.path.realpath(path)\n",
+        _T + "test_connect.py::test_tb045_the_last_check_does_not_follow_the_name",
+        False,
+        True,
+    ),
     # TM-04: a link followed while SQLite opened the file is caught after opening.
     (
-        "    return os.path.normcase(os.path.realpath(opened)) == os.path.normcase(os.path.realpath(path))\n",
+        "    return os.path.normcase(os.path.realpath(opened)) == os.path.normcase(checked)\n",
         "    return True\n",
         _T + "test_connect.py::test_s07_link_followed_while_opening_and_swapped_back",
         True,
         True,
+    ),
+    # TB-045: a name that changed while it was resolved is refused as UnsafePath, never passed on as an OSError.
+    (
+        "    except OSError:  # a name that changed while it was resolved\n",
+        "    except ValueError:  # a name that changed while it was resolved\n",
+        _T + "test_connect.py::test_tb045_a_name_that_changes_while_resolved_is_refused_without_its_path",
+        False,
+        False,
+    ),
+    # TM-04, TB-045: the descriptor SQLite opened is the checked file.
+    (
+        "        if after is not None and _opened_checked_file(before, after, expected, sides):\n",
+        "        if True:\n",
+        _T + "test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused",
+        True,
+        False,
+    ),
+    # TB-045: only a reused descriptor, with nothing new opened, may stand for the checked file.
+    (
+        "    if unexplained:\n",
+        "    if False:\n",
+        _T + "test_connect.py::test_tb045_another_file_opened_by_sqlite_is_refused",
+        True,
+        False,
+    ),
+    # TB-045: a descriptor SQLite reuses for the checked file is accepted (pools would fail otherwise).
+    (
+        "    return held\n",
+        "    return False\n",
+        _T + "test_connect.py::test_tb045_a_descriptor_sqlite_reuses_is_accepted",
+        True,
+        False,
+    ),
+    # TB-045: only the database's own side files opened meanwhile are ignored, nothing else.
+    (
+        "    unexplained = [entry for entry in new if entry[1:] not in side_files]\n",
+        "    unexplained: list[tuple[int, int, int]] = []\n",
+        _T + "test_connect.py::test_tb045_side_files_opened_meanwhile_do_not_hide_a_reused_descriptor",
+        False,
+        False,
+    ),
+    # TB-045 review F2: a side file counts only with a single link (nothing else linked under its name).
+    (
+        "            and info.st_nlink == 1\n",
+        "",
+        _T + "test_connect.py::test_tb045_side_file_identities_need_one_link_and_the_owners_rules",
+        True,
+        False,
+    ),
+    # TB-045 review F2: a side file counts only when it was the same before and after the open.
+    (
+        "            sides &= _side_file_identities(name, allow_shared_file=allow_shared_file)\n",
+        "            sides = _side_file_identities(name, allow_shared_file=allow_shared_file)\n",
+        _T + "test_connect.py::test_tb045_a_side_file_that_appeared_during_the_open_is_not_exempt",
+        True,
+        False,
+    ),
+    # TB-045 review F6: concurrent connects cannot interleave between the snapshots.
+    (
+        "        with _OPEN_LOCK:\n            before = _open_files() if name is not None else None\n",
+        "        with contextlib.nullcontext():\n            before = _open_files() if name is not None else None\n",
+        _T + "test_connect.py::test_tb045_connects_do_not_interleave_between_the_snapshots",
+        True,
+        False,
+    ),
+    # TB-045 review F6: only regular files are compared (a pipe or socket opened meanwhile is not a mismatch).
+    (
+        "        if stat.S_ISREG(info.st_mode):\n            files.add((descriptor, info.st_dev, info.st_ino))\n",
+        "        files.add((descriptor, info.st_dev, info.st_ino))\n",
+        _T + "test_connect.py::test_tb045_a_pipe_opened_meanwhile_does_not_count",
+        True,
+        False,
+    ),
+    # TB-045 review F4: a listing counts only when a probe descriptor shows up in it.
+    (
+        "            found = _complete_listing(candidates, probe.fileno())\n",
+        "            found = candidates[0]\n",
+        _T + "test_connect.py::test_tb045_an_incomplete_listing_is_not_used",
+        True,
+        False,
+    ),
+    # TB-045 review F1: a name that is gone while it is checked is checked again, never opened unchecked.
+    (
+        "            except FileNotFoundError:\n"
+        '                _log.debug("the database file %s disappeared while it was checked", name)\n',
+        "            except FileNotFoundError:\n                return 0, 0\n",
+        _T + "test_connect.py::test_tb045_a_name_gone_while_checked_is_checked_again",
+        True,
+        False,
+    ),
+    # TB-045 review F10: the -wal and -journal files are never exempt in the reuse case.
+    (
+        '_EXEMPT_SIDE_FILES = ("-shm",)\n',
+        '_EXEMPT_SIDE_FILES = ("-shm", "-wal", "-journal")\n',
+        _T + "test_connect.py::test_tb045_a_new_descriptor_on_the_wal_or_journal_is_retried",
+        True,
+        False,
+    ),
+    # TB-045 review F11: only a permission error is a refusal; other errors are raised as they are.
+    (
+        "            if exc.errno in _DENIED:\n",
+        "            if True:\n",
+        _T + "test_connect.py::test_tb045_resource_errors_are_not_refusals",
+        True,
+        False,
+    ),
+    # TB-045 review F1/F13: a file whose identity cannot be taken is refused before SQLite opens anything.
+    (
+        '                raise _unsafe("sqlite.unsafe_path", path) from None'
+        "  # unreadable: SQLite could not open it either\n",
+        "                return 0, 0\n",
+        _T + "test_connect.py::test_tb045_an_unreadable_file_is_refused",
+        True,
+        False,
+    ),
+    # TB-045 review F5/F13: the identity check runs under the open lock.
+    (
+        "        with _OPEN_LOCK:\n            if not os.path.lexists(name):\n",
+        "        with contextlib.nullcontext():\n            if not os.path.lexists(name):\n",
+        _T + "test_connect.py::test_tb045_the_identity_check_runs_under_the_lock",
+        True,
+        False,
+    ),
+    # TB-045 review F2/F13: a side file of another user is not exempt.
+    (
+        "            and info.st_uid == os.geteuid()\n",
+        "",
+        _T + "test_connect.py::test_tb045_side_file_identities_need_one_link_and_the_owners_rules",
+        True,
+        False,
+    ),
+    # TB-045 review F12/F15: the listing must drop the probe's copy after it is closed.
+    (
+        "    return None if copy in after_close else True\n",
+        "    return True\n",
+        _T + "test_connect.py::test_tb045_a_listing_of_fixed_entries_is_never_used",
+        True,
+        False,
+    ),
+    # TB-045 review F14: a failing listing after the probe is raised, never taken as "no listing".
+    (
+        "        return None\n    names = os.listdir(directory)\n",
+        "        return None\n"
+        "    try:\n        names = os.listdir(directory)\n    except OSError:\n        return None\n",
+        _T + "test_connect.py::test_tb045_a_failing_listing_is_raised",
+        True,
+        False,
+    ),
+    # TB-045 review F14: the connection is closed when the second listing fails.
+    (
+        "            except BaseException:\n                connection.close()\n                raise\n",
+        "            except BaseException:\n                raise\n",
+        _T + "test_connect.py::test_tb045_a_failing_listing_is_raised",
+        True,
+        False,
+    ),
+    # TB-045 review F16: a probe that could not run is raised and not cached as "no listing".
+    (
+        "        with tempfile.TemporaryFile() as probe:\n"
+        "            found = _complete_listing(candidates, probe.fileno())\n",
+        "        try:\n"
+        "            with tempfile.TemporaryFile() as probe:\n"
+        "                found = _complete_listing(candidates, probe.fileno())\n"
+        "        except OSError:\n"
+        "            found = None\n",
+        _T + "test_connect.py::test_tb045_a_probe_that_cannot_run_is_not_cached",
+        True,
+        False,
+    ),
+    # TB-045 review F16: running out of descriptors while listing a candidate is no verdict on it.
+    (
+        "        if exc.errno in _EXHAUSTED:\n            raise  # the probe could not run",
+        "        if False:\n            raise  # the probe could not run",
+        _T + "test_connect.py::test_tb045_a_probe_that_cannot_run_is_not_cached",
+        True,
+        False,
+    ),
+    # TB-045 review F15: a number taken again by another thread right after the close does not end the probe.
+    (
+        "_PROBE_ROUNDS = 3\n",
+        "_PROBE_ROUNDS = 1\n",
+        _T + "test_connect.py::test_tb045_the_probe_tries_again_when_the_number_is_taken_again",
+        True,
+        False,
+    ),
+    # TB-045 review F17: the copy lies above every listed number, out of reach of other threads' new descriptors.
+    (
+        "_PROBE_GAP = 16\n",
+        "_PROBE_GAP = 1\n",
+        _T + "test_connect.py::test_tb045_descriptors_opened_during_the_probe_do_not_hide_the_listing",
+        True,
+        False,
+    ),
+    # TB-045 review F17: an undecided probe refuses; it is never cached as "no listing".
+    (
+        '            raise _unsafe("sqlite.unsafe_path", directory)  # undecided: refuse rather than open unchecked\n',
+        "            verdict = False\n",
+        _T + "test_connect.py::test_tb045_a_listing_of_fixed_entries_is_never_used",
+        True,
+        False,
+    ),
+    # TB-045: where the entries are links, the copy's entry must lead to the probe's file.
+    (
+        "    return (listed.st_dev, listed.st_ino) == (info.st_dev, info.st_ino)\n",
+        "    return True\n",
+        _T + "test_connect.py::test_tb045_a_link_entry_must_lead_to_the_probe",
+        True,
+        False,
     ),
     # TM-04: the file that was checked is the file that was opened (same inode).
     (
@@ -244,17 +460,24 @@ PROBES: list[tuple[str, str, str, bool, bool]] = [
 ]
 
 
-def _skip_reason(posix: bool, links: bool) -> str | None:
+DESCRIPTOR_LINKS_ONLY = {_T + "test_connect.py::test_tb045_a_link_entry_must_lead_to_the_probe"}
+"""Probed tests that skip where the descriptor entries are no links (``_links_listing``, macOS): a skipped test
+cannot turn red, so their probes skip there too, on exactly the same condition."""
+
+
+def _skip_reason(posix: bool, links: bool, test: str = "") -> str | None:
     if posix and not POSIX:
         return "the probed test needs POSIX file modes"
     if links and not SYMLINKS:
         return "the probed test needs symbolic links"
+    if test in DESCRIPTOR_LINKS_ONLY and (not POSIX or descriptor_links() is None):
+        return NO_DESCRIPTOR_LINKS
     return None
 
 
 def test_unmutated_copy_passes(tmp_path: Path) -> None:
     """Positive control: the probed tests pass on an unchanged copy."""
-    tests = sorted({p[2] for p in PROBES if _skip_reason(p[3], p[4]) is None})
+    tests = sorted({p[2] for p in PROBES if _skip_reason(p[3], p[4], p[2]) is None})
     result = _run(_copy(tmp_path), tests)
     assert result.returncode == 0, result.stdout[-2000:]
 
@@ -271,7 +494,7 @@ def test_mutation_turns_the_test_red(
     target = copy / "tabrion" / "sqlite.py"
     text = target.read_text(encoding="utf-8")
     assert text.count(anchor) == 1, f"probe anchor not found exactly once: {anchor!r}"
-    reason = _skip_reason(posix, links)
+    reason = _skip_reason(posix, links, test)
     if reason is not None:
         pytest.skip(reason)
     target.write_text(text.replace(anchor, replacement), encoding="utf-8")

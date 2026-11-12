@@ -15,6 +15,8 @@ from tabrion import sqlite as ts
 from tabrion.errors import TabrionError, UnsafePath, UsageError
 from tests.sqlite.conftest import POSIX, digest, files, make_database, mode, posix_only, umask
 
+pytestmark = pytest.mark.usefixtures("hang_limit")  # TB-049: a hang fails the run within 120 s
+
 Opened = Callable[[sqlite3.Connection], sqlite3.Connection]
 
 

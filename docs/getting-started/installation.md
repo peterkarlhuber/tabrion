@@ -18,10 +18,7 @@ version (`0.1.1.dev0`), so no other commit builds as `0.1.0`. Consumers pin that
 
 | Version | Release commit (full SHA) | Date |
 |---|---|---|
-| `0.1.0` | `RELEASE-SHA` | RELEASE-DATE |
-
-Master moved on to `0.1.1.dev0` right after the release commit, so a pin on a later master commit never builds as
-`0.1.0`.
+| `0.1.0` | `RELEASE-SHA` (recorded by the pull request that moves master to `0.1.1.dev0`) | 2026-11-12 |
 
 Pin only a recorded release commit. pip does not check that: it accepts a pin on any master commit whose version is
 inside the range, for example `0.1.1.dev0`; only the architecture check AC-6 (planned, QA-15) refuses it. Always
@@ -49,7 +46,8 @@ pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@a4634222064
 ```
 
 Master moved on to `0.1.0a2.dev0` right after that commit (TB-053), so a pin on a later master commit never looks
-like the tag. Do not run `release.yml` for `v0.1.0a1`: its attest job would write a public build-provenance entry.
+like the tag. `release.yml` refuses `v0.1.0a1` (it builds final versions only), and its attest job, which would write a
+public build-provenance entry, runs only with the input `attest` (off by default, G-R).
 
 A library on such a branch declares a pre-release range, which pip needs to accept an alpha:
 

@@ -18,6 +18,7 @@ import time
 import traceback
 import types
 from typing import Any
+import uuid
 
 import pytest
 
@@ -32,6 +33,7 @@ from tabrion.errors import (  # noqa: E402
     Classification,
     ConfigurationError,
     ConnectionFailed,
+    DatabaseError,
     IntegrityViolation,
     Kind,
     MultipleRowsError,
@@ -40,6 +42,7 @@ from tabrion.errors import (  # noqa: E402
     StatementTimeout,
     StorageCorrupt,
     TabrionError,
+    UnknownDatabaseError,
     UnsafePath,
     UsageError,
     classify,
@@ -158,6 +161,60 @@ def test_b01_sqlite_file_urls(path: Path, scheme: str) -> None:
         assert database.safe_url == f"sqlite+pysqlite:///{path}"
         assert repr(database) == f"<tabrion.Database sqlite+pysqlite:///{path}>"
     assert path.exists()
+
+
+@pytest.mark.parametrize(
+    ("database", "shown"),
+    [
+        (r"C:\Users\a b\layer-b.db", r"sqlite+pysqlite:///C:\Users\a b\layer-b.db?mode=ro"),  # a Windows path
+        ("/srv/a@b/x%y.db", "sqlite+pysqlite:////srv/a@b/x%y.db?mode=ro"),  # "@" is no user name, "%" no escape
+        (":memory:", "sqlite+pysqlite:///:memory:?mode=ro"),
+        ("/srv/\u00fc.db", "sqlite+pysqlite:////srv/\u00fc.db?mode=ro"),  # non-ASCII stays readable
+        # Review M-1 of #37: what is not printable is percent-encoded, so a file name cannot forge a log line.
+        ("/srv/x\nERROR fake log line.db", "sqlite+pysqlite:////srv/x%0AERROR fake log line.db?mode=ro"),
+        ("/srv/x\r\t.db", "sqlite+pysqlite:////srv/x%0D%09.db?mode=ro"),
+        ("/srv/x\x1b[31mred\x07.db", "sqlite+pysqlite:////srv/x%1B[31mred%07.db?mode=ro"),
+        ("/srv/x\x7f\x85.db", "sqlite+pysqlite:////srv/x%7F%C2%85.db?mode=ro"),
+        ("/srv/x\u202edb.exe", "sqlite+pysqlite:////srv/x%E2%80%AEdb.exe?mode=ro"),
+        ("/srv/x\udcff.db", "sqlite+pysqlite:////srv/x%ED%B3%BF.db?mode=ro"),  # os.fsdecode of a byte 0xff
+        # Review M-2 of #37: ":", "@" and "?password=" in a path are no credentials, no host and no query.
+        (r"C:\Users\john@corp\x.db", r"sqlite+pysqlite:///C:\Users\john@corp\x.db?mode=ro"),
+        ("/srv/a:b@evil.example/x.db", "sqlite+pysqlite:////srv/a:b@evil.example/x.db?mode=ro"),
+        ("/srv/x?password=leak.db", "sqlite+pysqlite:////srv/x?password=leak.db?mode=ro"),
+    ],
+)
+def test_b01_safe_url_shows_the_sqlite_path_as_it_is(database: str, shown: str) -> None:
+    """SQLAlchemy percent-encodes the path when it renders a URL (``C%3A%5CUsers...``); ``safe_url`` does not
+    (Windows nightly of 546d254, TAB-040 readiness gap 2). Checked on every OS with a Windows-style path."""
+    url = sqlalchemy.URL.create("sqlite+pysqlite", database=database, query={"mode": "ro"})
+    assert tabrion._sa.database._safe_url(url) == shown
+
+
+@pytest.mark.parametrize(
+    ("username", "database", "shown"),
+    [
+        ("u", r"C:\a:b@c\x.db", r"sqlite+pysqlite://u:***@/C:\a:b@c\x.db"),
+        # Review L-1 of #37: a user name that looks like the placeholder of the old code changes nothing.
+        ("tabrion-database-slot", "/real.db", "sqlite+pysqlite://tabrion-database-slot:***@//real.db"),
+    ],
+)
+def test_b01_safe_url_masks_first_and_then_shows_the_path(username: str, database: str, shown: str) -> None:
+    """The credentials of a foreign engine's URL are masked before the path goes in (review M-2 of #37)."""
+    url = sqlalchemy.URL.create("sqlite+pysqlite", username=username, password="pw-canary", database=database)
+    assert tabrion._sa.database._safe_url(url) == shown
+
+
+def test_b01_safe_url_placeholder_is_new_for_every_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review L-1 of #37: the path goes in at the one place of a per-call placeholder, and if that place is not
+    unique the URL is rendered the old way rather than wrongly."""
+    fixed = uuid.UUID(int=7)
+    monkeypatch.setattr(uuid, "uuid4", lambda: fixed)  # _safe_url calls uuid.uuid4()
+    url = sqlalchemy.URL.create(
+        "sqlite+pysqlite", username=f"tabrion{fixed.hex}", password="pw-canary", database=r"C:\x.db"
+    )
+    shown = tabrion._sa.database._safe_url(url)
+    assert "pw-canary" not in shown
+    assert shown == url.render_as_string(hide_password=True)
 
 
 def test_b01_url_object(path: Path) -> None:
@@ -372,9 +429,24 @@ def test_b03_tls_without_a_host_follows_pghost(monkeypatch: pytest.MonkeyPatch) 
         assert sslmode(database) is None
 
 
+def test_b04_from_url_opens_the_file(tmp_path: Path) -> None:
+    """The portable half of the path checks in ``from_url`` (review L-3 of #37): the file is opened, created and
+    checked once in ``from_url``, before the engine's first connection, on every OS."""
+    fresh = tmp_path / "fresh.db"
+    database = Database.from_url(f"sqlite:///{fresh}")
+    try:
+        assert fresh.exists()
+    finally:
+        database.close()
+    missing_parent = tmp_path / "no-such-directory" / "x.db"
+    with pytest.raises(FileNotFoundError):  # raised by from_url itself, not by the first statement
+        Database.from_url(f"sqlite:///{missing_parent}")
+
+
 @pytest.mark.security
 @pytest.mark.skipif(not POSIX, reason="symbolic links and modes")
 def test_b04_sqlite_path_checks_run_in_from_url(tmp_path: Path) -> None:
+    """The POSIX-only half: a symbolic link is refused and a new file is ``0600`` whatever the umask."""
     target = tmp_path / "target.db"
     link = tmp_path / "link.db"
     link.symlink_to(target)
@@ -784,6 +856,13 @@ def test_b13_no_deadline_stays_behind(path: Path) -> None:
             "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 200000) SELECT count(*) FROM c"
         )
         assert database.fetch_scalar(counted) == 200000
+        # Every Tabrion statement installs a handler of its own (cancel, I-102), so a statement outside Tabrion on
+        # the same pooled connection, right after one with a deadline, shows whether that one stayed behind.
+        assert database.fetch_scalar("SELECT 1", timeout=0.05) == 1
+        time.sleep(0.1)
+        with database.engine.connect() as connection:
+            assert connection.exec_driver_sql(counted).scalar() == 200000
+            connection.rollback()
 
 
 def test_b16_executemany(db: Database) -> None:
@@ -827,6 +906,72 @@ def test_b18_no_parameter_value_in_errors(db: Database) -> None:
         assert SECRET not in text
         assert SECRET not in (error.statement or "")
         assert error.__cause__ is None and error.__context__ is None
+
+
+PARAMETER_CAST_HINT = "write CAST(:name AS type) instead of :name::type"
+
+
+@pytest.mark.security
+def test_t025_double_colon_cast_carries_a_hint_on_sqlite(db: Database) -> None:
+    """TAB-T-025 (planning document 07, probe P5; contract I-107): ``text()`` leaves ``:amount_7f`` before ``::``
+    unbound, SQLite reads ``:amount_7f::int`` as one parameter without a value, and the driver's error has no SQLite
+    code, so the kind stays ``UNKNOWN``. The error carries a fixed hint in ``details``: it names the pattern, not the
+    parameter, its value or the statement. ``CAST(:x AS int)`` works."""
+    with pytest.raises(UnknownDatabaseError) as info:
+        db.fetch_scalar("SELECT :amount_7f::int", {"amount_7f": SECRET})
+    error = info.value
+    assert error.kind is Kind.UNKNOWN
+    assert error.details == {"hint": PARAMETER_CAST_HINT}
+    assert str(error) == f"database.unknown (hint={PARAMETER_CAST_HINT}): database error"
+    text = str(error) + repr(error) + repr(error.args) + "".join(traceback.format_exception(error))
+    assert SECRET not in text
+    assert "amount_7f" not in str(error) + repr(error)  # the traceback's source lines show the test's own text
+    with db.transaction() as tx, pytest.raises(UnknownDatabaseError) as info:
+        tx.fetch_scalar("SELECT 1 WHERE :a IS NOT NULL AND :b::text IS NULL", {"a": 1, "b": SECRET})
+    assert info.value.details == {"hint": PARAMETER_CAST_HINT}
+    assert db.fetch_scalar("SELECT CAST(:x AS int) + 1", {"x": "41"}) == 42
+
+
+def test_t025_no_hint_without_the_pattern_or_for_other_kinds(db: Database) -> None:
+    """The hint needs both: ``:name::`` in the statement and a syntax or unknown error. Other errors keep empty
+    ``details``, also one whose statement holds the pattern but fails for another reason first."""
+    for statement, kind in (
+        ("SELEC 1", Kind.SYNTAX),
+        ("SELECT nope", Kind.UNDEFINED_OBJECT),
+        ("SELECT :x::int FROM no_such_table", Kind.UNDEFINED_OBJECT),
+    ):
+        with pytest.raises(DatabaseError) as info:
+            db.fetch_scalar(statement, {"x": 1})
+        assert info.value.kind is kind, statement
+        assert info.value.details == {}, statement
+    with pytest.raises(DatabaseError) as literal:
+        db.fetch_scalar("SELECT 'a:b'::int")
+    assert literal.value.details == {}
+
+
+@pytest.mark.parametrize(
+    ("text", "hint"),
+    [
+        ("SELECT :x::int", True),
+        ("SELECT :x_1::numeric(10, 2)", True),
+        ("SELECT 1 WHERE :a = 1 OR :Wert::text = ''", True),
+        ("SELECT CAST(:x AS int)", False),
+        ("SELECT '1'::int", False),
+        ("SELECT a::b::int", False),
+        ("SELECT x::int", False),
+        ("SELECT :x ::int", False),
+        ("SELECT \\:x::int", False),
+        ("SELECT (:x)::int", False),
+    ],
+)
+def test_t025_parameter_cast_pattern(text: str, hint: bool) -> None:
+    """The pattern is SQLAlchemy's own bind name rule with ``::`` after the name (I-107); the kind must be
+    ``SYNTAX`` or ``UNKNOWN``."""
+    found = tabrion._sa.database._parameter_cast_hint(Kind.SYNTAX, text)
+    assert found == ({"hint": PARAMETER_CAST_HINT} if hint else None)
+    assert tabrion._sa.database._parameter_cast_hint(Kind.UNKNOWN, text) == found
+    assert tabrion._sa.database._parameter_cast_hint(Kind.DATA, text) is None
+    assert tabrion._sa.database._parameter_cast_hint(Kind.SYNTAX, None) is None
 
 
 def test_b19_resource_warning_for_a_forgotten_close(path: Path) -> None:
@@ -1233,3 +1378,16 @@ def test_b11_a_failing_read_back_does_not_commit(db: Database, monkeypatch: pyte
     with pytest.raises(UsageError, match=r"database\.read_only"), db.read() as tx:
         assert tx.fetch_scalar("SELECT count(*) FROM items") == 0
     assert checked_out(db) == 0
+
+
+def test_t025_double_colon_cast_on_sqlite(db: Database) -> None:
+    """Probe P5 on SQLite: SQLAlchemy leaves ``:x::int`` unbound, and SQLite reads ``:x::int`` as one parameter
+    name without a value; the driver's ``ProgrammingError`` has no SQLite code, so the error is ``Kind.UNKNOWN``
+    with the fixed hint of contract I-107 (TODO TB-139). ``CAST(:x AS int)`` works on SQLite as on PostgreSQL."""
+    with pytest.raises(DatabaseError) as info:
+        db.fetch_scalar("SELECT :x::int", {"x": "41"})
+    assert info.value.kind is Kind.UNKNOWN
+    assert info.value.details == {"hint": PARAMETER_CAST_HINT}
+    assert str(info.value) == f"database.unknown (hint={PARAMETER_CAST_HINT}): database error"
+    assert "41" not in str(info.value) and "41" not in repr(info.value)
+    assert db.fetch_scalar("SELECT CAST(:x AS int) + 1", {"x": "41"}) == 42
