@@ -8,6 +8,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Dependency policy (TABRION QA-17, AC-2): `dependency-policy.json` is this repository's copy of the dependency policy
+  K-33 from nodestro-studio (only its outgoing edges: none, tabrion depends on no Levuvo package, P6), and
+  `scripts/check_dependency_policy.py` is the unchanged checker from there; `scripts/DEPENDENCY_POLICY_SOURCE.md`
+  records their origin and SHA-256. `python scripts/check_dependency_policy.py` checks `pyproject.toml` (core, every
+  extra and dependency group) against the copy. `tests/architecture/test_dependency_policy.py` checks the checksums,
+  runs the checker and probes forbidden requirements (a platform, a library, a studio, an unknown Levuvo package).
+  Ruff skips the vendored script (it is linted in nodestro-studio). The sdist ships the three files, since it ships
+  the tests.
 - Conventions audit (QA-22): report `docs/program/reports/qa-22-conventions.md` (both new repositories against the
   checklist and against orkexa and axentra) and `tests/security/test_conventions.py` (license, security policy,
   community files, Dependabot policy with a red-tested no-auto-merge check, CI manifest).
@@ -126,6 +134,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   The parts catalog also refuses values that do not fit a column and bill-of-materials totals that would round to
   0 with `InvalidValue`.
 
+- The canary suite (QA-2, TAB-T-110..113): a unique value in parameters, rows, passwords and secret files, through
+  every kind of both engines and both layers; no `str`, `repr`, traceback, stderr output, log record or pytest report
+  may hold it (`tests/canary.py`).
+
 ### Changed
 
 - `tabrion.sqlite.connect` hardens its open against a time-of-check to time-of-use race (TB-045, contract I-22,
@@ -148,6 +160,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Windows (issue #18, TB-134): `scripts/downstream.py` hands uv the interpreter file `Scripts\python.exe` (new
   `venv_python()`), so a downstream run works there; the downstream and golden-replay tests assert the Windows
   behavior (psycopg's `ConnectionTimeout` for a refused local connect, no POSIX mode in the replay).
+- CI (workflow change, TODO TB-017): `ci.yml` has the jobs `conformance` (TAB-050), `golden files` (TAB-022) and
+  `examples` (RA-A, RA-B), each listed in `.github/ci-manifest.json`; on a pull request the job `api surface` also
+  runs `scripts/api_surface.py --base <merge base>` (S-6, TAB-051). `nightly.yml` has the non-blocking job
+  `downstream` (S-7, TAB-022b). `release.yml` has the job `downstream-notice`, a dry run that prints the consumer
+  issues of the release flow and opens none. `platforms.yml` also runs on pull requests that change `conformance/**`,
+  `tests/conformance/**`, `config.py`, `errors.py`, `testing/sqlite.py`, `pyproject.toml`, `scripts/downstream.py`,
+  `tests/unit/test_downstream.py` or `tests/unit/test_golden_consumers.py` (TB-021, TB-134). No new secret, trigger or
+  write permission.
 - Documentation (owner decision of 2026-11-08 11:26Z): Tabrion is distributed through Git SHA pins, a PyPI
   publication is not planned for now, and the environment `pypi` is needed only if one is decided later. `v0.1.0`
   final (TAB-040) is the merge commit of the version-bump pull request that sets `0.1.0`, pinned by full SHA; its
@@ -164,6 +184,28 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Master builds as `0.1.0a2.dev0` after the `0.1.0a1` commit (TB-053), so later commits never build as the
   internal pre-release. The installation guide pins the a1 commit SHA instead of the tag name and says not to run
   `release.yml` for it (TAB-038 review Info notes).
+
+### Fixed
+
+- `classify` maps a SQLite error whose code the `sqlite3` module does not name (`sqlite_errorname == "unknown"`,
+  for example `SQLITE_CONSTRAINT_DATATYPE` of a STRICT table on Python 3.13) by its number: `DATA` instead of
+  `UNKNOWN` (contract I-75).
+- The PostgreSQL fixtures of `tabrion.testing` no longer print the password when the server is unreachable: pytest
+  showed the conninfo argument of psycopg's frames; the test now fails with the masked URL (contract I-75). A failed
+  `CREATE ROLE` or membership `GRANT` (an admin without `CREATEROLE`) fails the test the same way, without the
+  generated role password. A caller of `truncate_tables` with an unreachable URL gets pytest's `Failed` instead of
+  `psycopg.OperationalError`.
+- Layer B and `tabrion.config` keep values out of the frame locals of their tracebacks, which Sentry, `rich` and
+  `pytest -l` show: the statement parameters and SQL text (`execute`, `fetch_*`, on `Database` and `Transaction`;
+  the staged 0.2 `query` and `stream` with the rows of an earlier batch; also when `Canceled` or a `KeyboardInterrupt`
+  leaves them), the fetched rows of `MultipleRowsError`, the URL and `engine_options` of `from_url` and `from_env` (every
+  exception of `from_url`, also a `TypeError` of `create_engine` for an unknown engine option, is raised without
+  the frames of its helpers), the environment and the file
+  content in `url_from_env`, and the original error of `BackupFailed` and `MigrationFailed` in `tabrion.sqlite.migrate`
+  (contract I-76).
+- `Database.from_url` creates its engine with `hide_parameters=True`: SQLAlchemy's `sqlalchemy.engine` log records
+  and the `[parameters: ...]` part of its error messages leave the values out (`engine_options={"hide_parameters":
+  False}` turns them back on; contract I-76).
 
 ## [0.1.0a1] - internal pre-release, not published
 

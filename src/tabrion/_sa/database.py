@@ -269,10 +269,20 @@ class Transaction:
         timeout: float | None,
         consume: Callable[[sqlalchemy.CursorResult[Any]], _T],
     ) -> _T:
-        self._check()
-        executable = _statement(statement)
+        try:
+            self._check()
+            executable = _statement(statement)
+        except BaseException:
+            del statement, params  # no values or SQL text in the frames of the traceback (I-76)
+            raise
         connection = self._connection
-        return self._step(statement, timeout, lambda: consume(connection.execute(executable, params)))
+        try:
+            return self._step(statement, timeout, lambda: consume(connection.execute(executable, params)))
+        except BaseException:
+            # ``params`` and ``executable`` are cells of the lambda: deleting them empties the cells, so neither this
+            # frame nor the lambda's frame shows them (I-76).
+            del statement, params, executable
+            raise
 
     def _step(self, statement: object, timeout: float | None, call: Callable[[], _T]) -> _T:
         """One round trip of a statement (its execution, or one fetch of a stream) under the transaction's rules.
@@ -281,14 +291,14 @@ class Transaction:
         running for ``cancel()``, applies the timeout (PostgreSQL ``SET LOCAL statement_timeout``, SQLite the deadline
         of the progress handler, which also stops the statement once ``cancel()`` was called) and translates errors.
         """
-        self._check()
-        seconds = _optional_seconds(timeout)
-        if seconds is None:
-            seconds = self._default_timeout
-        connection = self._connection
         error: TabrionError
-        self._statement_started()
         try:
+            self._check()
+            seconds = _optional_seconds(timeout)
+            if seconds is None:
+                seconds = self._default_timeout
+            connection = self._connection
+            self._statement_started()
             try:
                 if self._dialect == "postgresql":
                     self._pg_statement_timeout(seconds)
@@ -300,9 +310,17 @@ class Transaction:
                 if not _is_database_error(exc):
                     raise
                 error = _translate(exc, statement)
-        finally:
-            self._statement_ended()
+            finally:
+                self._statement_ended()
+        except BaseException:
+            # No SQL text in the frames of the traceback; ``call`` closes over the parameters (I-76).
+            del statement, call
+            raise
         # Raised outside the except block: no __context__ that holds the SQLAlchemy error and its parameters (I-39).
+        # The frames it passes keep their locals for tools that capture them (Sentry, rich, ``pytest -l``): the
+        # parameters and the SQL text (which can quote a value) are dropped first, here and in each frame on the way
+        # out (I-76).
+        del statement, call
         raise error from None
 
     def _pg_statement_timeout(self, seconds: float | None) -> None:
@@ -391,35 +409,52 @@ class Transaction:
 
     def execute(self, statement: Statement, params: Params = None, *, timeout: float | None = None) -> int:
         """Row count (``-1`` becomes ``0`` for DDL)."""
-        values = _execute_params(params)
-        if isinstance(values, list) and not values:
-            self._check()
-            _statement(statement)
-            return 0  # executemany of nothing: SQLAlchemy would run the statement once without parameters
 
         def consume(result: sqlalchemy.CursorResult[Any]) -> int:
             count = result.rowcount
             result.close()
             return max(count, 0)
 
-        return self._run(statement, values, timeout, consume)
+        values = None
+        try:
+            values = _execute_params(params)
+            if isinstance(values, list) and not values:
+                self._check()
+                _statement(statement)
+                return 0  # executemany of nothing: SQLAlchemy would run the statement once without parameters
+            return self._run(statement, values, timeout, consume)
+        except BaseException:
+            del statement, params, values  # I-76
+            raise
 
     def fetch_one(
         self, statement: Statement, params: Mapping[str, Any] | None = None, *, timeout: float | None = None
     ) -> sqlalchemy.Row[Any] | None:
         """0 rows: ``None``; more than one: ``MultipleRowsError``."""
-        return self._run(statement, _fetch_params(params), timeout, _one_row)
+        try:
+            return self._run(statement, _fetch_params(params), timeout, _one_row)
+        except BaseException:
+            del statement, params  # I-76
+            raise
 
     def fetch_all(
         self, statement: Statement, params: Mapping[str, Any] | None = None, *, timeout: float | None = None
     ) -> list[sqlalchemy.Row[Any]]:
-        return self._run(statement, _fetch_params(params), timeout, _all_rows)
+        try:
+            return self._run(statement, _fetch_params(params), timeout, _all_rows)
+        except BaseException:
+            del statement, params  # I-76
+            raise
 
     def fetch_scalar(
         self, statement: Statement, params: Mapping[str, Any] | None = None, *, timeout: float | None = None
     ) -> Any:
         """First column of the only row; 0 rows: ``None``; more than one: ``MultipleRowsError``."""
-        row = self._run(statement, _fetch_params(params), timeout, _one_row)
+        try:
+            row = self._run(statement, _fetch_params(params), timeout, _one_row)
+        except BaseException:
+            del statement, params  # I-76
+            raise
         return None if row is None else row[0]
 
 
@@ -510,6 +545,7 @@ def _rows(result: sqlalchemy.CursorResult[Any], limit: int | None) -> list[sqlal
 def _one_row(result: sqlalchemy.CursorResult[Any]) -> sqlalchemy.Row[Any] | None:
     rows = _rows(result, 2)
     if len(rows) > 1:
+        del rows  # the fetched values stay out of the frame locals of the traceback (I-76)
         raise MultipleRowsError("database.multiple_rows")
     return rows[0] if rows else None
 
@@ -814,9 +850,26 @@ class Database:
         engine_options: Mapping[str, Any] | None = None,
     ) -> Database:
         """``sqlite:///path``, ``sqlite://`` (memory), ``postgresql://`` (rewritten to ``+psycopg``)."""
+        try:
+            return cls._from_url(url, profile, engine_options)
+        except BaseException as exc:
+            error = exc
+        # Raised here without the frames of the helpers: their locals hold the URL, its password and the
+        # ``connect_args``, which tools that capture locals would show (I-76). This holds for every exception, also
+        # the ``TypeError`` of ``create_engine`` for an engine option it does not know (review C-1/L-A of #25).
+        del url, engine_options
+        raise error.with_traceback(None)
+
+    @classmethod
+    def _from_url(
+        cls, url: str | sqlalchemy.URL, profile: Profile | None, engine_options: Mapping[str, Any] | None
+    ) -> Database:
         parsed = _parse_url(url)
         profile = _profile(profile)
         options = _engine_options(engine_options)
+        # SQLAlchemy leaves the values out of its ``sqlalchemy.engine`` log records and of the ``[parameters: ...]``
+        # part of its error messages; ``engine_options={"hide_parameters": False}`` turns them back on (I-76).
+        options.setdefault("hide_parameters", True)
         backend = parsed.drivername.partition("+")[0]
         if backend == "sqlite":
             engine, memory = _sqlite_engine(parsed, profile, options)
@@ -839,10 +892,15 @@ class Database:
         engine_options: Mapping[str, Any] | None = None,
     ) -> Database:
         """Through ``tabrion.config.url_from_env`` (supports ``*_FILE``)."""
-        url = _config.url_from_env(name)
-        if url is None:  # required=True raises instead; kept for the type checker
-            raise ConfigurationError("config.missing", details={"name": name})
-        return cls.from_url(url, profile=profile, engine_options=engine_options)
+        url = None
+        try:
+            url = _config.url_from_env(name)
+            if url is None:  # required=True raises instead; kept for the type checker
+                raise ConfigurationError("config.missing", details={"name": name})
+            return cls.from_url(url, profile=profile, engine_options=engine_options)
+        except BaseException:
+            del url, engine_options  # I-76
+            raise
 
     @classmethod
     def from_engine(
@@ -1078,29 +1136,45 @@ class Database:
 
     def execute(self, statement: Statement, params: Params = None, *, timeout: float | None = None) -> int:
         """In its own ``transaction()``."""
-        with self.transaction() as transaction:
-            return transaction.execute(statement, params, timeout=timeout)
+        try:
+            with self.transaction() as transaction:
+                return transaction.execute(statement, params, timeout=timeout)
+        except BaseException:
+            del statement, params  # I-76
+            raise
 
     def fetch_one(
         self, statement: Statement, params: Mapping[str, Any] | None = None, *, timeout: float | None = None
     ) -> sqlalchemy.Row[Any] | None:
         """In its own ``read()``."""
-        with self.read() as transaction:
-            return transaction.fetch_one(statement, params, timeout=timeout)
+        try:
+            with self.read() as transaction:
+                return transaction.fetch_one(statement, params, timeout=timeout)
+        except BaseException:
+            del statement, params  # I-76
+            raise
 
     def fetch_all(
         self, statement: Statement, params: Mapping[str, Any] | None = None, *, timeout: float | None = None
     ) -> list[sqlalchemy.Row[Any]]:
         """In its own ``read()``."""
-        with self.read() as transaction:
-            return transaction.fetch_all(statement, params, timeout=timeout)
+        try:
+            with self.read() as transaction:
+                return transaction.fetch_all(statement, params, timeout=timeout)
+        except BaseException:
+            del statement, params  # I-76
+            raise
 
     def fetch_scalar(
         self, statement: Statement, params: Mapping[str, Any] | None = None, *, timeout: float | None = None
     ) -> Any:
         """In its own ``read()``."""
-        with self.read() as transaction:
-            return transaction.fetch_scalar(statement, params, timeout=timeout)
+        try:
+            with self.read() as transaction:
+                return transaction.fetch_scalar(statement, params, timeout=timeout)
+        except BaseException:
+            del statement, params  # I-76
+            raise
 
     # Health and checks
 

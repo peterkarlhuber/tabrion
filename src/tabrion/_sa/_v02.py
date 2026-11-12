@@ -259,31 +259,43 @@ class _TransactionV02:
     ) -> Result:
         """Since 0.2. At most ``max_rows`` rows (default ``Profile.max_rows``), materialized; ``truncated`` if more."""
         transaction = _tx(self)
-        transaction._check()
-        executable = _db._statement(statement)
-        values = _db._fetch_params(params)
-        limit = _max_rows(max_rows, transaction._max_rows)
-        kind = statement_kind(executable)
-        _refuse_transaction_control(transaction, executable)
-        connection = transaction._connection
+        try:
+            transaction._check()
+            executable = _db._statement(statement)
+        except BaseException:
+            del statement, params  # no values or SQL text in the frames of the traceback (I-76)
+            raise
+        values = None
+        rows: list[sqlalchemy.Row[Any]] = []
+        try:
+            values = _db._fetch_params(params)
+            limit = _max_rows(max_rows, transaction._max_rows)
+            kind = statement_kind(executable)
+            _refuse_transaction_control(transaction, executable)
+            connection = transaction._connection
 
-        def run() -> tuple[Sequence[Any] | None, list[sqlalchemy.Row[Any]], bool, float]:
-            started = time.perf_counter()
-            with _extended_protocol(transaction):
-                result = connection.execute(executable, values)
-            try:
-                if not result.returns_rows:
-                    return None, [], False, started
-                description = result.cursor.description if result.cursor is not None else None
-                fetched = list(result.fetchmany(limit + 1))
-            finally:
-                result.close()
-            return description, fetched[:limit], len(fetched) > limit, started
+            def run() -> tuple[Sequence[Any] | None, list[sqlalchemy.Row[Any]], bool, float]:
+                started = time.perf_counter()
+                with _extended_protocol(transaction):
+                    result = connection.execute(executable, values)
+                try:
+                    if not result.returns_rows:
+                        return None, [], False, started
+                    description = result.cursor.description if result.cursor is not None else None
+                    fetched = list(result.fetchmany(limit + 1))
+                finally:
+                    result.close()
+                return description, fetched[:limit], len(fetched) > limit, started
 
-        description, rows, truncated, started = transaction._step(statement, timeout, run)
-        _still_in_transaction(transaction)
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        columns = transaction._step(statement, timeout, lambda: _columns(transaction, description))
+            description, rows, truncated, started = transaction._step(statement, timeout, run)
+            _still_in_transaction(transaction)
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            columns = transaction._step(statement, timeout, lambda: _columns(transaction, description))
+        except BaseException:
+            # ``values`` and ``executable`` are cells of ``run``: deleting them empties the cells; ``rows`` holds the
+            # fetched values (I-76).
+            del statement, params, values, executable, rows
+            raise
         return Result(
             columns=columns,
             rows=tuple(tuple(row) for row in rows),
@@ -303,12 +315,21 @@ class _TransactionV02:
     ) -> Iterator[Sequence[sqlalchemy.Row[Any]]]:
         """Since 0.2. PostgreSQL: server-side cursor; SQLite: ``fetchmany``."""
         transaction = _tx(self)
-        transaction._check()
-        executable = _db._statement(statement)
-        values = _db._fetch_params(params)
-        size = _batch_size(batch_size)
-        _db._optional_seconds(timeout)  # checked now, not at the first batch
-        _refuse_transaction_control(transaction, executable)
+        try:
+            transaction._check()
+            executable = _db._statement(statement)
+        except BaseException:
+            del statement, params  # no values or SQL text in the frames of the traceback (I-76)
+            raise
+        values = None
+        try:
+            values = _db._fetch_params(params)
+            size = _batch_size(batch_size)
+            _db._optional_seconds(timeout)  # checked now, not at the first batch
+            _refuse_transaction_control(transaction, executable)
+        except BaseException:
+            del statement, params, values, executable  # I-76
+            raise
         return _stream(transaction, statement, executable, values, size, timeout)
 
     def cancel(self) -> None:
@@ -345,10 +366,16 @@ def _stream(
         # A named (server-side) cursor: DECLARE ... CURSOR, then FETCH FORWARD per batch. psycopg sends the DECLARE
         # through the extended protocol, so the server refuses a text with several commands there as well.
         options = {"stream_results": True, "max_row_buffer": size}
-    result = transaction._step(
-        statement, timeout, lambda: connection.execute(executable, values, execution_options=options)
-    )
-    _still_in_transaction(transaction, result.close)
+    rows: list[sqlalchemy.Row[Any]] = []
+    try:
+        result = transaction._step(
+            statement, timeout, lambda: connection.execute(executable, values, execution_options=options)
+        )
+        _still_in_transaction(transaction, result.close)
+    except BaseException:
+        # ``executable`` and ``values`` are cells of the lambda: deleting them empties the cells (I-76).
+        del statement, executable, values
+        raise
     closed = threading.Event()
 
     def close() -> None:
@@ -366,6 +393,10 @@ def _stream(
                 yield rows
             if len(rows) < size:
                 return
+    except BaseException:
+        # No SQL text, parameters or rows of an earlier batch in the frame of the traceback (I-76).
+        del statement, executable, values, rows
+        raise
     finally:
         # Only in the owner thread of a running transaction: after its end the transaction's clean-up closed the
         # result, and the connection may belong to someone else (a generator collected later must not touch it).
@@ -391,9 +422,13 @@ class _DatabaseV02:
     ) -> Result:
         """Since 0.2. In its own ``read()``."""
         database = _database(self)
-        with database.read() as transaction:
-            staged = cast("_TransactionV02", transaction)  # in 0.2 every Transaction is one
-            return staged.query(statement, params, max_rows=max_rows, timeout=timeout)
+        try:
+            with database.read() as transaction:
+                staged = cast("_TransactionV02", transaction)  # in 0.2 every Transaction is one
+                return staged.query(statement, params, max_rows=max_rows, timeout=timeout)
+        except BaseException:
+            del statement, params  # I-76
+            raise
 
     @contextmanager
     def inspector(self) -> Iterator[sqlalchemy.Inspector]:

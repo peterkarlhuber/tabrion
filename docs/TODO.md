@@ -16,15 +16,15 @@
 
 ## Summary
 
-The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-11,
-integration branch of the ready pull requests).
+The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
+master merge into #25).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 9 |
 | P2 Medium | 13 |
-| P3 Low | 45 |
+| P3 Low | 46 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -83,8 +83,8 @@ required (owner decision of 2026-11-08 11:26Z).
   `assets/branding/social-preview.png` as the repository's social preview (O-9).
 - **Next step:** none required. When the owner sets one, record it in STATUS.md. Stale comments: the header of
   `.github/workflows/release.yml` still calls the environment `pypi` owner action O-2 as if it were required, and
-  `.github/workflows/ci-ok.yml` says branch protection requires `ci-ok` (O-1); reword both in a later pull request
-  with the label `workflow-change-reviewed` (ADR 0012).
+  `.github/workflows/ci-ok.yml` says branch protection requires `ci-ok` (O-1); both are reworded in the
+  workflow-change pull request of TB-017 (label `workflow-change-reviewed`, ADR 0012).
 
 ### TB-004 · Confirm the CR-DB decisions E-CR-1..E-CR-7
 
@@ -161,10 +161,10 @@ required (owner decision of 2026-11-08 11:26Z).
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
-- **What:** the canary suite (no values in errors or logs, QA-2); concurrency and stress suite, nightly (QA-4);
-  supply chain with SBOM next to the existing `dependency audit` job (QA-8, in review: SBOM script and
-  reproducible-wheel test; the CI step is TB-130); the release workflow is in place but
-  its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
+- **What:** the canary suite (no values in errors or logs, QA-2) is in review (TB-085 has its open points);
+  concurrency and stress suite, nightly (QA-4); supply chain with SBOM next to the existing `dependency audit` job
+  (QA-8, in review: SBOM script and reproducible-wheel test; the CI step is TB-130); the release workflow is in place
+  but its acceptance as QA-11 needs a dry run on a test tag (QA-11); conventions audit (QA-22: done in review,
   `docs/program/reports/qa-22-conventions.md`, `tests/security/test_conventions.py`).
 - **QA-22 follow-up (F-1, Low):** tabrion has no `.gitattributes` and no `.editorconfig` (orkexa has both). Nothing
   breaks today (golden files are compared as JSON, the Windows job reads them); add both when a byte-compared
@@ -205,8 +205,9 @@ required (owner decision of 2026-11-08 11:26Z).
   features); the fixture `app` of `tests/examples/measurements_variants.py` runs the whole measurements suite
   against both variants, and the baseline's probe hits (`DEVIATIONS`: file modes, error classification, capture
   without SQLAlchemy) are strict `xfail`, the input of RA-EVAL.
-- **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. It is
-  a workflow change that lane B does not make (`.github/**`); until then the existing jobs run the example tests.
+- **Open:** a dedicated CI job `examples`, one per application, also against PostgreSQL for RA-B-2 and RA-A-*. One
+  job `examples` (all of `tests/examples`, with a PostgreSQL 17 service) is in the workflow-change pull request of
+  TB-017; a split per application can follow when the suites grow.
 - **Next step:** RA-A-2 (#29) and RA-A-3 (#35, stacked on #29); RA-EVAL after RA-A-3 (the measurement report from
   both baselines). The dedicated `examples` job should also run the measurements suite against PostgreSQL 16, 17 and
   18 for both variants (today the `pg (...)` jobs do).
@@ -422,7 +423,9 @@ required (owner decision of 2026-11-08 11:26Z).
   blocked), both in the default test job; the Tabrion rows of the clean-install matrix with pip 25.0 and the current
   pip (QA-19); `docs/api-consumers.md` as the export target of the consumers' API check (QA-21); the ecosystem
   migration documentation under `docs/ecosystem/` (QA-23) and the closing record (QA-24).
-- **Next step:** QA-17 after QA-16 is done in every repository.
+- **Status note (QA-17):** the copy of the dependency policy (no edges) and the vendored checker with its test are in
+  the QA-17 pull request (nodestro-studio holds the policy, ST-061).
+- **Next step:** QA-18, QA-19, QA-21, QA-23 and QA-24.
 
 ## M4: Tabrion 0.2
 
@@ -496,7 +499,21 @@ required (owner decision of 2026-11-08 11:26Z).
   deviation D-2
 - **What:** `conformance`, `golden files` and `examples` in `ci.yml` (`api surface` arrived with TAB-023); fault injection, stress and
   `downstream` in `nightly.yml`. Each is added with its work package and listed in `.github/ci-manifest.json`.
-- **Next step:** with each work package.
+- **Status note (2026-11-08, workflow-change pull request on branch `claude/project-thread-rdo6g3-ci-wiring`):**
+  `conformance`, `golden files` and `examples` are in `ci.yml` and the manifest; the nightly `downstream` job is in
+  `nightly.yml`, not blocking (TB-070). The same pull request wires TB-090 (TAB-051, #21: `api surface` runs
+  `api_surface.py --base <merge base>` on pull requests; `release.yml` job `downstream-notice` prints the consumer
+  issues as a dry run and opens none) and TB-092 (TAB-050, #27: the `conformance` job runs
+  `python -m tests.support.conformance` and `pytest -m conformance` with a PostgreSQL 17 service), and rewords the
+  stale O-1/O-2 comments of TB-003, and widens the `platforms.yml` path filter (TB-021, TAB-050 review H-1, and the
+  workflow file itself). Workflow review conditions: every PostgreSQL service port is bound to `127.0.0.1` (C-3). Until #21 and #27 are on `master`, two transitional guards keep the jobs green:
+  `api surface` falls back to the plain check when the script has no `--base`, and `conformance` runs nothing when
+  `conformance/MANIFEST.json` is missing. Finding: at a tag, `--base <previous tag>` reads `[Unreleased]`, which a
+  release has already renamed to its version section, so in `release.yml` the check is informational (a warning);
+  the binding S-6 check stays the PR job and release-flow step 1 before tagging.
+- **Next step:** after #21 and #27 are merged, remove both transitional guards (a pull request with the label
+  `workflow-change-reviewed`), and close TB-070, TB-090, TB-092 and this entry's `conformance`, `golden files`,
+  `examples` and `downstream` parts. Fault injection 3x (TAB-034) and stress 200x (QA-4) remain.
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
 
@@ -506,8 +523,9 @@ required (owner decision of 2026-11-08 11:26Z).
   `fetch-depth: 0` and `--base ${{ github.event.pull_request.base.sha }}`). `release.yml` has no gate that runs
   `--base <previous release SHA>` and checks the `downstream` result (S-7). The downstream issues of the release
   flow stay manual: the owner, or the coordinator on the owner's go, opens them (`docs/development/api-stability.md`).
-- **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml` and `release.yml`; until then the
-  release checklist runs both steps by hand.
+- **Next step:** the workflow-change pull request of TB-017 (branch `claude/project-thread-rdo6g3-ci-wiring`) adds
+  `--base <merge base>` to `api surface` and the dry-run job `downstream-notice` to `release.yml`; close this entry
+  when it merges. Until then the release checklist runs both steps by hand.
 
 ### TB-091 · Error codes in `surface.json` (TABRION TAB-051, deviation D-91)
 
@@ -569,8 +587,10 @@ required (owner decision of 2026-11-08 11:26Z).
   `errors.py`, `testing/sqlite.py` and `pyproject.toml` also affect those platforms, and so do the Windows-specific
   paths of `scripts/downstream.py`, `tests/unit/test_downstream.py` and `tests/unit/test_golden_consumers.py`
   (TB-134: those failed on Windows in the nightly only).
-- **Next step:** add the paths to `platforms.yml` and to the manifest's `path_filters` in one pull request merged
-  before the change that needs them (ci-ok judges by the default branch's manifest).
+- **Next step:** the workflow-change pull request of TB-017 adds `config.py`, `errors.py`, `testing/sqlite.py`,
+  `pyproject.toml`, for the LDP vectors (TAB-050 review H-1) `conformance/**` and `tests/conformance/**`, and the
+  three TB-134 paths to `platforms.yml` and the manifest's `path_filters` (ci-ok judges by the default branch's
+  manifest, so it takes effect once merged); close this entry then.
 
 ### TB-134 · Windows: downstream runner and golden replay failed in the platforms job (issue #18)
 
@@ -837,6 +857,47 @@ required (owner decision of 2026-11-08 11:26Z).
   dependency. (I-4: review N-3, the double formatting cost, stays TB-039.)
 - **Next step:** add `pytest-timeout` with QA-4 and mark the backup and migration tests with a timeout.
 
+### TB-085 · Canary suite: what it does not cover (TABRION QA-2)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-2, TAB-T-110..113, contract I-39, I-75, I-76,
+  review `qa-2-review.md` of #25
+- **What:** points the canary suite found outside Tabrion's renderings, or covers only partly:
+  1. `Database.engine.url` is SQLAlchemy's `URL`: its `repr` masks the password in the user part only, not a
+     `?password=` query parameter. `repr(Database)` and `Database.safe_url` mask both.
+  2. The caller's own error from `Transaction.connection` stays the suppressed `__context__` of the translated error
+     (I-39); a tool that walks `__context__` despite `__suppress_context__` sees its text (with `hide_parameters`,
+     I-76, no parameters, but a PostgreSQL `DETAIL`). It is also the `value` local of `contextlib`'s `__exit__`
+     frames that threw it into `Database.transaction()`, which tools that capture locals show. The standard
+     traceback, `logging` and the filter do not.
+  3. `tabrion.testing._faults` helpers take a plain conninfo `str`: in a pytest report of a failure inside them, the
+     arguments of their frames can show the password (not a fixture value, so `repr` masking cannot help).
+  4. `SQLITE_NOMEM` (kind `RESOURCE`) and, on layer B, `UNKNOWN`, `CONNECTION` and `RESOURCE` on SQLite are not
+     raised by a real statement: the suite translates real `sqlite3` error objects instead. `DEADLOCK` on layer B and
+     `CORRUPT`, `DISK_FULL`, `RESOURCE` and a server-side `CONNECTION` state on PostgreSQL come from the server
+     through `RAISE ... USING ERRCODE`.
+  5. Paths are logged at DEBUG by `tabrion.sqlite` (by design); the suite checks records at INFO and above for a path
+     canary only. Paths may be frame locals (the path arguments of `connect`).
+  6. `sqlalchemy.engine` at DEBUG logs the fetched rows (like `echo="debug"`), and at INFO the SQL text as written:
+     the suite captures `sqlalchemy` at INFO and leaves the statement records (no arguments) out of the check.
+  7. `SQLITE_IOERR_CORRUPTFS` (8458) is `CONNECTION` through `SQLITE_IOERR*` (contract section 1.3); `CORRUPT` would
+     fit better (review, optional). It changes the documented mapping table, so it waits for a decision.
+  8. The coverage tests `test_t110_every_*_on_both_layers` rely on running last and on `session.items`: under a
+     random-order plugin they fail spuriously, under `pytest-xdist` they skip silently (neither is used today).
+  9. Not exercised by the suite: `logging.captureWarnings` and SQLAlchemy `SAWarning` texts, and the structlog
+     processor (it has its own unit tests).
+  10. A `BaseException` that is no `Exception` (such as `KeyboardInterrupt`) inside `connection.execute` is not
+      translated: Tabrion's frames (`_run`, `_step`, `query`, `stream`) drop the SQL text and the parameters on the
+      way out, SQLAlchemy's frames keep the parameters (review Info-B of #25, I-76). These exits are pinned by
+      `test_t111_frame_locals_hold_no_values_v02_early_exits` (review L-1 of rv-25m). Left open (Info-1 of rv-25m):
+      when `result.close()` raises after `fetchmany` returned, the frame of `query`'s inner `run` keeps `fetched`.
+  11. Tests still missing (review of #25): the `MigrationFailed` frame-local fix of `tabrion.sqlite.migrate` (a step
+      whose error message holds the canary, checked with `assert_clean`; L-B), the `GRANT` failure branch of
+      `_RoleSet.create` (Info-C), and a positive control for the SQLite `test_t110_layer_b_caller_connection`
+      (`canary in repr(info.value.__context__.params)`; Info-D).
+- **Next step:** decide 1, 3 and 7 with the 0.2 surface review (TB-033); 2, 5, 6 and 10 are documented behavior; 8
+  and 9 when such a plugin or path is adopted; 11 in a QA follow-up. The non-`TabrionError` path of `from_url` (review
+  C-1/L-A of #25) is closed: every exception leaves it without the helper frames.
+
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
 - **Priority:** P2 Medium · **Status:** Needs decision (contract addendum) · **Refs:** TABRION TAB-010, contract
@@ -989,8 +1050,9 @@ required (owner decision of 2026-11-08 11:26Z).
   so HEAD replaces the consumer's Tabrion requirement (a Git commit pin; Tabrion is not published to an index),
   and checks that it did (review M-1 of #19, fixed); the override names `tabrion[all]`, so a consumer keeps the
   extras it asks for (N-1 of the delta re-review, fixed). The job needs network access for the clones and installs.
-- **Next step:** whoever may change `.github/` adds both jobs (with the label `workflow-change-reviewed`) and lists
-  them in `.github/ci-manifest.json`; the release gate reads the last nightly result.
+- **Next step:** both jobs are in the workflow-change pull request of TB-017 (`golden files` in `ci.yml` and the
+  manifest; `downstream (not blocking)` in `nightly.yml`, `continue-on-error`, not in the needs of `report`); close
+  this entry when it is merged. Release-flow step 2 reads the nightly summary by hand.
 
 ### TB-071 · Record `pgvector_status` on a server with pgvector (TABRION TAB-022)
 
