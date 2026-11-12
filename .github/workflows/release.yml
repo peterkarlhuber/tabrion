@@ -24,6 +24,8 @@
 # * The job "downstream-notice" (TAB-051, TODO TB-090) runs `scripts/api_surface.py --base <previous tag>` and prints
 #   the downstream issues of the release flow (docs/development/api-stability.md) as a checklist. It opens no issue
 #   and holds no write permission: sending them is a manual step after G-R.
+# * The job "surface" runs `scripts/api_surface.py --no-stubs` on the release commit (TB-022, TODO TB-135); "build"
+#   needs it, so no release is built while a name of its version is still a stub.
 name: Release
 
 on:
@@ -158,8 +160,28 @@ jobs:
             for repo in nodestro-api nodestro-sdk tabrion-studio; do echo "- [ ] peterkarlhuber/$repo (where it uses the name)"; done
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
+  surface:
+    # TB-022 (TODO TB-135): the release commit's surface is consistent and no name its version exports is a stub
+    # (`api_surface.py --no-stubs`). Binding: "build" needs this job. Runs pip with `contents: read` only, no cache.
+    name: api surface (no stubs)
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: python scripts/api_surface.py --no-stubs
+
   build:
-    needs: [nightly-gate, resolve]
+    needs: [nightly-gate, resolve, surface]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -182,8 +204,17 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SHA" || { echo "::error::checked out $(git rev-parse HEAD), expected $SHA"; exit 1; }
           echo "building $SHA, version $VERSION" | tee -a "$GITHUB_STEP_SUMMARY"
       - run: pip install "build==1.6.1" "pytest==9.2.0" "twine==7.0.0"
+      # TB-130 (QA-8, TM-10): the build backend from the hashed pins of build-constraints.txt.
       - run: python -m build --outdir dist
+        env:
+          PIP_CONSTRAINT: build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
       - run: twine check --strict dist/*
+      # The CycloneDX SBOM of the wheel (QA-8), outside dist/; --vcs-ref is the release commit, not the dispatch ref.
+      - name: SBOM of the wheel
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: mkdir -p sbom && python -I scripts/sbom.py dist/tabrion-*.whl --vcs-ref "$SHA" -o sbom/tabrion.cdx.json
       - run: pytest -m packaging tests/packaging -v -p no:cacheprovider
         env:
           TABRION_DIST: dist
@@ -193,6 +224,10 @@ jobs:
         with:
           name: release-dist
           path: dist/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-sbom
+          path: sbom/
 
   attest:
     # Build provenance for exactly the files of "build". The only job with an OIDC token; no checkout, no pip. Opt-in
@@ -209,9 +244,16 @@ jobs:
         with:
           name: release-dist
           path: dist/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-sbom
+          path: sbom/
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: "dist/*"
+          # The artifacts and their SBOM (TB-130).
+          subject-path: |
+            dist/*
+            sbom/tabrion.cdx.json
 
   publish:
     # Skipped unless "attest" ran: a skipped need skips this job.
