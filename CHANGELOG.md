@@ -8,6 +8,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Layer B hint for `:name::type` (planning document 07, probe P5, TAB-T-025; contract I-107, TODO TB-139):
+  SQLAlchemy's `text()` leaves a parameter before a `::` cast unbound, so `:x::int` fails with `database.syntax`
+  (PostgreSQL, SQLSTATE 42601) or `database.unknown` (SQLite). Such an error now carries
+  `details={"hint": "write CAST(:name AS type) instead of :name::type"}`, and its text shows the hint. The hint is
+  fixed text without the parameter's name, its value or the statement; kinds and classes are unchanged, and errors
+  without the pattern keep empty `details`.
+
 - Dependency policy (TABRION QA-17, AC-2): `dependency-policy.json` is this repository's copy of the dependency policy
   K-33 from nodestro-studio (only its outgoing edges: none, tabrion depends on no Levuvo package, P6), and
   `scripts/check_dependency_policy.py` is the unchanged checker from there; `scripts/DEPENDENCY_POLICY_SOURCE.md`

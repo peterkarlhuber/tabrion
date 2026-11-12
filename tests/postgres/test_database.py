@@ -29,6 +29,7 @@ from tabrion.errors import (  # noqa: E402
     IntegrityViolation,
     Kind,
     ReadOnlyViolation,
+    StatementError,
     StatementTimeout,
     TabrionError,
     UsageError,
@@ -282,6 +283,32 @@ def test_b18_no_parameter_value_in_errors(db: Database, schema: str) -> None:
         text = str(error) + repr(error) + "".join(traceback.format_exception(error))
         assert SECRET not in text
         assert error.__cause__ is None and error.__context__ is None
+
+
+PARAMETER_CAST_HINT = "write CAST(:name AS type) instead of :name::type"
+
+
+@pytest.mark.security
+def test_t025_double_colon_cast_carries_a_hint_on_postgres(db: Database) -> None:
+    """TAB-T-025 (planning document 07, probe P5; contract I-107): ``text()`` leaves ``:amount_7f`` before ``::``
+    unbound, so ``:amount_7f::int`` reaches the server as written and fails with ``Kind.SYNTAX`` (SQLSTATE 42601).
+    The error carries a fixed hint in ``details``, never the parameter, its value or the server's text. The form the
+    guides recommend, ``CAST(:x AS int)``, works, and a cast without a parameter is unaffected."""
+    with pytest.raises(StatementError) as info:
+        db.fetch_scalar("SELECT :amount_7f::int", {"amount_7f": SECRET})
+    error = info.value
+    assert error.kind is Kind.SYNTAX
+    assert error.classification is not None and error.classification.sqlstate == "42601"
+    assert error.details == {"hint": PARAMETER_CAST_HINT}
+    assert str(error) == f"database.syntax (hint={PARAMETER_CAST_HINT}): syntax error (SQLSTATE 42601)"
+    text = str(error) + repr(error) + "".join(traceback.format_exception(error))
+    assert SECRET not in text
+    assert "amount_7f" not in str(error) + repr(error)  # the traceback's source lines show the test's own text
+    assert db.fetch_scalar("SELECT CAST(:x AS int) + 1", {"x": "41"}) == 42
+    assert db.fetch_scalar("SELECT '41'::int + :y", {"y": 1}) == 42
+    with pytest.raises(StatementError) as other:
+        db.fetch_scalar("SELEC :x", {"x": 1})
+    assert other.value.kind is Kind.SYNTAX and other.value.details == {}
 
 
 def test_b21_connections_return_after_errors(db: Database, schema: str) -> None:

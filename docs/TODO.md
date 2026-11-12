@@ -18,7 +18,8 @@
 
 The counts are the `TB-` entries below whose status is not `Done` (recounted from the entries on 2026-11-12,
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
-TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; counts unchanged after the merge of master `3c8eaf9`).
+TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; counts unchanged after the merge of master `3c8eaf9`;
+TB-139 pull request: the TAB-T-025 hint done, TB-139 stays open for TAB-T-021, counts unchanged).
 
 | Priority | Count |
 |---|---|
@@ -727,15 +728,19 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-139 · TAB-T-021 DST boundary and TAB-T-025 `:x::int` error hint
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 DI-08, probe P5;
-  `docs/program/traceability.md`
-- **What:** two parts of the plan text have no test.
-  - TAB-T-021: the timestamp round trips (aware values, microseconds, a UTC+1 offset, naive values refused) do not
-    cross a DST boundary.
-  - TAB-T-025: the guides recommend `CAST(:x AS int)`, but no test shows what `:x::int` does in layer B. The plan
-    asks for a test of the error message and its hint, and Tabrion gives no hint today.
-- **Next step:** add a DST case to `PartsSuite.test_values_round_trip_exactly`. For TAB-T-025, decide whether
-  layer B adds a hint; if not, add a test that documents the error, with a deviation row.
+- **Priority:** P3 Low · **Status:** Open (TAB-T-025 done in the TB-139 pull request; TAB-T-021 open) · **Refs:**
+  planning document 07 DI-08, probe P5; `docs/program/traceability.md`; contract I-107
+- **Done:** TAB-T-025. Layer B adds a value-free hint when a statement writes a parameter with a `::` cast:
+  a translated error of kind `SYNTAX` or `UNKNOWN` whose statement holds `:name::` carries
+  `details={"hint": "write CAST(:name AS type) instead of :name::type"}` (PostgreSQL `database.syntax`, SQLSTATE
+  42601; SQLite `database.unknown`). Tests on both engines, a pattern table, a canary case; the guides
+  (`database.md`, `errors.md`) name the hint.
+- **What:** TAB-T-021: the timestamp round trips (aware values, microseconds, a UTC+1 offset, naive values refused)
+  do not cross a DST boundary.
+- **Next step:** add a DST case to `PartsSuite.test_values_round_trip_exactly` (the TAB-040 gap tests pull request
+  #48 adds it). Whichever of #48 and the TB-139 pull request merges later merges master and changes #48's TAB-T-025
+  tests (`test_t025_double_colon_cast_is_a_syntax_error`, `test_t025_double_colon_cast_on_sqlite`) to expect the
+  hint, or drops them in favor of this pull request's tests.
 
 ### TB-140 · TAB-T-300: nightly benchmark of layer B against plain SQLAlchemy
 
