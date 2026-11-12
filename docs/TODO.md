@@ -20,13 +20,13 @@ The counts are the `TB-` entries below whose status is not `Done` (recounted fro
 TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 new; TAB-040 workflow pull request:
 TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; TAB-040 gap tests pull request: TB-137 (TAB-T-161 and
 TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 done; TB-141 review follow-up pull
-request: TB-141 done).
+request: TB-141 done; fault proxy pull request: TB-143 new, in progress).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 8 |
-| P2 Medium | 16 |
+| P2 Medium | 17 |
 | P3 Low | 45 |
 | P4 Optional | 7 |
 
@@ -781,6 +781,25 @@ required (owner decision of 2026-11-08 11:26Z).
   `reason_of` strips the `reason: ` prefix of pytest 8.0; R-4 D-79 says that G-M(n) and R-01 compare skips from the
   "skip guard" section of the job logs. Not done (optional): a gated path or CODEOWNERS entry for
   `tests/ci/skip-reasons.txt`, and `TABRION_SKIP_GUARD` in the nightly workflow's own jobs (a later workflow change).
+
+### TB-143 · `test_session_lock_raises_and_forgets[inflight]` failed intermittently under load
+
+- **Priority:** P2 Medium · **Status:** In progress (PR_LINK) · **Refs:** TAB-034 / QA-3, contract I-33 and I-32,
+  K7/K8 zero tolerance for flaky tests, `tests/postgres/test_faults.py`
+- **What:** one full `pytest tests/postgres` run under four CPU burners (local PostgreSQL 16) failed with "DID NOT
+  RAISE OperationalError". Cause: the fault proxy, not `SessionLock`. For `inflight` the proxy forwarded the batch and
+  only then closed both sides; when the forwarding thread was descheduled in between, the other proxy thread relayed
+  the server's complete answer (`ParseComplete` through `ReadyForQuery`; `pg_try_advisory_lock` answers in
+  microseconds), and the client correctly saw the lock taken. Reproduced under four CPU burners and a concurrent
+  `tests/postgres` loop: 16 of 300 runs failed, 5 of 100 with `--cov=tabrion --cov-branch`. An in-process probe saw
+  `try_acquire` return `True` in 5 of 300 attempts, each time after the proxy had relayed the answer past the cut.
+- **Fix:** the proxy closes the client side before it forwards the batch (contract I-33), so no answer can reach the
+  client however the threads are scheduled. The unit test `test_fault_proxy_inflight_lets_no_answer_through` holds the
+  forwarding thread until a fake server has answered; it fails 40 of 40 runs without the fix and passes 40 of 40 with
+  it. Under the same load: 300 of 300 and 200 of 200 (`--cov`) runs passed, and the probe saw 300 of 300 attempts
+  raise. A mutant `SessionLock` that swallows the error of the attempt still fails all three parameters of the test
+  (10 of 10 runs).
+- **Next step:** close this entry after the pull request merges.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
 

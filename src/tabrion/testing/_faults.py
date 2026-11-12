@@ -48,8 +48,9 @@ class FaultProxy:
     - ``"reply"``: the statement reaches the server, which executes it (and, outside a transaction, commits it);
       every server message from then on, up to and including the ``ReadyForQuery`` that ends it, is dropped, then
       both sides are closed. The client sees a lost connection after its statement ended (outcome unknown).
-    - ``"inflight"``: the statement (with the rest of the client's batch) reaches the server, and both sides are
-      closed at once. The server runs what it received; its process ends when it next writes to the closed socket.
+    - ``"inflight"``: the client side is closed, then the statement (with the rest of the client's batch) is
+      forwarded to the server and the server side is closed: no answer to it reaches the client, however fast the
+      server is. The server runs what it received; its process ends when it next writes to the closed socket.
     - ``"request"``: the message is never forwarded; both sides are closed. The server never saw the statement.
     - ``"delay"``: the server's answer to the statement is held back for ``delay`` seconds, then forwarded; the
       connection stays usable.
@@ -226,6 +227,10 @@ class FaultProxy:
                             link.server.sendall(out)
                         return
                     if fault == "inflight":
+                        # The client side is cut before the batch goes out: otherwise the other thread could relay
+                        # the server's (fast) answer before this one closes both sides, and the client would see the
+                        # statement succeed. The order makes the cut independent of how the threads are scheduled.
+                        _cut(link.client)
                         link.server.sendall(out + message + buffer)  # the whole batch, through its Sync
                         return
                     if fault == "reply":

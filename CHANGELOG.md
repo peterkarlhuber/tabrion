@@ -240,6 +240,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Fixed
 
+- The internal fault proxy `tabrion.testing._faults` (contract I-33) no longer lets the server's answer through an
+  `inflight` cut (TODO TB-143). It forwarded the batch and only then closed both sides; under CPU load the forwarding
+  thread could be descheduled in between, the other thread relayed a fast answer (here the one of
+  `pg_try_advisory_lock`), and the client saw the statement succeed: `test_session_lock_raises_and_forgets[inflight]`
+  failed with "DID NOT RAISE OperationalError" (16 of 300 runs, 5 of 100 with `--cov`, under load). The proxy now
+  closes the client side before it forwards the batch. `SessionLock` was not at fault and is unchanged. Unit test:
+  `test_fault_proxy_inflight_lets_no_answer_through`.
 - `classify` maps a SQLite error whose code the `sqlite3` module does not name (`sqlite_errorname == "unknown"`,
   for example `SQLITE_CONSTRAINT_DATATYPE` of a STRICT table on Python 3.13) by its number: `DATA` instead of
   `UNKNOWN` (contract I-75).
