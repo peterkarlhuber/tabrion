@@ -506,4 +506,4 @@ jobs:
       - name: Coverage floors (total and per module)
         run: >-
           python3 -I .github/scripts/coverage_floors.py --report coverage.json --total 93.5
-          --floor src/tabrion/errors.py=95 --floor src/tabrion/sql.py=95 --floor src/tabrion/sqlite.py=94.9
+          --floor src/tabrion/errors.py=95 --floor src/tabrion/sql.py=95 --floor src/tabrion/sqlite.py=95
