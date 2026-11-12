@@ -675,15 +675,20 @@ required (owner decision of 2026-11-08 11:26Z).
   stand-in on PR runs), then the nightly step in a workflow-change pull request. Alternatively, a deviation row for
   G-T2.
 
-### TB-137 · TAB-T-162: RLS table with two tenants through `transaction()`
+### TB-137 · TAB-T-162 RLS table with two tenants, TAB-T-161 next checkout is idle
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** planning document 07 SR-10, TM-08; `docs/program/traceability.md`
-- **What:** no test creates a table with `FORCE ROW LEVEL SECURITY` and runs two tenants through
-  `Database.transaction()` with `set_config(..., true)` as a non-owner role, asserting that neither sees the
-  other's rows. TAB-T-160 and TAB-T-161 (transaction-local settings, no reuse of a connection with an open
-  transaction) are covered.
-- **Next step:** one PostgreSQL test in `tests/postgres/test_database.py` with the runtime role of
-  `tabrion_postgres_roles`.
+- **What:** two TM-08 tests are missing.
+  - TAB-T-162: no test creates a table with `FORCE ROW LEVEL SECURITY` and runs two tenants through
+    `Database.transaction()` with `set_config(..., true)` as a non-owner role, asserting that neither sees the other's
+    rows.
+  - TAB-T-161 is covered only indirectly. A connection returns to the pool after an error, and a failed reset or
+    rollback invalidates it, but no test asserts that the next checkout after a failed or interrupted transaction is
+    idle (review L-5 of #46).
+  TAB-T-160 (transaction-local settings) is covered.
+- **Next step:** two PostgreSQL tests in `tests/postgres/test_database.py`. For TAB-T-162, use the runtime role of
+  `tabrion_postgres_roles`. For TAB-T-161, check `pg_stat_activity.state` and `transaction_status` of the next
+  checkout.
 
 ### TB-138 · TAB-T-202: restore drill of reference application B
 

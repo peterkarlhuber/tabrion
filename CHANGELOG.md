@@ -148,7 +148,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   package's minor is still only `staged`, or when its body, after the docstring, is only
   `raise NotImplementedError`, `pass` or `...`. The body is read with `ast`, so nothing is called.
 - `docs/program/traceability.md` maps each of the 53 numbered plan test IDs (TAB-T-001..300; G-T2, K2, K8) to the
-  tests that cover it, and marks 2 partial IDs and 5 gaps (TODO TB-136..TB-140).
+  tests that cover it, and marks 3 partial IDs and 5 gaps (TODO TB-136..TB-140).
   `tests/unit/test_traceability.py` checks that every ID has a row and that every named test exists.
 
 ### Changed
