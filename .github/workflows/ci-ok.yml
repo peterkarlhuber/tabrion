@@ -3,7 +3,8 @@ name: ci-ok
 # CI-FAST W1 (v2) plus the gate step of G-T1 condition C-7 (F-06): one evaluation that says whether every mandatory
 # pull-request check listed in .github/ci-manifest.json ran on the PR head SHA and succeeded, posted as the commit
 # STATUS `ci-ok` on that head SHA. A workflow_run job's own check run belongs to the default branch's commit and can
-# never be a required PR check; the commit status can, and branch protection on master requires it (owner action O-1).
+# never be a required PR check; the commit status can. Requiring it through branch protection on master is optional
+# hardening (owner action O-1, TODO TB-003); without it, ci-ok green is the merge rule that the person who merges checks.
 # ci_ok.py stays byte-identical to the canonical copy (nodestro-studio, design note docs/architecture/ci-fast/ci-ok.md,
 # "What remains before enforcement", step 1); ci_ok_status.py is the Tabrion addition. ADR 0012, section "Merge gate".
 #

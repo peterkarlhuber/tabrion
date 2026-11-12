@@ -1,8 +1,10 @@
-# Measurements: local capture on SQLite
+# Measurements: local capture on SQLite, idempotent transfer to PostgreSQL
 
-Reference application B, part 1 (TABRION RA-B-1). An edge device captures readings into a local SQLite file.
-It uses **layer A only** (`tabrion.sqlite`), so it needs nothing but the standard library and Tabrion. RA-B-2
-adds the transfer to PostgreSQL through layer B.
+Reference application B (TABRION RA-B-1, RA-B-2, RA-B-3). An edge device captures readings into a local SQLite file
+(RA-B-1) and sends them to PostgreSQL in batches, as often as it likes, without losing or duplicating one (RA-B-2).
+The capture uses **layer A only** (`tabrion.sqlite`), so it needs nothing but the standard library and Tabrion;
+the transfer uses **layer B** (`tabrion.Database`, `tabrion.Profile`) and needs the extras `sqlalchemy` and
+`postgres` (`pip install -e ".[sqlalchemy,postgres]"`).
 
 ## Run it
 
@@ -12,12 +14,28 @@ From a checkout with Tabrion installed (`pip install -e .`):
 $ cd examples/measurements
 $ python -m measurements --db data.db --backup-dir backups init
 $ python -m measurements --db data.db --backup-dir backups demo 10000
-10000 stored in 0.041 s
+10000 stored in 0.041 s       # example output of one run, not a measurement
 $ printf 'd2,rh,2026-01-01T00:00:00Z,41.5,%%\n' | python -m measurements --db data.db --backup-dir backups capture
 1
 $ python -m measurements --db data.db --backup-dir backups count
 10001
+$ export MEASUREMENTS_UPSTREAM_URL_FILE=upstream-url   # a file holding postgresql://user:password@host/db
+$ python -m measurements --db data.db --backup-dir backups init-upstream
+upstream ready
+$ python -m measurements --db data.db --backup-dir backups transfer
+10001 sent in 11 batches, 10001 new upstream, mark 10001
+$ python -m measurements --db data.db --backup-dir backups transfer
+0 sent in 0 batches, 0 new upstream, mark 10001
 ```
+
+The mark records what was sent, not where: after switching the upstream to another server or database, or
+restoring it from an older backup, run `transfer --from-start` once (`Store.reset_mark`). It sends everything
+again, and the rows already upstream are skipped. One transfer process per device file is the intended
+deployment; a second one is safe but wasteful.
+
+The upstream URL comes from `MEASUREMENTS_UPSTREAM_URL` or, better, from a file named by
+`MEASUREMENTS_UPSTREAM_URL_FILE` (`tabrion.config.url_from_env`), never from the command line. A `sqlite:///` URL
+works too, with the same code.
 
 From Python:
 
@@ -28,6 +46,13 @@ from measurements import Measurement, Store, open_database
 connection = open_database("data.db", backup_dir="backups")
 store = Store(connection)
 store.capture([Measurement("dev-1", "temp", datetime.now(UTC), 21.5, "degC")])
+
+from measurements.transfer import transfer
+from measurements.upstream import create_upstream, open_upstream
+
+with open_upstream("postgresql://user:password@localhost/measurements") as upstream:
+    create_upstream(upstream)
+    report = transfer(store, upstream)  # Report(batches=1, sent=1, inserted=1, mark=1)
 connection.close()
 ```
 
@@ -40,7 +65,17 @@ connection.close()
 | **Migrations with mandatory backup.** `tabrion.sqlite.migrate` moves `PRAGMA user_version` in one write transaction. Before that, `open_database` copies an existing database with `tabrion.sqlite.backup` to `backups/measurements-v<from>-to-v<to>-<time>.db`. Without a backup Tabrion refuses (`BackupRequired`), and a failed backup changes nothing (`BackupFailed`). Only a fresh, empty file skips the backup. | `measurements/db.py` |
 | **Owner-only files.** The database, its `-wal`/`-shm` files and every backup are `0600` whatever the umask; the backup directory is `0700`; symbolic links are refused. | `tabrion.sqlite.connect`, `backup` |
 | **Portable values.** `ts_utc` is fixed-width UTC text (`2026-01-01T12:00:00.000000Z`), so text order is time order; a naive `datetime` is refused. `value` is a finite `REAL`: NaN and infinity are refused. The unit is a column of its own (specification section 7). | `measurements/store.py` |
-| **No values in errors.** A validation error names the position and the field, never the value; the CLI names the CSV line and the field. A constraint violation of a writer that bypasses validation becomes a fixed `ValueError`. | `Measurement.row`, `cli.py` |
+| **No values in errors.** A validation error names the position and the field, never the value; the CLI names the CSV line and the field. A constraint violation of a writer that bypasses validation becomes a fixed `ValueError`. A transfer error prints Tabrion's code and classification, never the URL or a value. | `Measurement.row`, `cli.py` |
+
+### The transfer (RA-B-2)
+
+| Property | Where |
+|---|---|
+| **Batches by high-water mark.** The local table `transfer_mark` (migration 3) holds, per target, the largest `seq` that is committed upstream. A run sends the rows above it in capture order, `batch_size` (at most 4 000) per batch. | `measurements/transfer.py`, `Store.mark` |
+| **One upstream transaction per batch, idempotent.** Each batch is one `Database.transaction()` with one `INSERT ... ON CONFLICT (device_id, channel, ts_utc) DO NOTHING RETURNING`. The natural key is the upstream primary key, so a batch sent again stores nothing new; the first copy of a reading wins. | `measurements/upstream.py` |
+| **The mark moves only after the commit.** `Store.advance` runs after `transaction()` returned, in a local write transaction of its own, and never moves the mark back. A failure before the commit leaves the mark before the batch; a crash after the commit sends the batch again, and the key makes the copy a no-op. So a transfer can be repeated as often as needed: nothing is lost, nothing is stored twice. | `measurements/transfer.py` |
+| **Offline-friendly.** The capture never waits for the upstream: the transfer reads the local file in short read transactions and holds no local lock during the upstream round trip. An upstream error (`tabrion.TabrionError`) stops the run; the next run picks up at the mark. | `transfer()` |
+| **Layer B profile.** `tabrion.Profile(application_name="measurements-transfer", pool_size=1)`: Tabrion's TLS rule (a remote host gets `sslmode=require` at least), connect, statement, lock and idle timeouts, and value-free errors. | `measurements/upstream.py` |
 
 The profile is `SQLiteProfile()`: WAL, `synchronous=FULL`. The specification allows `synchronous=NORMAL` for bulk
 measurements; it is consistent in WAL mode, but a power loss can lose the last committed batch. Pass
@@ -49,8 +84,33 @@ can afford that.
 
 ## Tests
 
-`tests/examples/test_measurements.py` runs inside the normal suite (`pytest`) and covers the four RA-B-1
-acceptance criteria:
+`tests/examples/test_measurements.py`, `test_measurements_transfer.py` and `test_measurements_faults.py` run inside
+the normal suite (`pytest`), each test against this application and against the plain SQLAlchemy baseline of
+RA-B-4 ([`examples/measurements-baseline`](../measurements-baseline/README.md), fixture `app`). The transfer tests
+run against an upstream SQLite file and, with `TABRION_TEST_POSTGRES` set, against a PostgreSQL schema of their own
+(marker `postgres`, fixture `tabrion_postgres_schema`). They cover the RA-B-2 acceptance criteria: every row once in
+batches; a repeated transfer (lost mark, a second device file with the same readings) changes nothing; at the moment the mark moves, another connection already sees the batch upstream; a
+failed batch keeps the mark and is sent again; a crash between the commit and the mark sends the batch again
+without duplicates.
+
+`tests/examples/test_measurements_faults.py` (RA-B-3) injects the failures and counts **losses** (captured readings
+not upstream) and **duplicates** (upstream rows beyond one per natural key) after the transfer has run again:
+
+| Failure | How | Losses / duplicates |
+|---|---|---|
+| Reply lost after the `COMMIT` (committed, the client cannot know) | Tabrion's fault proxy drops the server's answer to the batch's `COMMIT` | 0 / 0 |
+| Network cut while committing, `COMMIT` never sent | proxy faults `inflight` and `request` on the `COMMIT` | 0 / 0 |
+| Network cut around the `INSERT` (reply lost, in flight, never sent) | the same three faults on the `INSERT` | 0 / 0 |
+| Process killed after the server ran the `COMMIT`, before the mark moved | the proxy holds the answer and `SIGKILL`s the CLI | 0 / 0 |
+| Process killed after the `INSERT`, before the `COMMIT` | the same on the `INSERT` | 0 / 0 |
+| Process killed at any moment | five `SIGKILL`s of a running `transfer` at moments drawn with a fixed seed | 0 / 0 |
+| 24 hours offline | a simulated day, two readings a minute, a transfer every 15 minutes, the upstream unreachable from 02:00 to 22:00 and for a flap at 23:00; on SQLite and PostgreSQL upstreams | 0 / 0 |
+
+Each network fault runs three times. The proxy places every cut by the protocol (the batch's `INSERT` or `COMMIT`
+message), never by a timer, and the test checks what the server really holds before the transfer runs again. The
+fault and kill tests need PostgreSQL (markers `postgres`, `slow`) and POSIX for the kills.
+
+The RA-B-1 criteria:
 - 10 000 measurements in one write transaction, checked with a statement trace;
 - migration with mandatory backup;
 - `0600` files;
@@ -61,12 +121,15 @@ The file-mode and kill tests are POSIX only.
 
 ## Measurement notes for RA-EVAL (planning document 09 section 7)
 
-- **MW-1** (database infrastructure code): `measurements/db.py` holds all of it (connection, profile, migrations,
-  backup); `store.py` and `cli.py` are domain code. Count `db.py` with `cloc`, together with the plumbing lines of
-  the tests (the fixtures-free `open_database` calls).
+- **MW-1** (database infrastructure code): `measurements/db.py` (local connection, profile, migrations, backup) and
+  `measurements/upstream.py` (upstream database, profile, table, insert) hold all of it; `store.py`, `transfer.py`
+  and `cli.py` are domain code. Count `db.py` and `upstream.py` with `cloc`, together with the plumbing lines of the
+  tests (the fixtures `store`, `upstream_url` and `upstream`).
 - **MW-4** (values in errors): `test_invalid_measurement_writes_nothing` checks that a canary value does not
   appear in the message and that the error has no `__context__`.
-- **MW-7** (runtime overhead): `python -m measurements ... demo N` prints the time of one batch of `N` rows.
-  Compare it with the baseline of RA-B-4 on the same machine.
-- **MW-2, MW-6 and MW-8** come with RA-B-2 and RA-B-3 (the transfer and the fault tests). MW-3 belongs to the parts
-  application. MW-5 is measured from this README.
+- **MW-7** (runtime overhead): not measured by a single `demo N` run, whose time includes setup and varies a lot
+  from run to run; RA-EVAL needs the interleaved harness described in the baseline's README.
+- **MW-8** (engine switch): the transfer tests run the same code against SQLite and PostgreSQL; only the URL differs.
+- **MW-6** (fault injection, losses/duplicates): `tests/examples/test_measurements_faults.py`, see the table above;
+  every case asserts `tally(...) == (0, 0)`; the baseline of RA-B-4 runs the same tests.
+- **MW-2** comes with RA-EVAL. MW-3 belongs to the parts application. MW-5 is measured from this README.

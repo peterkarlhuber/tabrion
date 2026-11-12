@@ -3,7 +3,12 @@ name: Nightly
 # 05 section 2.5 and 07 section 4.2: the whole PR suite (ci.yml, platforms.yml) once a night on master, plus
 # SQLAlchemy main (not blocking, R-T04) and the test-ID inventory, so that breakage from outside the repository (new
 # dependency releases, advisories, runner images) shows up as an open issue rather than on the next unrelated PR.
-# Added by later work packages: fault injection 3x (TAB-034), stress 200x (QA-4) and "downstream" (TAB-022b).
+# "downstream" (TAB-022b, TODO TB-070) runs the consumers' database tests against this commit and is not blocking.
+# "stress" (K6, QA-4, TODO TB-086) runs the stress suite with 200 repetitions, and "pg restart" (K7, TAB-T-009, TODO
+# TB-136) restarts the PostgreSQL service between two requests; both are nightly only and in the needs of "report".
+# "stress" also runs the randomized open race of TAB-T-123 with 1,000 repetitions (TODO TB-045). Fault injection 3x
+# (K7, TAB-034) needs no job of its own: tests/postgres/test_faults.py runs every fault three times in each "pg" job
+# of ci.yml, which "ci" runs here every night.
 on:
   schedule:
     - cron: "30 3 * * *"
@@ -43,6 +48,114 @@ jobs:
       - run: pip install "sqlalchemy @ git+https://github.com/sqlalchemy/sqlalchemy.git@main"
       - run: pytest -m "not postgres and not packaging" -p no:cacheprovider
 
+  downstream:
+    # S-7 (TAB-022b, TODO TB-070): Axentra, Orkexa and nodestro-runtime (each its master) run their database tests
+    # against this Tabrion commit; scripts/downstream.py writes the table to the job summary. Not blocking (plan
+    # document 04): the script exits 0 unless --strict, and the job is not in the needs of "report". Release-flow
+    # step 2 (docs/development/api-stability.md) reads this summary by hand. Clones public repositories only; no
+    # secret is used.
+    name: downstream (not blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 # postgres:17
+        env:
+          POSTGRES_PASSWORD: tabrion-ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TABRION_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=tabrion-ci dbname=postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: python scripts/downstream.py --summary "$GITHUB_STEP_SUMMARY"
+
+  stress:
+    # K6 (planning document 07 section 4.2, QA-4, TODO TB-086): the concurrency and stress suite (`-m stress`, SQLite
+    # and PostgreSQL 17) with 200 repetitions of each scenario. Pull requests run the same tests with 5 repetitions in
+    # "test" and "pg"; this job is nightly only and not a ci-ok check. Every wait in the suite is bounded
+    # (tests/stress.py, hang_guard), so a deadlock ends the run with tracebacks long before the job timeout. The open
+    # race test of TAB-T-123 (tests/sqlite/test_stress_open_race.py) runs 5 times the repetitions, 1,000 here.
+    name: stress (200 repetitions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 # postgres:17
+        env:
+          POSTGRES_PASSWORD: tabrion-ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TABRION_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=tabrion-ci dbname=postgres
+      TABRION_REQUIRE_POSTGRES: "1"
+      TABRION_STRESS_REPEAT: "200"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: pytest -m stress -v -p no:cacheprovider --durations=20
+
+  pg-restart:
+    # K7 (planning document 07 DI-05, probe P3, TAB-T-009, TODO TB-136): tests/postgres/test_restart_postgres.py
+    # restarts this job's PostgreSQL service container with `docker restart` between two requests and checks that the
+    # first request through a pool with pre_ping succeeds. The test skips without TABRION_PG_RESTART_COMMAND, so it
+    # never restarts a server in the pull-request jobs. The container ID comes from the job context, not from input.
+    name: pg restart
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 # postgres:17
+        env:
+          POSTGRES_PASSWORD: tabrion-ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TABRION_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=tabrion-ci dbname=postgres
+      TABRION_REQUIRE_POSTGRES: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - name: TAB-T-009, the first request after a server restart
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          test -n "$PG_CONTAINER" || { echo "::error::no ID of the postgres service container"; exit 1; }
+          TABRION_PG_RESTART_COMMAND="docker restart $PG_CONTAINER" pytest -m restart -v -p no:cacheprovider
+
   canary:
     # Proves that a red nightly opens an issue.
     if: inputs.canary_fail
@@ -81,8 +194,8 @@ jobs:
 
   report:
     # Opens one "Nightly failed" issue on red, comments on it while it stays red, closes it on the next green run.
-    # sqlalchemy-main is not blocking and therefore not in needs.
-    needs: [ci, platforms, canary, inventory]
+    # sqlalchemy-main and downstream are not blocking and therefore not in needs; stress (K6) and pg-restart (K7) are.
+    needs: [ci, platforms, stress, pg-restart, canary, inventory]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10

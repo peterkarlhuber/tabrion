@@ -6,6 +6,8 @@ and expect the check to fail and name it.
 
 from __future__ import annotations
 
+import ast
+import json
 import os
 from pathlib import Path
 import shutil
@@ -102,6 +104,18 @@ MUTATIONS: dict[str, tuple[list[Edit], str]] = {
         [("_sa/_v02.py", "batch_size: int = 500", "batch_size: int = 100")],
         "tabrion.Transaction.stream: staged signature changed",
     ),
+    "deprecation without surface.json and CHANGELOG (TAB-051)": (
+        [
+            (
+                "sql.py",
+                "\ndef split_statements(",
+                "\nfrom tabrion._deprecated import deprecated_callable  # noqa: E402\n\n\n"
+                '@deprecated_callable("tabrion.sql.split_statements", replacement="x", since="0.1", remove_in="0.3")\n'
+                "def split_statements(",
+            )
+        ],
+        "tabrion.sql.split_statements: deprecation differs",
+    ),
     "new public name": (
         [
             (
@@ -121,3 +135,108 @@ def test_mutation_turns_red(tmp_path: Path, case: str) -> None:
     result = _run(_mutated(tmp_path, edits))
     assert result.returncode == 1, result.stdout + result.stderr
     assert message in result.stderr, result.stderr
+
+
+# --- TB-022: the release check ``--no-stubs`` -------------------------------------------------------------------------
+
+
+def test_no_stubs_on_the_repository() -> None:
+    """Positive control: no name of the package's minor is a stub or only staged (TAB-040, G-T2)."""
+    result = _run(SRC, "--no-stubs")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "consistent, no stubs" in result.stdout
+
+
+def _stub_body(tmp_path: Path, module: str, header: str, body: str) -> Path:
+    """A copy of the package whose function starting with ``header`` has its whole body replaced by ``body``."""
+    src = _mutated(tmp_path, [])
+    path = src / "tabrion" / module
+    tree_source = path.read_text(encoding="utf-8")
+    tree = ast.parse(tree_source)
+    lines = tree_source.splitlines(keepends=True)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and lines[node.lineno - 1].lstrip().startswith(header):
+            first = node.body[0]
+            docstring = isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+            start = node.body[1].lineno if docstring else first.lineno
+            indent = " " * node.body[-1].col_offset
+            assert node.end_lineno is not None
+            new = [*lines[: start - 1], f"{indent}{body}\n", *lines[node.end_lineno :]]
+            path.write_text("".join(new), encoding="utf-8")
+            return src
+    raise AssertionError(header)
+
+
+@pytest.mark.parametrize(
+    ("module", "header", "body", "message"),
+    [
+        (
+            "sql.py",
+            "def split_statements(",
+            'raise NotImplementedError("tabrion.sql.split_statements: implemented in TAB-011")',
+            "tabrion.sql.split_statements: since 0.1, but it is a stub (its body only raises NotImplementedError)",
+        ),
+        (
+            "_sa/database.py",
+            "def health(",
+            "...",
+            "tabrion.Database.health: since 0.1, but it is a stub (its body is only pass or ...)",
+        ),
+        (
+            "_sa/database.py",
+            "def dialect(",
+            "raise NotImplementedError",
+            "tabrion.Database.dialect: since 0.1, but it is a stub",
+        ),
+        (
+            "_sa/database.py",
+            "def from_env(",
+            "raise NotImplementedError()",
+            "tabrion.Database.from_env: since 0.1, but it is a stub",
+        ),
+        ("check.py", "def check(", "pass", "tabrion.check.check: since 0.1, but it is a stub"),
+        (
+            "testing/postgres.py",
+            "def postgres_server_version(",
+            "raise NotImplementedError",
+            "tabrion.testing.postgres_server_version: since 0.1, but it is a stub",
+        ),
+    ],
+)
+def test_no_stubs_turns_red_for_a_stub(tmp_path: Path, module: str, header: str, body: str, message: str) -> None:
+    src = _stub_body(tmp_path, module, header, body)
+    assert _run(src).returncode == 0  # the plain check does not look at bodies
+    result = _run(src, "--no-stubs")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert message in result.stderr, result.stderr
+
+
+def test_no_stubs_turns_red_for_a_staged_name_of_this_minor(tmp_path: Path) -> None:
+    """A name of the package's minor that still carries ``staged`` is only a frozen stub, not promoted."""
+    data = json.loads(SURFACE.read_text(encoding="utf-8"))
+    data["names"]["tabrion.sql.split_statements"]["staged"] = "tabrion.sql:split_statements"
+    surface = tmp_path / "surface.json"
+    surface.write_text(json.dumps(data), encoding="utf-8")
+    result = _run(SRC, "--no-stubs", "--surface", str(surface))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "tabrion.sql.split_statements: since 0.1, but only staged" in result.stderr, result.stderr
+
+
+def test_no_stubs_reads_a_method_with_a_flush_left_string(tmp_path: Path) -> None:
+    """Review L-1 of #46: a method holding a triple-quoted string with flush-left lines cannot be dedented alone; the
+    check parses the whole module, so it neither crashes nor calls the method a stub."""
+    header = "    def health(self, *, timeout: float = 5.0, deep: bool = False) -> Health:\n"
+    flush_left = header + '        _sql = """\nSELECT 1\n"""\n'
+    src = _mutated(tmp_path, [("_sa/database.py", header, flush_left)])
+    result = _run(src, "--no-stubs")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "consistent, no stubs" in result.stdout
+
+
+def test_no_stubs_names_a_method_with_a_flush_left_string_that_is_a_stub(tmp_path: Path) -> None:
+    header = "    def health(self, *, timeout: float = 5.0, deep: bool = False) -> Health:\n"
+    stub = header + '        """Stub.\n\nflush-left line\n"""\n        raise NotImplementedError\n'
+    src = _mutated(tmp_path, [("_sa/database.py", header, stub + "\n    def _old_health(self) -> None:\n")])
+    result = _run(src, "--no-stubs")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "tabrion.Database.health: since 0.1, but it is a stub (its body only raises" in result.stderr

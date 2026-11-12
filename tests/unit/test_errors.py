@@ -308,6 +308,41 @@ def test_e04_sqlite_busy_is_not_mistaken_for_a_prefix() -> None:
     assert classify(sqlite_coded("SQLITE_BUSYX")).kind is Kind.UNKNOWN
 
 
+def test_e04_sqlite_code_from_the_number_when_unnamed() -> None:
+    """I-75 (found by QA-2): sqlite3 names codes its build does not know "unknown"; the number decides then."""
+    for number, name, kind in [
+        (3091, "SQLITE_CONSTRAINT_DATATYPE", Kind.DATA),  # a STRICT table (SQLite 3.37), unnamed on Python 3.13
+        (261, "SQLITE_BUSY", Kind.LOCKED),  # SQLITE_BUSY_RECOVERY: an extended code falls back to its primary
+        (8458, "SQLITE_IOERR", Kind.CONNECTION),  # SQLITE_IOERR_CORRUPTFS (3.34)
+        (1, "SQLITE_ERROR", Kind.UNKNOWN),
+    ]:
+        exc = sqlite3.IntegrityError("constraint failed")
+        exc.sqlite_errorname = "unknown"
+        exc.sqlite_errorcode = number
+        c = classify(exc)
+        assert (c.sqlite_code, c.kind) == (name, kind), number
+    values: tuple[object, ...] = (None, "3091", 3091.0, True, 0, 12345678)
+    for value in values:
+        other = sqlite3.OperationalError("x")
+        other.sqlite_errorname = "unknown"
+        other.sqlite_errorcode = value  # type: ignore[assignment]
+        assert classify(other).sqlite_code is None, value
+
+
+@pytest.mark.skipif(sqlite3.sqlite_version_info < (3, 37), reason="STRICT tables need SQLite 3.37")
+def test_e04_sqlite_strict_datatype_is_data() -> None:
+    """A real ``SQLITE_CONSTRAINT_DATATYPE`` (whatever ``sqlite_errorname`` says on this Python) is ``DATA``."""
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE TABLE s (n INTEGER) STRICT")
+        with pytest.raises(sqlite3.IntegrityError) as info:
+            conn.execute("INSERT INTO s VALUES ('text')")
+    finally:
+        conn.close()
+    c = classify(info.value)
+    assert (c.kind, c.sqlite_code) == (Kind.DATA, "SQLITE_CONSTRAINT_DATATYPE")
+
+
 def test_e04_sqlite_real_lock_and_readonly(tmp_path: Any) -> None:
     path = tmp_path / "db.sqlite"
     writer = sqlite3.connect(path, timeout=0, isolation_level=None)

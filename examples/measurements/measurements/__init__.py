@@ -1,8 +1,9 @@
-"""Measurements reference application, part 1: local capture on SQLite (TABRION RA-B-1).
+"""Measurements reference application: local capture on SQLite (RA-B-1), idempotent transfer upstream (RA-B-2).
 
-Layer A only (``tabrion.sqlite``, standard library): the capture side of an edge device. RA-B-2 adds the transfer
-to PostgreSQL through layer B; the natural key ``(device_id, channel, ts_utc)`` and the local sequence ``seq`` are
-already here for it.
+The package and its capture use layer A only (``tabrion.sqlite``, standard library). The transfer lives in
+``measurements.transfer`` and ``measurements.upstream`` (layer B, extras ``sqlalchemy`` and ``postgres``), which
+this module does not import: batches by the high-water mark ``seq``, ``ON CONFLICT DO NOTHING`` on the natural key
+``(device_id, channel, ts_utc)``, the mark moved only after the upstream commit.
 """
 
 from measurements.db import SCHEMA_VERSION, open_database

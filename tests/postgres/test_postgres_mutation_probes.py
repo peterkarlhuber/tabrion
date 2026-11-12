@@ -573,15 +573,15 @@ PROBES = [
     # TAB-032: a named role that exists already is never taken over (and so never dropped).
     (
         "testing/postgres.py",
-        "            except psycopg.errors.DuplicateObject:\n                pytest.fail(\n",
-        "            except psycopg.errors.DuplicateObject:\n                (lambda *a, **k: None)(\n",
+        "            except psycopg.errors.DuplicateObject:\n                duplicate = True\n",
+        "            except psycopg.errors.DuplicateObject:\n                pass\n",
         "tests/postgres/test_testing_database.py::test_x12_a_named_role_that_exists_is_left_alone",
     ),
     # TAB-032: the admin's membership in the roles it creates (an admin without superuser needs it).
     (
         "testing/postgres.py",
-        "            conn.execute(sql.SQL(grant).format(sql.Identifier(name)))\n",
-        "",
+        "                    conn.execute(sql.SQL(grant).format(sql.Identifier(name)))\n",
+        "                    pass\n",
         "tests/postgres/test_testing_database.py::test_x18_both_fixtures_without_superuser",
     ),
     # TAB-032: a grant that was only a warning is reported (one privilege per check).

@@ -64,12 +64,20 @@ class WorkflowGateTest(unittest.TestCase):
         self.assertIsNone(cs.workflow_gate("owner/repo", [2], fake_api(["src/tabrion/sql.py"])))
 
     def test_workflow_change_without_label_fails(self) -> None:
-        for path in (".github/workflows/ci.yml", ".github/workflows/new.yml", ".github/scripts/ci_ok.py"):
+        for path in (
+            ".github/workflows/ci.yml",
+            ".github/workflows/new.yml",
+            ".github/scripts/ci_ok.py",
+            ".github/ci-manifest.json",
+        ):
             gate = cs.workflow_gate("owner/repo", [2], fake_api(["README.md", path]))
             self.assertIsNotNone(gate)
             assert gate is not None
             self.assertEqual(gate[0], "failure")
             self.assertIn(cs.REVIEWED_LABEL, gate[1])
+
+    def test_other_github_files_are_not_gated(self) -> None:
+        self.assertIsNone(cs.workflow_gate("owner/repo", [2], fake_api([".github/dependabot.yml"])))
 
     def test_label_lets_it_pass(self) -> None:
         api = fake_api([".github/workflows/ci.yml"], [cs.REVIEWED_LABEL])

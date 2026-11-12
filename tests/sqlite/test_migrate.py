@@ -29,6 +29,8 @@ from tabrion.sqlite import Migration, SQLiteProfile
 from tests.conftest import SRC
 from tests.sqlite.conftest import CANARY, digest, make_database
 
+pytestmark = pytest.mark.usefixtures("hang_limit")  # TB-049: a hang fails the run within 120 s
+
 Opened = Callable[[sqlite3.Connection], sqlite3.Connection]
 
 

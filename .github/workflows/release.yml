@@ -1,4 +1,5 @@
-# Builds and verifies a Tabrion release from an existing tag. It NEVER publishes on its own.
+# Builds and verifies a Tabrion release from an existing annotated tag or a full commit SHA on master (QA-11). It
+# NEVER publishes on its own.
 #
 # * Manual only (workflow_dispatch; only users with write access can start it). Nothing here runs on pushes, tags,
 #   pull requests or published GitHub releases.
@@ -6,22 +7,49 @@
 #   version (00 section 13, E-PyPI; stop criterion ST-6). The PyPI path is work package TAB-043, bound to G-R.
 #   Until then the job "publish" contains no upload step: it stops with an error, and it runs only when the
 #   "publish" input is set AND the protected environment "pypi" (required reviewer: the owner) approves the job.
-# * Least privilege (G-T1 condition C-8, F-07): only the small job "attest" holds `id-token: write`. It runs no
-#   third-party Python code (no pip install); it downloads the built files and attests them. The job "build" runs pip
-#   and the packaging tests with `contents: read` only, so it can never mint an OIDC token.
-# * Repository settings this workflow relies on (owner action O-2; ADR 0009, section "Release environment"):
-#   environment "pypi" with the owner as required reviewer, "prevent self-review" on, deployment branches and tags
-#   restricted to the tag pattern `v*`; the PyPI trusted publisher (TAB-043) names this file and the environment
-#   "pypi", so a token for an upload exists only in an approved job of that environment.
+# * The release commit (job "resolve", .github/scripts/release_check.py): either the input "tag" (an existing
+#   annotated tag vX.Y.Z) or the input "sha" (a full 40-hex commit SHA; Tabrion is consumed through SHA pins and the
+#   agent's Git proxy refuses tag pushes). The commit must be on master, its __version__ final (X.Y.Z) and CHANGELOG.md
+#   must have the dated section "## [X.Y.Z] - YYYY-MM-DD". Every later job checks out exactly that commit.
+# * Least privilege (G-T1 condition C-8, F-07): only the small job "attest" holds `id-token: write`, and it runs only
+#   when the input "attest" is set (default off): a build provenance attestation is written to the public Sigstore
+#   transparency log, which is an outward action under G-R. It runs no third-party Python code (no pip install); it
+#   downloads the built files and attests them. The job "build" runs pip and the packaging tests with `contents: read`
+#   only, so it can never mint an OIDC token. "publish" needs "attest", so it is skipped without it.
+# * Tabrion is consumed through Git SHA pins; no PyPI publication is planned (owner decision of 2026-11-08 11:26Z,
+#   TODO TB-016). Only if one is decided later does the job "publish" need the environment "pypi" (owner action O-2,
+#   optional until then; ADR 0009, section "Release environment"): the owner as required reviewer, "prevent
+#   self-review" on, deployment refs restricted to the tag pattern `v*`, and the PyPI trusted publisher (TAB-043)
+#   naming this file and that environment, so a token for an upload exists only in an approved job of it.
+# * The job "downstream-notice" (TAB-051, TODO TB-090) runs `scripts/api_surface.py --base <previous tag>` and prints
+#   the downstream issues of the release flow (docs/development/api-stability.md) as a checklist. It opens no issue
+#   and holds no write permission: sending them is a manual step after G-R.
+# * The job "surface" runs `scripts/api_surface.py --no-stubs` on the release commit (TB-022, TODO TB-135); "build"
+#   needs it, so no release is built while a name of its version is still a stub.
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing annotated tag on a master merge commit, e.g. v0.1.0
-        required: true
+        description: Existing annotated tag on master, e.g. v0.1.0 (give this or sha)
+        required: false
         type: string
+        default: ""
+      sha:
+        description: Full 40-hex commit SHA on master at a final version (give this or tag)
+        required: false
+        type: string
+        default: ""
+      previous:
+        description: Previous release (tag or full SHA) for the downstream notice; default the latest v* tag before it
+        required: false
+        type: string
+        default: ""
+      attest:
+        description: Write build provenance attestations (public Sigstore log; needs G-R for this version)
+        type: boolean
+        default: false
       publish:
         description: Request publication (refused until TAB-043 is approved under G-R)
         type: boolean
@@ -59,8 +87,101 @@ jobs:
               sys.exit(f"::error::the latest nightly is older than 36 hours: {run['html_url']}")
           PY
 
+  resolve:
+    # The release commit, its final version and CHANGELOG section (QA-11). Reads everything with `git show`; runs no
+    # code of the release commit.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.check.outputs.sha }}
+      version: ${{ steps.check.outputs.version }}
+      label: ${{ steps.check.outputs.label }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # All branches and tags, so that origin/master and the tag exist locally.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: The release commit is on master, at a final version, with a dated CHANGELOG section
+        id: check
+        env:
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ inputs.sha }}
+        run: python3 -I .github/scripts/release_check.py --tag "$TAG" --sha "$SHA"
+
+  downstream-notice:
+    # Release flow steps 1 and 3 of docs/development/api-stability.md as a dry run (TODO TB-090): the S-6 check
+    # against the previous tag, then the consumer issues printed to the job summary. Nothing leaves the repository.
+    needs: [nightly-gate, resolve]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - name: api_surface.py --base <previous tag> and the downstream checklist (dry run)
+        env:
+          TAG: ${{ needs.resolve.outputs.label }}
+          PREVIOUS: ${{ inputs.previous }}
+        run: |
+          set -euo pipefail
+          previous=$PREVIOUS
+          if [ -z "$previous" ]; then
+            previous=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+          elif ! git rev-parse --verify --quiet "$previous^{commit}" >/dev/null; then
+            echo "::error::previous release $previous is not a tag or commit of this repository"; exit 1
+          fi
+          # Informational here: at the tag the entries sit in the version's CHANGELOG section, while --base reads
+          # [Unreleased]. The binding S-6 check is the "api surface" job of each pull request and release-flow step 1
+          # before tagging; a difference is printed as a warning and does not stop the build.
+          if [ -z "$previous" ]; then
+            echo "::notice::no release tag before $TAG and no input 'previous'; nothing to compare"
+          elif ! python scripts/api_surface.py --base "$previous"; then
+            echo "::warning::api_surface.py --base $previous lists surface changes; check that CHANGELOG.md names each one under $TAG"
+          fi
+          {
+            echo "### Downstream notice for $TAG (dry run, nothing was sent)"
+            echo
+            echo "Compared with: ${previous:-no earlier tag}. If this release deprecates, removes or tightens something"
+            echo "(S-3, S-5, S-8), open by hand, after G-R, one issue titled \`Tabrion ${TAG#v}: deprecations and removals\`"
+            echo "listing each Deprecated, Removed and Security entry of CHANGELOG.md with its replacement and removal version, in:"
+            echo
+            for repo in axentra orkexa nodestro-runtime; do echo "- [ ] peterkarlhuber/$repo"; done
+            for repo in nodestro-api nodestro-sdk tabrion-studio; do echo "- [ ] peterkarlhuber/$repo (where it uses the name)"; done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  surface:
+    # TB-022 (TODO TB-135): the release commit's surface is consistent and no name its version exports is a stub
+    # (`api_surface.py --no-stubs`). Binding: "build" needs this job. Runs pip with `contents: read` only, no cache.
+    name: api surface (no stubs)
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: python scripts/api_surface.py --no-stubs
+
   build:
-    needs: nightly-gate
+    needs: [nightly-gate, resolve, surface]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -68,25 +189,32 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ inputs.tag }}
-          fetch-depth: 0
+          # Exactly the commit that "resolve" checked (on master, final version, dated CHANGELOG section).
+          ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: The tag is annotated, on master, and matches the package version
+      - name: The checkout is the resolved release commit
         env:
-          TAG: ${{ inputs.tag }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          test "$(git cat-file -t "refs/tags/$TAG")" = tag || { echo "::error::$TAG is not an annotated tag"; exit 1; }
-          git fetch --no-tags origin master
-          git merge-base --is-ancestor "$TAG" origin/master || { echo "::error::$TAG is not on master"; exit 1; }
-          version=$(python -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('src/tabrion/_version.py').read()).group(1))")
-          test "$TAG" = "v$version" || { echo "::error::tag $TAG does not match version $version"; exit 1; }
+          test "$(git rev-parse HEAD)" = "$SHA" || { echo "::error::checked out $(git rev-parse HEAD), expected $SHA"; exit 1; }
+          echo "building $SHA, version $VERSION" | tee -a "$GITHUB_STEP_SUMMARY"
       - run: pip install "build==1.6.1" "pytest==9.2.0" "twine==7.0.0"
+      # TB-130 (QA-8, TM-10): the build backend from the hashed pins of build-constraints.txt.
       - run: python -m build --outdir dist
+        env:
+          PIP_CONSTRAINT: build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
       - run: twine check --strict dist/*
+      # The CycloneDX SBOM of the wheel (QA-8), outside dist/; --vcs-ref is the release commit, not the dispatch ref.
+      - name: SBOM of the wheel
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: mkdir -p sbom && python -I scripts/sbom.py dist/tabrion-*.whl --vcs-ref "$SHA" -o sbom/tabrion.cdx.json
       - run: pytest -m packaging tests/packaging -v -p no:cacheprovider
         env:
           TABRION_DIST: dist
@@ -96,10 +224,16 @@ jobs:
         with:
           name: release-dist
           path: dist/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-sbom
+          path: sbom/
 
   attest:
-    # Build provenance for exactly the files of "build". The only job with an OIDC token; no checkout, no pip.
+    # Build provenance for exactly the files of "build". The only job with an OIDC token; no checkout, no pip. Opt-in
+    # only (input "attest", default off): the attestation is recorded in the public Sigstore log (G-R).
     needs: build
+    if: inputs.attest
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -110,11 +244,19 @@ jobs:
         with:
           name: release-dist
           path: dist/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-sbom
+          path: sbom/
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: "dist/*"
+          # The artifacts and their SBOM (TB-130).
+          subject-path: |
+            dist/*
+            sbom/tabrion.cdx.json
 
   publish:
+    # Skipped unless "attest" ran: a skipped need skips this job.
     needs: [build, attest]
     if: inputs.publish
     runs-on: ubuntu-latest

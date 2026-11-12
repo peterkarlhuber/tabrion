@@ -1,0 +1,83 @@
+# Skip reasons allowed in CI (planning document 07 section 4.3, G-T2 "skip lists per job", TODO TB-141).
+#
+# Checked by tests/ci/skipguard.py when TABRION_SKIP_GUARD=1 (ci.yml, platforms.yml): a skip, a non-strict xfail
+# (the flaky marker; see tests/ci/flaky.txt) or a strict xfail outside tests/examples/ whose reason matches no
+# pattern below turns the job red. Each job's log lists its skipped node IDs and reasons under "skip guard", which is
+# that job's skip record.
+#
+# One Python regular expression per line, matched against the whole reason (re.fullmatch). Every pattern has a
+# comment above it: why the test skips and in which jobs. A new pattern needs review like a code change; prefer a
+# precise literal over a broad pattern. Jobs: "test" (Python 3.11-3.14, SQLAlchemy 2.0), "lowest versions",
+# "pg" (PostgreSQL 16-18, pgvector 17), "coverage", "security", "conformance", "golden files", "examples",
+# "mutation probes", "sqlite (macOS / Windows)" in platforms.yml, and the packaging jobs.
+
+# --- Platform: Windows has no POSIX modes, fork, FIFOs, SIGKILL or plain symbolic links (platforms.yml, Windows) ---
+# POSIX file and directory modes (0600/0700 checks).
+POSIX (file|directory) modes
+POSIX modes
+POSIX file modes and O_NOFOLLOW \(Windows: TAB-T-S12\)
+POSIX file modes and SIGKILL
+SIGKILL
+symbolic links \(POSIX\)
+symbolic links and modes
+symbolic links need privileges on Windows
+symbolic links cannot be created here
+# os.fork / os.register_at_fork (PostgreSQL pool fork safety; also unit test of the fork hook).
+needs os\.register_at_fork
+needs os\.fork
+POSIX only
+# FIFOs and descriptor listings (macOS has /dev/fd but no link targets; Windows has neither).
+no FIFOs on this platform
+no file descriptor listing on this platform
+the descriptor entries are no links here \(macOS\)
+# Windows file semantics.
+a directory cannot be opened as a file on Windows either way
+Windows does not rename a file that SQLite holds open
+Windows takes about 2 s to refuse each loopback connection
+# File systems without a stable file index (inode) or SQLite builds that do not resolve links (macOS, Windows).
+no file index on this file system
+this SQLite build does not resolve links in the name it opens
+# Mutation probes whose probed test itself skips on this platform (platforms.yml mutation probes on Windows/macOS).
+the probed test needs POSIX file modes
+the probed test needs symbolic links
+the probed test skips where os\.name is not posix
+# Conformance vectors with file modes or symbolic links (LDP vectors on Windows).
+LDP-[A-Z0-9-]+: POSIX only \(file modes and symlinks; Windows has neither 0600 nor plain symlinks\)
+
+# --- Versions: the oldest supported Python and SQLite ("test" Python 3.11, "lowest versions", macOS SQLite) ---
+# sqlite3.Connection.autocommit is new in Python 3.12.
+the autocommit attribute arrived in Python 3\.12
+sqlite3 autocommit needs Python 3\.12
+# STRICT tables need SQLite 3.37 (older system SQLite builds).
+STRICT tables need SQLite 3\.37
+
+# --- PostgreSQL: jobs without a server, or a server without an optional feature ---
+# Jobs without TABRION_TEST_POSTGRES ("test", platforms); the pg, conformance, golden, examples, mutation probes and
+# coverage jobs set TABRION_REQUIRE_POSTGRES=1, which turns this skip into a failure there.
+PostgreSQL tests need one of [A-Z0-9_]+(, [A-Z0-9_]+)*
+TABRION_TEST_POSTGRES is not set
+# The fault proxy needs a TCP address; a Unix socket URL (local runs) skips these.
+the (fault )?proxy needs a TCP server address
+# TB-025: the PostgreSQL images of the CI jobs have no de_DE locale (pg jobs, coverage).
+the server has no de_DE\.UTF-8 locale
+# Optional server features: citext (contrib), vector outside the pgvector job, version-bound LDP vectors.
+the server has no citext \(contrib\)
+# The optional tail is the activation error of src/tabrion/testing/postgres.py: " (<class>, SQLSTATE <code or ->)".
+the PostgreSQL extension '[a-z_]+' is [a-z_ ]+ and could not be activated( \([A-Za-z_][A-Za-z0-9_]*, SQLSTATE ([0-9A-Z]{5}|-)\))?
+LDP-[A-Z0-9-]+ needs server version \d+
+a NOINHERIT admin needs the membership options of PostgreSQL 16 \(contract I-60\)
+# TAB-T-009 restarts the server: nightly job "pg restart" only.
+TABRION_PG_RESTART_COMMAND is not set: the server restart runs in the nightly job 'pg restart' only
+
+# --- Optional extras and checkouts: core-only and packaging jobs, the sdist ---
+# Module-level importorskip where an extra is not installed ("core without extras", "lowest versions", packaging).
+could not import '(psycopg|psycopg_pool|sqlalchemy|alembic|jsonschema)': No module named '(psycopg|psycopg_pool|sqlalchemy|alembic|jsonschema)'
+PostgreSQL tests need psycopg: pip install "tabrion\[postgres\]"
+# The example apps and the branding/Git checks need a repository checkout, not an sdist.
+examples/ is not in the sdist
+needs a repository checkout
+not a (git|Git) checkout
+# The downstream runner test needs uv (the dev extra brings it).
+uv is not installed \(the dev extra brings it\)
+# A cross-test check that needs the whole file (skips when -k or a node ID selects part of it).
+only meaningful when every test of this file runs

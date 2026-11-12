@@ -146,8 +146,9 @@ def test_x11_database_with_split_roles(pytester: pytest.Pytester, admin: Any) ->
     assert not leaked(admin, INNER_PREFIX)  # the database and both roles are gone
 
 
-def test_x11_passwords_are_not_shown(pytester: pytest.Pytester) -> None:
-    """A failing test shows the handle with ``repr``: no password of the roles appears."""
+def test_x11_passwords_are_not_shown(pytester: pytest.Pytester, tabrion_postgres_url: str) -> None:
+    """A failing test shows the handle with ``repr``: no password of the roles appears. Asks for the server fixture,
+    so it skips without a server like the inner run does (review Info-4 of #25)."""
     result = _run(
         pytester,
         "",

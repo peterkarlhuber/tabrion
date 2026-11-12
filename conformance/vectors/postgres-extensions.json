@@ -1,0 +1,42 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.1",
+  "area": "postgres-extensions",
+  "vectors": [
+    {
+      "id": "LDP-PGX-001",
+      "level": "MUST",
+      "rule": "PGX-1",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "extension_status",
+        "args": {
+          "name": "ldp_no_such_extension"
+        }
+      },
+      "expect": {
+        "state": "unavailable",
+        "command": null
+      },
+      "provenance": "tabrion docs/api/contract.md section 4 (extension_status)"
+    },
+    {
+      "id": "LDP-PGX-002",
+      "level": "SHOULD",
+      "rule": "PGX-2",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "extension_status",
+        "args": {
+          "name": "plpgsql"
+        }
+      },
+      "expect": {
+        "has_installed_version": true
+      },
+      "provenance": "tabrion docs/api/contract.md section 4 (extension_status)"
+    }
+  ]
+}
