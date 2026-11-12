@@ -23,14 +23,15 @@ TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 don
 request: TB-141 done; LDP-PGL-005 pull request #53: TB-142 new; fault proxy pull request #55: TB-143 new;
 TAB-040 version-bump pull request: TB-142 and TB-143 done after their merges, TB-011 in progress; `0.1.1.dev0`
 follow-up pull request after the release commit `d5821fa` (review of #56, L-3): TB-008, TB-009, TB-011, TB-017,
-TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follow-up).
+TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follow-up; bookkeeping pull request after
+`v0.1.0` (reviews of #56 and #57): TB-090 and TB-092 done).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 6 |
-| P2 Medium | 11 |
-| P3 Low | 44 |
+| P2 Medium | 10 |
+| P3 Low | 43 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -153,7 +154,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-008 · Consumer protection, conformance, stability policy (TABRION TAB-022, TAB-050, TAB-051)
 
-- **Priority:** P1 High · **Status:** Done (TAB-022 (b) green in the master nightlies; TB-070) · **Refs:** TABRION TAB-022, TAB-050, TAB-051, AC-5
+- **Priority:** P1 High · **Status:** Done (TAB-022 (b) green in the master nightlies; TB-070) · **Refs:** TABRION
+  TAB-022, TAB-050, TAB-051, AC-5
 - **What:** golden files `tests/golden/` of the existing Nodestro and Axentra behavior (blocking job `golden files`)
   and the nightly `downstream` job (TAB-022); the internal "Levuvo Database Profile" with `conformance/SPEC.md`,
   vectors, manifest and the job `conformance` (TAB-050); the API stability policy and a deprecation helper
@@ -173,8 +175,8 @@ required (owner decision of 2026-11-08 11:26Z).
 - **What:** five quality work packages. Status on master `532da05`:
   - QA-2, the canary suite (no values in errors or logs): merged (#25, `a1c13cb`). TB-085 has its open points.
   - QA-4, the concurrency and stress suite: merged (#31, `a1c57a6`). Its nightly 200x job is TB-086 (in progress).
-  - QA-8, supply chain with SBOM next to the existing `dependency audit` job: merged (#30, `bd8994f`). It has the SBOM script
-    and the reproducible-wheel test; the CI step is TB-130 (in progress).
+  - QA-8, supply chain with SBOM next to the existing `dependency audit` job: merged (#30, `bd8994f`). It has the SBOM
+    script and the reproducible-wheel test; the CI step is TB-130 (in progress).
   - QA-11, the release workflow: `release.yml` takes a commit SHA since #40, but its acceptance needs a dry run.
   - QA-22, the conventions audit: merged (#42, `f5a3285`). See `docs/program/reports/qa-22-conventions.md` and
     `tests/security/test_conventions.py`. QA-11 status note: the
@@ -184,7 +186,6 @@ required (owner decision of 2026-11-08 11:26Z).
 - **QA-22 follow-up (F-1, Low):** tabrion has no `.gitattributes` and no `.editorconfig` (orkexa has both). Nothing
   breaks today (golden files are compared as JSON, the Windows job reads them); add both when a byte-compared
   fixture arrives, with `-text` for it.
-- **Next step:** the QA-11 dry run on the release commit (TAB-040).
 - **Closed (2026-11-12, review of #56, L-3):** all five are done. QA-4's nightly 200x job is TB-086 (done); QA-8's CI
   and release SBOM steps are TB-130 (done except the CI artifact follow-up); the QA-11 dry run of `release.yml` on the
   release commit `d5821faa8742dea012abda3b663549c038d76543` (run 43191784224) passed. F-1: `.gitattributes` exists
@@ -234,8 +235,9 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
-- **Priority:** P1 High · **Status:** Done (`v0.1.0` final: release commit `d5821faa8742dea012abda3b663549c038d76543`, #56, 2026-11-12) ·
-  **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
+- **Priority:** P1 High · **Status:** Done (`v0.1.0` final: release commit
+  `d5821faa8742dea012abda3b663549c038d76543`, #56, 2026-11-12) · **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2,
+  RC-8
 - **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001; merged in
   #24, `7c5fc6e`); the internal
   pre-release `v0.1.0a1` only for unmerged integration branches (TAB-038); `v0.1.0` final and gate G-T2 (TAB-040).
@@ -247,9 +249,9 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** TAB-038 is merged (#9, `a463422`, accepted after independent review). The agent created the
   annotated tag `v0.1.0a1` on that commit in its clone; the agent's Git proxy refuses tag pushes, so it is not on
   GitHub. That is optional: consumers pin the commit SHA and nothing waits on the tag. TAB-041 is merged (#24).
-  TAB-040 is done: #56 merged as `d5821faa8742dea012abda3b663549c038d76543` (2026-11-12), the `v0.1.0` final release commit,
-  recorded in CHANGELOG `[0.1.0]`, `installation.md` and STATUS TAB-040; the follow-up pull request moves master to
-  `0.1.1.dev0`. The QA-11 dry run of `release.yml` on that SHA (run 43191784224) passed (STATUS QA-11).
+  TAB-040 is done: #56 merged as `d5821faa8742dea012abda3b663549c038d76543` (2026-11-12), the `v0.1.0` final release
+  commit, recorded in CHANGELOG `[0.1.0]`, `installation.md` and STATUS TAB-040; the follow-up pull request moves
+  master to `0.1.1.dev0`. The QA-11 dry run of `release.yml` on that SHA (run 43191784224) passed (STATUS QA-11).
 
 ### TB-022 · Release check: no 0.1 name is still a stub (TABRION TAB-040, G-T1 F-08)
 
@@ -601,7 +603,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-051, S-6, S-8, contract I-81
+- **Priority:** P2 Medium · **Status:** Done (#34, `4cd3d89`; #47, `8af5f8b`) · **Refs:** TABRION TAB-051, S-6, S-8,
+  contract I-81
 - **What:** the job `api surface` in `ci.yml` runs `scripts/api_surface.py` without `--base`, so a surface change
   without a CHANGELOG entry fails only when a reviewer runs `--base origin/master` (the job needs
   `fetch-depth: 0` and `--base ${{ github.event.pull_request.base.sha }}`). `release.yml` has no gate that runs
@@ -610,6 +613,13 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** the workflow-change pull request of TB-017 (branch `claude/project-thread-rdo6g3-ci-wiring`) adds
   `--base <merge base>` to `api surface` and the dry-run job `downstream-notice` to `release.yml`; close this entry
   when it merges. Until then the release checklist runs both steps by hand.
+- **Closed (2026-11-12, bookkeeping after `v0.1.0`):** #34 (`4cd3d89`) merged both parts. On pull requests the job
+  `api surface` checks out the whole history (`fetch-depth: 0`) and runs `api_surface.py --base <merge base>`; since
+  #47 (`8af5f8b`) with `--no-stubs` as well. The `release.yml` job `downstream-notice` runs `--base <previous tag>` as
+  a warning and prints the consumer issues as a checklist; it ran green in the QA-11 dry run 43191784224. Unchanged by
+  design: release-flow step 2 (the `downstream` result, S-7) stays a manual check of the release checklist, because
+  the nightly `downstream` job is not blocking (planning document 04), and the issues of step 3 are opened by hand
+  after G-R (`docs/development/api-stability.md`, deviation D-90).
 
 ### TB-091 · Error codes in `surface.json` (TABRION TAB-051, deviation D-91)
 
@@ -621,13 +631,19 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-092 · CI job `conformance` (TABRION TAB-050, deviation D-92)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-050, TB-017, contract I-82
+- **Priority:** P3 Low · **Status:** Done (#34, `4cd3d89`; #47, `8af5f8b`) · **Refs:** TABRION TAB-050, TB-017,
+  contract I-82
 - **What:** the LDP vectors run inside the jobs `test (...)` and `pg (...)`; planning document 02 names a job
   `conformance` of its own (`pytest -m conformance` with and without PostgreSQL, `python -m tests.support.conformance`),
   listed in `.github/ci-manifest.json`; and `conformance/**` and `tests/conformance/**` in the path filter of
   `platforms.yml`, so a vector change runs on Windows and macOS (the POSIX-only vectors skip there; review H-1).
 - **Next step:** a separate, reviewed pull request for `.github/workflows/ci.yml`, `platforms.yml` and
   `ci-manifest.json` (lane J has the `platforms.yml` filter).
+- **Closed (2026-11-12, bookkeeping after `v0.1.0`):** #34 (`4cd3d89`) added the job `conformance` to `ci.yml`
+  (`python -m tests.support.conformance` and `pytest -m conformance` with a PostgreSQL 17 service), listed it in
+  `.github/ci-manifest.json` and added `conformance/**` and `tests/conformance/**` to the `platforms.yml` path filter;
+  #47 (`8af5f8b`) removed its transitional guard (TB-135). It was green in the master nightly 43187265178 and in
+  the CI push run 43191770959 on the release commit (STATUS G-T2). Deviation D-92 is closed.
 
 ### TB-093 · Foreign keys turn on when Nodestro and Orkexa switch to Tabrion (TABRION TAB-050 review M-1)
 
