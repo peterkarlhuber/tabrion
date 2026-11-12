@@ -1,0 +1,266 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.0",
+  "area": "sqlite-migrate",
+  "vectors": [
+    {
+      "id": "LDP-SQM-001",
+      "level": "MUST",
+      "rule": "SQM-1",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "migrate",
+        "args": {
+          "initial_version": 0,
+          "steps": {
+            "1": [
+              "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+            ],
+            "2": [
+              "ALTER TABLE parts ADD COLUMN material TEXT"
+            ]
+          },
+          "target": 2,
+          "backup": "none"
+        }
+      },
+      "expect": {
+        "user_version": 2,
+        "tables": [
+          "parts"
+        ],
+        "backed_up": false
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637"
+    },
+    {
+      "id": "LDP-SQM-002",
+      "level": "MUST",
+      "rule": "SQM-1",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "migrate",
+        "args": {
+          "initial_version": 1,
+          "steps": {
+            "1": [
+              "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+            ],
+            "2": [
+              "ALTER TABLE parts ADD COLUMN material TEXT"
+            ]
+          },
+          "target": 2,
+          "backup": "ok"
+        }
+      },
+      "expect": {
+        "user_version": 2,
+        "tables": [
+          "parts"
+        ],
+        "backed_up": true
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
+      "setup": [
+        "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+      ]
+    },
+    {
+      "id": "LDP-SQM-003",
+      "level": "MUST",
+      "rule": "SQM-2",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "migrate",
+        "args": {
+          "initial_version": 3,
+          "steps": {
+            "1": [
+              "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+            ],
+            "2": [
+              "ALTER TABLE parts ADD COLUMN material TEXT"
+            ]
+          },
+          "target": 2,
+          "backup": "ok"
+        }
+      },
+      "expect": {
+        "error": "sqlite.schema_too_new",
+        "user_version": 3,
+        "tables": [
+          "parts"
+        ]
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
+      "setup": [
+        "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+      ]
+    },
+    {
+      "id": "LDP-SQM-004",
+      "level": "MUST",
+      "rule": "SQM-3",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "migrate",
+        "args": {
+          "initial_version": 1,
+          "steps": {
+            "1": [
+              "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+            ],
+            "2": [
+              "ALTER TABLE parts ADD COLUMN material TEXT"
+            ]
+          },
+          "target": 2,
+          "backup": "none"
+        }
+      },
+      "expect": {
+        "error": "sqlite.backup_required",
+        "user_version": 1,
+        "tables": [
+          "parts"
+        ]
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
+      "setup": [
+        "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+      ]
+    },
+    {
+      "id": "LDP-SQM-005",
+      "level": "MUST",
+      "rule": "SQM-3",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "migrate",
+        "args": {
+          "initial_version": 1,
+          "steps": {
+            "1": [
+              "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+            ],
+            "2": [
+              "ALTER TABLE parts ADD COLUMN material TEXT"
+            ]
+          },
+          "target": 2,
+          "backup": "fail"
+        }
+      },
+      "expect": {
+        "error": "sqlite.backup_failed",
+        "user_version": 1,
+        "tables": [
+          "parts"
+        ]
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
+      "setup": [
+        "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+      ]
+    },
+    {
+      "id": "LDP-SQM-006",
+      "level": "MUST",
+      "rule": "SQM-4",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "migrate",
+        "args": {
+          "initial_version": 0,
+          "steps": {
+            "1": [
+              "CREATE TABLE parts (id INTEGER PRIMARY KEY)"
+            ],
+            "2": [
+              "INSERT INTO parts (id) VALUES (1)",
+              "INSERT INTO parts (id) VALUES (1)"
+            ]
+          },
+          "target": 2,
+          "backup": "none"
+        }
+      },
+      "expect": {
+        "error": "sqlite.migration_failed",
+        "user_version": 0,
+        "tables": []
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637",
+      "note": "step 2 fails on its second statement; step 1 is rolled back with it"
+    },
+    {
+      "id": "LDP-SQM-007",
+      "level": "SHOULD",
+      "rule": "SQM-5",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "migrate",
+        "args": {
+          "initial_version": 0,
+          "steps": {
+            "1": [
+              "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+            ],
+            "2": [
+              "ALTER TABLE parts ADD COLUMN material TEXT"
+            ]
+          },
+          "target": 1,
+          "backup": "none"
+        }
+      },
+      "expect": {
+        "user_version": 1,
+        "tables": [
+          "parts"
+        ],
+        "backed_up": false
+      },
+      "provenance": "nodestro-runtime@463e0d9 src/nodestro_runtime/storage.py:564-637"
+    },
+    {
+      "id": "LDP-SQM-008",
+      "level": "MUST",
+      "rule": "SQM-6",
+      "engine": "sqlite",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "migrate",
+        "args": {
+          "initial_version": 0,
+          "steps": {
+            "1": [
+              "CREATE TABLE parts (id INTEGER PRIMARY KEY, label TEXT)"
+            ],
+            "2": [
+              "ALTER TABLE parts ADD COLUMN material TEXT"
+            ]
+          },
+          "target": 1,
+          "backup": "none",
+          "in_transaction": true
+        }
+      },
+      "expect": {
+        "error": "sqlite.nested_transaction",
+        "user_version": 0,
+        "in_transaction_after": true
+      },
+      "provenance": "tabrion docs/adr/0011-ldp-internal-and-t-notx.md (T-NOTX)"
+    }
+  ]
+}

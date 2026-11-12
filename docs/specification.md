@@ -85,7 +85,9 @@ tabrion/                     package; layer B in the package root (importable on
 │   ├── events.py            connect/begin listeners (call tabrion.sqlite/postgres)
 │   ├── result.py            Result, Column (exported from 0.2)
 │   ├── _check.py            the layer-B checks of tabrion.check
-│   └── _v02.py              staged 0.2 methods of Database and Transaction (not mixed in before 0.2)
+│   ├── _types.py            the documentation-only aliases Statement, Params, Isolation
+│   ├── _v02.py              0.2 methods of Database and Transaction, implemented, not mixed in before 0.2
+│   └── _staged.py           the 0.2 classes for Tabrion's own tests until 0.2 (TAB-033)
 ├── migrations.py            layer B, extra [migrations]: status, require_current, SchemaStatus (without env.py)
 └── testing/                 extra [testing] (pytest); pytest plugin only on explicit request (pytest_plugins)
     ├── __init__.py          configure(), fixtures

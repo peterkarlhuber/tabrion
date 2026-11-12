@@ -11,18 +11,71 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Conventions audit (QA-22): report `docs/program/reports/qa-22-conventions.md` (both new repositories against the
   checklist and against orkexa and axentra) and `tests/security/test_conventions.py` (license, security policy,
   community files, Dependabot policy with a red-tested no-auto-merge check, CI manifest).
+
+- Supply chain (QA-8): `scripts/sbom.py` writes a deterministic CycloneDX 1.6 SBOM for a built wheel (standard
+  library only); packaging tests check that two builds give the same wheel hash and that the SBOM describes the
+  wheel. The build backend is pinned exactly (`hatchling==1.33.0`, and with hashes in `build-constraints.txt`), so
+  the wheel hash is reproducible for that backend, also offline from a local wheel cache. Report
+  `docs/program/reports/qa-8-supply-chain.md`.
+
+- Blocked-module tests per optional edge (AC-3, TABRION QA-18): `tests/packaging/edges.py` lists each extra
+  (`postgres`, `sqlalchemy`, `migrations`, `testing`) with what imports without it and what refuses with the
+  installation hint; `tests/unit/test_optional_edges.py` runs one fresh `python -I` per edge with the extra's modules
+  blocked, checks that the list equals the extras of `pyproject.toml` and turns red when a copy of the package imports
+  the extra at the top of a module. `tests/packaging/test_independent.py` imports every module while orkexa, axentra,
+  `nodestro_*` and `tabrion_studio` are blocked by a meta path finder (document 05, section 3.2), with probes. Tests
+  only.
+
+- User guides for 0.1 (TAB-041): a quickstart and guides for SQLite, PostgreSQL, layer B (`Database`, `Profile`),
+  transactions, errors, `tabrion.sql`, `tabrion.config`, migrations, `tabrion.check`, `tabrion.testing`,
+  portability, security, the PostgreSQL infrastructure baseline, existing platforms and troubleshooting. Every code
+  example runs in the test suite (`tests/docs/`, PostgreSQL pages in the pg jobs). Installation stays Git-SHA pins,
+  no PyPI. The migrations guide gives Alembic a profile of its own (SQLite foreign keys off before a batch rebuild,
+  `PRAGMA foreign_key_check` afterwards, longer PostgreSQL timeouts), because a batch rebuild with foreign keys on
+  deletes child rows through `ON DELETE CASCADE`.
+
+- `docs/api-consumers.md`: which public function each consumer uses and which consumer test covers it (K11).
+  `tests/unit/test_api_consumers.py` checks it against contract section 8 (API names per row), the golden record keys
+  and the replay tests. `advisory_unlock` is listed as not yet covered by a consumer record.
+
+- The 0.2 Studio APIs (TAB-033), implemented and tested on SQLite and PostgreSQL but **not public yet**: they stay
+  staged in `tabrion._sa._v02` until the version is 0.2, so the 0.1 surface does not grow (G-T1 condition C-6).
+  `query` returns a frozen `Result` with `Column` names and PostgreSQL type names, cut at `max_rows`; `stream` yields
+  batches from a PostgreSQL server-side cursor or SQLite `fetchmany`; `cancel()` from another thread stops the
+  running statement within a second (`interrupt()`, `cancel_safe()`), never reaches a later user of the pooled
+  connection, and a canceled transaction is never committed; `inspector()` runs on a read-only connection;
+  `query` and `stream` send user SQL through the extended query protocol, so PostgreSQL refuses a text with several
+  commands (the multi-statement escape of `read()`); experimental `on_begin`, `run_transaction` (retries only
+  retryable errors with a known outcome) and `savepoint`. Contract implementation notes I-100..I-106, deviations
+  D-120 and D-121. Every SQLite statement of a layer-B transaction now runs with Tabrion's progress handler, so a
+  cancel cannot be lost (I-102). A PostgreSQL transaction that sent a cancel request never returns its connection to
+  the pool, because a late request would cancel the next user's statement; a `COMMIT`, `ROLLBACK` (also
+  `... AND CHAIN`), `END`, `ABORT` or `PREPARE TRANSACTION` of the caller inside `query` or `stream` is refused
+  before it is sent, with `UsageError`, and a statement that still ended the transaction is caught afterwards, so
+  later statements never run outside the transaction (review and re-review of #32).
 - API stability policy (TAB-051, `docs/development/api-stability.md`): rules S-1..S-8, the steps to deprecate
   and remove a stable name, and the downstream notice in the release flow. The internal helper
   `tabrion._deprecated` (not public, no new name in `surface.json`) warns with `DeprecationWarning` naming the
   replacement and the removal version, and refuses a window shorter than S-3. `scripts/api_surface.py` checks every
   deprecation against `surface.json` (`"deprecated"`) and the CHANGELOG, and with `--base <ref>` that every surface
   change since `<ref>` is named under `Deprecated`, `Removed` or `Changed` in `[Unreleased]` (S-6).
+- Internal test asset "Levuvo Database Profile" LDP-0.1.0 (TAB-050, K-35; not in the wheel, not vendored by any
+  other repository): `conformance/SPEC.md` (33 rules in ten areas, MUST/SHOULD/INFO, with the reference behavior of
+  Nodestro, Orkexa and Axentra), the JSON Schema of API contract section 10.1, 115 vectors in `conformance/vectors/`,
+  `conformance/MANIFEST.json` and the internal loader `tests/support/conformance.py`. Tabrion passes every vector;
+  a changed expectation or action handler fails the tests until the manifest is regenerated, the LDP version is
+  raised and this file names the new version and digest. `.gitattributes` keeps LF line endings for the hashed files,
+  so the manifest also holds on a Windows checkout with `core.autocrlf=true`.
+  LDP-0.1.0 digest d70eeb2a7dc5.
 
 - Reference application `examples/measurements` (RA-B-1): local capture on SQLite with `tabrion.sqlite` only;
   not part of the wheel or the sdist. Its tests (`tests/examples/`) run in the normal suite and skip without
   `examples/`. RA-B-2 adds the idempotent transfer to PostgreSQL through layer B (high-water mark, `ON CONFLICT DO
   NOTHING` on the natural key, the mark moved only after the upstream commit, `transfer --from-start` after
-  switching the upstream), tested on SQLite and PostgreSQL.
+  switching the upstream), tested on SQLite and PostgreSQL. RA-B-3 adds its offline and failure tests: network
+  faults through the internal fault proxy, process kills and 24 hours offline simulated, each with 0 losses and 0
+  duplicates. RA-B-4 adds the plain SQLAlchemy baseline `examples/measurements-baseline` for RA-EVAL; the same test
+  suite runs against both variants.
 - Layer B core (TAB-018): `Profile` with validation and the presets `default()`, `readonly()`, `edge()` and
   `testing()`; `Database.from_url`, `from_env` and `from_engine` (a read-only profile only without listeners) for SQLite (`pysqlite`) and PostgreSQL
   (`postgresql://` rewritten to `+psycopg`), with the TLS rules of `TLSMode` (a libpq `service` or `PGSERVICE` counts as remote), the SQLite path checks and `0600`
@@ -64,6 +117,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   with Alembic on SQLite and PostgreSQL and `require_current` as the gate; decimals are scaled integers on SQLite,
   so they order and compare as on PostgreSQL, and migrations run in `Database.transaction()`; not part of the wheel
   or the sdist.
+- `examples/parts` functions (RA-A-2): `parts.catalog` with CRUD, a status life cycle under an optimistic lock,
+  exact properties, components, bill of materials and where-used; the same tests on SQLite and PostgreSQL, including
+  a lost-update test; the cycle check is serialized (an advisory transaction lock on PostgreSQL), and the bill of
+  materials is linear, exact and cycle-safe. Its foreign keys use `NO ACTION` (TODO TB-110).
+- `examples/parts-baseline` (RA-A-3): the parts application with plain SQLAlchemy and Alembic, run by the same
+  shared suite (`tests/examples/parts_suite.py`); its deviations are strict `xfail`s, measurements for RA-EVAL.
+  The parts catalog also refuses values that do not fit a column and bill-of-materials totals that would round to
+  0 with `InvalidValue`.
 
 ### Changed
 

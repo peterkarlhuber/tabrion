@@ -8,10 +8,10 @@ SQLAlchemy raises ``ImportError`` with the installation hint.
 The 0.2 names (``Result``, ``Column`` and the 0.2 methods of ``Database`` and ``Transaction``) are frozen in
 ``docs/api/surface.json`` but not exported before 0.2 (G-T1 condition C-6).
 
-Status (milestone M2): layer A (``tabrion.errors``, ``tabrion.sql``, ``tabrion.config``, ``tabrion.sqlite``,
-``tabrion.postgres``, ``tabrion.check``) and the layer-B core (``Database``, ``Profile``, ``Transaction``, TAB-018)
-are implemented; ``tabrion.migrations`` and ``tabrion.testing`` are still the API stubs of the freeze G-T1 and raise
-``NotImplementedError``.
+Status (milestone M2): every 0.1 name is implemented: layer A (``tabrion.errors``, ``tabrion.sql``,
+``tabrion.config``, ``tabrion.sqlite``, ``tabrion.postgres``, ``tabrion.check``), layer B (TAB-018),
+``tabrion.migrations`` and ``tabrion.testing``. Only the staged 0.2 names in ``tabrion._sa._v02`` raise
+``NotImplementedError`` (TB-022).
 """
 
 from __future__ import annotations
