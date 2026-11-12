@@ -8,6 +8,9 @@ from contextlib import closing, suppress
 import hashlib
 import math
 import os
+import socket
+import threading
+import time
 from typing import Any
 
 import pytest
@@ -134,69 +137,153 @@ def test_fault_proxy_arm_and_dsn() -> None:
     proxy.close()  # idempotent
 
 
-def test_fault_proxy_inflight_lets_no_answer_through(monkeypatch: pytest.MonkeyPatch) -> None:
-    """TB-143: an ``inflight`` cut reaches the client even when the server answers before the proxy closes.
+# ---- TB-143: the ``inflight`` cut against a fake server (deterministic, no PostgreSQL) -------------------------------
 
-    Under CPU load the thread that forwards the batch could be descheduled right after sending it; the other thread
-    then relayed the server's fast answer (``pg_try_advisory_lock``), and the client saw the statement succeed
-    (``tests/postgres/test_faults.py::test_session_lock_raises_and_forgets[inflight]``: "DID NOT RAISE"). Here a fake
-    server answers at once, and the forwarding thread is held in ``_close`` until that answer has been relayed or
-    the client has been cut: the outcome no longer depends on how the threads are scheduled.
-    """
-    import select
-    import socket
-    import threading
 
-    from tabrion.testing._faults import FaultProxy
+def _msg(kind: bytes, body: bytes) -> bytes:
+    return kind + (4 + len(body)).to_bytes(4, "big") + body
 
-    statement = b"SELECT pg_catalog.pg_try_advisory_lock($1)\x00"
-    query = b"Q" + (4 + len(statement)).to_bytes(4, "big") + statement
-    startup = (8).to_bytes(4, "big") + (196608).to_bytes(4, "big")  # protocol 3.0, no parameters
-    answered = threading.Event()
-    received = bytearray()
 
-    upstream = socket.create_server(("127.0.0.1", 0))
+STARTUP = (8).to_bytes(4, "big") + (196608).to_bytes(4, "big")  # protocol 3.0, no parameters
+SQL = b"SELECT pg_catalog.pg_try_advisory_lock($1)\x00"
+QUERY = _msg(b"Q", SQL)
+PARSE = _msg(b"P", b"\x00" + SQL + b"\x00\x00")
+REST = _msg(b"B", b"\x00\x00" + b"\x00\x00" * 3) + _msg(b"E", b"\x00" + b"\x00" * 4) + _msg(b"S", b"")
+READY = _msg(b"Z", b"I")  # ReadyForQuery: the whole answer of the fake server
+NOTICE = _msg(b"N", b"SWARNING\x00Mtabrion-notice\x00\x00")
 
-    def serve() -> None:
-        connection, _address = upstream.accept()
+
+def _until(condition: Callable[[], bool], timeout: float = 10.0) -> bool:
+    """Wait for something another thread signals (bounded; the outcome never depends on the time)."""
+    deadline = time.monotonic() + timeout
+    while not condition():
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.001)
+    return True
+
+
+class _Upstream:
+    """A fake server: reads ``expected`` (or until the proxy closes its side) and answers ``READY`` at once."""
+
+    def __init__(self, expected: bytes) -> None:
+        self.expected = expected
+        self.received = bytearray()
+        self.answered = threading.Event()
+        self.connected = threading.Event()
+        self.connection: socket.socket | None = None
+        self.listener = socket.create_server(("127.0.0.1", 0))
+        self.port: int = self.listener.getsockname()[1]
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def _serve(self) -> None:
+        connection, _address = self.listener.accept()
+        self.connection = connection
+        self.connected.set()  # the proxy may already forward before this thread has accepted
         with connection:
-            while len(received) < len(startup) + len(query):
+            while len(self.received) < len(self.expected):
                 data = connection.recv(65536)
                 if not data:
-                    break
-                received.extend(data)
+                    return  # the proxy closed its side before the batch was complete
+                self.received.extend(data)
             with suppress(OSError):
-                connection.sendall(b"Z\x00\x00\x00\x05I")  # ReadyForQuery: the answer, at once
-            answered.set()
+                connection.sendall(READY)
+            self.answered.set()
             with suppress(OSError):
                 connection.recv(1)  # until the proxy closes its side
 
-    server = threading.Thread(target=serve, daemon=True)
-    server.start()
-    # The client socket is closed after the proxy, whose close() joins its threads (``close_late`` selects on it).
-    with upstream, closing(socket.socket()) as client, FaultProxy("127.0.0.1", upstream.getsockname()[1]) as proxy:
+    def close(self) -> None:
+        self.thread.join(10)
+        self.listener.close()
+
+
+def _cut_in_flight(upstream: _Upstream, first: bytes, rest: bytes = b"", read: threading.Event | None = None) -> Any:
+    """Send ``first`` (and ``rest`` once the fault fired) through an ``inflight`` proxy; the proxy and what the client
+    read (``b""``: the cut, nothing else)."""
+    from tabrion.testing._faults import FaultProxy
+
+    # The client socket is closed after the proxy, whose close() joins its threads.
+    with closing(socket.socket()) as client, FaultProxy("127.0.0.1", upstream.port) as proxy:
         client.connect(("127.0.0.1", proxy.port))
-        close = FaultProxy._close
-
-        def close_late(self: FaultProxy, link: Any) -> None:
-            # The widest race: the forwarding thread closes only after the server answered and the client either
-            # received that answer or was cut (both make the client's socket readable).
-            if threading.current_thread().name == "tabrion-fault-proxy-up":
-                answered.wait(10)
-                select.select([client], [], [], 10)
-            close(self, link)
-
-        monkeypatch.setattr(FaultProxy, "_close", close_late)
-        proxy.arm(b"pg_try_advisory_lock", fault="inflight")
-        client.sendall(startup + query)
         client.settimeout(10)
+        proxy.arm(b"pg_try_advisory_lock", fault="inflight")
+        client.sendall(first)
+        if rest:
+            assert _until(lambda: proxy.fired == 1)
+            client.sendall(rest)  # the batch arrives at the proxy in two reads
         try:
             seen = client.recv(65536)
         except ConnectionResetError:
             seen = b""
-        server.join(10)
-    assert answered.is_set() and bytes(received) == startup + query  # the statement reached the server
+        if read is not None:
+            read.set()
+    upstream.close()
+    return proxy, seen
+
+
+def test_fault_proxy_inflight_lets_no_answer_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TB-143: no answer passes an ``inflight`` cut, however late the proxy closes.
+
+    Under CPU load the thread that forwards the batch could be descheduled right after sending it; the other thread
+    then relayed the server's fast answer, and the client saw the statement succeed
+    (``test_session_lock_raises_and_forgets[inflight]``: "DID NOT RAISE"; ``test_ping_reports_a_lost_connection``
+    ``[inflight]``: ``ok=True``). Here the first ``_close`` (the forwarding thread's, after the batch went out) waits
+    until the fake server has answered and that answer has either reached the client or been held back.
+    """
+    from tabrion.testing._faults import FaultProxy
+
+    upstream = _Upstream(STARTUP + QUERY)
+    read = threading.Event()
+    late: list[str] = []
+    close = FaultProxy._close
+
+    def close_late(self: FaultProxy, link: Any) -> None:
+        if not late:
+            late.append(threading.current_thread().name)
+            upstream.answered.wait(10)
+            _until(lambda: read.is_set() or getattr(self, "muted_messages", 0) >= 1)
+        close(self, link)
+
+    monkeypatch.setattr(FaultProxy, "_close", close_late)
+    proxy, seen = _cut_in_flight(upstream, STARTUP + QUERY, read=read)
+    assert late and late[0] != threading.current_thread().name  # a proxy thread was held, not the test's
+    assert upstream.answered.is_set() and bytes(upstream.received) == STARTUP + QUERY  # the batch reached the server
     assert seen == b""  # and its answer did not reach the client
+    assert proxy.fired == 1
+
+
+def test_fault_proxy_inflight_forwards_the_batch_when_the_server_writes_at_the_cut(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review F-1 of #55: a server message at the moment of the cut (an asynchronous ``NoticeResponse``) neither
+    reaches the client nor keeps the batch from the server (it must not turn ``inflight`` into ``request``)."""
+    from tabrion.testing._faults import FaultProxy
+
+    upstream = _Upstream(STARTUP + QUERY)
+    mute = FaultProxy._mute
+
+    def mute_then_notice(self: FaultProxy, link: Any) -> None:
+        mute(self, link)
+        assert upstream.connected.wait(10) and upstream.connection is not None
+        upstream.connection.sendall(NOTICE)  # the server writes after the mute and before the batch goes out
+        # Until the other thread has handled it: held back, or (the defect) relayed to a closed client, which closes
+        # the server side too.
+        _until(lambda: self.muted_messages >= 1 or link.server.fileno() == -1)
+
+    monkeypatch.setattr(FaultProxy, "_mute", mute_then_notice)
+    proxy, seen = _cut_in_flight(upstream, STARTUP + QUERY)
+    assert upstream.answered.is_set() and bytes(upstream.received) == STARTUP + QUERY
+    assert seen == b""
+    assert proxy.fired == 1 and proxy.muted_messages >= 1
+
+
+def test_fault_proxy_inflight_forwards_a_batch_split_across_reads() -> None:
+    """Review F-3 of #55: the cut forwards the batch through its ``Sync``, also when the rest arrives later."""
+    upstream = _Upstream(STARTUP + PARSE + REST)
+    proxy, seen = _cut_in_flight(upstream, STARTUP + PARSE, REST)
+    assert upstream.answered.is_set() and bytes(upstream.received) == STARTUP + PARSE + REST
+    assert seen == b""
     assert proxy.fired == 1
 
 

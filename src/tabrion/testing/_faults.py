@@ -25,6 +25,9 @@ __all__ = ["FAULTS", "FaultProxy", "wait_backend_gone"]
 FAULTS = ("reply", "inflight", "request", "delay")
 """The faults :meth:`FaultProxy.arm` can inject (see the class documentation)."""
 
+_BATCH_END = (b"Q", b"S", b"H")
+"""Client messages that end a batch: a simple ``Query``, a ``Sync`` or a ``Flush`` (the server answers after each)."""
+
 
 class _Link:
     """One proxied connection: both sockets, its fault state, its server process and the ``then`` of a fault."""
@@ -33,6 +36,7 @@ class _Link:
         self.client = client
         self.server = server
         self.dropping = threading.Event()
+        self.muted = threading.Event()
         self.delay_until: float | None = None
         self.backend: int | None = None
         self.then: Callable[[], None] | None = None
@@ -48,9 +52,13 @@ class FaultProxy:
     - ``"reply"``: the statement reaches the server, which executes it (and, outside a transaction, commits it);
       every server message from then on, up to and including the ``ReadyForQuery`` that ends it, is dropped, then
       both sides are closed. The client sees a lost connection after its statement ended (outcome unknown).
-    - ``"inflight"``: the client side is closed, then the statement (with the rest of the client's batch) is
-      forwarded to the server and the server side is closed: no answer to it reaches the client, however fast the
-      server is. The server runs what it received; its process ends when it next writes to the closed socket.
+    - ``"inflight"``: the connection is muted (nothing the server sends from then on reaches the client), the
+      statement and the rest of its batch, through the next ``Sync`` or ``Flush`` (a simple ``Query`` is its own
+      batch), are forwarded to the server, also when the batch arrives in several reads, and then both sides are
+      closed. So the batch always reaches the server, and no answer to it reaches the client, however the proxy's
+      threads are scheduled and whatever else the server sends meanwhile. The server runs what it received; its
+      process ends when it next writes to the closed socket. A client that sends neither ``Sync`` nor ``Flush``
+      after the statement keeps the cut waiting until it closes its side.
     - ``"request"``: the message is never forwarded; both sides are closed. The server never saw the statement.
     - ``"delay"``: the server's answer to the statement is held back for ``delay`` seconds, then forwarded; the
       connection stays usable.
@@ -75,6 +83,8 @@ class FaultProxy:
         """How often a fault fired."""
         self.replies_lost = 0
         """How often a lost reply was cut after the server ended the statement."""
+        self.muted_messages = 0
+        """How many server messages an ``inflight`` fault kept from the client."""
         self.fired_backend: int | None = None
         self.error: BaseException | None = None
         """What ``then`` raised (re-raised by :meth:`check`)."""
@@ -186,6 +196,10 @@ class FaultProxy:
             link.delay_until = time.monotonic() + delay
         return fault
 
+    def _mute(self, link: _Link) -> None:
+        """From now on no server message of ``link`` reaches the client (``inflight``, before the batch goes out)."""
+        link.muted.set()
+
     def _run_then(self, link: _Link) -> None:
         then, link.then = link.then, None
         if then is None:
@@ -221,18 +235,24 @@ class FaultProxy:
                     if len(buffer) < size:
                         break
                     message, buffer = buffer[:size], buffer[size:]
-                    fault = self._take(link, message[:1], message[5:]) or fault
+                    if fault != "inflight":
+                        fault = self._take(link, message[:1], message[5:]) or fault
+                        if fault == "inflight":
+                            # Muted before the batch goes out: otherwise the other thread could relay the server's
+                            # (fast) answer before this one closes both sides, and the client would see the statement
+                            # succeed (TB-143). The client side stays open, so a server message that arrives
+                            # meanwhile cannot make the other thread close the link before the batch is out.
+                            self._mute(link)
                     if fault == "request":
                         if out:
                             link.server.sendall(out)
                         return
                     if fault == "inflight":
-                        # The client side is cut before the batch goes out: otherwise the other thread could relay
-                        # the server's (fast) answer before this one closes both sides, and the client would see the
-                        # statement succeed. The order makes the cut independent of how the threads are scheduled.
-                        _cut(link.client)
-                        link.server.sendall(out + message + buffer)  # the whole batch, through its Sync
-                        return
+                        out += message
+                        if message[:1] in _BATCH_END:
+                            link.server.sendall(out + buffer)  # the whole batch, and what else the client sent
+                            return
+                        continue
                     if fault == "reply":
                         link.dropping.set()  # before the statement can reach the server
                     out += message
@@ -261,6 +281,10 @@ class FaultProxy:
                     message, buffer = buffer[:size], buffer[size:]
                     if message[:1] == b"K" and size >= 9:  # BackendKeyData: the server process id
                         link.backend = int.from_bytes(message[5:9], "big")
+                    if link.muted.is_set():  # an inflight cut: nothing reaches the client any more
+                        with self._lock:
+                            self.muted_messages += 1
+                        continue
                     if not link.dropping.is_set():
                         out += message
                         continue

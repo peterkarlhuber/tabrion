@@ -803,24 +803,37 @@ required (owner decision of 2026-11-08 11:26Z).
   last sample and end the wait by handing the key over instead of a timeout. No expectation changed.
 - **Next step:** close this entry after #53 merges.
 
-### TB-143 · `test_session_lock_raises_and_forgets[inflight]` failed intermittently under load
+### TB-143 · `inflight` fault tests (session lock, ping) failed intermittently under load
 
 - **Priority:** P2 Medium · **Status:** In progress ([#55](https://github.com/peterkarlhuber/tabrion/pull/55)) ·
   **Refs:** TAB-034 / QA-3, contract I-33 and I-32, K7/K8 zero tolerance for flaky tests,
   `tests/postgres/test_faults.py`
 - **What:** one full `pytest tests/postgres` run under four CPU burners (local PostgreSQL 16) failed with "DID NOT
-  RAISE OperationalError". Cause: the fault proxy, not `SessionLock`. For `inflight` the proxy forwarded the batch and
-  only then closed both sides; when the forwarding thread was descheduled in between, the other proxy thread relayed
-  the server's complete answer (`ParseComplete` through `ReadyForQuery`; `pg_try_advisory_lock` answers in
-  microseconds), and the client correctly saw the lock taken. Reproduced under four CPU burners and a concurrent
-  `tests/postgres` loop: 16 of 300 runs failed, 5 of 100 with `--cov=tabrion --cov-branch`. An in-process probe saw
-  `try_acquire` return `True` in 5 of 300 attempts, each time after the proxy had relayed the answer past the cut.
-- **Fix:** the proxy closes the client side before it forwards the batch (contract I-33), so no answer can reach the
-  client however the threads are scheduled. The unit test `test_fault_proxy_inflight_lets_no_answer_through` holds the
-  forwarding thread until a fake server has answered; it fails 40 of 40 runs without the fix and passes 40 of 40 with
-  it. Under the same load: 300 of 300 and 200 of 200 (`--cov`) runs passed, and the probe saw 300 of 300 attempts
-  raise. A mutant `SessionLock` that swallows the error of the attempt still fails all three parameters of the test
-  (10 of 10 runs).
+  RAISE OperationalError" in `test_session_lock_raises_and_forgets[inflight]`. Cause: the fault proxy, not
+  `SessionLock`. For `inflight` the proxy forwarded the batch and only then closed both sides; when the forwarding
+  thread was descheduled in between, the other proxy thread relayed the server's complete answer (`ParseComplete`
+  through `ReadyForQuery`; `pg_try_advisory_lock` answers in microseconds), and the client correctly saw the lock
+  taken. Reproduced under four CPU burners and a concurrent `tests/postgres` loop: 16 of 300 runs failed, 5 of 100
+  with `--cov=tabrion --cov-branch`. An in-process probe saw `try_acquire` return `True` in 5 of 300 attempts, each
+  time after the proxy had relayed the answer past the cut. The same race made
+  `test_ping_reports_a_lost_connection[inflight]` report `PingResult(ok=True)` (6 of 1000 runs under load in the
+  review of #55; the answer of `pg_is_in_recovery` is just as fast). `test_t170_cut_in_flight` could in principle be
+  hit too (its `INSERT` answers more slowly).
+- **Fix:** the proxy mutes the connection before it forwards the batch (the server-to-client thread drops every
+  message from then on, as `reply` does with its own flag), forwards the batch through its `Sync` or `Flush`, also
+  when it arrives in several reads (review F-3; before, only what one read had brought was forwarded), and then closes
+  both sides (contract I-33). A first version closed the client side before forwarding; the review of #55 (F-1) showed
+  that a server message at that moment made the other thread close the server side too, so the batch never left. Unit
+  tests against a fake server: `test_fault_proxy_inflight_lets_no_answer_through` holds the forwarding thread until
+  the answer was relayed or held back (fails on master's proxy),
+  `test_fault_proxy_inflight_forwards_the_batch_when_the_server_writes_at_the_cut` sends a `NoticeResponse` between
+  mute and forward (fails when the mute is replaced by closing the client), and
+  `test_fault_proxy_inflight_forwards_a_batch_split_across_reads` sends `Bind`, `Execute` and `Sync` after the fault
+  fired (fails on master's proxy). Under the same load after the fix: `test_session_lock_raises_and_forgets[inflight]`
+  and `test_ping_reports_a_lost_connection[inflight]` 250 of 250 each (100 of 100 each with `--cov`),
+  `test_t170_cut_in_flight` 100 of 100 runs, `tests/examples -k cut-while` 20 of 20, all of `test_faults.py` 30 of 30,
+  the three unit tests 300 of 300. A mutant `SessionLock` that swallows the error of the attempt still fails all three
+  parameters of the session-lock test (10 of 10 runs).
 - **Next step:** close this entry after the pull request merges.
 
 ### TB-025 · Localized server messages are not tested in CI (TABRION TAB-010, TAB-T-E15)
