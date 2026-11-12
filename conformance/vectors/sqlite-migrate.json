@@ -1,6 +1,6 @@
 {
   "format": "ldp-vectors/1",
-  "standard_version": "LDP-0.1.0",
+  "standard_version": "LDP-0.1.1",
   "area": "sqlite-migrate",
   "vectors": [
     {

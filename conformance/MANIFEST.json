@@ -1,22 +1,22 @@
 {
   "comment": "SHA-256 of every file of the Levuvo Database Profile (TAB-050). Regenerate with 'python -m tests.support.conformance --write' and name 'LDP-<version> digest <12 hex>' in CHANGELOG.md.",
   "format": "ldp-manifest/1",
-  "standard_version": "LDP-0.1.0",
+  "standard_version": "LDP-0.1.1",
   "files": {
-    "conformance/SPEC.md": "c07714eb638417600155e2f0fd166af76ec6d701d475bb2e963a1329a8236f9b",
+    "conformance/SPEC.md": "c7527ac588ae5bace3940038ff3ceabe84013214e8da7d85c5e1d952762dbbfd",
     "conformance/schema/vector-file.schema.json": "d9ad84c02b7280cc6521abbea0b9e935fc908ddb0ee4faf3b77624cd24d83a1f",
-    "conformance/vectors/errors-classification.json": "8c8bae64a9a791b92c24749a7f89034e777c9cedbf8cc50b01469dd2d9fddf7b",
-    "conformance/vectors/errors-redaction.json": "9f482137996bdeb02a1241ddd19ff9ecde6561857f78902e70f6d377fff3bb5f",
-    "conformance/vectors/postgres-extensions.json": "a63ed5d38d94d35cf929b2ce7ca0dd3a0ea52be0777ce03b83ccb81bbcf659b8",
-    "conformance/vectors/postgres-locks.json": "d477b6226205509950498c72769829ebd6fc067b4c1db428e0a90b8b72832910",
-    "conformance/vectors/postgres-roles.json": "d7a8c790da620017d0c4c3eba07af507d78bdfe5363656cc60a28b0cff84c807",
-    "conformance/vectors/postgres-session.json": "f3819e815720ea2456372d737a5cf6bb36ffd9b42a42b09e7e9d9c6030082a74",
-    "conformance/vectors/sql-split.json": "c72bc6d9e095e7176dc10f351126fd7862698bc6e4ef38119606886ca54efc04",
-    "conformance/vectors/sqlite-migrate.json": "736da09cddb54a04fb4033fac17722018638642ea737fa9c4ce577d8eb01c081",
-    "conformance/vectors/sqlite-profile.json": "6a9215470c37a631a9756c2f1778933b1e72e8c9206c10d989f80c42f369bbd4",
-    "conformance/vectors/sqlite-transactions.json": "1c1eaa2984f75cc98b06fdd548ea2c3ac97895b92ab47bbba1387599bd35706b",
+    "conformance/vectors/errors-classification.json": "66c748e5358abaa93381180f8f253fb7e3324ce4624688564f53990105546286",
+    "conformance/vectors/errors-redaction.json": "6c322a6e710c1e64cef883dff383a85eb9c7144f93821c68f142298842118dab",
+    "conformance/vectors/postgres-extensions.json": "b2993880d1fc5583152ec9b8147aca3577035fc2524fa0360fdb06aa4aa27e27",
+    "conformance/vectors/postgres-locks.json": "f965891175ffe0602d13ebc42e99a5785b4bb5bf82b392574c76d3342a5a8be0",
+    "conformance/vectors/postgres-roles.json": "caa0b1b6fa7cb84c602fa868bd20e7ff3fda9d44a3acc36a8c4d5bf1cb121b9a",
+    "conformance/vectors/postgres-session.json": "ae166929b46bfbf7f55dd91273f17fe5110388243c38ee40ba4ccf360d98afe6",
+    "conformance/vectors/sql-split.json": "6a3b42910077e2ea007a8e5b6c183ac494b846d10e795b59040a9a4b51f7a2f6",
+    "conformance/vectors/sqlite-migrate.json": "b1df64dffa1c304a2d290fb3692b69375b462885762ae331007930d065dda0f8",
+    "conformance/vectors/sqlite-profile.json": "6417f0f1dafdb76e9b96bb6a3bdae4d91de6dbc84f44bc5d876c1942b3ccce40",
+    "conformance/vectors/sqlite-transactions.json": "0ad579ab2098d44ed05f00f68412d09da19b70368e412492252375471e7b45ff",
     "tests/conformance/actions.py": "95607a7e864bc0dba4c47507a33bc681f30c44753e6a3145d0452c5bb2fa19ab",
-    "tests/postgres/test_conformance_vectors.py": "a756b243b859cb56fb02a5adb2a7cc2182e845ba720ecf27ca0f63f75d4ce7d6"
+    "tests/postgres/test_conformance_vectors.py": "790ba2622e856536e2341f355dab725a777979c246674bc374a97ca5149f72cc"
   },
-  "digest": "d70eeb2a7dc5e47e261c2522c12afdcb84eef87395c77376bb28ed47c9270fd1"
+  "digest": "575fd6b03028e3823f063a48960ac26d2b464b39f643ff74d889efe6838f396b"
 }
