@@ -1,0 +1,179 @@
+{
+  "format": "ldp-vectors/1",
+  "standard_version": "LDP-0.1.0",
+  "area": "postgres-locks",
+  "vectors": [
+    {
+      "id": "LDP-PGL-001",
+      "level": "MUST",
+      "rule": "PGL-1",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "lock_acquire",
+        "args": {
+          "steps": [
+            [
+              "a",
+              "try_acquire"
+            ],
+            [
+              "b",
+              "try_acquire"
+            ],
+            [
+              "a",
+              "release"
+            ],
+            [
+              "b",
+              "try_acquire"
+            ]
+          ]
+        }
+      },
+      "expect": {
+        "results": [
+          true,
+          false,
+          null,
+          true
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:309-318; nodestro-runtime@463e0d9 src/nodestro_runtime/storage_postgres.py:521-560"
+    },
+    {
+      "id": "LDP-PGL-002",
+      "level": "MUST",
+      "rule": "PGL-2",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "lock_acquire",
+        "args": {
+          "steps": [
+            [
+              "a",
+              "try_acquire"
+            ],
+            [
+              "a",
+              "try_acquire"
+            ],
+            [
+              "a",
+              "release"
+            ],
+            [
+              "a",
+              "holds"
+            ],
+            [
+              "b",
+              "try_acquire"
+            ],
+            [
+              "a",
+              "release"
+            ],
+            [
+              "a",
+              "holds"
+            ],
+            [
+              "b",
+              "try_acquire"
+            ]
+          ]
+        }
+      },
+      "expect": {
+        "results": [
+          true,
+          true,
+          null,
+          true,
+          false,
+          null,
+          false,
+          true
+        ]
+      },
+      "provenance": "tabrion docs/api/contract.md section 4 (SessionLock)"
+    },
+    {
+      "id": "LDP-PGL-003",
+      "level": "MUST",
+      "rule": "PGL-3",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "lock_connection_lost",
+        "args": {}
+      },
+      "expect": {
+        "holds_after_loss": false
+      },
+      "provenance": "tabrion docs/api/contract.md section 4 (SessionLock)"
+    },
+    {
+      "id": "LDP-PGL-004",
+      "level": "MUST",
+      "rule": "PGL-4",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "lock_acquire",
+        "args": {
+          "steps": [
+            [
+              "a",
+              "try_acquire"
+            ],
+            [
+              "b",
+              "acquire_timeout_0.3"
+            ]
+          ]
+        }
+      },
+      "expect": {
+        "results": [
+          true,
+          false
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:309-318"
+    },
+    {
+      "id": "LDP-PGL-005",
+      "level": "MUST",
+      "rule": "PGL-4",
+      "engine": "postgres",
+      "since": "LDP-0.1.0",
+      "action": {
+        "name": "lock_acquire",
+        "args": {
+          "steps": [
+            [
+              "a",
+              "try_acquire"
+            ],
+            [
+              "b",
+              "waiter_state"
+            ]
+          ]
+        }
+      },
+      "expect": {
+        "results": [
+          true,
+          "idle"
+        ]
+      },
+      "provenance": "axentra@ea7aa9f src/axentra/data/migrations.py:309-318",
+      "note": "while b polls, its backend is idle: no statement and no snapshot stay open"
+    }
+  ]
+}

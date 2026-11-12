@@ -77,4 +77,7 @@
 
 ## Changes from the plan
 
-None. The `conformance/` directory and the CI job `conformance` arrive with TAB-050 (M2).
+- TAB-050 (M2) added `conformance/` (LDP-0.1.0) and the loader `tests/support/conformance.py`. The check that a
+  changed expectation has a CHANGELOG entry is a digest that `CHANGELOG.md` must name (contract I-82). The vectors
+  run in the existing CI jobs; the job `conformance` of its own needs a workflow change (TODO TB-092, deviation
+  D-92).

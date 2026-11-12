@@ -41,7 +41,7 @@ def upgrade() -> None:
         sa.Column(
             "material_id",
             ID,
-            sa.ForeignKey("material.id", name="fk_part_material", ondelete="RESTRICT"),
+            sa.ForeignKey("material.id", name="fk_part_material"),
             nullable=False,
         ),
         sa.Column("status", sa.String(16), nullable=False, server_default=sa.text("'draft'")),
@@ -79,7 +79,7 @@ def upgrade() -> None:
         sa.Column(
             "component_id",
             ID,
-            sa.ForeignKey("part.id", name="fk_part_relation_component", ondelete="RESTRICT"),
+            sa.ForeignKey("part.id", name="fk_part_relation_component"),
             nullable=False,
         ),
         sa.Column("quantity", ExactDecimal(12, 3), nullable=False),
