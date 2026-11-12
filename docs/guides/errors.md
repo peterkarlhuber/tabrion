@@ -146,6 +146,12 @@ The `DatabaseError` subclasses group the kinds: `ConnectionFailed` (connection, 
 check, exclusion), `PermissionDenied`, `ReadOnlyViolation`, `StatementError` (syntax, undefined object, data),
 `StorageCorrupt` (corrupt, disk full) and `UnknownDatabaseError`.
 
+A statement that writes a parameter with a `::` cast, such as `:x::int`, leaves the parameter unbound: SQLAlchemy
+reads `:x` as a parameter only when no `:` follows. PostgreSQL then reports `database.syntax`, SQLite
+`database.unknown`. Such an error carries `details={"hint": "write CAST(:name AS type) instead of :name::type"}`, so
+its text reads `database.syntax (hint=write CAST(:name AS type) instead of :name::type): syntax error (SQLSTATE
+42601)`. The hint is fixed text: it never names the parameter, its value or the statement.
+
 ```pycon
 >>> from tabrion import Database
 >>> from tabrion.errors import IntegrityViolation, TabrionError

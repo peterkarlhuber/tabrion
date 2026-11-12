@@ -49,7 +49,7 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 | TAB-T-022 | DI-09: decimal amounts round-trip exactly on both engines in the recommended pattern | `tests/examples/parts_suite.py::PartsSuite::test_values_round_trip_exactly`, `tests/examples/parts_suite.py::PartsSuite::test_decimals_order_and_compare_alike_on_both_engines`, `tests/examples/parts_suite.py::PartsSuite::test_decimals_are_stored_scaled_on_sqlite_and_numeric_on_postgresql`, `tests/examples/test_parts.py::test_exact_decimal_precision_limit` | Covered |
 | TAB-T-023 | Probe S2: the reference app's STRICT or CHECK pattern enforces the length and type | `tests/examples/parts_suite.py::PartsSuite::test_constraints_hold_on_both_engines`, `tests/examples/parts_suite.py::PartsSuite::test_every_check_has_a_case`, `tests/examples/test_measurements.py::test_a_constraint_violation_becomes_a_fixed_error` | Covered |
 | TAB-T-024 | Probe S4: `connect` sets `journal_mode=wal` for files | `tests/sqlite/test_connect.py::test_s10_pragmas_after_connect`, `tests/sqlite/test_findings.py::test_k02_journal_mode_not_wal` | Covered |
-| TAB-T-025 | Probe P5 (`:x::int`): a doc example with `CAST`; a test shows the error message with its hint | `tests/postgres/test_database.py::test_t025_double_colon_cast_is_a_syntax_error`, `tests/unit/test_database.py::test_t025_double_colon_cast_on_sqlite`; the guides show `CAST(:x AS int)` (`docs/guides/database.md`, `docs/guides/portability.md`). The tests pin the error (PostgreSQL `Kind.SYNTAX`, SQLSTATE 42601; SQLite `Kind.UNKNOWN`) and the `CAST` form; the error carries no hint that names the collision | Partial (TB-139) |
+| TAB-T-025 | Probe P5 (`:x::int`): a doc example with `CAST`; a test shows the error message with its hint | `tests/postgres/test_database.py::test_t025_double_colon_cast_is_a_syntax_error`, `tests/postgres/test_database.py::test_t025_double_colon_cast_carries_a_hint_on_postgres`, `tests/unit/test_database.py::test_t025_double_colon_cast_on_sqlite`, `tests/unit/test_database.py::test_t025_double_colon_cast_carries_a_hint_on_sqlite`, `tests/unit/test_database.py::test_t025_no_hint_without_the_pattern_or_for_other_kinds`, `tests/unit/test_database.py::test_t025_parameter_cast_pattern`; the guides show `CAST(:x AS int)` (`docs/guides/database.md`, `docs/guides/portability.md`) and the hint (`docs/guides/errors.md`). The error keeps its kind (PostgreSQL `SYNTAX`, SQLSTATE 42601; SQLite `UNKNOWN`) and carries `details["hint"]` (contract I-107); the `CAST` form works on both engines | Covered |
 | TAB-T-101 | TM-01, SR-01: no Bandit or ruff `S608` finding in `src/` and `examples/` | ruff with rule set `S` (`pyproject.toml`), run by the CI jobs `lint` (`ruff check .`) and `security` (`ruff check --select S src examples`); `CONTRIBUTING.md` records ruff `S` as the Bandit substitute. Not a pytest test | Covered |
 | TAB-T-102 | TM-01: an identifier with `"` or `;` is quoted correctly or refused | `tests/postgres/test_grants.py::test_r18_quoted_names_and_a_hostile_search_path`, `tests/postgres/test_session.py::test_p01_search_path_is_quoted`, `tests/postgres/test_health.py::test_p14_command_quotes_the_schema`, `tests/sqlite/test_checks.py::test_s38_table_name_is_quoted` | Covered |
 | TAB-T-110 | TM-02, SR-05: the canary value never appears in `str`, `repr`, a traceback or a log record, for every `Kind` | `tests/security/test_canary_sqlite.py::test_t110_layer_a_statement_errors`, `tests/security/test_canary_sqlite.py::test_t110_layer_b_connection_unknown_resource`, `tests/postgres/test_canary_postgres.py::test_t110_layer_a_serialization`, `tests/postgres/test_canary_postgres.py::test_t110_layer_b_serialization_and_deadlock`, `tests/unit/test_errors.py::test_e10_canary_never_in_safe_message` | Covered |
@@ -88,17 +88,15 @@ success and one failure case per engine) and for K8 (security regression TAB-T-1
 
 ## Summary
 
-- **Covered:** 50 IDs (two of them, TAB-T-211 and TAB-T-212, on staged 0.2 APIs; TAB-T-009 in the nightly job
+- **Covered:** 51 IDs (two of them, TAB-T-211 and TAB-T-212, on staged 0.2 APIs; TAB-T-009 in the nightly job
   `pg restart` only).
-- **Partial:** 2 IDs.
-  - TAB-T-025: the error for `:x::int` is tested, but it has no hint (TB-139).
+- **Partial:** 1 ID.
   - TAB-T-123: no randomized 1,000x race (TB-045).
 - **Gap:** 1 ID.
   - TAB-T-300: benchmark, not a gate (TB-140).
 
 The open parts belong to these categories:
 
-- Portability: TAB-T-025 (the hint only).
 - Symbolic-link race: TAB-T-123 (the randomized repetition only).
 - A non-gating benchmark: TAB-T-300.
 

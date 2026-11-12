@@ -2,8 +2,9 @@ name: Platforms
 
 # 05 section 2.5: the SQLite suite on macOS and Windows (other SQLite builds; Windows has no O_NOFOLLOW). On pull
 # requests only when SQLite code or tests, the modules and metadata they depend on (TODO TB-021), the LDP vectors
-# (TAB-050 review H-1), the Windows-specific paths of the downstream runner and golden replay (TB-134) or this
-# workflow change; the manifest's path_filters copy this filter. Nightly always.
+# (TAB-050 review H-1), the Windows-specific paths of the downstream runner and golden replay (TB-134), the skip
+# guard and its allowlist (TB-141) or this workflow change; the manifest's path_filters copy this filter. Nightly
+# always.
 on:
   pull_request:
     paths:
@@ -17,6 +18,7 @@ on:
       - "src/tabrion/errors.py"
       - "src/tabrion/sqlite.py"
       - "src/tabrion/testing/sqlite.py"
+      - "tests/ci/**"
       - "tests/conformance/**"
       - "tests/conftest.py"
       - "tests/sqlite/**"
@@ -28,6 +30,12 @@ on:
 
 permissions:
   contents: read
+
+# TB-141 (07 section 4.3, G-T2): every pytest run fails on a skip or non-strict xfail reason that is not in the
+# reviewed allowlist tests/ci/skip-reasons.txt and lists its skipped node IDs (tests/ci/skipguard.py, loaded by
+# tests/conftest.py).
+env:
+  TABRION_SKIP_GUARD: "1"
 
 concurrency:
   group: platforms-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
