@@ -91,9 +91,11 @@ Every release that deprecates, removes or tightens something (S-3, S-5, S-8) not
 final SHA is recorded:
 
 1. Run `python scripts/api_surface.py --base <SHA of the previous release>`: every surface change since the previous
-   release is in the CHANGELOG.
-2. Check the `downstream` nightly (S-7) on the release commit, or, while that job is not in the workflows (TB-070),
-   a local `python scripts/downstream.py --strict` run: green, and without deprecation warnings when the release
+   release is in the CHANGELOG. In the `release.yml` dispatch, set the input `previous` to the full SHA of the
+   previous release commit: release tags are optional (D-67) and none exists, so without the input
+   `downstream-notice` finds no earlier tag and compares nothing.
+2. Check the `downstream` nightly (S-7) on the release commit (the job `downstream (not blocking)` of `nightly.yml`),
+   or a local `python scripts/downstream.py --strict` run: green, and without deprecation warnings when the release
    removes a name.
 3. Notify each consumer repository that uses an affected name (axentra, orkexa, nodestro-runtime; then nodestro-api,
    nodestro-sdk, tabrion-studio) with one issue titled `Tabrion <version>: deprecations and removals`. It lists each
@@ -106,6 +108,8 @@ final SHA is recorded:
 4. Record the release SHA (and set the optional tag) only after steps 1 to 3. This needs no G-R (D-67). A public
    publication (PyPI, a GitHub release, an announcement) additionally needs G-R.
 
-The automation of steps 1 and 2 in the workflows (`ci.yml` job `api surface` with `--base`, a release gate in
-`release.yml`) is recorded in [TODO.md](../TODO.md) (TB-090). The issues of step 3 stay a manual step of the owner or
-the coordinator. Until then the release checklist runs steps 1 and 2 by hand.
+Step 1 runs in the workflows: the `ci.yml` job `api surface` runs `--base <merge base>` on every pull request, and the
+`release.yml` job `downstream-notice` runs `--base <input previous, or the previous tag>` (informational) and prints the
+issues of step 3 as a checklist ([TODO.md](../TODO.md) TB-090, done). Step 2 stays a check of the release checklist,
+because the `downstream` job is not blocking, and the issues of step 3 stay a manual step of the owner or the
+coordinator.
