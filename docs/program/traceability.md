@@ -98,5 +98,6 @@ The open part belongs to this category:
 
 - A non-gating benchmark: TAB-T-300.
 
-K8's TAB-T-101..191 has no gap and no partial row. The owner decides with TAB-040 whether each open part blocks
-G-T2 or becomes a deviation.
+K8's TAB-T-101..191 has no gap and no partial row. TAB-T-300 does not block G-T2 for 0.1.0: plan 07 marks the
+benchmark as not a gate, and deviation D-86 in [STATUS](STATUS.md#deviation-log) records the gap (TODO TB-140 stays
+open).

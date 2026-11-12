@@ -21,14 +21,16 @@ TAB-040 readiness pull request on master `532da05`: TB-022 done, TB-135..TB-140 
 TB-141 new, TB-086, TB-130, TB-135 and TB-136 in progress; TAB-040 gap tests pull request: TB-137 (TAB-T-161 and
 TAB-T-162) and TB-138 done, TB-139 narrowed; TB-139 pull request #49: TB-139 done; TB-141 review follow-up pull
 request: TB-141 done; LDP-PGL-005 pull request #53: TB-142 new; fault proxy pull request #55: TB-143 new;
-TAB-040 version-bump pull request: TB-142 and TB-143 done after their merges, TB-011 in progress).
+TAB-040 version-bump pull request: TB-142 and TB-143 done after their merges, TB-011 in progress; `0.1.1.dev0`
+follow-up pull request after the release commit `d5821fa` (review of #56, L-3): TB-008, TB-009, TB-011, TB-017,
+TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follow-up).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 8 |
-| P2 Medium | 16 |
-| P3 Low | 45 |
+| P1 High | 6 |
+| P2 Medium | 11 |
+| P3 Low | 44 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -151,7 +153,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-008 · Consumer protection, conformance, stability policy (TABRION TAB-022, TAB-050, TAB-051)
 
-- **Priority:** P1 High · **Status:** Blocked · **Refs:** TABRION TAB-022, TAB-050, TAB-051, AC-5
+- **Priority:** P1 High · **Status:** Done (TAB-022 (b) green in the master nightlies; TB-070) · **Refs:** TABRION TAB-022, TAB-050, TAB-051, AC-5
 - **What:** golden files `tests/golden/` of the existing Nodestro and Axentra behavior (blocking job `golden files`)
   and the nightly `downstream` job (TAB-022); the internal "Levuvo Database Profile" with `conformance/SPEC.md`,
   vectors, manifest and the job `conformance` (TAB-050); the API stability policy and a deprecation helper
@@ -161,10 +163,13 @@ required (owner decision of 2026-11-08 11:26Z).
   The CI jobs are TB-070.
 - **Next step:** TAB-051 (#21, `4f777b4`) and TAB-050 (#27, `2e4b888`) are on master, and their CI jobs were wired by
   #34 (`4cd3d89`; TB-090, TB-092). Still open for TAB-022: one green nightly `downstream` run (TB-070).
+- **Closed (2026-11-12):** `downstream (not blocking)` was green in the master nightlies 43141696609 (`532da05`) and
+  43187265178 (`75dbee9`); TB-070 is done (review of #56, L-3).
 
 ### TB-009 · Quality suites and release path in this repository (TABRION QA-2, QA-4, QA-8, QA-11, QA-22)
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION QA-2, QA-4, QA-8, QA-11, QA-22
+- **Priority:** P2 Medium · **Status:** Done (QA-11 dry run 43191784224 on the release commit) · **Refs:** TABRION QA-2,
+  QA-4, QA-8, QA-11, QA-22
 - **What:** five quality work packages. Status on master `532da05`:
   - QA-2, the canary suite (no values in errors or logs): merged (#25, `a1c13cb`). TB-085 has its open points.
   - QA-4, the concurrency and stress suite: merged (#31, `a1c57a6`). Its nightly 200x job is TB-086 (in progress).
@@ -180,6 +185,11 @@ required (owner decision of 2026-11-08 11:26Z).
   breaks today (golden files are compared as JSON, the Windows job reads them); add both when a byte-compared
   fixture arrives, with `-text` for it.
 - **Next step:** the QA-11 dry run on the release commit (TAB-040).
+- **Closed (2026-11-12, review of #56, L-3):** all five are done. QA-4's nightly 200x job is TB-086 (done); QA-8's CI
+  and release SBOM steps are TB-130 (done except the CI artifact follow-up); the QA-11 dry run of `release.yml` on the
+  release commit `d5821faa8742dea012abda3b663549c038d76543` (run 43191784224) passed. F-1: `.gitattributes` exists
+  since TAB-050 (`2302ab9`, LF for the hashed LDP files); `.editorconfig` is still missing and is added with the next
+  byte-compared fixture.
 
 ### TB-010 · Reference applications and measurement report (TABRION RA-A-1..3, RA-B-1..4, RA-EVAL)
 
@@ -224,7 +234,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-011 · Documentation 0.1, internal alpha and release 0.1.0 (TABRION TAB-041, TAB-038, TAB-040)
 
-- **Priority:** P1 High · **Status:** In progress (TAB-040 version-bump pull request; release commit `RELEASE-SHA`) ·
+- **Priority:** P1 High · **Status:** Done (`v0.1.0` final: release commit `d5821faa8742dea012abda3b663549c038d76543`, #56, 2026-11-12) ·
   **Refs:** TABRION TAB-041, TAB-038, TAB-040, G-T2, RC-8
 - **What:** the guides of 0.1 (TAB-041, including `docs/guides/infrastructure-baseline.md` of ADR 0001; merged in
   #24, `7c5fc6e`); the internal
@@ -236,9 +246,10 @@ required (owner decision of 2026-11-08 11:26Z).
   No GitHub release and no PyPI upload without G-R.
 - **Next step:** TAB-038 is merged (#9, `a463422`, accepted after independent review). The agent created the
   annotated tag `v0.1.0a1` on that commit in its clone; the agent's Git proxy refuses tag pushes, so it is not on
-  GitHub. That is optional: consumers pin the commit SHA and nothing waits on the tag. TAB-041 is merged (#24);
-  TAB-040 remains (gap status in the TAB-040 readiness notes; TAB-T traceability in
-  `docs/program/traceability.md`).
+  GitHub. That is optional: consumers pin the commit SHA and nothing waits on the tag. TAB-041 is merged (#24).
+  TAB-040 is done: #56 merged as `d5821faa8742dea012abda3b663549c038d76543` (2026-11-12), the `v0.1.0` final release commit,
+  recorded in CHANGELOG `[0.1.0]`, `installation.md` and STATUS TAB-040; the follow-up pull request moves master to
+  `0.1.1.dev0`. The QA-11 dry run of `release.yml` on that SHA (run 43191784224) passed (STATUS QA-11).
 
 ### TB-022 · Release check: no 0.1 name is still a stub (TABRION TAB-040, G-T1 F-08)
 
@@ -319,7 +330,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-130 · Hashed build and SBOM step in CI and in the release workflow (TABRION QA-8)
 
-- **Priority:** P2 Medium · **Status:** In progress (the TAB-040 workflow pull request) · **Refs:** TABRION QA-8, QA-11,
+- **Priority:** P2 Medium · **Status:** Open (only the follow-up below: the CI SBOM as its own artifact) · **Refs:** TABRION QA-8, QA-11,
   07 TM-10, review of PR #30 (M-1)
 - **What:** `scripts/sbom.py` writes the CycloneDX SBOM of a wheel and is tested on the CI build's wheel, and
   `build-constraints.txt` pins the build backend with hashes, but no workflow uses either yet.
@@ -327,8 +338,12 @@ required (owner decision of 2026-11-08 11:26Z).
   the steps below are in place, taken over from the paused branch `claude/project-thread-rdo6g3-ci-sbom-wip`
   (`006753a`). `build and install` uploads `dist/` and `sbom/` as the artifact `dist`; the release `build` uploads
   `release-dist` and `release-sbom`; `attest` (opt-in) attests both. Nothing is published.
-- **Next step:** after the merge, the QA-11 dry run of `release.yml` on the version-bump merge commit shows the SBOM
-  artifact; then set this entry to Done. Follow-up (workflow review of #47, finding 4 and optional condition C-3; a
+- **Status note (2026-11-12, review of #56, L-3):** #47 merged as `8af5f8b`; the master CI push run 43187196995
+  (`75dbee9`) built with the hashed constraints and uploaded the artifact `dist` with `sbom/`. The QA-11 dry run of
+  `release.yml` on the release commit `d5821faa8742dea012abda3b663549c038d76543` (run 43191784224) passed and
+  uploaded `release-dist` and `release-sbom`, so the hashed build and the SBOM step are done in CI and in the release
+  workflow.
+- **Next step:** the follow-up below; then set this entry to Done. Follow-up (workflow review of #47, finding 4 and optional condition C-3; a
   workflow change, so not in #47): upload the CI SBOM as its own artifact `sbom`, as `release.yml` does, so that the
   artifact `dist` keeps the wheel at its root again. `release.yml` already uploads `release-dist` and `release-sbom`
   apart; only `ci.yml` job `build and install` remains. Not in the nightly K7 pull request, which changes only the
@@ -523,8 +538,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-017 · CI jobs that arrive with later work packages
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-022, TAB-034, TAB-050, QA-4, RA-A-1, RA-B-1;
-  deviation D-2
+- **Priority:** P3 Low · **Status:** Done (#34, #47, #50, #51; green master nightly 43187265178) · **Refs:** TABRION
+  TAB-022, TAB-034, TAB-050, QA-4, RA-A-1, RA-B-1; deviation D-2
 - **What:** `conformance`, `golden files` and `examples` in `ci.yml` (`api surface` arrived with TAB-023); fault injection, stress and
   `downstream` in `nightly.yml`. Each is added with its work package and listed in `.github/ci-manifest.json`.
 - **Status note (2026-11-08, workflow-change pull request on branch `claude/project-thread-rdo6g3-ci-wiring`):**
@@ -577,6 +592,12 @@ required (owner decision of 2026-11-08 11:26Z).
     measurements (left alone so as not to collide with the TB-141 edits of `ci.yml`); update it with the next
     `ci.yml` change.
   The TAB-T traceability check (`tests/unit/test_traceability.py`) runs in the unit jobs and needs no wiring.
+- **Closed (2026-11-12, the `0.1.1.dev0` follow-up pull request, review of #56, L-3):** every job of this entry is on
+  master: `conformance`, `golden files`, `examples` (#34, `4cd3d89`; guards removed in #47, `8af5f8b`, TB-135),
+  `downstream` (TB-070), `stress (200 repetitions)` (TB-086) and `pg restart` (TB-136), with fault injection 3x in
+  the `pg` jobs (#50, `a0d935d`) and the skip guard instead of per-job skip lists (#51, TB-141, D-79). The master
+  nightly 43187265178 on `75dbee9` was green in every job. The comment above the `coverage` job in `ci.yml` now names
+  the current floors and the measurement of the master CI run 43187196995 (comment-only workflow change).
 
 ### TB-090 · Workflow steps of the API stability policy (TABRION TAB-051, deviation D-90)
 
@@ -680,7 +701,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-135 · Workflow follow-ups of the TAB-040 readiness pull request: guards, `--no-stubs`
 
-- **Priority:** P2 Medium · **Status:** In progress (the TAB-040 workflow pull request) · **Refs:** TABRION TAB-040, TB-017, TB-022, QA-11, workflow review C-2
+- **Priority:** P2 Medium · **Status:** Done (#47, `8af5f8b`) · **Refs:** TABRION TAB-040, TB-017, TB-022, QA-11, workflow review C-2
 - **What:** two changes to `.github/`, which need a separate workflow-change pull request with the label
   `workflow-change-reviewed`. This pull request changes no workflow.
   - The two transitional guards of `ci.yml` are dead code now, because #21 (`4f777b4`) and #27 (`2e4b888`) are on
@@ -696,10 +717,12 @@ required (owner decision of 2026-11-08 11:26Z).
   event; `release.yml` has the job `surface` (`api_surface.py --no-stubs` on the resolved release commit), and
   `build` needs it.
 - **Next step:** Done once that pull request merges.
+- **Closed (2026-11-12):** #47 merged as `8af5f8b`; `api surface` with `--base` and `--no-stubs` and `conformance`
+  without the guard are green on master since (review of #56, L-3).
 
 ### TB-136 · TAB-T-009: first request after a database restart (K7 nightly case)
 
-- **Priority:** P2 Medium · **Status:** In progress (the TAB-040 workflow pull request) · **Refs:** planning document 07 DI-05, K7, probe P3; TAB-034;
+- **Priority:** P2 Medium · **Status:** Done (#47, `8af5f8b`; green master nightly 43187265178) · **Refs:** planning document 07 DI-05, K7, probe P3; TAB-034;
   `docs/program/traceability.md`
 - **What:** no test restarts the PostgreSQL server and checks that the first request through a layer-B `Database`
   (with `pool_pre_ping`) succeeds. Related tests exist: `test_p07_terminated_backend` ends a session, and
@@ -715,6 +738,8 @@ required (owner decision of 2026-11-08 11:26Z).
   binding and data across a restart. Checked locally on a private PostgreSQL 16 cluster with
   `pg_ctl restart` (passes; it fails when both pools lack pre_ping).
 - **Next step:** the first green nightly with `pg restart`; then Done.
+- **Closed (2026-11-12):** #47 merged as `8af5f8b`. `pg restart` was green in the branch nightlies 43170623313 and
+  43178965598 and in the master nightly 43187265178 on `75dbee9` (review of #56, L-3).
 
 ### TB-137 · TAB-T-162 RLS table with two tenants, TAB-T-161 next checkout is idle
 
@@ -768,7 +793,8 @@ required (owner decision of 2026-11-08 11:26Z).
   `docs/program/traceability.md`
 - **What:** the plan asks for a nightly benchmark that warns above 2x the baseline and is not a gate. It does not
   exist yet. RA-EVAL measures the overhead once.
-- **Next step:** with RA-EVAL, or after 0.1.0.
+- **Next step:** with RA-EVAL, or after 0.1.0. Not a gate (plan 07): G-T2 for 0.1.0 does not wait for it, recorded as
+  deviation D-86 (review of #56, L-4). The entry stays open at P4.
 
 ### TB-141 · Skip guard instead of per-job skip lists (planning document 07 section 4.3, deviation D-79)
 
@@ -1149,7 +1175,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-086 · Nightly `stress` job: 200 repetitions (TABRION QA-4)
 
-- **Priority:** P2 Medium · **Status:** In progress (the TAB-040 workflow pull request) · **Refs:** TABRION QA-4, planning document 07 K6 and section 4.3,
+- **Priority:** P2 Medium · **Status:** Done (#47, `8af5f8b`; green master nightly 43187265178) · **Refs:** TABRION QA-4, planning document 07 K6 and section 4.3,
   deviations D-2, D-85
 - **What:** the stress suite (`pytest -m stress`, `tests/stress.py`) repeats each scenario `TABRION_STRESS_REPEAT`
   times: 5 by default, so it runs on every pull request in the `test` and `pg (...)` jobs. The nightly run with 200
@@ -1164,6 +1190,9 @@ required (owner decision of 2026-11-08 11:26Z).
   gate waits for a green nightly). Not a ci-ok check.
 - **Next step:** QA-4's "nightly `stress` 200 repetitions without loss" is checked on the first nightly; then Done and
   D-85 closed.
+- **Closed (2026-11-12):** #47 merged as `8af5f8b`. `stress (200 repetitions)` was green in the branch nightlies
+  43170623313 and 43178965598 and in the first master nightly with the job, 43187265178 on `75dbee9`. QA-4 is done
+  and D-85 is closed (review of #56, L-3).
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
@@ -1309,7 +1338,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-070 · CI jobs `golden files` and nightly `downstream` (TABRION TAB-022)
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-022, TB-017, specification S-7, contract I-61
+- **Priority:** P2 Medium · **Status:** Done (#34, `4cd3d89`; green nightlies) · **Refs:** TABRION TAB-022, TB-017, specification S-7, contract I-61
 - **What:** the golden tests run today in the existing unit and `pg` jobs. The plan wants a job `golden files` in
   `ci.yml` (blocking) and a job `downstream` in `nightly.yml` that runs `python scripts/downstream.py --summary
   "$GITHUB_STEP_SUMMARY"` against a PostgreSQL service (not blocking; its result is a release-gate criterion of
@@ -1320,6 +1349,9 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** both jobs are in the workflow-change pull request of TB-017 (`golden files` in `ci.yml` and the
   manifest; `downstream (not blocking)` in `nightly.yml`, `continue-on-error`, not in the needs of `report`); close
   this entry when it is merged. Release-flow step 2 reads the nightly summary by hand.
+- **Closed (2026-11-12):** both jobs are on master since #34 (`4cd3d89`). `downstream (not blocking)` was green in
+  the master nightlies 43141696609 (`532da05`) and 43187265178 (`75dbee9`), so TAB-022 (b) has its green run (review
+  of #56, L-3).
 
 ### TB-071 · Record `pgvector_status` on a server with pgvector (TABRION TAB-022)
 

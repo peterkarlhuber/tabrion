@@ -6,11 +6,17 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Changed
+
+- Master builds as `0.1.1.dev0` after the `0.1.0` release commit `d5821faa8742dea012abda3b663549c038d76543` (TAB-040,
+  the TB-053 pattern), so later commits never build as `0.1.0`. The release commit's full SHA is recorded in
+  `[0.1.0]` below, in the installation guide and in STATUS TAB-040.
+
 ## [0.1.0] - 2026-11-12
 
 TABRION TAB-040, gate G-T2: `v0.1.0` final. The release commit is the merge commit of the pull request that sets
-this version: `RELEASE-SHA` (recorded by the follow-up pull request that moves master to `0.1.1.dev0`; ADR 0009,
-amendment of 2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.1.0` on it is an
+this version (#56): `d5821faa8742dea012abda3b663549c038d76543` (recorded by the follow-up pull request that moves
+master to `0.1.1.dev0`; ADR 0009, amendment of 2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.1.0` on it is an
 optional label. No PyPI upload, no GitHub release and no announcement (G-R). It satisfies the final range
 `tabrion>=0.1,<0.2` (RC-8).
 

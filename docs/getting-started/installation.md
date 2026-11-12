@@ -18,7 +18,7 @@ version (`0.1.1.dev0`), so no other commit builds as `0.1.0`. Consumers pin that
 
 | Version | Release commit (full SHA) | Date |
 |---|---|---|
-| `0.1.0` | `RELEASE-SHA` (recorded by the pull request that moves master to `0.1.1.dev0`) | 2026-11-12 |
+| `0.1.0` | `d5821faa8742dea012abda3b663549c038d76543` | 2026-11-12 |
 
 Pin only a recorded release commit. pip does not check that: it accepts a pin on any master commit whose version is
 inside the range, for example `0.1.1.dev0`; only the architecture check AC-6 (planned, QA-15) refuses it. Always
