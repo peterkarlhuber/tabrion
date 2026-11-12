@@ -6,6 +6,8 @@ Inner runs use ``pytester`` in-process with the plugin loaded by ``-p`` and a sm
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -50,7 +52,7 @@ def test_listed_reasons_pass_and_the_summary_names_each_node(guarded: pytest.Pyt
     result.stdout.fnmatch_lines(
         [
             "*skip guard (enforce)*",
-            "2 skipped or non-strict xfail, 0 strict xfail; allowlist 2 patterns",
+            "2 checked (skip or xfail), 0 strict xfail in tests/examples/ (listed only); allowlist 2 patterns",
             "SKIP test_a.py::test_allowed: allowed reason",
             "SKIP test_a.py::test_other: allowed reason",
         ]
@@ -115,14 +117,10 @@ def test_a_module_level_skip_is_checked(guarded: pytest.Pytester) -> None:
     result.stdout.fnmatch_lines(["NOT ALLOWED SKIP test_a.py: could not import 'tabrion_no_such_module'*"])
 
 
-def test_non_strict_xfail_is_checked_and_strict_xfail_is_listed(guarded: pytest.Pytester) -> None:
+def test_non_strict_xfail_is_checked(guarded: pytest.Pytester) -> None:
     guarded.makepyfile(
         test_a="""
 import pytest
-
-@pytest.mark.xfail(strict=True, reason="baseline deviation")
-def test_strict():
-    assert False
 
 @pytest.mark.xfail(strict=False, reason="flaky: issue 1")
 def test_flaky_fails():
@@ -138,17 +136,105 @@ def test_unlisted_flaky(request):
 """
     )
     result = _run(guarded, "--skip-guard=enforce")
-    result.assert_outcomes(xfailed=3, xpassed=1)
+    result.assert_outcomes(xfailed=2, xpassed=1)
     assert result.ret == pytest.ExitCode.TESTS_FAILED
     result.stdout.fnmatch_lines(
         [
-            "3 skipped or non-strict xfail, 1 strict xfail; allowlist 2 patterns",
-            "XFAIL STRICT test_a.py::test_strict: baseline deviation",
+            "3 checked (skip or xfail), 0 strict xfail in tests/examples/ (listed only); allowlist 2 patterns",
             "XFAIL test_a.py::test_flaky_fails: flaky: issue 1",
             "XFAIL test_a.py::test_flaky_passes: flaky: issue 2",
             "NOT ALLOWED XFAIL test_a.py::test_unlisted_flaky: not listed",
         ]
     )
+
+
+STRICT = """
+import pytest
+
+@pytest.mark.xfail(strict=True, reason="{reason}")
+def test_strict():
+    assert False
+
+def test_imperative_strict(request):
+    request.applymarker(pytest.mark.xfail(strict=True, reason="{reason}"))
+    assert False
+"""
+
+
+def test_strict_xfail_is_checked_outside_tests_examples(guarded: pytest.Pytester) -> None:
+    """Review of #51, R-1: a strict xfail parks a failing test, so its reason needs an allowlist entry too."""
+    guarded.mkdir("tests")
+    guarded.makepyfile(**{"tests/test_outside": STRICT.format(reason="parked regression")})
+    result = _run(guarded, "--skip-guard=enforce")
+    result.assert_outcomes(xfailed=2)
+    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    result.stdout.fnmatch_lines(
+        [
+            "2 checked (skip or xfail), 0 strict xfail in tests/examples/ (listed only); allowlist 2 patterns",
+            "NOT ALLOWED XFAIL STRICT tests/test_outside.py::test_strict: parked regression",
+            "NOT ALLOWED XFAIL STRICT tests/test_outside.py::test_imperative_strict: parked regression",
+        ]
+    )
+    guarded.makepyfile(**{"tests/test_outside": STRICT.format(reason="flaky: listed")})
+    result = _run(guarded, "--skip-guard=enforce")
+    assert result.ret == pytest.ExitCode.OK
+    result.stdout.no_fnmatch_line("*NOT ALLOWED*")
+
+
+def test_strict_xfail_under_tests_examples_is_listed_only(guarded: pytest.Pytester) -> None:
+    """The baseline deviations of the example apps keep their reasons in that suite's own deviation table."""
+    guarded.mkdir("tests")
+    guarded.mkdir("tests/examples")
+    guarded.makepyfile(
+        **{
+            "tests/examples/test_example": STRICT.format(reason="baseline deviation")
+            + "\n@pytest.mark.xfail(strict=False, reason='not listed')\ndef test_flaky():\n    assert False\n"
+        }
+    )
+    result = _run(guarded, "--skip-guard=enforce")
+    result.assert_outcomes(xfailed=3)
+    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    result.stdout.fnmatch_lines(
+        [
+            "1 checked (skip or xfail), 2 strict xfail in tests/examples/ (listed only); allowlist 2 patterns",
+            "XFAIL STRICT tests/examples/test_example.py::test_strict: baseline deviation",
+            "XFAIL STRICT tests/examples/test_example.py::test_imperative_strict: baseline deviation",
+            "NOT ALLOWED XFAIL tests/examples/test_example.py::test_flaky: not listed",
+        ]
+    )
+    result.stdout.no_fnmatch_line("NOT ALLOWED XFAIL STRICT*")
+
+
+def test_imperative_and_notrun_xfail_reasons_have_no_prefix(guarded: pytest.Pytester) -> None:
+    """Review of #51, R-3: pytest 8.0 reports ``reason: <msg>``, later versions ``<msg>``; the guard sees ``<msg>``."""
+    guarded.makepyfile(
+        test_a="""
+import pytest
+
+def test_imperative():
+    pytest.xfail("flaky: imperative")
+
+@pytest.mark.xfail(run=False, reason="not run")
+def test_not_run():
+    assert False
+"""
+    )
+    result = _run(guarded, "--skip-guard=enforce")
+    result.assert_outcomes(xfailed=2)
+    result.stdout.fnmatch_lines(
+        ["XFAIL test_a.py::test_imperative: flaky: imperative", "NOT ALLOWED XFAIL test_a.py::test_not_run: *not run"]
+    )
+    result.stdout.no_fnmatch_line("*: reason: *")
+
+
+def test_reason_of_strips_the_prefixes() -> None:
+    def report(**fields: Any) -> pytest.TestReport:
+        return cast(pytest.TestReport, SimpleNamespace(**{"wasxfail": None, "longrepr": None, **fields}))
+
+    assert skipguard.reason_of(report(wasxfail="reason: imperative")) == "imperative"
+    assert skipguard.reason_of(report(wasxfail="reason: [NOTRUN] allowed")) == "[NOTRUN] allowed"
+    assert skipguard.reason_of(report(wasxfail="imperative")) == "imperative"
+    assert skipguard.reason_of(report(longrepr=("f.py", 1, "Skipped: why"))) == "why"
 
 
 def test_a_failing_run_keeps_its_status(guarded: pytest.Pytester) -> None:
@@ -174,3 +260,42 @@ def test_the_repository_allowlist_is_well_formed() -> None:
     duplicates = {p.regex.pattern for p in patterns if [q.regex.pattern for q in patterns].count(p.regex.pattern) > 1}
     assert not duplicates, f"listed twice: {sorted(duplicates)}"
     assert not [p.regex.pattern for p in patterns if p.regex.fullmatch("")], "a pattern matches an empty reason"
+
+
+# Arbitrary reasons that no reviewed pattern may accept (review of #51, R-2): a pattern like ``.+``, ``[\s\S]*`` or
+# an open tail on a listed prefix would disable the guard without any test failing.
+ARBITRARY_REASONS = (
+    "x",
+    "TODO",
+    "broken",
+    "flaky",
+    "skip",
+    "temporarily disabled",
+    "reason: anything",
+    "POSIX only, and anything else",
+    "PostgreSQL tests need one of anything at all",
+    "PostgreSQL tests need one of TABRION_TEST_POSTGRES; broken",
+    "the PostgreSQL extension 'vector' is unavailable and could not be activated; broken anyway",
+    "the PostgreSQL extension 'vector' is unavailable and could not be activated (any text)",
+    "could not import 'psycopg': anything",
+)
+# The real forms of the two formerly open patterns (src/tabrion/testing/postgres.py) must still pass.
+REAL_REASONS = (
+    "PostgreSQL tests need one of TABRION_TEST_POSTGRES",
+    "PostgreSQL tests need one of A_URL, B_URL",
+    "the PostgreSQL extension 'vector' is unavailable and could not be activated",
+    "the PostgreSQL extension 'citext' is available and could not be activated (InsufficientPrivilege, SQLSTATE 42501)",
+    "the PostgreSQL extension 'vector' is installed elsewhere and could not be activated (Error, SQLSTATE -)",
+)
+
+
+@pytest.mark.parametrize("reason", ARBITRARY_REASONS)
+def test_the_repository_allowlist_rejects_arbitrary_reasons(reason: str) -> None:
+    patterns = skipguard.parse_allowlist(Path(skipguard.ALLOWLIST).read_text(encoding="utf-8"))
+    assert not [p.regex.pattern for p in patterns if p.regex.fullmatch(reason)]
+
+
+@pytest.mark.parametrize("reason", REAL_REASONS)
+def test_the_repository_allowlist_accepts_the_real_postgres_reasons(reason: str) -> None:
+    patterns = skipguard.parse_allowlist(Path(skipguard.ALLOWLIST).read_text(encoding="utf-8"))
+    assert [p.regex.pattern for p in patterns if p.regex.fullmatch(reason)]
