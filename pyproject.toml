@@ -45,7 +45,7 @@ dev = [
     "hypothesis>=6",
     # The full JSON Schema check of the internal LDP vectors (TAB-050, API contract section 11).
     "jsonschema>=4.18",
-    "ruff>=0.8",
+    "ruff>=0.17.5,<0.18",  # TB-146: a new minor may add rules; raise it on purpose
     "mypy>=1.13",
     "import-linter>=2.1",
     # mkdocs-material pulls MkDocs 1.x; MkDocs 2 drops the plugin system that Material uses.
