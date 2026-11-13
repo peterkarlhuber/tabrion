@@ -11,6 +11,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - Master builds as `0.1.1.dev0` after the `0.1.0` release commit `d5821faa8742dea012abda3b663549c038d76543` (TAB-040,
   the TB-053 pattern), so later commits never build as `0.1.0`. The release commit's full SHA is recorded in
   `[0.1.0]` below, in the installation guide and in STATUS TAB-040.
+- The `dev` extra pins ruff to `>=0.17.5,<0.18` (TB-146), so a new ruff minor release cannot fail the lint job
+  without a change of ours; the unused `# noqa: B008` on `tabrion.postgres.configure` is gone (RUF100).
 
 ## [0.1.0] - 2026-11-12
 

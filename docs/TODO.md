@@ -15,6 +15,10 @@
 > 11:26Z.
 > Program status 2026-11-12 (branch `claude/project-thread-rdo6g3-status-stu024`): the owner accepted STU-024 before
 > STU-017 (STATUS.md D-122) and STU-021 before STU-017 (D-123); no item of this file changes.
+> Program status 2026-11-13 (branch `claude/project-thread-bjlq25-t02-status`): TABRION JQ-1..JQ-4, MIG-AXE-0, QA-13,
+> QA-21 and QA-25 set to done in STATUS.md after a check on GitHub; no item of this file changes. The same pull request
+> drops the `# noqa: B008` on `tabrion.postgres.configure` that current ruff reports as unused (RUF100, CI lint);
+> TB-146 new and done (ruff pinned to `>=0.17.5,<0.18` in the `dev` extra).
 
 ## Summary
 
@@ -1214,6 +1218,18 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Closed (2026-11-12):** #47 merged as `8af5f8b`. `stress (200 repetitions)` was green in the branch nightlies
   43170623313 and 43178965598 and in the first master nightly with the job, 43187265178 on `75dbee9`. QA-4 is done
   and D-85 is closed (review of #56, L-3).
+
+### TB-146 · ruff is unpinned in the lint job, so a new ruff release can break master
+
+- **Priority:** P3 Low · **Status:** Done (program status pull request #61) · **Refs:** TABRION QA-12, `pyproject.toml`
+  extra `dev` (was `ruff>=0.8`),
+  `.github/workflows/ci.yml` job `lint`
+- **What:** the lint job installs `.[dev]`, which takes the newest ruff. On 2026-11-13 a new release reported the
+  `# noqa: B008` on `tabrion.postgres.configure` as unused (RUF100), so `lint` failed on master and on every open
+  pull request with no change of ours (fixed by dropping the comment, program status pull request #61).
+- **Done:** the `dev` extra pins ruff to `>=0.17.5,<0.18` (the release that reported RUF100, and no new minor), so
+  a new minor ruff release no longer changes the lint result. Raise the bound on purpose, with the fixes the new
+  rules ask for.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
