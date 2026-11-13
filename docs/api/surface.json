@@ -1067,11 +1067,257 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.profilefile.ConnectionProfile": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str",
+        "engine: Engine",
+        "path: str | None = None",
+        "host: str | None = None",
+        "port: int | None = None",
+        "database: str | None = None",
+        "user: str | None = None",
+        "password: SecretRef | None = None",
+        "sslmode: str | None = None",
+        "environment: Environment | None = None",
+        "mode: Mode = 'read_only'",
+        "read_only_role: bool = False",
+        "statement_timeout_ms: int | None = None",
+        "application_name: str | None = None",
+        "allow: tuple[str, ...] = ()",
+        "schema_fingerprint: str | None = None",
+        "description: str | None = None"
+      ],
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.ConnectionProfile.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, engine: Engine, path: str | None = None, host: str | None = None, port: int | None = None, database: str | None = None, user: str | None = None, password: SecretRef | None = None, sslmode: str | None = None, environment: Environment | None = None, mode: Mode = 'read_only', read_only_role: bool = False, statement_timeout_ms: int | None = None, application_name: str | None = None, allow: tuple[str, ...] = (), schema_fingerprint: str | None = None, description: str | None = None) -> None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.ConnectionProfile.url": {
+      "kind": "method",
+      "signature": "(self) -> str",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.FORMAT_VERSION": {
+      "kind": "alias",
+      "value": "1",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.ProfileFile": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "profiles: tuple[ConnectionProfile, ...]",
+        "warnings: tuple[ProfileIssue, ...] = ()",
+        "version: int = 1"
+      ],
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.ProfileFile.__init__": {
+      "kind": "method",
+      "signature": "(self, profiles: tuple[ConnectionProfile, ...], warnings: tuple[ProfileIssue, ...] = (), version: int = 1) -> None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.ProfileFile.get": {
+      "kind": "method",
+      "signature": "(self, name: str) -> ConnectionProfile",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.ProfileFileError": {
+      "kind": "exception",
+      "bases": [
+        "ConfigurationError"
+      ],
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.ProfileFileError.__init__": {
+      "kind": "method",
+      "signature": "(self, issues: Sequence[ProfileIssue]) -> None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.ProfileIssue": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "pointer: str",
+        "code: str",
+        "severity: Severity = 'error'"
+      ],
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.ProfileIssue.__init__": {
+      "kind": "method",
+      "signature": "(self, pointer: str, code: str, severity: Severity = 'error') -> None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.SecretRef": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "kind: SecretKind",
+        "target: str | None = None"
+      ],
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.SecretRef.__init__": {
+      "kind": "method",
+      "signature": "(self, kind: SecretKind, target: str | None = None) -> None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.SecretRef.parse": {
+      "kind": "classmethod",
+      "signature": "(cls, text: str) -> SecretRef",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.dump": {
+      "kind": "function",
+      "signature": "(profiles: Iterable[ConnectionProfile]) -> str",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.load": {
+      "kind": "function",
+      "signature": "(path: str | os.PathLike[str]) -> ProfileFile",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.profilefile.parse": {
+      "kind": "function",
+      "signature": "(text: str | bytes) -> ProfileFile",
+      "since": "0.2",
+      "stability": "X"
+    },
     "tabrion.safe_url": {
       "kind": "function",
       "signature": "(url: str) -> str",
       "since": "0.1",
       "stability": "S"
+    },
+    "tabrion.schema.ColumnShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str",
+        "type: str",
+        "nullable: bool"
+      ],
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.ColumnShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, type: str, nullable: bool) -> None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.SchemaDifference": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "kind: DifferenceKind",
+        "table: str",
+        "column: str | None = None"
+      ],
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.SchemaDifference.__init__": {
+      "kind": "method",
+      "signature": "(self, kind: DifferenceKind, table: str, column: str | None = None) -> None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.SchemaDifference.breaking": {
+      "kind": "property",
+      "signature": "(self) -> bool",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.SchemaSnapshot": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "dialect: str",
+        "tables: tuple[TableShape, ...]"
+      ],
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.SchemaSnapshot.__init__": {
+      "kind": "method",
+      "signature": "(self, dialect: str, tables: tuple[TableShape, ...]) -> None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.SchemaSnapshot.from_json": {
+      "kind": "classmethod",
+      "signature": "(cls, text: str) -> SchemaSnapshot",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.SchemaSnapshot.table": {
+      "kind": "method",
+      "signature": "(self, name: str) -> TableShape | None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.SchemaSnapshot.to_json": {
+      "kind": "method",
+      "signature": "(self) -> str",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.TableShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str",
+        "columns: tuple[ColumnShape, ...]",
+        "primary_key: tuple[str, ...]"
+      ],
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.TableShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, columns: tuple[ColumnShape, ...], primary_key: tuple[str, ...]) -> None",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.compare": {
+      "kind": "function",
+      "signature": "(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDifference, ...]",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.fingerprint": {
+      "kind": "function",
+      "signature": "(snapshot: SchemaSnapshot) -> str",
+      "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.snapshot": {
+      "kind": "function",
+      "signature": "(inspector: sqlalchemy.Inspector, *, tables: Iterable[str] | None = None, schemas: Iterable[str] | None = None) -> SchemaSnapshot",
+      "since": "0.2",
+      "stability": "X"
     },
     "tabrion.sql.split_statements": {
       "kind": "function",

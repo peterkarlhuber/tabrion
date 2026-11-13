@@ -31,7 +31,15 @@ class Edge:
     """Distribution names the extra lists in ``pyproject.toml`` (checked by the meta test)."""
 
 
-CORE = ("tabrion", "tabrion.errors", "tabrion.sql", "tabrion.config", "tabrion.sqlite", "tabrion.check")
+CORE = (
+    "tabrion",
+    "tabrion.errors",
+    "tabrion.sql",
+    "tabrion.config",
+    "tabrion.sqlite",
+    "tabrion.check",
+    "tabrion.profilefile",
+)
 POSTGRES = ("tabrion.postgres", "tabrion.postgres.roles", "tabrion.postgres.locks")
 
 EDGES: dict[str, Edge] = {
@@ -46,7 +54,7 @@ EDGES: dict[str, Edge] = {
     "sqlalchemy": Edge(
         blocked=("sqlalchemy",),
         imports=(*CORE, *POSTGRES),
-        refuses=("tabrion:Database", "tabrion:Profile", "tabrion:Transaction"),
+        refuses=("tabrion:Database", "tabrion:Profile", "tabrion:Transaction", "tabrion:Result", "tabrion.schema"),
         hint='pip install "tabrion[sqlalchemy]"',
         probe=("postgres/roles.py", "import sqlalchemy"),
         requirements=("sqlalchemy",),

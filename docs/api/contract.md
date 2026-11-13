@@ -107,7 +107,7 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 
 | Module | `__all__` |
 |---|---|
-| `tabrion` | `Database`, `Health`, `Profile`, `TLSMode`, `TabrionError`, `Transaction`, `__version__`, `safe_url` (0.2 adds `Column`, `Result`) |
+| `tabrion` | `Column`, `Database`, `Health`, `Profile`, `Result`, `TLSMode`, `TabrionError`, `Transaction`, `__version__`, `safe_url` (`Column` and `Result` since 0.2) |
 | `tabrion.errors` | `Kind`, `Classification`, `classify`, `safe_message`, `DbErrorRedactionFilter`, and the 25 error classes of section 1.4 |
 | `tabrion.sql` | `split_statements` |
 | `tabrion.config` | `safe_url`, `url_from_env` |
@@ -115,6 +115,8 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 | `tabrion.postgres` | the names of section 4 (including the role and lock names, re-exported from `tabrion.postgres.roles` and `tabrion.postgres.locks`) |
 | `tabrion.check` | `check`, `Finding`, `Severity` |
 | `tabrion.migrations` | `status`, `require_current`, `SchemaStatus` |
+| `tabrion.profilefile` (since 0.2, experimental) | `FORMAT_VERSION`, `ConnectionProfile`, `ProfileFile`, `ProfileFileError`, `ProfileIssue`, `SecretRef`, `parse`, `load`, `dump` (section 5.9) |
+| `tabrion.schema` (since 0.2, experimental, extra `sqlalchemy`) | `ColumnShape`, `TableShape`, `SchemaSnapshot`, `SchemaDifference`, `snapshot`, `fingerprint`, `compare` (section 5.10) |
 | `tabrion.testing` | `configure`, `profiles`, the fixtures of section 6 (including `tabrion_role_setup`), `postgres_server_version`, `truncate_tables`, `require_extension`, `RoleSetup`, `TestRoles`, `PostgresSchema`, `PostgresDatabaseHandle` |
 | `tabrion.testing.profiles` | `SQLiteConnect`, `ProfileCase`, `PortabilityCase`, `sqlite_profile_cases`, `portability_cases` |
 
@@ -1226,6 +1228,158 @@ in the [deviation log](../program/STATUS.md#deviation-log).
 | I-104 | 5.3 | **One statement per `query` and `stream`; read-only** (the multi-statement escape of the Studio review). psycopg sends a statement without parameters as a simple query, in which PostgreSQL runs several commands: `COMMIT; BEGIN READ WRITE; INSERT ...` ends a `read()` and writes. `query` sets `prepare_threshold = 0` on the psycopg connection for the user statement (and back afterwards), so it goes through the extended query protocol as a prepared statement, and the server refuses a text with more than one command (`StatementError`, SQLSTATE 42601), whatever a client-side split thinks the text holds (also under `standard_conforming_strings = off`). `stream`'s `DECLARE` goes through the extended protocol by psycopg itself. The prepared statement stays in psycopg's cache on the pooled connection (cleared on `ROLLBACK`, `DROP`, `ALTER`); a pooler in transaction mode needs prepared-statement support (PgBouncer 1.21 or later). SQLite's `execute` refuses a second statement itself (`UnknownDatabaseError` over `sqlite3.ProgrammingError`, nothing runs). **The caller's SQL cannot end the transaction** (review L-1 and re-review N-1 of #32): `COMMIT` or `ROLLBACK` passes the one-command rule as a statement of its own, and what follows would run outside Tabrion's transaction (`query("COMMIT")`, `query("BEGIN READ WRITE")`, `query("INSERT ...")`); after `COMMIT AND CHAIN` or `ROLLBACK AND CHAIN` PostgreSQL is in a new transaction at once. Two lines: (1) before sending, a statement whose first keyword (after whitespace, `(`, `;` and comments, read both as PostgreSQL does, where `--` ends at a line feed or a carriage return and `/* */` nests, and as SQLite does, where `--` ends at a line feed only and `/* */` does not nest) is `COMMIT`, `END`, `ROLLBACK` (`ROLLBACK TO SAVEPOINT` too; use `savepoint()`) or `ABORT`, with or without `AND CHAIN`, or that starts with `PREPARE TRANSACTION`, is refused and never sent. Since TB-123 (TAB-042) this covers every executable, not only `text()`: `text().columns()` and `DDL(...)` are read from their text, a Core `SELECT`, `INSERT`, `UPDATE`, `DELETE` or schema construct starts with its own keyword and is not compiled, and any other executable is compiled with the connection's dialect and read the same way (a subclass of a Core DML or schema construct that a `@compiles` hook rewrites is not compiled, so only line 2 sees it; TB-147); (2) after each user statement of `query` and `stream`, Tabrion checks that the transaction is still open (psycopg `transaction_status` INTRANS or INERROR, SQLite `in_transaction`). Either way the call raises `UsageError("database.transaction_ended")`, every later statement of the transaction raises it without being sent, the end of the block rolls back and raises it even when the caller caught the error, and the connection is invalidated instead of going back to the pool (an in-memory SQLite database keeps its one connection). A transaction-ending statement that passes line 1 (a form the lexer does not know) and is caught only by line 2 has taken effect: a `COMMIT` it made is not undone, only what follows it is refused. With one statement per call, a `read()` cannot be lifted and written in the same call: PostgreSQL refuses `transaction_read_only = off` once the statement has its snapshot, and a lone `SET TRANSACTION READ WRITE` or `PRAGMA query_only = OFF` is caught by the read-back of I-56 before the `COMMIT`. Read-only stays a best-effort guard (I-56): a function with side effects (`dblink`, an extension, a `SECURITY DEFINER` function) is limited only by the role, so untrusted SQL needs a role without write rights. The 0.1 methods `execute` and `fetch_*` keep psycopg's default protocol (decided for 0.2 in TB-121: no behavior change of 0.1 methods); tools that run user SQL use `query` or `stream` |
 | I-105 | 5.5, 5.6 | **`inspector`, `on_begin`, `run_transaction`, `savepoint`.** `inspector()` yields `sqlalchemy.inspect()` of the connection of its own `read()` (PostgreSQL `BEGIN READ ONLY`, SQLite `query_only`); a write through it raises `ReadOnlyViolation`, a database error in the block is translated as in I-39, nesting is refused per thread, and the inspector's connection goes back to the pool at the end of the block (the object must not be used afterwards). It has no `timeout` of its own: the profile's statement timeout applies. `on_begin(callback)` (X) calls `callback(connection, read_only)` with the SQLAlchemy connection at the start of every `transaction()` and `read()` of this `Database` (also `query`, `inspector`, `run_transaction`), inside the transaction and before the caller's block; an exception of the callback rolls back and propagates (a database error translated); `callback` must be callable (`TypeError`), a closed `Database` raises `UsageError("database.closed")`; the returned function unregisters exactly this registration and is idempotent. `run_transaction(fn, ...)` (X) runs `fn(transaction)` in `transaction(isolation=...)` and retries only a `TabrionError` whose classification is `retryable` and not `outcome_unknown` (LOCKED, DEADLOCK, SERIALIZATION, a refused connection or checkout), at most `attempts` times in all (`int` of at least 1), waiting a random time between 0 and `backoff * 2 ** (attempt - 1)` seconds (full jitter), each wait at most 2 s unless `backoff` itself is larger; any other exception, and a `COMMIT` cut by the proxy (outcome unknown, TAB-T-B33), propagate at once; `backoff` is a finite number of at least 0. `savepoint()` (X) is SQLAlchemy's `begin_nested()` (`SAVEPOINT`): released at the end of its block, rolled back to on an exception, which then propagates; the transaction stays usable after `ROLLBACK TO SAVEPOINT` (on PostgreSQL also after an error) |
 | I-106 | 0 | **Staging until 0.2, public since 0.2** (G-T1 condition C-6, TAB-042). The implementation lives in the mixins of `tabrion._sa._v02`. While the version was 0.1, `tabrion.Database` and `tabrion.Transaction` did not inherit from them and `scripts/api_surface.py` saw the frozen signatures as staged; Tabrion's own tests used private subclasses (`tabrion._sa._staged`, removed in 0.2). Since 0.2: `class Transaction(_TransactionV02)` and `class Database(_DatabaseV02)` in `tabrion._sa.database`, `Result` and `Column` exported from `tabrion`, no `staged` key in `surface.json`; `scripts/api_surface.py` counts the public methods of a private Tabrion base (the mixins) as members of the public class. `Database._transaction_class` names the transaction class to create. The aliases `Statement`, `Params` and `Isolation` live in `tabrion._sa._types`, and `_v02` imports `tabrion._sa.database` as a module and `Transaction` only for the type checker, so `database` imports the mixins at its top without a failing cycle (CC-2, TODO TB-024; `test_tb024_a_fresh_interpreter_imports_the_mixins_without_a_cycle`) |
+
+### 5.9 Connection profile files: `tabrion.profilefile` (since 0.2, experimental; TAB-CR-1)
+
+Change request CR-DB (planning document 14, section 3.1, decision E-CR-8) puts one generic **file format** for
+connection profiles into Tabrion, so Tabrion Studio (STU-006, STU-CR-6 export) and Nodestro (NOD-CR-3 import) share
+it without an edge between them. Tabrion parses, checks and writes the format; it **stores nothing and resolves no
+secret** (storage, keyring and prompts stay in the consumers). Standard library only (`tomllib`), part of the core.
+
+```python
+FORMAT_VERSION: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class SecretRef:
+    kind: Literal["env", "keyring", "file", "prompt"]
+    target: str | None = None  # env: variable; keyring: "service/user" or None; file: path; prompt: None
+
+    @classmethod
+    def parse(cls, text: str) -> SecretRef: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectionProfile:
+    name: str
+    engine: Literal["sqlite", "postgresql"]
+    path: str | None = None  # SQLite
+    host: str | None = None  # PostgreSQL: name, IP address or socket folder "/..."
+    port: int | None = None
+    database: str | None = None
+    user: str | None = None
+    password: SecretRef | None = None  # a reference, never a password
+    sslmode: str | None = None
+    environment: Literal["dev", "test", "prod"] | None = None
+    mode: Literal["read_only", "read_write"] = "read_only"
+    read_only_role: bool = False
+    statement_timeout_ms: int | None = None
+    application_name: str | None = None
+    allow: tuple[str, ...] = ()  # "schema.table" or "schema.table.column"; empty = nothing
+    schema_fingerprint: str | None = None  # "v1:sha256:<hex>" of section 5.10
+    description: str | None = None
+
+    def url(self) -> str: ...  # SQLAlchemy URL without any password
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileIssue:
+    pointer: str  # "profile[2].port", "version", "line 7"; never a value
+    code: str  # "profilefile.<reason>"
+    severity: Literal["error", "warning"] = "error"
+
+
+class ProfileFileError(ConfigurationError):  # code "profilefile.invalid", details {"errors": n}
+    issues: tuple[ProfileIssue, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileFile:
+    profiles: tuple[ConnectionProfile, ...]
+    warnings: tuple[ProfileIssue, ...] = ()
+    version: int = 1
+
+    def get(self, name: str) -> ConnectionProfile: ...
+
+
+def parse(text: str | bytes) -> ProfileFile: ...
+def load(path: str | os.PathLike[str]) -> ProfileFile: ...
+def dump(profiles: Iterable[ConnectionProfile]) -> str: ...
+```
+
+The file (TOML, UTF-8, at most 256 KiB) follows Tabrion Studio's schema version 1 (`studio.toml`, `profiles.toml`):
+`version = 1` and an array of `[[profile]]` tables. It adds keys and secret references, and it refuses three things
+Studio accepts: a libpq multi-host `host = "db1,db2"` (TB-148), a `?` or `#` in a SQLite `path`, and `/`, `?`, `#`,
+`%` or `@` in `database` (I-109 d). The format fixes no file name or extension
+(R-CR-6); a consumer may pick one.
+
+| I-109 | Rule |
+|---|---|
+| a | `version` is required and must be `1`; `name` (1 to 200 characters, no control character, no leading or trailing blank, unique) and `engine` are required; SQLite needs `path`, PostgreSQL `host` and `database`. A key of the other engine is an error (`profilefile.other_engine`); an unknown key is a warning (`profilefile.unknown_key`, pointer without the key). Every error of the file is reported at once in `ProfileFileError.issues` |
+| b | `password` is `env:NAME` (`[A-Za-z_][A-Za-z0-9_]*`), `keyring:` (the consumer's default entry), `keyring:<service>/<user>`, `file:PATH` or `prompt`. Anything else is `profilefile.plain_password`, and the text is never repeated: not in the error, its `issues`, `repr`, chain or frame locals (I-76) |
+| c | `path` and `file:` targets that name another host, a device or a drive-relative path (`//host`, `\\host`, `\\?\`, `\\.\`, the NT prefix `\??\` or `/??/`, `C:x`, `file:...`, and `/net` or `/Network` after normalizing the text, so `/x/../net/host` too) are `profilefile.network_path` (text check, the same on every platform; Studio's `network_or_device`, reviews T-2 and R-3). A relative SQLite path is relative to the profile file's folder; the consumer resolves it and applies `tabrion.sqlite.check_path` |
+| d | `host` must not hold a URL or credentials (`@`, `/` unless it is a socket folder starting with `/`, `?`, `#`, `\`, blank, comma, `://`). `database` must not hold `/`, `?`, `#`, `%` or `@`, and a SQLite `path` must not hold `?` or `#`: `url()` writes both unquoted, because SQLAlchemy 2.0 does not unquote the database part of a URL and 2.1 does (review of #64, L-2). `port` 1 to 65 535, default 5432 for a TCP host. `sslmode` is one of libpq's six modes; when left out it is `prefer` for a socket folder, `localhost` and a loopback address and `verify-full` for any other host (Studio review T-4) |
+| e | `mode` defaults to `read_only`; `allow` entries are `schema.table` or `schema.table.column` (SQLite schema `main`), duplicates are dropped; `schema_fingerprint` matches `v1:sha256:[0-9a-f]{64}`; `statement_timeout_ms` 1 to 2 147 483 647 |
+| f | A TOML syntax error keeps only its line number (`pointer = "line N"`), never the parser's message, which may quote the file. Errors are raised outside an `except` block (no `__context__`) |
+| g | `load` refuses a path that is a symbolic link (`profilefile.symlink`), a file that is not regular (`profilefile.not_regular_file`), a larger file (`profilefile.too_large`) and an unreadable one (`profilefile.unreadable`); the path is not in the error |
+| h | `dump` writes the canonical form (fixed key order, basic strings with every control character, U+2028 and U+2029 escaped), parses its own output and raises `ProfileFileError` unless it reads back to the same profiles, so its output always parses |
+| i | Tests: `tests/unit/test_profilefile.py` (Studio's example, the change request 14 fields, plain-password canaries, every invalid value, network paths, file-level rules, syntax errors, unknown keys, round trip, `load` refusals, frame locals of `load` and `dump`) |
+| j | **Consumer rule for files from elsewhere** (review of #64, C-3; TM-DB-05). A file may come from a repository the user does not control, and it names both the host and the secret source. A consumer (Tabrion Studio STU-CR-6, Nodestro NOD-CR-3) therefore resolves a secret reference of an imported or untrusted file only after the user has confirmed the pair (host, reference); it never resolves `file:` or `env:` references of such a file on its own; and for a remote host it did not configure itself it requires `require_auth=scram-sha-256` (or a stronger method) and an `sslmode` of `verify-ca` or `verify-full`, whatever the file says. Tabrion never resolves a reference, so it cannot enforce this; `dump` and `parse` do not change it. A `file:` target is not refused as a device (`/dev/...`, `/proc/...`): the consumer opens it as `load` does (no symbolic link, a regular file, a size cap) |
+
+### 5.10 Schema fingerprint: `tabrion.schema` (since 0.2, experimental, extra `sqlalchemy`; TAB-CR-2)
+
+A schema fingerprint and comparison over an inspector, so Nodestro's `database` node (NOD-CR-5) can store the shape
+of the tables a release uses and report drift at start-up (change request 14, TM-DB-09). It reads the catalog only,
+never data, and never migrates.
+
+```python
+@dataclass(frozen=True, slots=True)
+class ColumnShape:
+    name: str
+    type: str  # the type as the dialect compiles it: "INTEGER", "VARCHAR(20)", "TEXT[]"
+    nullable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TableShape:
+    name: str  # "schema.table" (SQLite: "main.table")
+    columns: tuple[ColumnShape, ...]
+    primary_key: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaSnapshot:
+    dialect: str
+    tables: tuple[TableShape, ...]  # sorted by name
+
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, text: str) -> SchemaSnapshot: ...
+    def table(self, name: str) -> TableShape | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaDifference:
+    kind: Literal[
+        "table_missing",
+        "table_added",
+        "column_missing",
+        "column_added",
+        "column_type",
+        "column_nullable",
+        "column_order",
+        "primary_key",
+    ]
+    table: str
+    column: str | None = None
+
+    @property
+    def breaking(self) -> bool: ...  # False only for table_added, column_added and column_order
+
+
+def snapshot(
+    inspector: sqlalchemy.Inspector, *, tables: Iterable[str] | None = None, schemas: Iterable[str] | None = None
+) -> SchemaSnapshot: ...
+def fingerprint(snapshot: SchemaSnapshot) -> str: ...  # "v1:sha256:<64 hex>"
+def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDifference, ...]: ...
+```
+
+| I-110 | Rule |
+|---|---|
+| a | `snapshot` takes the inspector of `Database.inspector()` (read-only, I-105). With `tables`, only those (`schema.table`, or `table` in the default schema); a missing one or a view (also a materialized view) is left out, so `compare` reports `table_missing`. Without, every table of `schemas` (default: the default schema). Views are not included. Above 10 000 tables: `UsageError("schema.too_many_tables")` |
+| b | The fingerprint is the SHA-256 of the snapshot's canonical JSON (`to_json`: sorted keys, no blanks, ASCII) with the prefix `v1:sha256:`. Table creation order and data do not count; column order does, and `compare` names a new order of the columns both snapshots have as `column_order` (table only, not breaking), so a changed fingerprint always has a named difference. The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy upgrade that writes a type differently changes the fingerprint, and `compare` then names the column (`column_type`) |
+| c | `compare` refuses snapshots of different dialects (`UsageError("schema.dialect_mismatch")`); a difference names a table and a column, never data. `from_json` refuses anything but a format-1 snapshot, including deep nesting and a `primary_key` that is not a list (`UsageError("schema.invalid_snapshot")`, no `__context__`) |
+| d | Tests: `tests/unit/test_schema.py` (SQLite: shape, stable and sensitive fingerprint, selection, every difference kind including `column_order`, views left out, JSON round trip and refusals, read-only inspector, table cap) and `tests/postgres/test_schema_postgres.py` (types such as `TEXT[]` and `TIMESTAMP WITH TIME ZONE`, a composite primary key, drift) |
 
 ## 6. `tabrion.testing` (extra `testing`)
 

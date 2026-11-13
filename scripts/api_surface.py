@@ -70,6 +70,8 @@ PUBLIC_MODULES = (
     "tabrion.postgres.roles",
     "tabrion.postgres.locks",
     "tabrion.check",
+    "tabrion.profilefile",
+    "tabrion.schema",
     "tabrion.migrations",
     "tabrion.testing",
     "tabrion.testing.profiles",

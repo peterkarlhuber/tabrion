@@ -68,6 +68,7 @@ nav:
       - Database and Profile (layer B): guides/database.md
       - Transactions: guides/transactions.md
       - "Query, stream, cancel and inspect (0.2)": guides/studio-apis.md
+      - "Profile files and schema fingerprints (0.2)": guides/profiles-and-schema.md
       - Errors: guides/errors.md
       - Splitting SQL scripts: guides/sql.md
       - Connection URLs and secrets: guides/config.md

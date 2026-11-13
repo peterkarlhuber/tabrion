@@ -13,6 +13,15 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `Transaction.stream`, `Transaction.cancel`; experimental `Database.on_begin`, `Database.run_transaction` and
   `Transaction.savepoint`. New guide "Query, stream, cancel and inspect (0.2)" with tested examples. No 0.1 name
   changes, so this release has no breaking change (RC-3).
+- `tabrion.profilefile` (experimental, standard library only; TABRION TAB-CR-1, contract section 5.9, I-109): the
+  connection profile file format v1 (TOML) with `parse`, `load`, `dump`, `ConnectionProfile`, `SecretRef`,
+  `ProfileFile`, `ProfileIssue` and `ProfileFileError`. Passwords are references (`env:`, `keyring:`, `file:`,
+  `prompt`); a plain password is refused and never repeated. Tabrion Studio's schema version 1 is a valid file
+  (except a libpq multi-host `host`). A consumer resolves the references of a file from elsewhere only after the user
+  confirms host and reference (I-109 j).
+- `tabrion.schema` (experimental, extra `sqlalchemy`; TABRION TAB-CR-2, contract section 5.10, I-110): `snapshot`
+  of tables through `Database.inspector()`, `fingerprint` (`v1:sha256:...`) and `compare` with named differences.
+  Guide "Profile files and schema fingerprints (0.2)".
 
 ### Changed
 
