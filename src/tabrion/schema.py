@@ -1,6 +1,6 @@
 """Schema fingerprint and comparison over a SQLAlchemy inspector (TAB-CR-2, CR-DB; layer B, extra ``sqlalchemy``).
 
-Contract: ``docs/api/contract.md`` section 5.8 and implementation note I-108. A :class:`SchemaSnapshot` holds the
+Contract: ``docs/api/contract.md`` section 5.10 and implementation note I-110. A :class:`SchemaSnapshot` holds the
 shape of some tables (columns with type and nullability, primary key), never data; :func:`fingerprint` is a stable
 hash of it, and :func:`compare` names what differs between an expected and an actual snapshot. Use it with
 ``Database.inspector()``::
@@ -15,6 +15,7 @@ messages) with a release and compares at start-up; drift is reported, never migr
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+import contextlib
 from dataclasses import dataclass
 import hashlib
 import json
@@ -41,9 +42,17 @@ SNAPSHOT_FORMAT = 1
 _MAX_TABLES = 10_000
 
 DifferenceKind = Literal[
-    "table_missing", "table_added", "column_missing", "column_added", "column_type", "column_nullable", "primary_key"
+    "table_missing",
+    "table_added",
+    "column_missing",
+    "column_added",
+    "column_type",
+    "column_nullable",
+    "column_order",
+    "primary_key",
 ]
 _BREAKING = frozenset({"table_missing", "column_missing", "column_type", "column_nullable", "primary_key"})
+# column_order is not breaking: an application that names its columns does not notice it.
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +90,7 @@ class SchemaSnapshot:
         snapshot: SchemaSnapshot | None = None
         try:
             snapshot = _from_dict(json.loads(text))
-        except (ValueError, TypeError, KeyError, AttributeError):
+        except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
             snapshot = None
         del text  # I-76
         if snapshot is None:
@@ -99,7 +108,8 @@ class SchemaSnapshot:
 @dataclass(frozen=True, slots=True)
 class SchemaDifference:
     """One difference between an expected and an actual snapshot. ``breaking`` is ``False`` only for an added table
-    or column, which an application that does not use it does not notice."""
+    or column, which an application that does not use it does not notice, and for a changed column order
+    (``column_order``, named by table), which only a positional ``SELECT *`` notices."""
 
     kind: DifferenceKind
     table: str
@@ -122,8 +132,8 @@ def snapshot(
 ) -> SchemaSnapshot:
     """The shape of ``tables`` (``schema.table``), or of every table of ``schemas`` (default: the default schema).
 
-    A table of ``tables`` that does not exist is left out, so :func:`compare` reports it as ``table_missing``. Views
-    are not included. Raises ``UsageError("schema.too_many_tables")`` above 10 000 tables."""
+    A table of ``tables`` that does not exist or is a view is left out, so :func:`compare` reports it as
+    ``table_missing``. Views are not included. Raises ``UsageError("schema.too_many_tables")`` above 10 000 tables."""
     default = inspector.default_schema_name or "main"
     wanted: list[tuple[str, str]] = []
     if tables is not None:
@@ -137,9 +147,14 @@ def snapshot(
         raise UsageError("schema.too_many_tables", details={"limit": _MAX_TABLES})
     dialect = inspector.dialect
     shapes: dict[str, TableShape] = {}
+    views: dict[str, frozenset[str]] = {}
     for schema, table in wanted:
         if not inspector.has_table(table, schema=_arg(schema, default)):
             continue
+        if schema not in views:
+            views[schema] = _view_names(inspector, _arg(schema, default))
+        if table in views[schema]:
+            continue  # has_table is true for a view in SQLAlchemy 2
         columns = tuple(
             ColumnShape(name=str(c["name"]), type=_type_name(c["type"], dialect), nullable=bool(c["nullable"]))
             for c in inspector.get_columns(table, schema=_arg(schema, default))
@@ -153,9 +168,9 @@ def snapshot(
 def fingerprint(snapshot: SchemaSnapshot) -> str:
     """``v1:sha256:<64 hex>`` of the snapshot's canonical JSON: equal shapes give equal fingerprints.
 
-    Column order counts (it is part of the shape a ``SELECT *`` sees). The type text comes from SQLAlchemy's dialect
-    compiler, so a SQLAlchemy upgrade that writes a type differently changes the fingerprint; :func:`compare` then
-    names the column."""
+    Column order counts (it is part of the shape a ``SELECT *`` sees; :func:`compare` names it as ``column_order``).
+    The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy upgrade that writes a type differently
+    changes the fingerprint; :func:`compare` then names the column."""
     return "v1:sha256:" + hashlib.sha256(snapshot.to_json().encode("ascii")).hexdigest()
 
 
@@ -192,6 +207,9 @@ def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDif
             for column in new.columns
             if column.name not in old_names
         )
+        kept = [column.name for column in new.columns if column.name in old_names]
+        if kept != [column.name for column in old.columns if column.name in new_columns]:
+            out.append(SchemaDifference("column_order", name))
         if old.primary_key != new.primary_key:
             out.append(SchemaDifference("primary_key", name))
     return tuple(out)
@@ -199,6 +217,13 @@ def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDif
 
 def _arg(schema: str, default: str) -> str | None:
     return None if schema == default else schema
+
+
+def _view_names(inspector: sqlalchemy.Inspector, schema: str | None) -> frozenset[str]:
+    names = set(inspector.get_view_names(schema=schema))
+    with contextlib.suppress(NotImplementedError):  # a dialect without materialized views
+        names.update(inspector.get_materialized_view_names(schema=schema))
+    return frozenset(names)
 
 
 def _type_name(column_type: Any, dialect: sqlalchemy.Dialect) -> str:
@@ -227,7 +252,11 @@ def _from_dict(data: Mapping[str, Any]) -> SchemaSnapshot | None:
     if data.get("format") != SNAPSHOT_FORMAT or not isinstance(data.get("dialect"), str):
         return None
     tables: list[TableShape] = []
+    if not isinstance(data["tables"], list):
+        return None
     for table in data["tables"]:
+        if not isinstance(table["columns"], list) or not isinstance(table["primary_key"], list):
+            return None
         columns = []
         for name, type_name, nullable in table["columns"]:
             if not (isinstance(name, str) and isinstance(type_name, str) and isinstance(nullable, bool)):

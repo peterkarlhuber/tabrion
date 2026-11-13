@@ -1,4 +1,4 @@
-"""Schema fingerprint and comparison on PostgreSQL (TABRION TAB-CR-2, contract section 5.8, I-108)."""
+"""Schema fingerprint and comparison on PostgreSQL (TABRION TAB-CR-2, contract section 5.10, I-110)."""
 
 # The SQL is built from the schema fixture's generated name and fixed text, never from outside input.
 
@@ -76,3 +76,12 @@ def test_cr2_postgres_drift(db: Database, names: str, tabrion_postgres_url: str)
         f"column_type: {names}.invoices.note",
         f"column_nullable: {names}.invoices.at",
     ]
+
+
+def test_cr2_postgres_views_are_left_out(db: Database, names: str, tabrion_postgres_url: str) -> None:
+    # review of #64, L-4 a: has_table is true for a view and a materialized view on PostgreSQL.
+    with psycopg.connect(tabrion_postgres_url, autocommit=True) as conn:
+        conn.execute(f"CREATE VIEW {names}.v AS SELECT id FROM {names}.invoices")
+        conn.execute(f"CREATE MATERIALIZED VIEW {names}.mv AS SELECT id FROM {names}.invoices")
+    snap = take(db, tables=[f"{names}.v", f"{names}.mv", f"{names}.lines"])
+    assert [t.name for t in snap.tables] == [f"{names}.lines"]

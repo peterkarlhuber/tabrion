@@ -1,4 +1,4 @@
-"""Schema fingerprint and comparison on SQLite (TABRION TAB-CR-2, contract section 5.8, I-108).
+"""Schema fingerprint and comparison on SQLite (TABRION TAB-CR-2, contract section 5.10, I-110).
 
 The PostgreSQL side is ``tests/postgres/test_schema_postgres.py``.
 """
@@ -131,3 +131,35 @@ def test_cr2_too_many_tables(db: Database, monkeypatch: pytest.MonkeyPatch) -> N
     with pytest.raises(UsageError) as info:
         take(db)
     assert info.value.code == "schema.too_many_tables"
+
+
+def test_cr2_a_view_named_in_tables_is_left_out(db: Database) -> None:
+    # review of #64, L-4 a: has_table is true for a view in SQLAlchemy 2, but I-110 a leaves views out.
+    assert [t.name for t in take(db, tables=["big", "invoices"]).tables] == ["main.invoices"]
+
+
+def test_cr2_column_order_is_named() -> None:
+    # review of #64, L-4 b: a new column order changes the fingerprint, so compare must name it.
+    a, b = ts.ColumnShape("a", "INTEGER", True), ts.ColumnShape("b", "TEXT", True)
+    first = ts.SchemaSnapshot("sqlite", (ts.TableShape("main.t", (a, b), ()),))
+    swapped = ts.SchemaSnapshot("sqlite", (ts.TableShape("main.t", (b, a), ()),))
+    assert ts.fingerprint(first) != ts.fingerprint(swapped)
+    (difference,) = ts.compare(first, swapped)
+    assert (str(difference), difference.breaking) == ("column_order: main.t", False)
+    added = ts.SchemaSnapshot("sqlite", (ts.TableShape("main.t", (ts.ColumnShape("c", "TEXT", True), a, b), ()),))
+    assert [d.kind for d in ts.compare(first, added)] == ["column_added"]  # an added column alone is no reorder
+
+
+def test_cr2_from_json_refuses_deep_nesting_and_loose_types() -> None:
+    # review of #64, L-4 c and d.
+    column = '["a", "TEXT", true]'
+    table = f'{{"name": "main.t", "columns": {column}, "primary_key": []}}'
+    for bad in (
+        "[" * 100_000,
+        '{"format": 1, "dialect": "sqlite", "tables": [{"name": "main.t", "columns": [], "primary_key": "ab"}]}',
+        f'{{"format": 1, "dialect": "sqlite", "tables": [{table}]}}',
+        '{"format": 1, "dialect": "sqlite", "tables": "main.t"}',
+    ):
+        with pytest.raises(UsageError) as info:
+            ts.SchemaSnapshot.from_json(bad)
+        assert info.value.code == "schema.invalid_snapshot"

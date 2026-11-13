@@ -1297,21 +1297,23 @@ def load(path: str | os.PathLike[str]) -> ProfileFile: ...
 def dump(profiles: Iterable[ConnectionProfile]) -> str: ...
 ```
 
-The file (TOML, UTF-8, at most 256 KiB) is a superset of Tabrion Studio's schema version 1 (`studio.toml`,
-`profiles.toml`): `version = 1` and an array of `[[profile]]` tables. The format fixes no file name or extension
+The file (TOML, UTF-8, at most 256 KiB) follows Tabrion Studio's schema version 1 (`studio.toml`, `profiles.toml`):
+`version = 1` and an array of `[[profile]]` tables. It adds keys and secret references, and it differs in one point:
+a libpq multi-host `host = "db1,db2"` is refused (TB-148). The format fixes no file name or extension
 (R-CR-6); a consumer may pick one.
 
-| I-107 | Rule |
+| I-109 | Rule |
 |---|---|
 | a | `version` is required and must be `1`; `name` (1 to 200 characters, no control character, no leading or trailing blank, unique) and `engine` are required; SQLite needs `path`, PostgreSQL `host` and `database`. A key of the other engine is an error (`profilefile.other_engine`); an unknown key is a warning (`profilefile.unknown_key`, pointer without the key). Every error of the file is reported at once in `ProfileFileError.issues` |
 | b | `password` is `env:NAME` (`[A-Za-z_][A-Za-z0-9_]*`), `keyring:` (the consumer's default entry), `keyring:<service>/<user>`, `file:PATH` or `prompt`. Anything else is `profilefile.plain_password`, and the text is never repeated: not in the error, its `issues`, `repr`, chain or frame locals (I-76) |
-| c | `path` and `file:` targets that name another host, a device or a drive-relative path (`//host`, `\\host`, `\\?\`, `C:x`, `file:...`, `/net/`, `/Network/`) are `profilefile.network_path` (text check, the same on every platform; the same list as Studio's review T-2). A relative SQLite path is relative to the profile file's folder; the consumer resolves it and applies `tabrion.sqlite.check_path` |
+| c | `path` and `file:` targets that name another host, a device or a drive-relative path (`//host`, `\\host`, `\\?\`, `\\.\`, the NT prefix `\??\` or `/??/`, `C:x`, `file:...`, and `/net` or `/Network` after normalizing the text, so `/x/../net/host` too) are `profilefile.network_path` (text check, the same on every platform; Studio's `network_or_device`, reviews T-2 and R-3). A relative SQLite path is relative to the profile file's folder; the consumer resolves it and applies `tabrion.sqlite.check_path` |
 | d | `host` must not hold a URL or credentials (`@`, `/` unless it is a socket folder starting with `/`, `?`, `#`, `\`, blank, comma, `://`). `port` 1 to 65 535, default 5432 for a TCP host. `sslmode` is one of libpq's six modes; when left out it is `prefer` for a socket folder, `localhost` and a loopback address and `verify-full` for any other host (Studio review T-4) |
 | e | `mode` defaults to `read_only`; `allow` entries are `schema.table` or `schema.table.column` (SQLite schema `main`), duplicates are dropped; `schema_fingerprint` matches `v1:sha256:[0-9a-f]{64}`; `statement_timeout_ms` 1 to 2 147 483 647 |
 | f | A TOML syntax error keeps only its line number (`pointer = "line N"`), never the parser's message, which may quote the file. Errors are raised outside an `except` block (no `__context__`) |
 | g | `load` refuses a path that is a symbolic link (`profilefile.symlink`), a file that is not regular (`profilefile.not_regular_file`), a larger file (`profilefile.too_large`) and an unreadable one (`profilefile.unreadable`); the path is not in the error |
 | h | `dump` writes the canonical form (fixed key order, basic strings with every control character, U+2028 and U+2029 escaped), parses its own output and raises `ProfileFileError` unless it reads back to the same profiles, so its output always parses |
-| i | Tests: `tests/unit/test_profilefile.py` (Studio's example, the change request 14 fields, plain-password canaries, every invalid value, network paths, file-level rules, syntax errors, unknown keys, round trip, `load` refusals) |
+| i | Tests: `tests/unit/test_profilefile.py` (Studio's example, the change request 14 fields, plain-password canaries, every invalid value, network paths, file-level rules, syntax errors, unknown keys, round trip, `load` refusals, frame locals of `load` and `dump`) |
+| j | **Consumer rule for files from elsewhere** (review of #64, C-3; TM-DB-05). A file may come from a repository the user does not control, and it names both the host and the secret source. A consumer (Tabrion Studio STU-CR-6, Nodestro NOD-CR-3) therefore resolves a secret reference of an imported or untrusted file only after the user has confirmed the pair (host, reference); it never resolves `file:` or `env:` references of such a file on its own; and for a remote host it did not configure itself it requires `require_auth=scram-sha-256` (or a stronger method) and an `sslmode` of `verify-ca` or `verify-full`, whatever the file says. Tabrion never resolves a reference, so it cannot enforce this; `dump` and `parse` do not change it. A `file:` target is not refused as a device (`/dev/...`, `/proc/...`): the consumer opens it as `load` does (no symbolic link, a regular file, a size cap) |
 
 ### 5.10 Schema fingerprint: `tabrion.schema` (since 0.2, experimental, extra `sqlalchemy`; TAB-CR-2)
 
@@ -1354,13 +1356,14 @@ class SchemaDifference:
         "column_added",
         "column_type",
         "column_nullable",
+        "column_order",
         "primary_key",
     ]
     table: str
     column: str | None = None
 
     @property
-    def breaking(self) -> bool: ...  # False only for table_added and column_added
+    def breaking(self) -> bool: ...  # False only for table_added, column_added and column_order
 
 
 def snapshot(
@@ -1370,12 +1373,12 @@ def fingerprint(snapshot: SchemaSnapshot) -> str: ...  # "v1:sha256:<64 hex>"
 def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDifference, ...]: ...
 ```
 
-| I-108 | Rule |
+| I-110 | Rule |
 |---|---|
-| a | `snapshot` takes the inspector of `Database.inspector()` (read-only, I-105). With `tables`, only those (`schema.table`, or `table` in the default schema); a missing one is left out, so `compare` reports `table_missing`. Without, every table of `schemas` (default: the default schema). Views are not included. Above 10 000 tables: `UsageError("schema.too_many_tables")` |
-| b | The fingerprint is the SHA-256 of the snapshot's canonical JSON (`to_json`: sorted keys, no blanks, ASCII) with the prefix `v1:sha256:`. Table creation order and data do not count; column order does. The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy upgrade that writes a type differently changes the fingerprint, and `compare` then names the column (`column_type`) |
-| c | `compare` refuses snapshots of different dialects (`UsageError("schema.dialect_mismatch")`); a difference names a table and a column, never data. `from_json` refuses anything but a format-1 snapshot (`UsageError("schema.invalid_snapshot")`, no `__context__`) |
-| d | Tests: `tests/unit/test_schema.py` (SQLite: shape, stable and sensitive fingerprint, selection, every difference kind, JSON round trip, read-only inspector, table cap) and `tests/postgres/test_schema_postgres.py` (types such as `TEXT[]` and `TIMESTAMP WITH TIME ZONE`, a composite primary key, drift) |
+| a | `snapshot` takes the inspector of `Database.inspector()` (read-only, I-105). With `tables`, only those (`schema.table`, or `table` in the default schema); a missing one or a view (also a materialized view) is left out, so `compare` reports `table_missing`. Without, every table of `schemas` (default: the default schema). Views are not included. Above 10 000 tables: `UsageError("schema.too_many_tables")` |
+| b | The fingerprint is the SHA-256 of the snapshot's canonical JSON (`to_json`: sorted keys, no blanks, ASCII) with the prefix `v1:sha256:`. Table creation order and data do not count; column order does, and `compare` names a new order of the columns both snapshots have as `column_order` (table only, not breaking), so a changed fingerprint always has a named difference. The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy upgrade that writes a type differently changes the fingerprint, and `compare` then names the column (`column_type`) |
+| c | `compare` refuses snapshots of different dialects (`UsageError("schema.dialect_mismatch")`); a difference names a table and a column, never data. `from_json` refuses anything but a format-1 snapshot, including deep nesting and a `primary_key` that is not a list (`UsageError("schema.invalid_snapshot")`, no `__context__`) |
+| d | Tests: `tests/unit/test_schema.py` (SQLite: shape, stable and sensitive fingerprint, selection, every difference kind including `column_order`, views left out, JSON round trip and refusals, read-only inspector, table cap) and `tests/postgres/test_schema_postgres.py` (types such as `TEXT[]` and `TIMESTAMP WITH TIME ZONE`, a composite primary key, drift) |
 
 ## 6. `tabrion.testing` (extra `testing`)
 

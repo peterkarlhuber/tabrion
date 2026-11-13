@@ -1,6 +1,6 @@
 """Connection profile file format v1: parse, check and write; no storage, no secrets (TAB-CR-1, CR-DB).
 
-Contract: ``docs/api/contract.md`` section 5.7 and implementation note I-107. Standard library only (``tomllib``).
+Contract: ``docs/api/contract.md`` section 5.9 and implementation note I-109. Standard library only (``tomllib``).
 
 A profile file names databases without holding a secret: the password is a *reference* (``env:NAME``, ``keyring:``
 or ``keyring:<service>/<user>``, ``file:PATH``, ``prompt``) that the consumer resolves (Tabrion Studio, Nodestro);
@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 import ipaddress
 import math
 import os
+import posixpath
 import re
 import stat
 import tomllib
@@ -63,6 +64,8 @@ _IDENTIFIER = re.compile(r"[^\x00-\x1f\x7f.\s][^\x00-\x1f\x7f.]{0,62}")
 _FINGERPRINT = re.compile(r"v1:sha256:[0-9a-f]{64}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]")
 _DRIVE_RELATIVE = re.compile(r"[A-Za-z]:(?![\\/])")
+_SEPARATORS = "/\\"
+_AUTOMOUNT = ("/net", "/network")
 _TOML_LINE = re.compile(r"line (\d+)")
 
 _COMMON_KEYS = frozenset(
@@ -186,14 +189,14 @@ class ConnectionProfile:
 
         The consumer resolves :attr:`password` and adds it (``sqlalchemy.engine.make_url(url).set(password=...)``)."""
         if self.engine == "sqlite":
-            return f"sqlite:///{self.path}"
+            return f"sqlite:///{quote(self.path or '', safe='/:')}"  # "?" and "#" stay part of the path
         user = f"{quote(self.user, safe='')}@" if self.user else ""
         host = self.host or ""
         query = f"?sslmode={self.sslmode}" if self.sslmode else ""
         if host.startswith("/"):
             query += ("&" if query else "?") + "host=" + quote(host, safe="/")
             host = ""
-        elif ":" in host:
+        elif ":" in host and not host.startswith("["):
             host = f"[{host}]"
         port = f":{self.port}" if self.port is not None and host else ""
         return f"postgresql+psycopg://{user}{host}{port}/{quote(self.database or '', safe='')}{query}"
@@ -248,7 +251,10 @@ def load(path: str | os.PathLike[str]) -> ProfileFile:
     del path  # I-76
     if data is None:
         raise ProfileFileError([ProfileIssue("", code)])
-    return parse(data)
+    try:
+        return parse(data)
+    finally:
+        data = None  # the whole file, perhaps with a plain password: not in the traceback's frame locals (I-76)
 
 
 def _read(path: str) -> tuple[bytes | None, str]:
@@ -530,21 +536,30 @@ def _secret(text: str) -> tuple[SecretRef | None, str]:
 
 
 def _is_network_path(text: str) -> bool:
-    """A path that names another host, a device or a drive-relative path (text only; the same on every platform)."""
-    unified = text.replace("\\", "/")
-    lowered = unified.lower()
-    return (
-        unified.startswith("//")
-        or lowered.startswith("file:")
-        or _DRIVE_RELATIVE.match(text) is not None
-        or lowered.startswith(("/net/", "/network/"))
-        or lowered in ("/net", "/network")
-    )
+    """A path that names another host, a device or a drive-relative path (text only; the same on every platform).
+
+    The same rules as Tabrion Studio's ``network_or_device`` (Studio review T-2, re-review R-3), and a ``file:`` URL
+    is refused outright."""
+    if text[:5].lower() == "file:":
+        return True
+    if len(text) >= 2 and text[0] in _SEPARATORS and text[1] in _SEPARATORS:
+        return True  # \\host\share, //host/share, \\?\..., \\.\...
+    if len(text) >= 4 and text[0] in _SEPARATORS and text[1:3] == "??" and text[3] in _SEPARATORS:
+        return True  # \??\..., the NT namespace prefix that Win32 passes on unchanged (\??\UNC\host\share)
+    if _DRIVE_RELATIVE.match(text) is not None:
+        return True  # C:x is relative to the current folder of drive C
+    if text[:1] in _SEPARATORS:
+        folded = posixpath.normpath(text.replace("\\", "/")).lower()
+        if any(folded == folder or folded.startswith(folder + "/") for folder in _AUTOMOUNT):
+            return True  # /net/host and /Network/... reach another host through the automounter
+    return False
 
 
 def _is_local(host: str) -> bool:
-    if host.startswith("/") or host == "localhost":
+    if host.startswith("/") or host.lower() == "localhost":
         return True
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
     try:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
@@ -561,8 +576,15 @@ def dump(profiles: Iterable[ConnectionProfile]) -> str:
 
     Raises :class:`ProfileFileError` if a profile would not pass :func:`parse` (the check runs on the written text,
     so what ``dump`` returns always parses)."""
-    lines = [f"version = {FORMAT_VERSION}"]
     profiles = tuple(profiles)
+    misused = next(
+        (index for index, p in enumerate(profiles) if p.password is not None and not isinstance(p.password, SecretRef)),
+        None,
+    )
+    if misused is not None:
+        profiles = ()  # a plain value in ``password`` is never written and stays out of the frame locals (I-76)
+        raise ProfileFileError([ProfileIssue(f"profile[{misused}].password", "profilefile.type")])
+    lines = [f"version = {FORMAT_VERSION}"]
     for profile in profiles:
         lines += ["", "[[profile]]"]
         values = {
@@ -589,7 +611,13 @@ def dump(profiles: Iterable[ConnectionProfile]) -> str:
             if value is not None:
                 lines.append(f"{key} = {_toml_value(value)}")
     text = "\n".join(lines) + "\n"
-    parsed = parse(text)
+    lines = []
+    try:
+        parsed = parse(text)
+    except ProfileFileError:
+        text = ""  # I-76: neither the written text nor the values stay in the frame locals
+        values = {}
+        raise
     if parsed.profiles != profiles:
         raise ProfileFileError([ProfileIssue("", "profilefile.not_storable")])
     return text

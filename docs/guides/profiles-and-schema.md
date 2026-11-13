@@ -48,8 +48,8 @@ profilefile.invalid [('profile[0].password', 'profilefile.plain_password')]
 ```
 
 Defaults: `mode` is `read_only`; `sslmode` is `prefer` for a socket folder, `localhost` and a loopback address and
-`verify-full` for any other host. A path or `file:` target on another host (`//host/share`, `\\host\share`, `C:x`)
-is refused. Unknown keys are warnings, so a newer writer's file still reads. `dump` writes the canonical form and
+`verify-full` for any other host. A path or `file:` target on another host or a device (`//host/share`,
+`\\host\share`, `\??\UNC\host\share`, `/net/host`, `C:x`) is refused. Unknown keys are warnings, so a newer writer's file still reads. `dump` writes the canonical form and
 always reads back to the same profiles:
 
 ```pycon
@@ -73,7 +73,10 @@ allow = ["public.invoices", "public.invoices.total_cents"]
 ```
 
 `profilefile.load(path)` reads a file and refuses a symbolic link, a file that is not regular and one larger than
-256 KiB, because a profile file may come from a repository you do not trust. Tabrion Studio's `studio.toml` (schema
+256 KiB, because a profile file may come from a repository you do not trust. Such a file names both the host and
+where the secret comes from, so a consumer resolves its references only after the user has confirmed the host and
+the reference, and requires `require_auth=scram-sha-256` and `sslmode` `verify-ca` or `verify-full` for a remote host
+it did not configure itself (contract I-109 j). Tabrion Studio's `studio.toml` (schema
 version 1) is a valid profile file.
 
 ## Schema fingerprints
@@ -102,7 +105,7 @@ False
 >>> db.close()
 ```
 
-An added table or column is not breaking (`breaking` is `False`); a missing table or column, a changed type or
-nullability and a changed primary key are. The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy
+An added table or column and a new column order (`column_order`) are not breaking (`breaking` is `False`); a
+missing table or column, a changed type or nullability and a changed primary key are. Views are left out. The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy
 upgrade can change a fingerprint without a schema change; `compare` then names the column, and the consumer records
 the new fingerprint.

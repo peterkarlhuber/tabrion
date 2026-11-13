@@ -1,4 +1,4 @@
-"""Connection profile file format v1 (TABRION TAB-CR-1, contract section 5.7, I-107)."""
+"""Connection profile file format v1 (TABRION TAB-CR-1, contract section 5.9, I-109)."""
 
 from __future__ import annotations
 
@@ -175,6 +175,15 @@ def test_cr1_invalid_values(body: str, expected: list[tuple[str, str]]) -> None:
         "file:///a.db",
         "/net/h/a",
         "/Network/a",
+        # review of #64, C-2: Studio's network_or_device cases (T-2, R-3)
+        "\\??\\UNC\\host\\share\\a.db",
+        "\\??\\C:\\a.db",
+        "/??/C:/a.db",
+        "/x/../net/host/a.db",
+        "/./net/host/a.db",
+        "\\net\\host\\a.db",
+        "//./pipe/x",
+        "FILE:a.db",
     ],
 )
 def test_cr1_network_paths_are_refused(path: str) -> None:
@@ -183,6 +192,55 @@ def test_cr1_network_paths_are_refused(path: str) -> None:
     assert _issues(_one(f'engine = "sqlite"\npath = "a"\npassword = "file:{escaped}"')) == [
         ("profile[0].password", "profilefile.network_path")
     ]
+
+
+@pytest.mark.parametrize("path", ["a.db", "/srv/net/a.db", "/netx/a.db", "C:/data/a.db", "C:\\data\\a.db", "/x/??/a"])
+def test_cr1_local_paths_are_kept(path: str) -> None:
+    escaped = path.replace("\\", "\\\\")
+    assert pf.parse(_one(f'engine = "sqlite"\npath = "{escaped}"')).profiles[0].path == path
+
+
+def _frame_locals(error: BaseException) -> str:
+    out = []
+    tb = error.__traceback__
+    while tb is not None:
+        out.append(repr(tb.tb_frame.f_locals))
+        tb = tb.tb_next
+    return "".join(out)
+
+
+def test_cr1_load_keeps_no_secret_in_the_frame_locals(tmp_path: Path) -> None:
+    # review of #64, C-1: load() held the whole file (with the plain password) after parse() raised.
+    path = tmp_path / "profiles.toml"
+    path.write_text(_one(f'engine = "sqlite"\npath = "a.db"\npassword = "{SECRET}"'), encoding="utf-8")
+    with pytest.raises(pf.ProfileFileError) as info:
+        pf.load(path)
+    assert [i.code for i in info.value.issues] == ["profilefile.plain_password"]
+    assert SECRET not in _frame_locals(info.value)
+    with pytest.raises(pf.ProfileFileError) as direct:
+        pf.parse(path.read_bytes())
+    assert SECRET not in _frame_locals(direct.value)
+
+
+def test_cr1_dump_refuses_a_plain_value_in_password() -> None:
+    # review of #64, L-1: a str placed in password by mistake is never written and not kept in dump's frame.
+    misused = pf.ConnectionProfile(name="x", engine="sqlite", path="a.db", password=SECRET)  # type: ignore[arg-type]
+    with pytest.raises(pf.ProfileFileError) as info:
+        pf.dump([misused])
+    assert [(i.pointer, i.code) for i in info.value.issues] == [("profile[0].password", "profilefile.type")]
+    del misused
+    assert SECRET not in _frame_locals(info.value) + repr(info.value)
+
+
+def test_cr1_url_quotes_the_sqlite_path_and_brackets_once() -> None:
+    # review of #64, L-2 and L-3 a.
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    url = pf.ConnectionProfile(name="x", engine="sqlite", path="x.db?mode=rw#f").url()
+    assert sqlalchemy.engine.make_url(url).database == "x.db?mode=rw#f"
+    assert sqlalchemy.engine.make_url(url).query == {}
+    bracketed = pf.parse(_one('engine = "postgresql"\nhost = "[::1]"\ndatabase = "d"')).profiles[0]
+    assert bracketed.sslmode == "prefer"
+    assert bracketed.url() == "postgresql+psycopg://[::1]:5432/d?sslmode=prefer"
 
 
 def test_cr1_file_level_rules() -> None:
