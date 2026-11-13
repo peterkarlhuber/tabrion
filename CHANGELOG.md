@@ -26,9 +26,9 @@ Between `0.1.0` and this release master built as `0.1.1.dev0` (from `d5821faa`) 
 - `tabrion.profilefile` (experimental, standard library only; TABRION TAB-CR-1, contract section 5.9, I-109): the
   connection profile file format v1 (TOML) with `parse`, `load`, `dump`, `ConnectionProfile`, `SecretRef`,
   `ProfileFile`, `ProfileIssue` and `ProfileFileError`. Passwords are references (`env:`, `keyring:`, `file:`,
-  `prompt`); a plain password is refused and never repeated. Tabrion Studio's schema version 1 is a valid file
-  (except a libpq multi-host `host`). A consumer resolves the references of a file from elsewhere only after the user
-  confirms host and reference (I-109 j).
+  `prompt`); a plain password is refused and never repeated. Tabrion Studio's schema version 1 is a valid file (except
+  a libpq multi-host `host` and URL characters in `path` and `database`). A consumer resolves the references of a file
+  from elsewhere only after the user confirms host and reference (I-109 j).
 - `tabrion.schema` (experimental, extra `sqlalchemy`; TABRION TAB-CR-2, contract section 5.10, I-110): `snapshot`
   of tables through `Database.inspector()`, `fingerprint` (`v1:sha256:...`) and `compare` with named differences.
   Guide "Profile files and schema fingerprints (0.2)".
@@ -51,6 +51,9 @@ Between `0.1.0` and this release master built as `0.1.1.dev0` (from `d5821faa`) 
   one line, or with collapsed blanks), also in a record without a database exception. Before, only psycopg's two
   blanks matched mid-line, so such a value stayed in the log (tabrion-studio TD-056, TODO TB-144). Lower-case prose
   (`details:`, `Hint:`), longer identifiers (`MY_DETAIL:`) and a label without a value are kept.
+- `tabrion.profilefile` refuses a `?`, `#` or `%` in a SQLite `path` (`profilefile.value`). SQLAlchemy 2.1 unquotes
+  the path of `ConnectionProfile.url()`, so a percent-encoded network path such as `%2F%2Fhost/share/x.db` would
+  otherwise pass the network-path check of an untrusted profile file (G-T2 review, B-1; contract I-109 c and d).
 
 ## [0.1.0] - 2026-11-12
 

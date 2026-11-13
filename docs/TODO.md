@@ -513,10 +513,10 @@ required (owner decision of 2026-11-08 11:26Z).
   fixes no file name or extension (R-CR-6), and Studio's `studio.toml` schema version 1 is a valid file. The independent
   review of the new API is part of the 0.2.0 G-T2 review (TAB-042). Review of #64: C-1 (`load` frame locals), C-2
   (Studio's `network_or_device` rules) and C-3 (consumer rule I-109 j) fixed; L-1, L-2 (a `?` or `#` in the SQLite path
-  and `/?#%@` in `database` are refused, so `url()` is the same under SQLAlchemy 2.0 and 2.1; a `%` in a SQLite path is
-  still read differently by the two, and the `url()` docstring tells the consumer to use `URL.create` then), L-3 a and
-  N-1 fixed; L-3 b and I-1 are TB-148. The notes were renumbered from I-107/I-108 to I-109/I-110, because I-107 is the
-  `:name::type` hint (TB-139).
+  and `/?#%@` in `database` are refused, so `url()` is the same under SQLAlchemy 2.0 and 2.1), L-3 a and N-1 fixed; L-3
+  b and I-1 are TB-148. The notes were renumbered from I-107/I-108 to I-109/I-110, because I-107 is the `:name::type`
+  hint (TB-139). G-T2 review of #65, B-1: a `%` in the SQLite path is refused too, because SQLAlchemy 2.1 unquotes
+  `url()` and `%2F%2Fhost/share` would otherwise become a network path after the text check.
 - **Next step (consumers):** Studio STU-006/STU-CR-6 and Nodestro NOD-CR-3 adopt it; stability `X` until a
   consumer has used it, then `S` (API stability policy S-1).
 
@@ -535,11 +535,13 @@ required (owner decision of 2026-11-08 11:26Z).
 ### TB-148 · Profile file follow-ups from the review of #64 (TABRION TAB-CR-1)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-CR-1, contract I-109, review of #64 (L-3 b, I-1,
-  optional part of C-3)
+  optional part of C-3), G-T2 review of #65 (N-2)
 - **What:** (1) Studio's schema version 1 accepts a libpq multi-host `host = "db1,db2"`; `tabrion.profilefile`
   refuses it (the comma is in the refused set of I-109 d). (2) A `file:` target under `/dev/` or `/proc/` is not
   refused as a device (Studio has the same gap; I-109 j tells the consumer to open it as `load` does). (3) No warning
-  yet for an `sslmode` below `require` on a host that is not local.
+  yet for an `sslmode` below `require` on a host that is not local. (4) `host = "[::1]:6000"` passes `parse`, but
+  `url()` then gives `[::1]:6000:5432`, which `make_url` refuses; it fails closed at connect time instead of at parse
+  time (G-T2 review of #65, N-2). Refuse a host that starts with `[` and does not end with `]`, or any `]` inside.
 - **Next step:** decide (1) with Studio STU-CR-6 (accept a list of hosts, each checked, or keep refusing and state
   it); add a warning issue for (3) if a consumer asks for it.
 

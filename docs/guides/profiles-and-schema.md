@@ -49,8 +49,9 @@ profilefile.invalid [('profile[0].password', 'profilefile.plain_password')]
 
 Defaults: `mode` is `read_only`; `sslmode` is `prefer` for a socket folder, `localhost` and a loopback address and
 `verify-full` for any other host. A path or `file:` target on another host or a device (`//host/share`,
-`\\host\share`, `\??\UNC\host\share`, `/net/host`, `C:x`) is refused. Unknown keys are warnings, so a newer writer's file still reads. `dump` writes the canonical form and
-always reads back to the same profiles:
+`\\host\share`, `\??\UNC\host\share`, `/net/host`, `C:x`) is refused, and so is any `?`, `#` or `%` in a SQLite path,
+so a percent-encoded network path cannot slip through `url()`. Unknown keys are warnings, so a newer writer's file
+still reads. `dump` writes the canonical form and always reads back to the same profiles:
 
 ```pycon
 >>> written = profilefile.dump([profile])
