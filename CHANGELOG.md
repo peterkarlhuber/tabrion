@@ -6,6 +6,20 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Security
+
+- Log redaction (`DbErrorRedactionFilter`, `tabrion.errors`): psycopg's `LINE n:` statement echo is removed also
+  when it is the only server text label in a message. The cheap pre-check that decides whether a text is scanned had
+  no `LINE` entry, so an escaped `\nLINE n:` inside a `repr` (for example a cast error in a list argument) kept the
+  statement and its literals (Tabrion Studio security assessment C-02, Low). A `LINE n:` in the middle of a line (a
+  syntax error joined onto one line) is removed as well (TODO TB-145). The scan stays linear in the input length.
+- Dependency confusion (DC-TB-1, TODO TB-132): the `ImportError` hints of a missing extra and the psycopg skip of
+  `tabrion.testing` name the Git-pin form `tabrion[<extra>] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>`
+  instead of the bare requirement, which a package index would resolve; the README examples pin the `0.2.0` release
+  commit; a unit test keeps `src/`, `docs/`, `examples/`, the README and CONTRIBUTING free of a bare install
+  command. SECURITY.md and the installation guide record the residual risk: the names `tabrion` and
+  `tabrion-studio` are not registered on PyPI (owner decision of 2026-11-13).
+
 ## [0.2.0] - 2026-11-13
 
 TABRION TAB-042, gate G-T2: `v0.2.0` final, the Studio APIs release (milestone M4). The release commit is the merge

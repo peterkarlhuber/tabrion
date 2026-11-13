@@ -1117,6 +1117,72 @@ def test_td056_harmless_text_is_kept(text: str) -> None:
     assert errors._strip_server_text(text) == text
 
 
+def test_c02_escaped_line_echo_without_another_label_is_stripped() -> None:
+    """Security assessment C-02: an escaped ``\\nLINE n:`` statement echo (a ``repr()`` of a syntax or cast error) is
+    stripped although no other label is in the text."""
+    mark = errors._SERVER_TEXT_MARK
+    assert errors._strip_server_text(f"x\\nLINE 1: SELECT '{CANARY}'") == f"x {mark}"
+    assert errors._strip_server_text(f"x\\nDETAIL:  a\\nLINE 1: SELECT '{CANARY}'") == f"x {mark}"
+    text = f"[InvalidTextRepresentation('bad\\nLINE 1: SELECT \\'{CANARY}\\'::int\\n               ^')]"
+    assert errors._strip_server_text(text) == f"[InvalidTextRepresentation('bad {mark}"
+
+
+def test_c02_line_echo_alone_is_stripped_at_line_start() -> None:
+    """C-02: a multi-line message whose only label is psycopg's ``LINE n:`` echo."""
+    mark = errors._SERVER_TEXT_MARK
+    assert errors._strip_server_text(f"syntax error at or near \"x\"\nLINE 1: INSERT '{CANARY}'\n  ^") == (
+        f'syntax error at or near "x"\n{mark}'
+    )
+
+
+@pytest.mark.parametrize("gap", [" ", "\t", "  "])
+def test_tb145_mid_line_line_echo_is_stripped(gap: str) -> None:
+    """TB-145 (review F-3 of the TD-056 fix): a syntax error joined onto one line keeps no statement text."""
+    mark = errors._SERVER_TEXT_MARK
+    text = f"syntax error at or near \"x\" LINE 1:{gap}VALUES ('{CANARY}')"
+    assert errors._strip_server_text(text) == f'syntax error at or near "x" {mark}'
+    assert errors._strip_server_text(f"('bad LINE 12:{gap}{CANARY}',)") == f"('bad {mark}"
+
+
+def test_c02_line_echo_in_a_log_record_without_a_database_error(capture: Any) -> None:
+    """C-02: the filter strips a ``LINE n:`` echo in a record that holds no database exception, also as the
+    ``repr`` of a list argument."""
+    capture.logger.warning("cast failed: %s", [f"bad\nLINE 1: SELECT '{CANARY}'::int"])
+    capture.logger.warning(f"joined: syntax error LINE 3: SELECT '{CANARY}'")
+    try:
+        raise RuntimeError(f"gave up: bad\nLINE 1: SELECT '{CANARY}'")
+    except RuntimeError:
+        capture.logger.exception("retry loop")
+    assert CANARY not in _out(capture)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "PIPELINE 3 failed",
+        "PIPELINE 3: failed",
+        "OFFLINE 2: mode",
+        "line 3: lower case is prose",
+        "Line 3: title case is prose",
+        "LINE: no number",
+        "LINE 3 without a colon",
+        "a label without a value LINE 3:",
+        "a label with one blank only LINE 3: ",
+        "LINES 3: plural is another word",
+    ],
+)
+def test_tb145_harmless_line_text_is_kept(text: str) -> None:
+    """TB-145: the ``LINE n:`` label is a whole upper-case word followed by a value, like the other labels."""
+    assert errors._strip_server_text(text) == text
+
+
+def test_tb145_ordinary_text_does_not_reach_the_redaction_path() -> None:
+    """The ``LINE n:`` gate is a pattern, not the substring ``LINE ``: ordinary text stays off the slow path."""
+    assert not errors._may_hold_server_text("PIPELINE 3 failed, OFFLINE MODE")
+    assert errors._may_hold_server_text("x\\nLINE 1: SELECT 1")
+    assert errors._may_hold_server_text("x LINE 12: SELECT 1")
+
+
 def test_m3_group_whose_only_database_error_is_a_member(capture: Any) -> None:
     group = ExceptionGroup("batch", [ValueError("other"), _unique_violation()])
     assert group.__context__ is None
@@ -1269,6 +1335,22 @@ def test_f3_long_run_of_blanks_is_linear() -> None:
     assert time.perf_counter() - started < 0.5
     assert errors._strip_server_text("a" + " " * 50_000 + " DETAIL:  x") == "a " + errors._SERVER_TEXT_MARK
     assert errors._strip_server_text("value \t DETAIL:  secret") == "value " + errors._SERVER_TEXT_MARK
+
+
+def test_c02_line_label_scan_is_linear() -> None:
+    """C-02/TB-145 keep the TD-056 property: a long input around a ``LINE n:`` label stays fast."""
+    started = time.perf_counter()
+    text = "a" + " " * 50_000 + " LINE 1:"  # a label without a value: no inline match
+    assert errors._strip_server_text(text) == text
+    text = "a LINE 1:" + "\t" * 50_000  # tabs after the label but no value
+    assert errors._strip_server_text(text) == text
+    text = "a LINE " + "1" * 50_000  # a long number and no colon: the gate fails once, linearly
+    assert errors._strip_server_text(text) == text
+    text = "LINE 1" * 20_000  # many label starts, none complete
+    assert errors._strip_server_text(text) == text
+    assert errors._strip_server_text("a" + " " * 50_000 + " LINE 1: x") == "a " + errors._SERVER_TEXT_MARK
+    assert errors._strip_server_text("x\\n" * 20_000 + "LINE 1: y") == "x\\n" * 19_999 + "x " + errors._SERVER_TEXT_MARK
+    assert time.perf_counter() - started < 0.5
 
 
 @pytest.mark.parametrize("line", ["+------+", "+", "| +---", 'File "a", line 1', "Traceback (most recent call last):"])

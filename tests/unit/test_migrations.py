@@ -179,7 +179,7 @@ def test_m06_missing_alembic_names_the_extra() -> None:
         "try:\n"
         "    import tabrion.migrations\n"
         "except ImportError as exc:\n"
-        "    assert 'pip install \"tabrion[migrations]\"' in str(exc), exc\n"
+        "    assert 'pip install \"tabrion[migrations] @ git+https://' in str(exc), exc\n"
         "    print('hint ok')\n"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)

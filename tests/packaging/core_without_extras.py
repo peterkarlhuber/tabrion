@@ -43,7 +43,9 @@ def test_core_loads_no_driver() -> None:
 def test_layer_b_and_migrations_give_the_installation_hint() -> None:
     import tabrion
 
-    with pytest.raises(ImportError, match=r'pip install "tabrion\[sqlalchemy\]"'):
+    with pytest.raises(
+        ImportError, match=r'pip install "tabrion\[sqlalchemy\] @ git\+https://github\.com/peterkarlhuber/tabrion@'
+    ):
         _ = tabrion.Database
     with pytest.raises(ImportError, match=r"tabrion\[migrations\]"):
         importlib.import_module("tabrion.migrations")

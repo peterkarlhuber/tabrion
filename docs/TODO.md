@@ -32,14 +32,15 @@ follow-up pull request after the release commit `d5821fa` (review of #56, L-3): 
 TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follow-up; bookkeeping pull request after
 `v0.1.0` (reviews of #56 and #57): TB-090 and TB-092 done; TD-056 redaction pull request #62: TB-144 done,
 TB-042 superseded, TB-145 new; 0.2 switch pull request (TAB-042): TB-123 done, TB-121 decided without a change,
-TB-013 in progress, TB-147 new; TAB-CR-1/2 pull request: TB-014 and TB-015 done, TB-148 new).
+TB-013 in progress, TB-147 new; TAB-CR-1/2 pull request: TB-014 and TB-015 done, TB-148 new; C-02 / DC-TB-1 pull
+request: TB-132 and TB-145 done).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 4 |
 | P2 Medium | 10 |
-| P3 Low | 45 |
+| P3 Low | 43 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -453,15 +454,18 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** write them when the kit content (TB-081) is aligned, moving the long sections out of the baseline
   page and linking back; until then the baseline page is the reference.
 
-### TB-132 · The `ImportError` install hint names the PyPI form (TABRION TAB-041 review L-6)
+### TB-132 · The `ImportError` install hint names the PyPI form (TABRION TAB-041 review L-6, DC-TB-1)
 
-- **Priority:** P3 Low · **Status:** Open (lane B/C) · **Refs:** TABRION TAB-041, ADR 0009 amendment, D-67,
-  `docs/getting-started/installation.md`
-- **What:** the `ImportError` of a missing extra suggests `pip install "tabrion[sqlalchemy]"`, which resolves from
-  PyPI, where Tabrion is not published (dependency-confusion risk). The troubleshooting guide now says to use the
-  Git-pin form instead.
-- **Next step:** change the hint text in `src` to point to the installation page (message text only, no API change;
-  a bug fix for lane B/C, not part of the docs PR).
+- **Priority:** P3 Low · **Status:** Done (DC-TB-1 pull request) · **Refs:** TABRION TAB-041, DC-TB-1 (owner
+  decision of 2026-11-13 22:37Z), ADR 0009 amendment, D-67, `docs/getting-started/installation.md`, SECURITY.md
+- **What:** the `ImportError` of a missing extra (and the psycopg skip of `tabrion.testing`) suggested the bare
+  requirement `tabrion[sqlalchemy]` without a direct URL, which a package index resolves, where Tabrion is not
+  published (dependency-confusion risk).
+- **Done:** every hint names the Git-pin form
+  `tabrion[<extra>] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>` with "Tabrion is not on PyPI: pin the commit you use" (message text only, no API change; contract section 0 and
+  G-7); the README examples pin the `0.2.0` release commit; `tests/unit/test_install_hints.py` keeps `src/`, `docs/`,
+  `examples/`, the README and CONTRIBUTING free of a bare install command and of a Git URL without a full commit;
+  SECURITY.md and the installation guide record the residual risk of the unregistered PyPI name.
 
 ## M3, M5 and M8: work in this repository
 
@@ -1284,14 +1288,21 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-145 · A mid-line `LINE n:` keeps the statement text (review F-3 of the TD-056 fix)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-010, contract I-6, TB-144, planning folder
-  `reviews/tab-042-td056-review.md` F-3
+- **Priority:** P3 Low · **Status:** Done (C-02 / DC-TB-1 pull request) · **Refs:** TABRION TAB-010, contract I-6,
+  TB-144, planning folder `reviews/tab-042-td056-review.md` F-3, Tabrion Studio security assessment C-02
 - **What:** `LINE \d+:` is only in the line-start alternative of `_SERVER_TEXT_START`. A syntax error joined onto
   one line (`syntax error at or near "x" LINE 1: INSERT ... VALUES ('...')`) keeps the statement text with its
   literals, also with the exception object in the record (the diag replacement covers `message_detail`,
   `message_hint` and `context` only). Pre-existing.
-- **Next step:** add `LINE \d+:` with psycopg's blanks to the inline alternative (little over-redaction risk), with
-  tests like `test_td056_*`.
+- **Also (C-02, Low):** the cheap pre-check `_SUSPICIOUS` that decides whether a text is scanned at all had no
+  `LINE` entry, so an escaped `\nLINE n:` echo inside a `repr` (a cast error in a list argument, as Studio's filter
+  order produces it) survived whenever no other label was in the text.
+- **Done:** `LINE \d+:` is in the inline alternative of `_SERVER_TEXT_START` (an upper-case whole word with a blank
+  and a value, like the other labels), and the pre-check also matches the pattern `LINE \d+:` (not the substring
+  `LINE `, so `PIPELINE 3 failed` stays off the redaction path). Tests in `tests/unit/test_errors.py`:
+  `test_c02_*` (escaped echo alone and after `DETAIL`, line-start echo alone, records without a database error,
+  linear time on 50 000-character inputs) and `test_tb145_*` (mid-line echo with one blank, a tab or two; ten
+  harmless texts kept; ordinary text not flagged).
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 

@@ -18,7 +18,11 @@ from typing import Any
 try:
     import alembic as _alembic  # noqa: F401  # the extra "migrations"
 except ImportError:
-    raise ImportError('tabrion.migrations needs the extra "migrations": pip install "tabrion[migrations]"') from None
+    raise ImportError(
+        'tabrion.migrations needs the extra "migrations": '
+        'pip install "tabrion[migrations] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"'
+        " (Tabrion is not on PyPI: pin the commit you use)"
+    ) from None
 
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory

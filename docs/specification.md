@@ -112,7 +112,8 @@ tabrion/                     package; layer B in the package root (importable on
 so that `tabrion.errors` stays standard-library only.
 
 **Layer B without the extra:** `import tabrion` always works. Accessing `tabrion.Database` without SQLAlchemy
-raises `ImportError` with the hint `pip install "tabrion[sqlalchemy]"`.
+raises `ImportError` with the hint `pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"` (the Git-pin form: Tabrion is not
+on PyPI).
 
 ---
 
@@ -405,7 +406,7 @@ codes.
 | Goal | Measure |
 |---|---|
 | Small | layer A ≤ 2 500 lines without tests, layer B ≤ 1 200 lines [A] |
-| Dependency-light | `pip install tabrion` installs 0 third-party packages |
+| Dependency-light | installing the core (`tabrion @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>`) installs 0 third-party packages |
 | Correct | the lost-update test (q.py scenario, 5 threads) gives 5 and 0 lock errors on SQLite; a parallel-claim test on PostgreSQL |
 | Safe | parameter and password leak tests over all error paths (TAB-T-E10..E14) |
 | Covered | branch coverage ≥ 90 % for layer A, ≥ 85 % for layer B |

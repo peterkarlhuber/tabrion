@@ -642,7 +642,8 @@ def safe_message(error: BaseException | Classification) -> str:
 # ---------------------------------------------------------------------------------------------------------------------
 
 #: Where psycopg's server text starts in a message: a ``DETAIL:``/``HINT:``/``CONTEXT:``/``QUERY:``/``LINE n:`` line,
-#: or the same upper-case label in the middle of a line, followed by at least one blank and a value. psycopg puts two
+#: or the same upper-case label in the middle of a line, followed by at least one blank and a value (``LINE n:`` as
+#: well since TB-145: a syntax error joined onto one line keeps psycopg's statement echo after it). psycopg puts two
 #: spaces after the colon, but a message that was joined onto one line or had its blanks collapsed keeps only one
 #: (TD-056 of tabrion-studio, review F-9 of its #78), so one blank followed by a value is enough. psycopg's two blanks
 #: count whatever follows, since a value may start on the next line (review F-1 of the TD-056 fix). The label is a
@@ -654,7 +655,7 @@ def safe_message(error: BaseException | Classification) -> str:
 #: (quadratic time, a log-injection DoS; Axentra review F-3).
 _SERVER_TEXT_START = re.compile(
     r"^[ \t]*(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):"
-    r"|(?<![ \t])[ \t]*\b(?:DETAIL|HINT|CONTEXT|QUERY):(?: {2}|[ \t]+(?=[^ \t\r\n]))"
+    r"|(?<![ \t])[ \t]*\b(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):(?: {2}|[ \t]+(?=[^ \t\r\n]))"
 )
 #: The header line of a formatted traceback. Only after one has been seen in a text does :data:`_BOUNDARY` end a
 #: removed part (Axentra review F-4): in free text the removal runs to the end.
@@ -682,7 +683,14 @@ _PARAMETERS_INLINE = re.compile(r"\[parameters: .*")
 _ESCAPED_SERVER_TEXT = re.compile(
     r"(?:\\r)?\\n[ \t]*(?:(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):|\[(?:parameters|SQL): ).*"
 )
+#: Cheap tests that decide whether a text is scanned at all (:func:`_has_server_text_marker`). Together they must
+#: cover every label of :data:`_SERVER_TEXT_START` and :data:`_ESCAPED_SERVER_TEXT`: without :data:`_LINE_LABEL` a
+#: ``LINE n:`` statement echo (also the escaped ``\\nLINE n:`` of a ``repr()``) survived whenever no other label was
+#: in the text (security assessment C-02, TB-145). ``LINE n:`` is a pattern rather than a substring so that ordinary
+#: text such as ``PIPELINE 3 failed`` does not send an exception or a broken log call down the redaction path. It
+#: has no word boundary, because the escaped form glues it to the ``n`` of ``\\n``; the scan itself decides.
 _SUSPICIOUS = ("DETAIL:", "HINT:", "CONTEXT:", "QUERY:", "[parameters: ", "\\n[SQL: ")
+_LINE_LABEL = re.compile(r"LINE \d+:")
 _REDACTED = "[redacted]"
 _MAX_COLLECT_DEPTH = 3
 _MAX_COLLECT_ITEMS = 1_000
@@ -694,7 +702,7 @@ def _strip_server_text(text: str) -> str:
     A part is replaced by :data:`_SERVER_TEXT_MARK` from its label to the end of the text; only inside a formatted
     traceback (after a ``Traceback (most recent call last):`` header) does it end at the next whole line of the
     traceback's structure (Axentra review F-4, re-review N-1)."""
-    if not any(marker in text for marker in _SUSPICIOUS):
+    if not _has_server_text_marker(text):
         return text
     text = _ESCAPED_SERVER_TEXT.sub(" " + _SERVER_TEXT_MARK, text)
     out: list[str] = []
@@ -720,8 +728,12 @@ def _strip_server_text(text: str) -> str:
     return "".join(out).rstrip("\n")
 
 
+def _has_server_text_marker(text: str) -> bool:
+    return any(marker in text for marker in _SUSPICIOUS) or _LINE_LABEL.search(text) is not None
+
+
 def _may_hold_server_text(value: object) -> bool:
-    return isinstance(value, str) and any(marker in value for marker in _SUSPICIOUS)
+    return isinstance(value, str) and _has_server_text_marker(value)
 
 
 def _is_db_error(exc: BaseException) -> bool:
