@@ -18,7 +18,7 @@
 > Program status 2026-11-13 (branch `claude/project-thread-bjlq25-t02-status`): TABRION JQ-1..JQ-4, MIG-AXE-0, QA-13,
 > QA-21 and QA-25 set to done in STATUS.md after a check on GitHub; no item of this file changes. The same pull request
 > drops the `# noqa: B008` on `tabrion.postgres.configure` that current ruff reports as unused (RUF100, CI lint);
-> TB-146 new (ruff unpinned in the lint job).
+> TB-146 new and done (ruff pinned to `>=0.17.5,<0.18` in the `dev` extra).
 
 ## Summary
 
@@ -37,7 +37,7 @@ TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follo
 | P0 Critical | 0 |
 | P1 High | 6 |
 | P2 Medium | 10 |
-| P3 Low | 44 |
+| P3 Low | 43 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -1221,13 +1221,15 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-146 · ruff is unpinned in the lint job, so a new ruff release can break master
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-12, `pyproject.toml` extra `dev` (`ruff>=0.8`),
+- **Priority:** P3 Low · **Status:** Done (program status pull request #61) · **Refs:** TABRION QA-12, `pyproject.toml`
+  extra `dev` (was `ruff>=0.8`),
   `.github/workflows/ci.yml` job `lint`
 - **What:** the lint job installs `.[dev]`, which takes the newest ruff. On 2026-11-13 a new release reported the
   `# noqa: B008` on `tabrion.postgres.configure` as unused (RUF100), so `lint` failed on master and on every open
   pull request with no change of ours (fixed by dropping the comment, program status pull request #61).
-- **Next step:** give ruff an upper bound in the `dev` extra (for example `ruff>=0.8,<0.18`) or pin it in a
-  constraints file for the lint job, and raise it on purpose with any fixes the new rules ask for.
+- **Done:** the `dev` extra pins ruff to `>=0.17.5,<0.18` (the release that reported RUF100, and no new minor), so
+  a new minor ruff release no longer changes the lint result. Raise the bound on purpose, with the fixes the new
+  rules ask for.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
