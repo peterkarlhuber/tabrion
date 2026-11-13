@@ -27,12 +27,12 @@ TAB-040 version-bump pull request: TB-142 and TB-143 done after their merges, TB
 follow-up pull request after the release commit `d5821fa` (review of #56, L-3): TB-008, TB-009, TB-011, TB-017,
 TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follow-up; bookkeeping pull request after
 `v0.1.0` (reviews of #56 and #57): TB-090 and TB-092 done; 0.2 switch pull request (TAB-042): TB-123 done, TB-121
-decided without a change, TB-013 in progress).
+decided without a change, TB-013 in progress; TAB-CR-1/2 pull request: TB-014 and TB-015 done).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 6 |
+| P1 High | 4 |
 | P2 Medium | 10 |
 | P3 Low | 42 |
 | P4 Optional | 7 |
@@ -496,20 +496,28 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-014 · Connection profile format v1 (TABRION TAB-CR-1)
 
-- **Priority:** P1 High · **Status:** Blocked (G-T1) · **Refs:** TABRION TAB-CR-1, CR-DB, R-CR-6
+- **Priority:** P1 High · **Status:** Done (branch `claude/project-thread-bjlq25-t02-cr`, lands in 0.2.0) · **Refs:**
+  TABRION TAB-CR-1, CR-DB, R-CR-6, contract section 5.9, I-107
 - **What:** a Tabrion connection profile format v1: schema, parser, secret references, no storage (storage stays in
   Studio and Nodestro). Studio STU-006 and Nodestro NOD-CR-3 use the same format. 2 + 0.5 agent days. New public API:
   needs a contract addendum and its own G-T1 style review.
-- **Next step:** the format after G-T1. The profile file extension no longer waits on a register check (owner
-  decision of 2026-11-08 11:26Z); keep the name out of frozen places where a choice exists, so a later rename stays
-  cheap (R-36, R-CR-6).
+- **Done:** `tabrion.profilefile` (experimental in 0.2, standard library only): `parse`, `load`, `dump`, contract
+  addendum section 5.9 (I-107), guide `docs/guides/profiles-and-schema.md`, `tests/unit/test_profilefile.py`. The
+  format fixes no file name or extension (R-CR-6), and Studio's `studio.toml` schema version 1 is a valid file. The
+  independent review of the new API is part of the 0.2.0 G-T2 review (TAB-042).
+- **Next step (consumers):** Studio STU-006/STU-CR-6 and Nodestro NOD-CR-3 adopt it; stability `X` until a
+  consumer has used it, then `S` (API stability policy S-1).
 
 ### TB-015 · Schema fingerprint and comparison (TABRION TAB-CR-2)
 
-- **Priority:** P1 High · **Status:** Blocked (TAB-CR-1, TAB-033) · **Refs:** TABRION TAB-CR-2, CR-DB, NOD-CR-5
+- **Priority:** P1 High · **Status:** Done (branch `claude/project-thread-bjlq25-t02-cr`, lands in 0.2.0) · **Refs:**
+  TABRION TAB-CR-2, CR-DB, NOD-CR-5, contract section 5.10, I-108
 - **What:** a schema fingerprint and a comparison through `Database.inspector`; NOD-CR-5 (node `database`) depends on
   it. 1.5 + 0.5 agent days. New public API, like TB-014.
-- **Next step:** after TAB-CR-1 and the inspector of TAB-033.
+- **Done:** `tabrion.schema` (experimental in 0.2, extra `sqlalchemy`): `snapshot`, `fingerprint`, `compare`,
+  `SchemaSnapshot.to_json`/`from_json`; contract section 5.10 (I-108); tests `tests/unit/test_schema.py`,
+  `tests/postgres/test_schema_postgres.py`.
+- **Next step (consumer):** Nodestro NOD-CR-5 stores the fingerprint and the snapshot JSON with a release.
 
 ### TB-016 · PyPI path (TABRION TAB-043), not planned
 

@@ -172,6 +172,7 @@ source_modules = [
     "tabrion.config",
     "tabrion.sqlite",
     "tabrion.check",
+    "tabrion.profilefile",
     "tabrion._deprecated",
 ]
 forbidden_modules = [
@@ -184,6 +185,7 @@ forbidden_modules = [
     "tabrion.testing",
     "tabrion.postgres",
     "tabrion.migrations",
+    "tabrion.schema",
 ]
 allow_indirect_imports = false
 
@@ -208,7 +210,7 @@ forbidden_modules = [
 id = "layer-b-sqlalchemy-only"
 name = "Layer B needs only SQLAlchemy"
 type = "forbidden"
-source_modules = ["tabrion._sa"]
+source_modules = ["tabrion._sa", "tabrion.schema"]
 forbidden_modules = ["pytest", "alembic", "psycopg_pool", "tabrion.testing", "tabrion.migrations"]
 
 # Doc 02 section 2: the migration helpers never import pytest (G-T1 condition C-5).
@@ -226,9 +228,9 @@ type = "layers"
 layers = [
     "tabrion.testing",
     "tabrion.migrations",
-    "tabrion._sa",
+    "tabrion._sa | tabrion.schema",
     "tabrion.postgres",
-    "tabrion.sqlite | tabrion.check",
+    "tabrion.sqlite | tabrion.check | tabrion.profilefile",
     "tabrion.sql | tabrion.config",
     # The foundation: every layer-A module raises or classifies with it (config raises ConfigurationError, TAB-012).
     "tabrion.errors",

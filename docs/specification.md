@@ -73,6 +73,7 @@ tabrion/                     package; layer B in the package root (importable on
 ├── config.py                layer A, stdlib: safe_url, url_from_env (including *_FILE)
 ├── sqlite.py                layer A, stdlib: SQLiteProfile, connect, apply_profile, check_path, write_/read_transaction,
 │                            migrate, backup, integrity_check, quick_check, foreign_key_check, diagnose
+├── profilefile.py           layer A, stdlib: connection profile file format v1 (since 0.2, TAB-CR-1)
 ├── postgres/                layer A, extra [postgres] (psycopg)
 │   ├── __init__.py          SessionSettings, configure, ping, diagnose, extension_status
 │   ├── roles.py             RoleInfo, RoleReport, role_info, check_role, inspect_role, grant_runtime_role
@@ -87,6 +88,7 @@ tabrion/                     package; layer B in the package root (importable on
 │   ├── _check.py            the layer-B checks of tabrion.check
 │   ├── _types.py            the documentation-only aliases Statement, Params, Isolation
 │   └── _v02.py              0.2 methods of Database and Transaction (mixins the public classes inherit since 0.2)
+├── schema.py                layer B, extra [sqlalchemy]: snapshot, fingerprint, compare (since 0.2, TAB-CR-2)
 ├── migrations.py            layer B, extra [migrations]: status, require_current, SchemaStatus (without env.py)
 └── testing/                 extra [testing] (pytest); pytest plugin only on explicit request (pytest_plugins)
     ├── __init__.py          configure(), fixtures
