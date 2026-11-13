@@ -262,8 +262,12 @@ def load(path: str | os.PathLike[str]) -> ProfileFile:
 def _read(path: str) -> tuple[bytes | None, str]:
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     try:
-        if stat.S_ISLNK(os.lstat(path).st_mode):
+        mode = os.lstat(path).st_mode
+        if stat.S_ISLNK(mode):
             return None, "profilefile.symlink"
+        if not stat.S_ISREG(mode):
+            # Before the open: Windows refuses to open a folder (PermissionError), and a device is never opened.
+            return None, "profilefile.not_regular_file"
         fd = os.open(path, flags)
     except (OSError, ValueError):
         return None, "profilefile.unreadable"
