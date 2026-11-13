@@ -27,14 +27,14 @@ TAB-040 version-bump pull request: TB-142 and TB-143 done after their merges, TB
 follow-up pull request after the release commit `d5821fa` (review of #56, L-3): TB-008, TB-009, TB-011, TB-017,
 TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follow-up; bookkeeping pull request after
 `v0.1.0` (reviews of #56 and #57): TB-090 and TB-092 done; 0.2 switch pull request (TAB-042): TB-123 done, TB-121
-decided without a change, TB-013 in progress; TAB-CR-1/2 pull request: TB-014 and TB-015 done).
+decided without a change, TB-013 in progress, TB-147 new; TAB-CR-1/2 pull request: TB-014 and TB-015 done).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 4 |
 | P2 Medium | 10 |
-| P3 Low | 42 |
+| P3 Low | 43 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -1321,6 +1321,16 @@ required (owner decision of 2026-11-08 11:26Z).
   other executable with the connection's dialect. Tests: `test_tb123_other_executables_are_checked` (3 forms x 3
   texts x `query`/`stream`), `test_tb123_core_constructs_and_harmless_executables_pass`, PostgreSQL
   `test_tb123_and_chain_in_other_executables_is_refused`.
+
+### TB-147 · A `@compiles` override of a Core DML or schema construct skips the transaction-control pre-check (TABRION TAB-042)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-042, TB-123, contract I-104, review of #63 (Low)
+- **What:** `_sql_text` (`tabrion._sa._v02`) skips every `UpdateBase` and `ExecutableDDLElement` on the assumption
+  that it compiles to its own keyword. A subclass that a `@compiles` hook turns into `COMMIT AND CHAIN` passes the
+  pre-check, and the check after the statement cannot see the chained transaction (probe on PostgreSQL 16). This
+  needs code-authored constructs, not user SQL text; the limit is stated in I-104.
+- **Next step:** compile any construct whose `__visit_name__` is not one of SQLAlchemy's own (or whose class has a
+  `@compiles` override for the dialect) and read the text like any other executable.
 
 ### TB-056 · Layer-B waits outside `timeout` (TABRION TAB-018, TAB-041)
 
