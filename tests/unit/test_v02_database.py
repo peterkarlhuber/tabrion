@@ -1,9 +1,8 @@
 """The 0.2 Studio APIs of layer B on SQLite (TAB-033): ``query``/``Result``, ``stream``, ``cancel``, ``inspector``,
 ``on_begin``, ``savepoint`` and ``run_transaction`` (TAB-T-B15, B26..B40; contract I-100..I-106).
 
-They are staged until 0.2 (G-T1 condition C-6): ``tabrion.Database`` does not have them yet, so these tests use the
-private ``tabrion._sa._staged`` classes, which combine the mixins with the 0.1 classes exactly as 0.2 will. The
-PostgreSQL side is ``tests/postgres/test_v02_postgres.py``.
+Public since 0.2 (TAB-042): ``tabrion.Database`` and ``tabrion.Transaction`` inherit the mixins of
+``tabrion._sa._v02``. The PostgreSQL side is ``tests/postgres/test_v02_postgres.py``.
 """
 
 # ruff: noqa: S608  (the SQL is fixed text and generated table names)
@@ -26,15 +25,15 @@ import pytest
 
 sqlalchemy = pytest.importorskip("sqlalchemy")
 from sqlalchemy import Connection  # noqa: E402
+from sqlalchemy.ext.compiler import compiles  # noqa: E402
+from sqlalchemy.sql.expression import ClauseElement, Executable  # noqa: E402
 
 pytest.importorskip("psycopg")
 
-from tabrion import Database, Profile, Transaction  # noqa: E402
-from tabrion._sa._staged import _StagedDatabase, _StagedTransaction  # noqa: E402
+from tabrion import Column, Database, Profile, Result, Transaction  # noqa: E402  # noqa: E402
 import tabrion._sa._v02  # noqa: E402
 from tabrion._sa._v02 import statement_kind  # noqa: E402
 import tabrion._sa.database  # noqa: E402
-from tabrion._sa.result import Column, Result  # noqa: E402
 from tabrion.errors import (  # noqa: E402
     Canceled,
     Classification,
@@ -49,16 +48,15 @@ from tabrion.errors import (  # noqa: E402
 )
 from tabrion.sqlite import SQLiteProfile  # noqa: E402
 from tests.conftest import ROOT  # noqa: E402
-from tests.unit.test_mutation_probes import _copy  # noqa: E402
 
 SECRET = "SECRET-4711"
 COUNT_FOREVER = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c"
 EVERY_NUMBER = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT x FROM c"
 
 
-def staged(transaction: Transaction) -> _StagedTransaction:
-    """The transaction as the 0.2 type (``tabrion.Transaction`` has these methods from 0.2 on)."""
-    assert isinstance(transaction, _StagedTransaction)
+def staged(transaction: Transaction) -> Transaction:
+    """The transaction (a name kept from the staging of TAB-033; ``tabrion.Transaction`` has the methods since 0.2)."""
+    assert isinstance(transaction, Transaction)
     return transaction
 
 
@@ -68,13 +66,12 @@ def path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def open_db(path: Path) -> Iterator[Callable[..., _StagedDatabase]]:
+def open_db(path: Path) -> Iterator[Callable[..., Database]]:
     opened: list[Database] = []
 
-    def factory(profile: Profile | None = None) -> _StagedDatabase:
-        database = _StagedDatabase.from_url(f"sqlite:///{path}", profile=profile)
+    def factory(profile: Profile | None = None) -> Database:
+        database = Database.from_url(f"sqlite:///{path}", profile=profile)
         opened.append(database)
-        assert isinstance(database, _StagedDatabase)
         return database
 
     yield factory
@@ -83,7 +80,7 @@ def open_db(path: Path) -> Iterator[Callable[..., _StagedDatabase]]:
 
 
 @pytest.fixture
-def db(open_db: Callable[..., _StagedDatabase]) -> _StagedDatabase:
+def db(open_db: Callable[..., Database]) -> Database:
     database = open_db()
     database.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, n INTEGER NOT NULL, label TEXT)")
     database.execute(
@@ -107,57 +104,45 @@ def cancel_later(transaction: Transaction, delay: float) -> tuple[threading.Thre
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Staging (G-T1 condition C-6)
+# Public since 0.2 (TAB-042; G-T1 condition C-6 kept them off the 0.1 classes)
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_the_public_classes_stay_0_1(db: _StagedDatabase) -> None:
-    """The staged classes are subclasses; ``tabrion.Database`` and ``tabrion.Transaction`` gain nothing in 0.1."""
-    assert isinstance(db, Database)
+def test_the_public_classes_have_the_0_2_methods(db: Database) -> None:
+    """``tabrion.Database`` and ``tabrion.Transaction`` inherit the mixins; ``read()`` yields a ``Transaction``."""
     for name in ("query", "inspector", "on_begin", "run_transaction"):
-        assert not hasattr(Database, name)
+        assert callable(getattr(Database, name))
     for name in ("query", "stream", "cancel", "savepoint"):
-        assert not hasattr(Transaction, name)
-    with Database.from_url("sqlite://") as plain, plain.read() as transaction:
+        assert callable(getattr(Transaction, name))
+    assert tabrion._sa._v02._DatabaseV02 in Database.__mro__
+    assert tabrion._sa._v02._TransactionV02 in Transaction.__mro__
+    with db.read() as transaction:
         assert type(transaction) is Transaction
 
 
-def test_tb024_mixing_in_at_the_top_has_no_import_cycle(tmp_path: Path) -> None:
-    """TB-024 (CC-2): ``database`` can import the mixins at its top, as 0.2 will, and the 0.2 methods then work."""
-    copy = _copy(tmp_path)
-    target = copy / "tabrion" / "_sa" / "database.py"
-    text = target.read_text(encoding="utf-8")
-    for anchor, replacement in (
-        (
-            "from tabrion._sa._types import",
-            "from tabrion._sa._v02 import _DatabaseV02, _TransactionV02\nfrom tabrion._sa._types import",
-        ),
-        ("class Transaction:", "class Transaction(_TransactionV02):"),
-        ("class Database:", "class Database(_DatabaseV02):"),
-    ):
-        assert text.count(anchor) == 1
-        text = text.replace(anchor, replacement)
-    target.write_text(text, encoding="utf-8")
+def test_tb024_a_fresh_interpreter_imports_the_mixins_without_a_cycle() -> None:
+    """TB-024 (CC-2): ``database`` imports the mixins at its top; a fresh process imports and uses them."""
     program = (
         "import tabrion\n"
         "with tabrion.Database.from_url('sqlite://') as db:\n"
         "    result = db.query('SELECT 1 AS one')\n"
         "    with db.read() as tx:\n"
         "        batches = list(tx.stream('SELECT 2'))\n"
-        "print(result.rows, len(batches))\n"
+        "print(result.rows, len(batches), type(result) is tabrion.Result)\n"
     )
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-    env["PYTHONPATH"] = os.pathsep.join([str(copy), str(ROOT)])
-    done = subprocess.run(
-        [sys.executable, "-c", program],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert done.returncode == 0, done.stderr
-    assert done.stdout.strip() == "((1,),) 1"
+    for first in ("tabrion", "tabrion._sa._v02", "tabrion._sa.database", "tabrion._sa.result"):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+        env["PYTHONPATH"] = str(ROOT / "src")
+        done = subprocess.run(
+            [sys.executable, "-c", f"import {first}\n" + program],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert done.returncode == 0, done.stderr
+        assert done.stdout.strip() == "((1,),) 1 True"
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -165,7 +150,7 @@ def test_tb024_mixing_in_at_the_top_has_no_import_cycle(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_b26_query_returns_a_result(db: _StagedDatabase) -> None:
+def test_b26_query_returns_a_result(db: Database) -> None:
     result = db.query("SELECT id, n, label, NULL AS empty FROM items WHERE n < :limit ORDER BY n", {"limit": 3})
     assert isinstance(result, Result)
     assert result.columns == (
@@ -182,7 +167,7 @@ def test_b26_query_returns_a_result(db: _StagedDatabase) -> None:
         result.row_count = 0  # type: ignore[misc]  # frozen
 
 
-def test_b26_query_in_a_transaction_and_no_rows(db: _StagedDatabase) -> None:
+def test_b26_query_in_a_transaction_and_no_rows(db: Database) -> None:
     with db.transaction() as transaction:
         written = staged(transaction).query("INSERT INTO items (n) VALUES (100)")
         assert (written.columns, written.rows, written.row_count, written.statement_kind) == ((), (), 0, "dml")
@@ -194,7 +179,7 @@ def test_b26_query_in_a_transaction_and_no_rows(db: _StagedDatabase) -> None:
     assert (empty.rows, empty.row_count, empty.truncated, len(empty.columns)) == ((), 0, False, 3)
 
 
-def test_b27_max_rows_is_enforced(open_db: Callable[..., _StagedDatabase], db: _StagedDatabase) -> None:
+def test_b27_max_rows_is_enforced(open_db: Callable[..., Database], db: Database) -> None:
     result = db.query("SELECT n FROM items ORDER BY n", max_rows=10)
     assert (result.row_count, result.truncated) == (10, True)
     assert result.rows == tuple((n,) for n in range(10))
@@ -244,7 +229,7 @@ def test_b28_statement_kind() -> None:
         assert statement_kind(executable) == kind, executable
 
 
-def test_b28_core_expressions(db: _StagedDatabase) -> None:
+def test_b28_core_expressions(db: Database) -> None:
     metadata = sqlalchemy.MetaData()
     items = sqlalchemy.Table("items", metadata, autoload_with=db.engine)
     result = db.query(sqlalchemy.select(items.c.n).where(items.c.n >= 20).order_by(items.c.n))
@@ -253,7 +238,7 @@ def test_b28_core_expressions(db: _StagedDatabase) -> None:
     assert result.statement_kind == "select"
 
 
-def test_b29_database_query_is_read_only(db: _StagedDatabase) -> None:
+def test_b29_database_query_is_read_only(db: Database) -> None:
     with pytest.raises(ReadOnlyViolation):
         db.query("INSERT INTO items (n) VALUES (1)")
     with pytest.raises(ReadOnlyViolation):
@@ -266,7 +251,7 @@ def test_b29_database_query_is_read_only(db: _StagedDatabase) -> None:
         assert staged(transaction).query("SELECT 1").rows == ((1,),)
 
 
-def test_b29_errors_are_translated_without_values(db: _StagedDatabase) -> None:
+def test_b29_errors_are_translated_without_values(db: Database) -> None:
     with pytest.raises(TabrionError) as info:
         db.query("SELECT * FROM missing WHERE label = :v", {"v": SECRET})
     assert info.value.code == "database.undefined_object"
@@ -280,7 +265,7 @@ def test_b29_errors_are_translated_without_values(db: _StagedDatabase) -> None:
         db.query(42)  # type: ignore[arg-type]
 
 
-def test_b30_query_timeout(db: _StagedDatabase) -> None:
+def test_b30_query_timeout(db: Database) -> None:
     started = time.monotonic()
     with pytest.raises(StatementTimeout) as info:
         db.query(COUNT_FOREVER, timeout=0.2)
@@ -315,7 +300,7 @@ def _classification(**changes: Any) -> Classification:
     return replace(base, **changes)
 
 
-def test_b31_run_transaction_retries_retryable_errors(db: _StagedDatabase) -> None:
+def test_b31_run_transaction_retries_retryable_errors(db: Database) -> None:
     calls: list[int] = []
 
     def work(transaction: Transaction) -> int:
@@ -330,7 +315,7 @@ def test_b31_run_transaction_retries_retryable_errors(db: _StagedDatabase) -> No
     assert db.query("SELECT n FROM items WHERE n >= 1000").rows == ((1003,),)
 
 
-def test_b31_run_transaction_with_a_real_lock(path: Path, open_db: Callable[..., _StagedDatabase]) -> None:
+def test_b31_run_transaction_with_a_real_lock(path: Path, open_db: Callable[..., Database]) -> None:
     """A writer holds the lock past the busy timeout: BEGIN IMMEDIATE fails (LOCKED) until it lets go."""
     db = open_db(Profile(sqlite=replace(SQLiteProfile(), busy_timeout=0.1)))
     db.execute("CREATE TABLE t (n INTEGER)")
@@ -357,7 +342,7 @@ def test_b31_run_transaction_with_a_real_lock(path: Path, open_db: Callable[...,
     assert db.fetch_scalar("SELECT count(*) FROM t") == 1
 
 
-def test_b32_run_transaction_does_not_retry_the_rest(db: _StagedDatabase) -> None:
+def test_b32_run_transaction_does_not_retry_the_rest(db: Database) -> None:
     calls: list[int] = []
 
     def unique(transaction: Transaction) -> None:
@@ -396,7 +381,7 @@ def test_b32_run_transaction_does_not_retry_the_rest(db: _StagedDatabase) -> Non
     assert len(calls) == 1
 
 
-def test_b32_run_transaction_arguments(db: _StagedDatabase) -> None:
+def test_b32_run_transaction_arguments(db: Database) -> None:
     def work(transaction: Transaction) -> str:
         return "ok"
 
@@ -423,7 +408,7 @@ def test_b32_run_transaction_arguments(db: _StagedDatabase) -> None:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_b34_stream_in_batches(db: _StagedDatabase) -> None:
+def test_b34_stream_in_batches(db: Database) -> None:
     with db.read() as transaction:
         batches = list(staged(transaction).stream("SELECT n FROM items ORDER BY n", batch_size=10))
         assert [len(batch) for batch in batches] == [10, 10, 5]
@@ -435,7 +420,7 @@ def test_b34_stream_in_batches(db: _StagedDatabase) -> None:
         assert rows[0]._mapping == {"n": 3, "label": "r3"}
 
 
-def test_b34_stream_is_lazy_and_bounded(db: _StagedDatabase) -> None:
+def test_b34_stream_is_lazy_and_bounded(db: Database) -> None:
     """An endless statement: the first batches arrive; nothing is materialized beyond the batch (fetchmany)."""
     with db.read() as transaction:
         started = time.monotonic()
@@ -450,7 +435,7 @@ def test_b34_stream_is_lazy_and_bounded(db: _StagedDatabase) -> None:
         assert staged(transaction).query("SELECT count(*) FROM items").rows == ((25,),)
 
 
-def test_b34_stream_ends_with_its_transaction(db: _StagedDatabase) -> None:
+def test_b34_stream_ends_with_its_transaction(db: Database) -> None:
     with db.read() as transaction:
         stream = staged(transaction).stream(EVERY_NUMBER, batch_size=10)
         next(stream)
@@ -467,7 +452,7 @@ def test_b34_stream_ends_with_its_transaction(db: _StagedDatabase) -> None:
     assert db.query("SELECT 1").rows == ((1,),)
 
 
-def test_b34_stream_arguments_and_errors(db: _StagedDatabase) -> None:
+def test_b34_stream_arguments_and_errors(db: Database) -> None:
     with db.read() as transaction:
         tx = staged(transaction)
         for bad, error in ((0, ValueError), (True, TypeError), (2.5, TypeError)):
@@ -486,7 +471,7 @@ def test_b34_stream_arguments_and_errors(db: _StagedDatabase) -> None:
     assert norows.value.code == "database.no_rows_returned"
 
 
-def test_b34_stream_from_another_thread_is_refused(db: _StagedDatabase) -> None:
+def test_b34_stream_from_another_thread_is_refused(db: Database) -> None:
     with db.read() as transaction:
         stream = staged(transaction).stream("SELECT n FROM items", batch_size=5)
         next(stream)
@@ -505,7 +490,7 @@ def test_b34_stream_from_another_thread_is_refused(db: _StagedDatabase) -> None:
         assert errors[0].code == "database.wrong_thread"
 
 
-def test_b35_stream_timeout_per_batch(db: _StagedDatabase) -> None:
+def test_b35_stream_timeout_per_batch(db: Database) -> None:
     slow = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT x FROM c WHERE x % 5000000 = 0"
     with db.read() as transaction:
         stream = staged(transaction).stream(slow, batch_size=1, timeout=0.2)
@@ -513,7 +498,7 @@ def test_b35_stream_timeout_per_batch(db: _StagedDatabase) -> None:
             next(stream)
 
 
-def test_b35_cancel_a_stream(db: _StagedDatabase) -> None:
+def test_b35_cancel_a_stream(db: Database) -> None:
     with pytest.raises(Canceled), db.read() as transaction:
         stream = staged(transaction).stream(EVERY_NUMBER, batch_size=100)
         next(stream)
@@ -527,7 +512,7 @@ def test_b35_cancel_a_stream(db: _StagedDatabase) -> None:
 
 
 @pytest.mark.parametrize("method", ["query", "fetch_scalar", "stream"])
-def test_b15_cancel_from_a_second_thread(db: _StagedDatabase, method: str) -> None:
+def test_b15_cancel_from_a_second_thread(db: Database, method: str) -> None:
     """The statement stops within 1 s of cancel() (TAB-033 acceptance); the transaction rolls back."""
     with pytest.raises(Canceled) as info, db.transaction() as transaction:
         transaction.execute("INSERT INTO items (n) VALUES (500)")
@@ -549,7 +534,7 @@ def test_b15_cancel_from_a_second_thread(db: _StagedDatabase, method: str) -> No
     assert db.query("SELECT 1").rows == ((1,),)  # the pooled connection works afterwards
 
 
-def test_b40_a_canceled_transaction_is_never_committed(db: _StagedDatabase) -> None:
+def test_b40_a_canceled_transaction_is_never_committed(db: Database) -> None:
     with pytest.raises(Canceled), db.transaction() as transaction:
         transaction.execute("INSERT INTO items (n) VALUES (600)")
         staged(transaction).cancel()  # nothing runs: the transaction is marked
@@ -559,7 +544,7 @@ def test_b40_a_canceled_transaction_is_never_committed(db: _StagedDatabase) -> N
     assert db.query("SELECT count(*) FROM items WHERE n >= 600").rows == ((0,),)
 
 
-def test_b40_cancel_after_the_end_is_a_no_op(open_db: Callable[..., _StagedDatabase]) -> None:
+def test_b40_cancel_after_the_end_is_a_no_op(open_db: Callable[..., Database]) -> None:
     """A late cancel() cannot reach the next transaction on the same pooled connection."""
     db = open_db(Profile(pool_size=1))
     with db.read() as first:
@@ -570,7 +555,7 @@ def test_b40_cancel_after_the_end_is_a_no_op(open_db: Callable[..., _StagedDatab
     staged(first).cancel()  # idempotent, never raises
 
 
-def test_b40_cancel_from_many_threads(db: _StagedDatabase) -> None:
+def test_b40_cancel_from_many_threads(db: Database) -> None:
     with pytest.raises(Canceled), db.read() as transaction:
         threads = [threading.Thread(target=staged(transaction).cancel) for _ in range(8)]
         for thread in threads:
@@ -585,7 +570,7 @@ def test_b40_cancel_from_many_threads(db: _StagedDatabase) -> None:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_b36_inspector(db: _StagedDatabase) -> None:
+def test_b36_inspector(db: Database) -> None:
     db.execute("CREATE INDEX items_n ON items (n)")
     db.execute("CREATE VIEW small AS SELECT n FROM items WHERE n < 5")
     with db.inspector() as inspector:
@@ -602,7 +587,7 @@ def test_b36_inspector(db: _StagedDatabase) -> None:
         assert [i["name"] for i in inspector.get_indexes("items")] == ["items_n"]
 
 
-def test_b36_inspector_is_read_only(db: _StagedDatabase) -> None:
+def test_b36_inspector_is_read_only(db: Database) -> None:
     with pytest.raises(ReadOnlyViolation), db.inspector() as inspector:
         connection = inspector.bind
         assert isinstance(connection, Connection)
@@ -613,7 +598,7 @@ def test_b36_inspector_is_read_only(db: _StagedDatabase) -> None:
         db.query("SELECT 1")  # it holds a read() of this thread
 
 
-def test_b36_inspector_catalog_of_500_tables(db: _StagedDatabase) -> None:
+def test_b36_inspector_catalog_of_500_tables(db: Database) -> None:
     """STU-010 lists the catalog of 500 tables in under 1 s; the bound here leaves room for slow CI runners."""
     with db.transaction() as transaction:
         for i in range(500):
@@ -632,7 +617,7 @@ def test_b36_inspector_catalog_of_500_tables(db: _StagedDatabase) -> None:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_b37_on_begin(db: _StagedDatabase) -> None:
+def test_b37_on_begin(db: Database) -> None:
     seen: list[tuple[bool, bool]] = []
 
     def callback(connection: Connection, read_only: bool) -> None:
@@ -660,7 +645,7 @@ def test_b37_on_begin(db: _StagedDatabase) -> None:
         db.on_begin("no")  # type: ignore[arg-type]
 
 
-def test_b37_on_begin_errors_roll_back(db: _StagedDatabase) -> None:
+def test_b37_on_begin_errors_roll_back(db: Database) -> None:
     def fails(connection: Connection, read_only: bool) -> None:
         connection.exec_driver_sql("INSERT INTO items (n) VALUES (700)")
         raise RuntimeError("callback")
@@ -684,7 +669,7 @@ def test_b37_on_begin_errors_roll_back(db: _StagedDatabase) -> None:
         db.on_begin(lambda connection, read_only: None)
 
 
-def test_b38_savepoint(db: _StagedDatabase) -> None:
+def test_b38_savepoint(db: Database) -> None:
     with db.transaction() as transaction:
         tx = staged(transaction)
         tx.execute("INSERT INTO items (n) VALUES (800)")
@@ -710,7 +695,7 @@ def test_b38_savepoint(db: _StagedDatabase) -> None:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_b39_one_statement_per_query(db: _StagedDatabase) -> None:
+def test_b39_one_statement_per_query(db: Database) -> None:
     """sqlite3 runs one statement per execute: a second one is refused before anything runs."""
     for text in (
         "SELECT 1; DELETE FROM items",
@@ -725,7 +710,7 @@ def test_b39_one_statement_per_query(db: _StagedDatabase) -> None:
     assert db.query("SELECT count(*) FROM items").rows == ((25,),)
 
 
-def test_b39_lifting_read_only_in_one_statement_is_refused(db: _StagedDatabase) -> None:
+def test_b39_lifting_read_only_in_one_statement_is_refused(db: Database) -> None:
     """``PRAGMA query_only = OFF`` alone writes nothing, and the read-back before COMMIT refuses it (I-56)."""
     with pytest.raises(UsageError) as info:
         db.query("PRAGMA query_only = OFF")
@@ -736,7 +721,7 @@ def test_b39_lifting_read_only_in_one_statement_is_refused(db: _StagedDatabase) 
     assert db.query("SELECT count(*) FROM items").rows == ((25,),)
 
 
-def test_b39_read_only_profile(path: Path, db: _StagedDatabase, open_db: Callable[..., _StagedDatabase]) -> None:
+def test_b39_read_only_profile(path: Path, db: Database, open_db: Callable[..., Database]) -> None:
     readonly = open_db(Profile.readonly())
     assert readonly.query("SELECT count(*) FROM items").rows == ((25,),)
     with pytest.raises(ReadOnlyViolation):
@@ -752,7 +737,7 @@ def test_b39_read_only_profile(path: Path, db: _StagedDatabase, open_db: Callabl
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_l1_the_callers_sql_cannot_end_the_transaction(db: _StagedDatabase) -> None:
+def test_l1_the_callers_sql_cannot_end_the_transaction(db: Database) -> None:
     """``COMMIT`` alone would end the ``read()``; a ``PRAGMA query_only = OFF`` and an autocommitted write could
     follow. The call raises, every later statement is refused, and the block does not end quietly."""
     with pytest.raises(UsageError) as at_end, db.read() as transaction:
@@ -787,7 +772,7 @@ REFUSED = [
 
 @pytest.mark.parametrize("method", ["query", "stream"])
 @pytest.mark.parametrize("text", REFUSED)
-def test_n1_transaction_control_is_refused_before_sending(db: _StagedDatabase, text: str, method: str) -> None:
+def test_n1_transaction_control_is_refused_before_sending(db: Database, text: str, method: str) -> None:
     """N-1 of the re-review of #32: a statement that would end the transaction is never sent, whatever comes
     first (whitespace, ``;``, ``(``, comments read nested or not). The write before it is rolled back."""
     with pytest.raises(UsageError) as at_end, db.transaction() as transaction:
@@ -802,11 +787,63 @@ def test_n1_transaction_control_is_refused_before_sending(db: _StagedDatabase, t
     assert db.query("SELECT count(*) FROM items WHERE n >= 300").rows == ((0,),)
 
 
+class _RawExecutable(Executable, ClauseElement):
+    """An executable of none of the known classes; it compiles to its text (TB-123)."""
+
+    inherit_cache = False
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+def _compile_raw(element: _RawExecutable, compiler: Any, **kw: Any) -> str:
+    return element.text
+
+
+compiles(_RawExecutable)(_compile_raw)
+
+
+EXECUTABLES: list[Callable[[str], Any]] = [
+    lambda text: sqlalchemy.text(text).columns(sqlalchemy.column("x")),
+    sqlalchemy.DDL,
+    _RawExecutable,
+]
+
+
+@pytest.mark.parametrize("method", ["query", "stream"])
+@pytest.mark.parametrize("make", EXECUTABLES, ids=["textual-select", "ddl", "custom-executable"])
+@pytest.mark.parametrize("text", ["COMMIT", "/* x */ ROLLBACK", "-- x\nEND"])
+def test_tb123_other_executables_are_checked(db: Database, make: Callable[[str], Any], text: str, method: str) -> None:
+    """TB-123 (review of #32 C-1): ``text().columns()``, ``DDL(...)`` and other executables are lexed as well; the
+    statement is never sent and the write before it is rolled back."""
+    with pytest.raises(UsageError) as at_end, db.transaction() as transaction:
+        transaction.execute("INSERT INTO items (n) VALUES (310)")
+        with pytest.raises(UsageError) as info:
+            result = getattr(staged(transaction), method)(make(text))
+            if method == "stream":
+                next(result)
+        assert info.value.code == "database.transaction_ended"
+        assert transaction._dbapi.in_transaction  # not sent
+    assert at_end.value.code == "database.transaction_ended"
+    assert db.query("SELECT count(*) FROM items WHERE n = 310").rows == ((0,),)
+
+
+def test_tb123_core_constructs_and_harmless_executables_pass(db: Database) -> None:
+    items = sqlalchemy.table("items", sqlalchemy.column("n"))
+    with db.transaction() as transaction:
+        assert staged(transaction).query(sqlalchemy.select(items.c.n).limit(1)).statement_kind == "select"
+        assert staged(transaction).query(sqlalchemy.insert(items).values(n=320)).statement_kind == "dml"
+        assert staged(transaction).query(sqlalchemy.text("SELECT 1").columns(sqlalchemy.column("x"))).rows == ((1,),)
+        assert staged(transaction).query(_RawExecutable("SELECT 2")).rows == ((2,),)
+        staged(transaction).query(sqlalchemy.DDL("CREATE TABLE tb123 (x INTEGER)"))
+    assert db.query("SELECT count(*) FROM items WHERE n = 320").rows == ((1,),)
+
+
 @pytest.mark.parametrize(
     "text",
     ["SELECT 'commit'", "/* commit */ SELECT 1", "-- rollback\nSELECT 1", "SELECT 1 AS endless", "VALUES (2)"],
 )
-def test_n1_other_statements_pass(db: _StagedDatabase, text: str) -> None:
+def test_n1_other_statements_pass(db: Database, text: str) -> None:
     with db.read() as transaction:
         assert len(staged(transaction).query(text).rows) == 1
 
@@ -814,7 +851,7 @@ def test_n1_other_statements_pass(db: _StagedDatabase, text: str) -> None:
 @pytest.mark.parametrize("method", ["query", "stream"])
 @pytest.mark.parametrize("text", ["COMMIT", "ROLLBACK", "END"])
 def test_n2_status_check_after_the_statement(
-    db: _StagedDatabase, monkeypatch: pytest.MonkeyPatch, text: str, method: str
+    db: Database, monkeypatch: pytest.MonkeyPatch, text: str, method: str
 ) -> None:
     """N-2 of the re-review of #32: the second line on its own (the refusal before sending switched off). After
     ``stream("ROLLBACK")`` or ``query("ROLLBACK")`` the next write would autocommit; it is refused instead."""
@@ -835,9 +872,7 @@ def test_n2_status_check_after_the_statement(
         assert db.query("SELECT count(*) FROM items WHERE n = 200").rows == ((0,),)
 
 
-def test_n3_the_end_of_the_block_waits_for_a_cancel_being_sent(
-    db: _StagedDatabase, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_n3_the_end_of_the_block_waits_for_a_cancel_being_sent(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     """N-3 of the re-review of #32: the end of the block does not overtake a cancel request that is being sent
     (the connection could be handed out while the request is still on its way)."""
     events: list[str] = []
@@ -857,7 +892,7 @@ def test_n3_the_end_of_the_block_waits_for_a_cancel_being_sent(
     assert events[0] == "sent"
 
 
-def test_l3_cancel_sends_only_while_a_statement_runs(db: _StagedDatabase, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_l3_cancel_sends_only_while_a_statement_runs(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     sent: list[str] = []
     original = tabrion._sa.database._send_cancel
 

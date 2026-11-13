@@ -5,13 +5,10 @@ Layer A (driver core) lives in ``tabrion.errors``, ``tabrion.sql``, ``tabrion.co
 ``sqlalchemy``) is exported here lazily (PEP 562): ``import tabrion`` always works, and a layer-B name without
 SQLAlchemy raises ``ImportError`` with the installation hint.
 
-The 0.2 names (``Result``, ``Column`` and the 0.2 methods of ``Database`` and ``Transaction``) are frozen in
-``docs/api/surface.json`` but not exported before 0.2 (G-T1 condition C-6).
-
-Status (milestone M2): every 0.1 name is implemented: layer A (``tabrion.errors``, ``tabrion.sql``,
-``tabrion.config``, ``tabrion.sqlite``, ``tabrion.postgres``, ``tabrion.check``), layer B (TAB-018),
-``tabrion.migrations`` and ``tabrion.testing``. The 0.2 names in ``tabrion._sa._v02`` are implemented and staged
-(TAB-033); ``scripts/api_surface.py --no-stubs`` fails if a name of the package's minor is a stub (TB-022).
+Since 0.2 (TAB-042) the Studio APIs are public: ``Result``, ``Column`` and the 0.2 methods of ``Database``
+(``query``, ``inspector``, experimental ``on_begin`` and ``run_transaction``) and ``Transaction`` (``query``,
+``stream``, ``cancel``, experimental ``savepoint``); ``docs/api/surface.json`` freezes them.
+``scripts/api_surface.py --no-stubs`` fails if a name of the package's minor is a stub (TB-022).
 """
 
 from __future__ import annotations
@@ -24,13 +21,16 @@ from tabrion._version import __version__
 if TYPE_CHECKING:
     from tabrion._sa.database import Database, Health, Transaction
     from tabrion._sa.profile import Profile, TLSMode
+    from tabrion._sa.result import Column, Result
     from tabrion.config import safe_url
     from tabrion.errors import TabrionError
 
 __all__ = [
+    "Column",
     "Database",
     "Health",
     "Profile",
+    "Result",
     "TLSMode",
     "TabrionError",
     "Transaction",
@@ -47,6 +47,8 @@ _LAYER_B = {
     "Transaction": "tabrion._sa.database",
     "Profile": "tabrion._sa.profile",
     "TLSMode": "tabrion._sa.profile",
+    "Result": "tabrion._sa.result",
+    "Column": "tabrion._sa.result",
 }
 
 _SQLALCHEMY_HINT = 'tabrion.{name} needs the extra "sqlalchemy": pip install "tabrion[sqlalchemy]"'

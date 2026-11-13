@@ -168,7 +168,7 @@ Planned effort: 4.5 + 1.75 agent days; with CR-DB also TAB-CR-1 and TAB-CR-2 (3.
 |---|---|---|---|---|---|---|---|---|
 | TAB-033 | 0.2: query/Result, stream, cancel, inspector (Studio APIs) | tabrion | TAB-040 | - | 3 + 0.75 | Core | Done (implemented and staged; public with 0.2) | Merged in [#32](https://github.com/peterkarlhuber/tabrion/pull/32) (`3d79898`), landed through [#44](https://github.com/peterkarlhuber/tabrion/pull/44) (`5bf4012`). Implemented and staged (G-T1 C-6): `tabrion._sa._v02`, contract I-100..I-106, TAB-T-B15, B26..B40 on SQLite and PostgreSQL; public with 0.2 (TAB-042, TB-013) |
 | TAB-043 | PyPI path V-B (bound to G-R): trusted publisher, 0.1.0rc1 | tabrion | TAB-040, GOV-1 | G-R | 0.5 + 0.5 | Core | Not started | Not planned (owner decision of 2026-11-08 11:26Z): consumers use Git SHA pins; only if a publication is decided, then with G-R and the environment `pypi` (O-2) |
-| TAB-042 | Release 0.2.0 (Studio APIs) and 0.2 documentation | tabrion | TAB-033 | G-T2 | 1 + 0.5 | Core | Not started |  |
+| TAB-042 | Release 0.2.0 (Studio APIs) and 0.2 documentation | tabrion | TAB-033 | G-T2 | 1 + 0.5 | Core | In progress | 0.2 switch (branch `claude/project-thread-bjlq25-t02-v02`): the Studio APIs public, `0.2.0.dev0`, guide `docs/guides/studio-apis.md`, TODO TB-123 done, TB-121 decided; TD-056 redaction fix (TODO TB-144, #62); TAB-CR-1/2 and the release pull request with G-T2 follow |
 
 ### M5: Waves W3-W6 (S2b session and locks, S2c, S3 roles, S4 SQLite including Desktop); G-EM = no
 

@@ -6,8 +6,23 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Added
+
+- The 0.2 Studio APIs are public (TABRION TAB-033, TAB-042; contract sections 5.3 to 5.6, notes I-100..I-106):
+  `tabrion.Result` and `tabrion.Column`; `Database.query`, `Database.inspector`, `Transaction.query`,
+  `Transaction.stream`, `Transaction.cancel`; experimental `Database.on_begin`, `Database.run_transaction` and
+  `Transaction.savepoint`. New guide "Query, stream, cancel and inspect (0.2)" with tested examples. No 0.1 name
+  changes, so this release has no breaking change (RC-3).
+
 ### Changed
 
+- Master builds as `0.2.0.dev0` (TAB-042): `tabrion.Database` and `tabrion.Transaction` inherit the 0.2 mixins of
+  `tabrion._sa._v02`; the private test-only module `tabrion._sa._staged` is removed, and `docs/api/surface.json` has
+  no `staged` entry any more. `scripts/api_surface.py` counts the public methods of a private Tabrion base class as
+  members of the public class.
+- `query` and `stream` refuse a statement that ends the transaction (`COMMIT`, `ROLLBACK`, ... `AND CHAIN`) also
+  when it comes as `text().columns()`, `DDL(...)` or another executable, not only as `text()` (TODO TB-123, review of
+  #32 C-1; contract I-104).
 - Master builds as `0.1.1.dev0` after the `0.1.0` release commit `d5821faa8742dea012abda3b663549c038d76543` (TAB-040,
   the TB-053 pattern), so later commits never build as `0.1.0`. The release commit's full SHA is recorded in
   `[0.1.0]` below, in the installation guide and in STATUS TAB-040.
