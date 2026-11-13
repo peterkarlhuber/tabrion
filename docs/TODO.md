@@ -19,6 +19,10 @@
 > QA-21 and QA-25 set to done in STATUS.md after a check on GitHub; no item of this file changes. The same pull request
 > drops the `# noqa: B008` on `tabrion.postgres.configure` that current ruff reports as unused (RUF100, CI lint);
 > TB-146 new and done (ruff pinned to `>=0.17.5,<0.18` in the `dev` extra).
+> CR-DBX planning 2026-11-13 (branch `claude/project-thread-rdo6g3-crdbx`; planning document 15, owner decisions of
+> 23:28Z and 23:35Z, planning confirmed, implementation not started): TB-149 new (TABRION TAB-XW-1..TAB-XW-10, blocked
+> on the development-start approval), TB-004 narrowed to the Nodestro decisions (W-1), TB-148 (1) linked to W-10;
+> [ADR 0014](adr/0014-crdbx-tabrion-scope.md).
 
 ## Summary
 
@@ -34,14 +38,14 @@ TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follo
 TB-042 superseded, TB-145 new; 0.2 switch pull request (TAB-042): TB-123 done, TB-121 decided without a change,
 TB-013 in progress, TB-147 new; TAB-CR-1/2 pull request: TB-014 and TB-015 done, TB-148 new; `0.2.1.dev0`
 follow-up pull request after the `0.2.0` release commit `52353da`: TB-013 done, TB-145 extended, TB-075 closed
-by the owner decision on K-Q).
+by the owner decision on K-Q; CR-DBX planning pull request: TB-149 new, P3 from 44 to 45).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 3 |
 | P2 Medium | 10 |
-| P3 Low | 44 |
+| P3 Low | 45 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -103,14 +107,18 @@ required (owner decision of 2026-11-08 11:26Z).
   `.github/workflows/ci-ok.yml` says branch protection requires `ci-ok` (O-1); both are reworded in the
   workflow-change pull request of TB-017 (label `workflow-change-reviewed`, ADR 0012).
 
-### TB-004 · Confirm the CR-DB decisions E-CR-1..E-CR-7
+### TB-004 · Confirm the CR-DB decisions E-CR-1 and E-CR-3..E-CR-7 (Nodestro)
 
-- **Priority:** P2 Medium · **Status:** Needs decision · **Refs:** TABRION ARC-CR-1, TABRION STU-CR-1, G-CR
-- **What:** CR-DB is part of the program; E-CR-8 (M9, M10, TAB-CR-1/2 in 0.2) is in force. The other decisions of
-  planning document 14 section 9.1 (edge `nodestro-runtime[database]` to `tabrion[sqlalchemy]`, Studio 1.1 with G-S3,
-  one node type, agent write rules, psycopg-binary in bundles, empty SQLite schema in exports, server defaults) have
-  recommendations but no recorded confirmation.
-- **Next step:** owner confirms or changes each; ARC-CR-1 records the new edge.
+- **Priority:** P2 Medium · **Status:** Needs decision (narrowed 2026-11-13) · **Refs:** TABRION ARC-CR-1, TABRION
+  NOD-CR-1, G-CR, owner action O-6, planning document 15 W-1
+- **What:** CR-DB is part of the program; E-CR-8 (M9, M10, TAB-CR-1/2 in 0.2) is in force. The CR-DBX acceptance of
+  2026-11-13 decides E-CR-2 in changed form: the Studio Schema Designer is Studio **1.2** (not 1.1) with G-S3 (E-X10),
+  and role management beyond the runtime role comes only with the Database Manager in Studio 1.3 under G-S4 (E-X6);
+  the Studio-side recommendation of planning document 14 section 9.1 is therefore no longer open. Still without a
+  recorded confirmation are the Nodestro decisions of M9: E-CR-1 (edge `nodestro-runtime[database]` to
+  `tabrion[sqlalchemy]`), E-CR-3 (one node type), E-CR-4 (agent write rules), E-CR-5 (psycopg-binary in bundles),
+  E-CR-6 (empty SQLite schema in exports) and E-CR-7 (server defaults).
+- **Next step:** owner confirms or changes E-CR-1 and E-CR-3..E-CR-7; ARC-CR-1 records the new edge.
 
 ### TB-023 · Planning errata from G-T1 (F-17)
 
@@ -546,7 +554,9 @@ required (owner decision of 2026-11-08 11:26Z).
   `url()` then gives `[::1]:6000:5432`, which `make_url` refuses; it fails closed at connect time instead of at parse
   time (G-T2 review of #65, N-2). Refuse a host that starts with `[` and does not end with `]`, or any `]` inside.
 - **Next step:** decide (1) with Studio STU-CR-6 (accept a list of hosts, each checked, or keep refusing and state
-  it); add a warning issue for (3) if a consumer asks for it.
+  it); add a warning issue for (3) if a consumer asks for it. (1) is contradiction W-10 of planning document 15: the
+  CR-DBX profile import and export (STU-XDM-5) and the profile modes `read_write`/`admin` (E-X8, TAB-XW-1 addendum)
+  build on the same format, so the decision is due before TAB-XW-1 at the latest.
 
 ### TB-016 · PyPI path (TABRION TAB-043), not planned
 
@@ -557,6 +567,25 @@ required (owner decision of 2026-11-08 11:26Z).
   release needs its own G-R. The `publish` job of `release.yml` fails on purpose until then.
 - **Next step:** none, unless the owner decides a publication; then G-R for that version, the environment `pypi`
   (TB-003) and, before public marketing under the name, a new name assessment.
+
+## CR-DBX: Tabrion 0.3 building blocks (planned, not started)
+
+### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
+
+- **Priority:** P3 Low · **Status:** Blocked (planned, not started; needs the development-start approval G-CX after
+  Studio 1.0 and the repository migration) · **Refs:** planning document 15 sections 3, 5, 9.1;
+  [ADR 0014](adr/0014-crdbx-tabrion-scope.md); [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15);
+  E-X3, E-X4, E-X5, E-X6, E-X11
+- **What:** the owner accepted the CR-DBX planning on 2026-11-13 (not the start of implementation). Tabrion's part is
+  the experimental 0.3 cycle TAB-XW-1..TAB-XW-10 (19 + 9.5 agent days), defined in planning document 15 section 9.1 and
+  not repeated here: ADR and contract addendum (TAB-XW-1), `tabrion.schema` v2 (-2), DDL (-3), diff to
+  `MigrationPlan` with Alembic revision text only (-4), executor with dry run, plan binding and drift check for DEV and
+  TEST databases without migration management (-5), guided write transaction (-6), SQLite `restore()` and
+  `delete_database_file` (-7), role DDL that never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION (-8, with
+  TB-035), PostgreSQL `create_database`/`drop_database` (-9), G-T2 for 0.3 with an independent API review (-10).
+  Boundaries (ADR 0014): built on SQLAlchemy Core and Alembic operations, no own builder, no schema tool UI, no
+  `pg_dump`/`pg_restore` wrapper, no role-admin UI, no vector functions, never running a project's `env.py`.
+- **Next step:** none before the development-start approval. Then TAB-XW-1 first; TB-148 (1) and TB-035 are inputs.
 
 ## Tests and quality assurance
 
