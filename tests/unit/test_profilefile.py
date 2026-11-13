@@ -252,6 +252,15 @@ def test_cr1_url_sqlite_path_and_brackets_once() -> None:
     assert bracketed.url() == "postgresql+psycopg://[::1]:5432/d?sslmode=prefer"
 
 
+@pytest.mark.parametrize(
+    "path", ["%2F%2Fhost/share/x.db", "%5C%5Chost%5Cshare%5Cx.db", "C%3Ax.db", "%2Fnet/host/x.db", "a%20b.db"]
+)
+def test_cr1_percent_in_a_sqlite_path_is_refused(path: str) -> None:
+    # G-T2 review of #65, B-1: SQLAlchemy 2.1 unquotes the path of url(), so "%2F%2Fhost/share" would become a network
+    # path after the text check. Every "%" is refused, like in database.
+    assert _issues(_one(f'engine = "sqlite"\npath = "{path}"')) == [("profile[0].path", "profilefile.value")]
+
+
 def test_cr1_file_level_rules() -> None:
     assert _issues('[[profile]]\nname = "x"\nengine = "sqlite"\npath = "a"\n') == [("version", "profilefile.required")]
     assert _issues("version = 2\n") == [("version", "profilefile.version")]

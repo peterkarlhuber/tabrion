@@ -6,6 +6,16 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-13
+
+TABRION TAB-042, gate G-T2: `v0.2.0` final, the Studio APIs release (milestone M4). The release commit is the merge
+commit of the pull request that sets this version; its full SHA is recorded by the follow-up pull request that moves
+master to `0.2.1.dev0` (ADR 0009, amendment of 2026-11-08). Consumers pin that commit by its full SHA via
+`git+https`; a tag `v0.2.0` on it is an optional label. No PyPI upload, no GitHub release and no announcement (G-R).
+It satisfies the range `tabrion>=0.2,<0.3`. **No breaking change** (RC-3): every 0.1 name keeps its signature and
+behavior, so `>=0.1,<0.2` consumers move by widening their range and pin; the redaction fix only removes more.
+Between `0.1.0` and this release master built as `0.1.1.dev0` (from `d5821faa`) and then `0.2.0.dev0`.
+
 ### Added
 
 - The 0.2 Studio APIs are public (TABRION TAB-033, TAB-042; contract sections 5.3 to 5.6, notes I-100..I-106):
@@ -16,25 +26,21 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - `tabrion.profilefile` (experimental, standard library only; TABRION TAB-CR-1, contract section 5.9, I-109): the
   connection profile file format v1 (TOML) with `parse`, `load`, `dump`, `ConnectionProfile`, `SecretRef`,
   `ProfileFile`, `ProfileIssue` and `ProfileFileError`. Passwords are references (`env:`, `keyring:`, `file:`,
-  `prompt`); a plain password is refused and never repeated. Tabrion Studio's schema version 1 is a valid file
-  (except a libpq multi-host `host`). A consumer resolves the references of a file from elsewhere only after the user
-  confirms host and reference (I-109 j).
+  `prompt`); a plain password is refused and never repeated. Tabrion Studio's schema version 1 is a valid file (except
+  a libpq multi-host `host` and URL characters in `path` and `database`). A consumer resolves the references of a file
+  from elsewhere only after the user confirms host and reference (I-109 j).
 - `tabrion.schema` (experimental, extra `sqlalchemy`; TABRION TAB-CR-2, contract section 5.10, I-110): `snapshot`
   of tables through `Database.inspector()`, `fingerprint` (`v1:sha256:...`) and `compare` with named differences.
   Guide "Profile files and schema fingerprints (0.2)".
 
 ### Changed
 
-- Master builds as `0.2.0.dev0` (TAB-042): `tabrion.Database` and `tabrion.Transaction` inherit the 0.2 mixins of
-  `tabrion._sa._v02`; the private test-only module `tabrion._sa._staged` is removed, and `docs/api/surface.json` has
-  no `staged` entry any more. `scripts/api_surface.py` counts the public methods of a private Tabrion base class as
-  members of the public class.
+- `tabrion.Database` and `tabrion.Transaction` inherit the 0.2 mixins of `tabrion._sa._v02` (TAB-042); the private
+  test-only module `tabrion._sa._staged` is removed, and `docs/api/surface.json` has no `staged` entry any more.
+  `scripts/api_surface.py` counts the public methods of a private Tabrion base class as members of the public class.
 - `query` and `stream` refuse a statement that ends the transaction (`COMMIT`, `ROLLBACK`, ... `AND CHAIN`) also
   when it comes as `text().columns()`, `DDL(...)` or another executable, not only as `text()` (TODO TB-123, review of
   #32 C-1; contract I-104).
-- Master builds as `0.1.1.dev0` after the `0.1.0` release commit `d5821faa8742dea012abda3b663549c038d76543` (TAB-040,
-  the TB-053 pattern), so later commits never build as `0.1.0`. The release commit's full SHA is recorded in
-  `[0.1.0]` below, in the installation guide and in STATUS TAB-040.
 - The `dev` extra pins ruff to `>=0.17.5,<0.18` (TB-146), so a new ruff minor release cannot fail the lint job
   without a change of ours; the unused `# noqa: B008` on `tabrion.postgres.configure` is gone (RUF100).
 
@@ -45,6 +51,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   one line, or with collapsed blanks), also in a record without a database exception. Before, only psycopg's two
   blanks matched mid-line, so such a value stayed in the log (tabrion-studio TD-056, TODO TB-144). Lower-case prose
   (`details:`, `Hint:`), longer identifiers (`MY_DETAIL:`) and a label without a value are kept.
+- `tabrion.profilefile` refuses a `?`, `#` or `%` in a SQLite `path` (`profilefile.value`). SQLAlchemy 2.1 unquotes
+  the path of `ConnectionProfile.url()`, so a percent-encoded network path such as `%2F%2Fhost/share/x.db` would
+  otherwise pass the network-path check of an untrusted profile file (G-T2 review, B-1; contract I-109 c and d).
 
 ## [0.1.0] - 2026-11-12
 
