@@ -30,16 +30,17 @@ request: TB-141 done; LDP-PGL-005 pull request #53: TB-142 new; fault proxy pull
 TAB-040 version-bump pull request: TB-142 and TB-143 done after their merges, TB-011 in progress; `0.1.1.dev0`
 follow-up pull request after the release commit `d5821fa` (review of #56, L-3): TB-008, TB-009, TB-011, TB-017,
 TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follow-up; bookkeeping pull request after
-`v0.1.0` (reviews of #56 and #57): TB-090 and TB-092 done; 0.2 switch pull request (TAB-042): TB-123 done, TB-121
-decided without a change, TB-013 in progress, TB-147 new).
+`v0.1.0` (reviews of #56 and #57): TB-090 and TB-092 done; TD-056 redaction pull request #62: TB-144 done,
+TB-042 superseded, TB-145 new; 0.2 switch pull request (TAB-042): TB-123 done, TB-121 decided without a change,
+TB-013 in progress, TB-147 new).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 6 |
 | P2 Medium | 10 |
-| P3 Low | 43 |
-| P4 Optional | 7 |
+| P3 Low | 44 |
+| P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
 trademark register check from gate G-T2 (TB-001 closed; a later public marketing under the name needs a new
@@ -1056,7 +1057,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-042 · Inline `DETAIL:` with a single space is not stripped (review N-7)
 
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** TABRION TAB-010, contract I-6, review N-7
+- **Priority:** P4 Optional · **Status:** Done (superseded by TB-144) · **Refs:** TABRION TAB-010, contract I-6,
+  review N-7, TB-144
 - **What:** the inline alternative of `_SERVER_TEXT_START` needs two spaces after `DETAIL:`; text rewritten to single
   spaces (`str(e).replace("\n", " ").replace("  ", " ")`) keeps the value. It needs a deliberate rewrite; the same
   text with a newline is caught.
@@ -1233,6 +1235,34 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Done:** the `dev` extra pins ruff to `>=0.17.5,<0.18` (the release that reported RUF100, and no new minor), so
   a new minor ruff release no longer changes the lint result. Raise the bound on purpose, with the fixes the new
   rules ask for.
+
+### TB-144 · A mid-line `DETAIL:` with one blank kept its value (tabrion-studio TD-056, review F-9 of its #78)
+
+- **Priority:** P1 High (security) · **Status:** Done (branch `claude/project-thread-bjlq25-t02-td056`; lands in
+  0.2.0) · **Refs:** TABRION TAB-042, contract I-6, B-06-1, tabrion-studio `docs/TODO.md` TD-056, planning folder
+  `reviews/pr78-td055-review.md` F-9 and `reviews/tab-042-td056-review.md`, supersedes TB-042
+- **What:** `_strip_server_text` (used by `DbErrorRedactionFilter`, the structlog processor and the redacted
+  traceback formatting) found a label in the middle of a line only with psycopg's two blanks after the colon. A
+  message joined onto one line or with collapsed blanks (`"dup key DETAIL: Key (email)=(a@b.c) ..."`) and no
+  database exception object in the record kept the value. Now an upper-case whole-word `DETAIL:`, `HINT:`,
+  `CONTEXT:` or `QUERY:` followed by psycopg's two blanks (whatever follows, review F-1) or by one or more blanks and
+  a value starts a removed part anywhere in a line; lower-case prose (`details:`, `Hint:`), longer identifiers
+  (`MY_DETAIL:`, `DETAILED:`) and a label with one blank and no value stay. The inline search stays linear (F-3).
+- **Tests:** `tests/unit/test_errors.py` `test_td056_*` (every label with one blank, a tab and mixed blanks; two
+  blanks with the value on the next line, also in a traceback; a record without a database error; a mapping
+  message; 13 harmless texts kept), `test_f3_long_run_of_blanks_is_linear` (blanks after a label),
+  `test_f8_diag_value_is_replaced_when_the_label_was_rewritten`.
+
+### TB-145 · A mid-line `LINE n:` keeps the statement text (review F-3 of the TD-056 fix)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-010, contract I-6, TB-144, planning folder
+  `reviews/tab-042-td056-review.md` F-3
+- **What:** `LINE \d+:` is only in the line-start alternative of `_SERVER_TEXT_START`. A syntax error joined onto
+  one line (`syntax error at or near "x" LINE 1: INSERT ... VALUES ('...')`) keeps the statement text with its
+  literals, also with the exception object in the record (the diag replacement covers `message_detail`,
+  `message_hint` and `context` only). Pre-existing.
+- **Next step:** add `LINE \d+:` with psycopg's blanks to the inline alternative (little over-redaction risk), with
+  tests like `test_td056_*`.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 

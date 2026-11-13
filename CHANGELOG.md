@@ -29,6 +29,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - The `dev` extra pins ruff to `>=0.17.5,<0.18` (TB-146), so a new ruff minor release cannot fail the lint job
   without a change of ours; the unused `# noqa: B008` on `tabrion.postgres.configure` is gone (RUF100).
 
+### Security
+
+- `DbErrorRedactionFilter` and the other users of the server-text removal now also remove a `DETAIL:`, `HINT:`,
+  `CONTEXT:` or `QUERY:` part in the middle of a line when only one blank follows the label (a message joined onto
+  one line, or with collapsed blanks), also in a record without a database exception. Before, only psycopg's two
+  blanks matched mid-line, so such a value stayed in the log (tabrion-studio TD-056, TODO TB-144). Lower-case prose
+  (`details:`, `Hint:`), longer identifiers (`MY_DETAIL:`) and a label without a value are kept.
+
 ## [0.1.0] - 2026-11-12
 
 TABRION TAB-040, gate G-T2: `v0.1.0` final. The release commit is the merge commit of the pull request that sets
