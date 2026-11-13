@@ -17,7 +17,8 @@
 > STU-017 (STATUS.md D-122) and STU-021 before STU-017 (D-123); no item of this file changes.
 > Program status 2026-11-13 (branch `claude/project-thread-bjlq25-t02-status`): TABRION JQ-1..JQ-4, MIG-AXE-0, QA-13,
 > QA-21 and QA-25 set to done in STATUS.md after a check on GitHub; no item of this file changes. The same pull request
-> drops the `# noqa: B008` on `tabrion.postgres.configure` that current ruff reports as unused (RUF100, CI lint).
+> drops the `# noqa: B008` on `tabrion.postgres.configure` that current ruff reports as unused (RUF100, CI lint);
+> TB-146 new (ruff unpinned in the lint job).
 
 ## Summary
 
@@ -36,7 +37,7 @@ TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follo
 | P0 Critical | 0 |
 | P1 High | 6 |
 | P2 Medium | 10 |
-| P3 Low | 43 |
+| P3 Low | 44 |
 | P4 Optional | 7 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -1217,6 +1218,16 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Closed (2026-11-12):** #47 merged as `8af5f8b`. `stress (200 repetitions)` was green in the branch nightlies
   43170623313 and 43178965598 and in the first master nightly with the job, 43187265178 on `75dbee9`. QA-4 is done
   and D-85 is closed (review of #56, L-3).
+
+### TB-146 · ruff is unpinned in the lint job, so a new ruff release can break master
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION QA-12, `pyproject.toml` extra `dev` (`ruff>=0.8`),
+  `.github/workflows/ci.yml` job `lint`
+- **What:** the lint job installs `.[dev]`, which takes the newest ruff. On 2026-11-13 a new release reported the
+  `# noqa: B008` on `tabrion.postgres.configure` as unused (RUF100), so `lint` failed on master and on every open
+  pull request with no change of ours (fixed by dropping the comment, program status pull request #61).
+- **Next step:** give ruff an upper bound in the `dev` extra (for example `ruff>=0.8,<0.18`) or pin it in a
+  constraints file for the lint job, and raise it on purpose with any fixes the new rules ask for.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
