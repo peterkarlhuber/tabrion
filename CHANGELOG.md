@@ -6,15 +6,22 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Changed
+
+- Master builds as `0.2.1.dev0` after the `0.2.0` release commit `52353daee6cd6e37a7efc45b74061a48beb2b280` (TAB-042,
+  the TB-053 pattern), so later commits never build as `0.2.0`. The release commit's full SHA is recorded in
+  `[0.2.0]` below, in the installation guide and in STATUS TAB-042.
+
 ## [0.2.0] - 2026-11-13
 
 TABRION TAB-042, gate G-T2: `v0.2.0` final, the Studio APIs release (milestone M4). The release commit is the merge
-commit of the pull request that sets this version; its full SHA is recorded by the follow-up pull request that moves
-master to `0.2.1.dev0` (ADR 0009, amendment of 2026-11-08). Consumers pin that commit by its full SHA via
-`git+https`; a tag `v0.2.0` on it is an optional label. No PyPI upload, no GitHub release and no announcement (G-R).
-It satisfies the range `tabrion>=0.2,<0.3`. **No breaking change** (RC-3): every 0.1 name keeps its signature and
-behavior, so `>=0.1,<0.2` consumers move by widening their range and pin; the redaction fix only removes more.
-Between `0.1.0` and this release master built as `0.1.1.dev0` (from `d5821faa`) and then `0.2.0.dev0`.
+commit of the pull request that sets this version (#65): `52353daee6cd6e37a7efc45b74061a48beb2b280` (recorded by the
+follow-up pull request that moves master to `0.2.1.dev0`; ADR 0009, amendment of 2026-11-08). Consumers pin that
+commit by its full SHA via `git+https`; a tag `v0.2.0` on it is an optional label. No PyPI upload, no GitHub release
+and no announcement (G-R). It satisfies the range `tabrion>=0.2,<0.3`. **No breaking change** (RC-3): every 0.1 name
+keeps its signature and behavior, so `>=0.1,<0.2` consumers move by widening their range and pin; the redaction fix
+only removes more. Between `0.1.0` and this release master built as `0.1.1.dev0` (from `d5821faa`) and then
+`0.2.0.dev0`.
 
 ### Added
 

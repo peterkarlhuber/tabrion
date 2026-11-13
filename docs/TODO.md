@@ -32,14 +32,16 @@ follow-up pull request after the release commit `d5821fa` (review of #56, L-3): 
 TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follow-up; bookkeeping pull request after
 `v0.1.0` (reviews of #56 and #57): TB-090 and TB-092 done; TD-056 redaction pull request #62: TB-144 done,
 TB-042 superseded, TB-145 new; 0.2 switch pull request (TAB-042): TB-123 done, TB-121 decided without a change,
-TB-013 in progress, TB-147 new; TAB-CR-1/2 pull request: TB-014 and TB-015 done, TB-148 new).
+TB-013 in progress, TB-147 new; TAB-CR-1/2 pull request: TB-014 and TB-015 done, TB-148 new; `0.2.1.dev0`
+follow-up pull request after the `0.2.0` release commit `52353da`: TB-013 done, TB-145 extended, TB-075 closed
+by the owner decision on K-Q).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 4 |
+| P1 High | 3 |
 | P2 Medium | 10 |
-| P3 Low | 45 |
+| P3 Low | 44 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -484,8 +486,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-013 · Studio APIs and release 0.2.0 (TABRION TAB-033, TAB-042)
 
-- **Priority:** P1 High · **Status:** In progress (the 0.2 switch merged in #63, `06b4029`; the version pull request
-  sets `0.2.0`, G-T2 open) · **Refs:**
+- **Priority:** P1 High · **Status:** Done (0.2 switch #63, `06b4029`; `v0.2.0` final `52353da` from #65, G-T2
+  passed) · **Refs:**
   TABRION TAB-033, TAB-042, contract I-100..I-106
 - **What:** TAB-033 implemented `query`/`Result`, `stream`, `cancel`, `inspector` and the experimental `on_begin`,
   `run_transaction`, `savepoint` in the mixins of `tabrion._sa._v02`, tested on both engines through the private
@@ -495,8 +497,9 @@ required (owner decision of 2026-11-08 11:26Z).
   `tabrion._sa.database`, `Result` and `Column` exported from `tabrion`, the `staged` keys of `surface.json` dropped,
   `_staged.py` deleted, the tests on `tabrion.Database`; `scripts/api_surface.py` reads the mixins' methods as members
   of the public classes; guide `docs/guides/studio-apis.md`; TB-123 fixed, TB-121 decided.
-- **Release (TAB-042):** the version pull request sets `0.2.0`; its merge commit is `v0.2.0` final, recorded with
-  the G-T2 result by the `0.2.1.dev0` follow-up (then Done).
+- **Release (TAB-042):** #65 set `0.2.0`; its merge commit `52353daee6cd6e37a7efc45b74061a48beb2b280` is `v0.2.0`
+  final (2026-11-13). G-T2 passed (planning folder `reviews/tab-042-review.md`; its blocker B-1, a `%` in a SQLite
+  profile path, was fixed in #65 before the merge). Master then builds as `0.2.1.dev0`.
 - **Next step:** Studio STU-010 and STU-011 then replace
   their workaround (`fetch_all` with `prepare_threshold=0`, `tabrion_compat`, TD-013) with `inspector`, `query`,
   `stream` and `cancel`.
@@ -1290,8 +1293,12 @@ required (owner decision of 2026-11-08 11:26Z).
   one line (`syntax error at or near "x" LINE 1: INSERT ... VALUES ('...')`) keeps the statement text with its
   literals, also with the exception object in the record (the diag replacement covers `message_detail`,
   `message_hint` and `context` only). Pre-existing.
-- **Next step:** add `LINE \d+:` with psycopg's blanks to the inline alternative (little over-redaction risk), with
-  tests like `test_td056_*`.
+- **Also kept** (G-T2 review of #65, N-3; pre-formatted text without a database exception object only, none a
+  regression from 0.1.0): `DETAIL:` followed by one blank, a line break and the value (`dup key DETAIL: \nKey
+  (email)=(...)`, refused by the lookahead `(?=[^ \t\r\n])`; needs a formatter that cuts psycopg's two blanks to one
+  and keeps the line break), and `DETAIL:` followed by U+00A0 and the value.
+- **Next step:** add `LINE \d+:` with psycopg's blanks to the inline alternative (little over-redaction risk), and
+  treat a lone blank before a line break and U+00A0 like psycopg's blanks, with tests like `test_td056_*`.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
@@ -1518,18 +1525,18 @@ required (owner decision of 2026-11-08 11:26Z).
   the probe failed with `UnicodeDecodeError` before it read the return code. The probe runner now decodes the
   child's output with `errors="backslashreplace"`; checked locally with the lowest versions.
 
-### TB-075 · Core size: what could still shrink the stdlib core (TABRION TAB-040 T-9, deviation D-78)
+### TB-075 · Core size of the stdlib core (TABRION TAB-040, deviation D-78), closed by the K-Q decision
 
-- **Priority:** P3 Low · **Status:** Open (0.2) · **Refs:** TABRION TAB-040, plan 07 section 5 (T-9), plan 01 ST-7,
-  STATUS D-78, TB-050, TB-051
-- **What:** the stdlib-only core has 2 128 code lines against the guideline of 1 500; D-78 justifies it, and the
-  justification stays in force after 0.1.0. Small 0.2 changes: the SQLSTATE and SQLite code tables as one data table
-  (a few lines) and more shared path checks in `sqlite` (little). The log redaction of `tabrion.errors` (326 code
-  lines) leaves the count only behind an extra (for example `tabrion[logging]`) or by an owner decision to count
-  opt-in logging integration outside the core; a stdlib module of its own is still core. Even then the core stays at
-  about 1 800 lines, over 1 500.
-- **Next step:** with TB-050 and TB-051 in 0.2, without changing a public name or a behavior; the extra or the owner
-  decision first, if the redaction is to move.
+- **Priority:** P3 Low · **Status:** Closed (owner decision of 2026-11-13 21:44Z) · **Refs:** TABRION TAB-040,
+  TAB-042, STATUS D-78, G-T2 review of #65 (N-1), TB-050, TB-051
+- **What:** the fixed line limit for the stdlib-only core is lifted for good. The qualitative criteria K-Q replace it:
+  (1) clear module responsibilities and clean layering, (2) no needless dependencies or artificial module splits,
+  (3) a traceable justification for substantial growth or rising complexity, (4) every existing security,
+  architecture, test and review requirement stays. D-78 records the actual figures (about 2 407 code lines at
+  `0.1.0`, about 2 936 at `0.2.0`, `_deprecated` included) and is closed.
+- **Left over:** the earlier ideas (one data table for the SQLSTATE and SQLite codes; more shared path checks in
+  `sqlite`) are ordinary refactorings now, done only where they serve K-Q (1) or (2); moving the log redaction behind
+  an extra is no longer a size question (TB-050, TB-051).
 
 ### TB-076 · K11 consumer coverage list `docs/api-consumers.md` (TABRION TAB-040 readiness gap 6)
 
