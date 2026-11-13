@@ -15,6 +15,8 @@
 > 11:26Z.
 > Program status 2026-11-12 (branch `claude/project-thread-rdo6g3-status-stu024`): the owner accepted STU-024 before
 > STU-017 (STATUS.md D-122) and STU-021 before STU-017 (D-123); no item of this file changes.
+> Program status 2026-11-13 (branch `claude/project-thread-bjlq25-t02-status`): TABRION JQ-1..JQ-4, MIG-AXE-0, QA-13,
+> QA-21 and QA-25 set to done in STATUS.md after a check on GitHub; no item of this file changes.
 
 ## Summary
 
