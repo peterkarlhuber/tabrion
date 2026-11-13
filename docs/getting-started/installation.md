@@ -19,7 +19,7 @@ label, never what a pin names.
 
 | Version | Release commit (full SHA) | Date |
 |---|---|---|
-| `0.2.0` | the merge commit of the TAB-042 version pull request; its SHA is recorded by the `0.2.1.dev0` follow-up | 2026-11-13 |
+| `0.2.0` | `52353daee6cd6e37a7efc45b74061a48beb2b280` | 2026-11-13 |
 | `0.1.0` | `d5821faa8742dea012abda3b663549c038d76543` | 2026-11-12 |
 
 `0.2.0` adds the Studio APIs, `tabrion.profilefile` and `tabrion.schema` and changes no 0.1 name (no breaking
