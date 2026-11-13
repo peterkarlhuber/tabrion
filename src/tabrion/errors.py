@@ -644,15 +644,17 @@ def safe_message(error: BaseException | Classification) -> str:
 #: Where psycopg's server text starts in a message: a ``DETAIL:``/``HINT:``/``CONTEXT:``/``QUERY:``/``LINE n:`` line,
 #: or the same upper-case label in the middle of a line, followed by at least one blank and a value. psycopg puts two
 #: spaces after the colon, but a message that was joined onto one line or had its blanks collapsed keeps only one
-#: (TD-056 of tabrion-studio, review F-9 of its #78), so one blank is enough. The label is a whole word in upper case
-#: (``_DETAIL:``, ``details:`` and ``Hint:`` stay), and a label without a value (``DETAIL:`` at the end) stays. From
+#: (TD-056 of tabrion-studio, review F-9 of its #78), so one blank followed by a value is enough. psycopg's two blanks
+#: count whatever follows, since a value may start on the next line (review F-1 of the TD-056 fix). The label is a
+#: whole word in upper case (``_DETAIL:``, ``details:`` and ``Hint:`` stay), and a label with one blank or none and
+#: no value after it stays. From
 #: there the text is removed to the end of the text, or inside a traceback up to the next line of its structure,
 #: because a value may span several lines (review M-2). The run of blanks before an inline label starts only after a
 #: non-blank character: without the look-behind every start position inside a long run of blanks rescans the run
 #: (quadratic time, a log-injection DoS; Axentra review F-3).
 _SERVER_TEXT_START = re.compile(
     r"^[ \t]*(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):"
-    r"|(?<![ \t])[ \t]*\b(?:DETAIL|HINT|CONTEXT|QUERY):[ \t]+(?=[^ \t\r\n])"
+    r"|(?<![ \t])[ \t]*\b(?:DETAIL|HINT|CONTEXT|QUERY):(?: {2}|[ \t]+(?=[^ \t\r\n]))"
 )
 #: The header line of a formatted traceback. Only after one has been seen in a text does :data:`_BOUNDARY` end a
 #: removed part (Axentra review F-4): in free text the removal runs to the end.

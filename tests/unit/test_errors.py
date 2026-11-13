@@ -1080,6 +1080,23 @@ def test_td056_inline_label_without_a_database_error_object(capture: Any) -> Non
 @pytest.mark.parametrize(
     "text",
     [
+        f"x DETAIL:  \n{CANARY}",
+        f"x DETAIL:  \r\n{CANARY}",
+        f"x DETAIL:   \n  {CANARY} more",
+        f"x HINT:  \n{CANARY}",
+    ],
+)
+def test_td056_two_blanks_with_the_value_on_the_next_line(text: str) -> None:
+    """Review F-1 of the TD-056 fix: psycopg's two blanks start a removed part even when the value starts on the next
+    line (a multi-line ``DETAIL``), in free text and inside a traceback."""
+    assert CANARY not in errors._strip_server_text(text)
+    traceback = f'Traceback (most recent call last):\n  File "a", line 1, in f\nE: {text}\n'
+    assert CANARY not in errors._strip_server_text(traceback)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         "plain text",
         "see details: in the guide",
         "Detail: lower case is prose",
@@ -1089,7 +1106,8 @@ def test_td056_inline_label_without_a_database_error_object(capture: Any) -> Non
         "MY_DETAIL: a longer identifier",
         "XDETAIL: glued to a word",
         "a label without a value DETAIL:",
-        "a label with blanks only HINT:   ",
+        "a label with one blank only HINT: ",
+        "a label with a tab only HINT:\t",
         "DETAILED: another word",
         "QUERYING: another word",
     ],
@@ -1246,7 +1264,8 @@ def test_f3_long_run_of_blanks_is_linear() -> None:
     assert time.perf_counter() - started < 0.5  # quadratic: about 10 s
     text = "a" + " DETAIL:" + " " * 50_000  # blanks after the label but no value (TD-056): linear as well
     started = time.perf_counter()
-    assert errors._strip_server_text(text) == text
+    assert errors._strip_server_text(text) == "a " + errors._SERVER_TEXT_MARK  # psycopg's two blanks count
+    assert errors._strip_server_text("a DETAIL:" + "\t" * 50_000) == "a DETAIL:" + "\t" * 50_000
     assert time.perf_counter() - started < 0.5
     assert errors._strip_server_text("a" + " " * 50_000 + " DETAIL:  x") == "a " + errors._SERVER_TEXT_MARK
     assert errors._strip_server_text("value \t DETAIL:  secret") == "value " + errors._SERVER_TEXT_MARK
