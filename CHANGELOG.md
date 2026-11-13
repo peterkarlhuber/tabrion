@@ -6,6 +6,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Security
+
+- `DbErrorRedactionFilter` and the other users of the server-text removal now also remove a `DETAIL:`, `HINT:`,
+  `CONTEXT:` or `QUERY:` part in the middle of a line when only one blank follows the label (a message joined onto
+  one line, or with collapsed blanks), also in a record without a database exception. Before, only psycopg's two
+  blanks matched mid-line, so such a value stayed in the log (tabrion-studio TD-056, TODO TB-144). Lower-case prose
+  (`details:`, `Hint:`), longer identifiers (`MY_DETAIL:`) and a label without a value are kept.
+
 ### Changed
 
 - Master builds as `0.1.1.dev0` after the `0.1.0` release commit `d5821faa8742dea012abda3b663549c038d76543` (TAB-040,

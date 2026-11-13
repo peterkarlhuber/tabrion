@@ -1215,6 +1215,22 @@ required (owner decision of 2026-11-08 11:26Z).
   43170623313 and 43178965598 and in the first master nightly with the job, 43187265178 on `75dbee9`. QA-4 is done
   and D-85 is closed (review of #56, L-3).
 
+### TB-144 · A mid-line `DETAIL:` with one blank kept its value (tabrion-studio TD-056, review F-9 of its #78)
+
+- **Priority:** P1 High (security) · **Status:** Done (branch `claude/project-thread-bjlq25-t02-td056`; lands in
+  0.2.0) · **Refs:** TABRION TAB-042, contract I-6, B-06-1, tabrion-studio `docs/TODO.md` TD-056, planning folder
+  `reviews/pr78-td055-review.md` F-9
+- **What:** `_strip_server_text` (used by `DbErrorRedactionFilter`, the structlog processor and the redacted
+  traceback formatting) found a label in the middle of a line only with psycopg's two blanks after the colon. A message joined
+  onto one line or with collapsed blanks (`"dup key DETAIL: Key (email)=(a@b.c) ..."`) and no database exception
+  object in the record kept the value. Now an upper-case whole-word `DETAIL:`, `HINT:`, `CONTEXT:` or `QUERY:`
+  followed by at least one blank and a value starts a removed part anywhere in a line; lower-case prose
+  (`details:`, `Hint:`), longer identifiers (`MY_DETAIL:`, `DETAILED:`) and a label without a value stay. The
+  inline search stays linear (F-3).
+- **Tests:** `tests/unit/test_errors.py` `test_td056_*` (every label with one blank, a tab and mixed blanks; a record
+  without a database error; a mapping message; 12 harmless texts kept), `test_f3_long_run_of_blanks_is_linear`
+  (blanks after a label), `test_f8_diag_value_is_replaced_when_the_label_was_rewritten`.
+
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
 - **Priority:** P2 Medium · **Status:** Needs decision (contract addendum) · **Refs:** TABRION TAB-010, contract
