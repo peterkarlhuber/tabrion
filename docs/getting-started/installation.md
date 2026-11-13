@@ -11,14 +11,20 @@ pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha
 ## Final versions
 
 A final version is the merge commit of the version-bump pull request that sets a final package version; `v0.1.0`
-final (TABRION TAB-040) is the one that sets `0.1.0`. Its full SHA is recorded here, in the CHANGELOG section of the
-version and in `docs/program/STATUS.md` (TAB-040), and the next pull request bumps master to the next `.dev0`
-version (`0.1.1.dev0`), so no other commit builds as `0.1.0`. Consumers pin that commit by its full SHA; a tag
-`v0.1.0` on it is an optional label, never what a pin names.
+final (TABRION TAB-040) is the one that sets `0.1.0`, `v0.2.0` final (TAB-042) the one that sets `0.2.0`. Its full
+SHA is recorded here, in the CHANGELOG section of the version and in `docs/program/STATUS.md` (TAB-040, TAB-042),
+and the next pull request bumps master to the next `.dev0` version (`0.1.1.dev0`, `0.2.1.dev0`), so no other commit
+builds as that version. Consumers pin that commit by its full SHA; a tag (`v0.1.0`, `v0.2.0`) on it is an optional
+label, never what a pin names.
 
 | Version | Release commit (full SHA) | Date |
 |---|---|---|
+| `0.2.0` | the merge commit of the TAB-042 version pull request; its SHA is recorded by the `0.2.1.dev0` follow-up | 2026-11-13 |
 | `0.1.0` | `d5821faa8742dea012abda3b663549c038d76543` | 2026-11-12 |
+
+`0.2.0` adds the Studio APIs, `tabrion.profilefile` and `tabrion.schema` and changes no 0.1 name (no breaking
+change, CHANGELOG `[0.2.0]`). A consumer that needs a 0.2 name declares `tabrion[...]>=0.2,<0.3` and pins the
+`0.2.0` release commit; one that needs only 0.1 names may stay on `>=0.1,<0.2` and `d5821faa`.
 
 Pin only a recorded release commit. pip does not check that: it accepts a pin on any master commit whose version is
 inside the range, for example `0.1.1.dev0`; only the architecture check AC-6 (planned, QA-15) refuses it. Always

@@ -484,8 +484,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-013 · Studio APIs and release 0.2.0 (TABRION TAB-033, TAB-042)
 
-- **Priority:** P1 High · **Status:** In progress (the 0.2 switch done on branch
-  `claude/project-thread-bjlq25-t02-v02`, master `0.2.0.dev0`; the release pull request with G-T2 open) · **Refs:**
+- **Priority:** P1 High · **Status:** In progress (the 0.2 switch merged in #63, `06b4029`; the version pull request
+  sets `0.2.0`, G-T2 open) · **Refs:**
   TABRION TAB-033, TAB-042, contract I-100..I-106
 - **What:** TAB-033 implemented `query`/`Result`, `stream`, `cancel`, `inspector` and the experimental `on_begin`,
   `run_transaction`, `savepoint` in the mixins of `tabrion._sa._v02`, tested on both engines through the private
@@ -495,13 +495,15 @@ required (owner decision of 2026-11-08 11:26Z).
   `tabrion._sa.database`, `Result` and `Column` exported from `tabrion`, the `staged` keys of `surface.json` dropped,
   `_staged.py` deleted, the tests on `tabrion.Database`; `scripts/api_surface.py` reads the mixins' methods as members
   of the public classes; guide `docs/guides/studio-apis.md`; TB-123 fixed, TB-121 decided.
-- **Next step:** the release pull request sets `0.2.0` (G-T2, TAB-042). Studio STU-010 and STU-011 then replace
+- **Release (TAB-042):** the version pull request sets `0.2.0`; its merge commit is `v0.2.0` final, recorded with
+  the G-T2 result by the `0.2.1.dev0` follow-up (then Done).
+- **Next step:** Studio STU-010 and STU-011 then replace
   their workaround (`fetch_all` with `prepare_threshold=0`, `tabrion_compat`, TD-013) with `inspector`, `query`,
   `stream` and `cancel`.
 
 ### TB-014 · Connection profile format v1 (TABRION TAB-CR-1)
 
-- **Priority:** P1 High · **Status:** Done (branch `claude/project-thread-bjlq25-t02-cr`, lands in 0.2.0) · **Refs:**
+- **Priority:** P1 High · **Status:** Done (#64, `96a2a33`, lands in 0.2.0) · **Refs:**
   TABRION TAB-CR-1, CR-DB, R-CR-6, contract section 5.9, I-109
 - **What:** a Tabrion connection profile format v1: schema, parser, secret references, no storage (storage stays in
   Studio and Nodestro). Studio STU-006 and Nodestro NOD-CR-3 use the same format. 2 + 0.5 agent days. New public API:
@@ -520,7 +522,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-015 · Schema fingerprint and comparison (TABRION TAB-CR-2)
 
-- **Priority:** P1 High · **Status:** Done (branch `claude/project-thread-bjlq25-t02-cr`, lands in 0.2.0) · **Refs:**
+- **Priority:** P1 High · **Status:** Done (#64, `96a2a33`, lands in 0.2.0) · **Refs:**
   TABRION TAB-CR-2, CR-DB, NOD-CR-5, contract section 5.10, I-110
 - **What:** a schema fingerprint and a comparison through `Database.inspector`; NOD-CR-5 (node `database`) depends on
   it. 1.5 + 0.5 agent days. New public API, like TB-014.
@@ -1263,7 +1265,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-144 · A mid-line `DETAIL:` with one blank kept its value (tabrion-studio TD-056, review F-9 of its #78)
 
-- **Priority:** P1 High (security) · **Status:** Done (branch `claude/project-thread-bjlq25-t02-td056`; lands in
+- **Priority:** P1 High (security) · **Status:** Done (#62, `22f964d`; lands in
   0.2.0) · **Refs:** TABRION TAB-042, contract I-6, B-06-1, tabrion-studio `docs/TODO.md` TD-056, planning folder
   `reviews/pr78-td055-review.md` F-9 and `reviews/tab-042-td056-review.md`, supersedes TB-042
 - **What:** `_strip_server_text` (used by `DbErrorRedactionFilter`, the structlog processor and the redacted
@@ -1373,7 +1375,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-123 · The transaction-control pre-check of `query` and `stream` sees only text statements (TABRION TAB-033, review of #32 C-1)
 
-- **Priority:** P3 Low · **Status:** Done (0.2 switch, branch `claude/project-thread-bjlq25-t02-v02`) · **Refs:**
+- **Priority:** P3 Low · **Status:** Done (0.2 switch, #63, `06b4029`) · **Refs:**
   TABRION TAB-033, TAB-042, contract I-104, review of #32 (P-1, condition C-1)
 - **What:** the check that refuses `COMMIT`, `ROLLBACK` and the like before they are sent looks only at a
   `TextClause`. Other executables, such as `sqlalchemy.DDL(...)` and `text(...).columns()` (a `TextualSelect`), skip

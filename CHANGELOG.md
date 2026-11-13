@@ -6,6 +6,16 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-13
+
+TABRION TAB-042, gate G-T2: `v0.2.0` final, the Studio APIs release (milestone M4). The release commit is the merge
+commit of the pull request that sets this version; its full SHA is recorded by the follow-up pull request that moves
+master to `0.2.1.dev0` (ADR 0009, amendment of 2026-11-08). Consumers pin that commit by its full SHA via
+`git+https`; a tag `v0.2.0` on it is an optional label. No PyPI upload, no GitHub release and no announcement (G-R).
+It satisfies the range `tabrion>=0.2,<0.3`. **No breaking change** (RC-3): every 0.1 name keeps its signature and
+behavior, so `>=0.1,<0.2` consumers move by widening their range and pin; the redaction fix only removes more.
+Between `0.1.0` and this release master built as `0.1.1.dev0` (from `d5821faa`) and then `0.2.0.dev0`.
+
 ### Added
 
 - The 0.2 Studio APIs are public (TABRION TAB-033, TAB-042; contract sections 5.3 to 5.6, notes I-100..I-106):
@@ -25,16 +35,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
-- Master builds as `0.2.0.dev0` (TAB-042): `tabrion.Database` and `tabrion.Transaction` inherit the 0.2 mixins of
-  `tabrion._sa._v02`; the private test-only module `tabrion._sa._staged` is removed, and `docs/api/surface.json` has
-  no `staged` entry any more. `scripts/api_surface.py` counts the public methods of a private Tabrion base class as
-  members of the public class.
+- `tabrion.Database` and `tabrion.Transaction` inherit the 0.2 mixins of `tabrion._sa._v02` (TAB-042); the private
+  test-only module `tabrion._sa._staged` is removed, and `docs/api/surface.json` has no `staged` entry any more.
+  `scripts/api_surface.py` counts the public methods of a private Tabrion base class as members of the public class.
 - `query` and `stream` refuse a statement that ends the transaction (`COMMIT`, `ROLLBACK`, ... `AND CHAIN`) also
   when it comes as `text().columns()`, `DDL(...)` or another executable, not only as `text()` (TODO TB-123, review of
   #32 C-1; contract I-104).
-- Master builds as `0.1.1.dev0` after the `0.1.0` release commit `d5821faa8742dea012abda3b663549c038d76543` (TAB-040,
-  the TB-053 pattern), so later commits never build as `0.1.0`. The release commit's full SHA is recorded in
-  `[0.1.0]` below, in the installation guide and in STATUS TAB-040.
 - The `dev` extra pins ruff to `>=0.17.5,<0.18` (TB-146), so a new ruff minor release cannot fail the lint job
   without a change of ours; the unused `# noqa: B008` on `tabrion.postgres.configure` is gone (RUF100).
 
