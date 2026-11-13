@@ -1057,6 +1057,66 @@ def test_m3_inline_single_line_server_text_is_stripped() -> None:
     assert errors._strip_server_text("plain text") == "plain text"
 
 
+@pytest.mark.parametrize("label", ["DETAIL", "HINT", "CONTEXT", "QUERY"])
+@pytest.mark.parametrize("gap", [" ", "\t", "  ", " \t "])
+def test_td056_inline_label_with_one_blank_is_stripped(label: str, gap: str) -> None:
+    """TD-056 (review F-9 of tabrion-studio #78): a one-line message whose label has a single blank after it."""
+    mark = errors._SERVER_TEXT_MARK
+    text = f"insert failed {label}:{gap}Key (email)=({CANARY}) already exists."
+    assert errors._strip_server_text(text) == f"insert failed {mark}"
+    assert errors._strip_server_text(f"x={label}:{gap}{CANARY}") == f"x= {mark}"
+    assert errors._strip_server_text(f"('dup {label}:{gap}{CANARY}',)") == f"('dup {mark}"
+
+
+def test_td056_inline_label_without_a_database_error_object(capture: Any) -> None:
+    """TD-056: the filter strips a mid-line label in a record that holds no database exception at all."""
+    capture.logger.error("sync failed: duplicate key DETAIL: Key (email)=(%s) already exists.", CANARY)
+    capture.logger.error("bulk: HINT: %s and CONTEXT: %s", CANARY, CANARY)
+    capture.logger.error({"event": "failed", "text": f"dup DETAIL: ({CANARY})"})
+    assert CANARY not in _out(capture)
+    assert capture.text.getvalue().splitlines()[0] == f"ERROR sync failed: duplicate key {errors._SERVER_TEXT_MARK}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"x DETAIL:  \n{CANARY}",
+        f"x DETAIL:  \r\n{CANARY}",
+        f"x DETAIL:   \n  {CANARY} more",
+        f"x HINT:  \n{CANARY}",
+    ],
+)
+def test_td056_two_blanks_with_the_value_on_the_next_line(text: str) -> None:
+    """Review F-1 of the TD-056 fix: psycopg's two blanks start a removed part even when the value starts on the next
+    line (a multi-line ``DETAIL``), in free text and inside a traceback."""
+    assert CANARY not in errors._strip_server_text(text)
+    traceback = f'Traceback (most recent call last):\n  File "a", line 1, in f\nE: {text}\n'
+    assert CANARY not in errors._strip_server_text(traceback)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "plain text",
+        "see details: in the guide",
+        "Detail: lower case is prose",
+        "Hint: set the timeout",
+        "context: worker 3",
+        "HINTS: plural is another word",
+        "MY_DETAIL: a longer identifier",
+        "XDETAIL: glued to a word",
+        "a label without a value DETAIL:",
+        "a label with one blank only HINT: ",
+        "a label with a tab only HINT:\t",
+        "DETAILED: another word",
+        "QUERYING: another word",
+    ],
+)
+def test_td056_harmless_text_is_kept(text: str) -> None:
+    """TD-056: the wider inline match does not touch prose or identifiers that merely contain a label word."""
+    assert errors._strip_server_text(text) == text
+
+
 def test_m3_group_whose_only_database_error_is_a_member(capture: Any) -> None:
     group = ExceptionGroup("batch", [ValueError("other"), _unique_violation()])
     assert group.__context__ is None
@@ -1198,10 +1258,15 @@ def test_t2_broken_call_while_database_text_is_handled(capture: Any, capsys: pyt
 
 def test_f3_long_run_of_blanks_is_linear() -> None:
     """Axentra F-3: a long run of blanks before an inline label is no longer scanned quadratically."""
-    text = "a" + " " * 50_000 + " DETAIL:"  # one space after the label: no inline match, the worst case
+    text = "a" + " " * 50_000 + " DETAIL:"  # a label without a value: no inline match, the worst case
     started = time.perf_counter()
     assert errors._strip_server_text(text) == text
     assert time.perf_counter() - started < 0.5  # quadratic: about 10 s
+    text = "a" + " DETAIL:" + " " * 50_000  # blanks after the label but no value (TD-056): linear as well
+    started = time.perf_counter()
+    assert errors._strip_server_text(text) == "a " + errors._SERVER_TEXT_MARK  # psycopg's two blanks count
+    assert errors._strip_server_text("a DETAIL:" + "\t" * 50_000) == "a DETAIL:" + "\t" * 50_000
+    assert time.perf_counter() - started < 0.5
     assert errors._strip_server_text("a" + " " * 50_000 + " DETAIL:  x") == "a " + errors._SERVER_TEXT_MARK
     assert errors._strip_server_text("value \t DETAIL:  secret") == "value " + errors._SERVER_TEXT_MARK
 
@@ -1255,6 +1320,11 @@ def test_f8_diag_value_is_replaced_when_the_label_was_rewritten(capture: Any) ->
     """Axentra F-8: the ``DETAIL`` value itself is replaced when only its label survived a rewrite."""
     e = _unique_violation()
     capture.logger.error("x %s / %s", e, " ".join(str(e).split()))
+    # Joined onto one line, the label keeps one blank: the inline label search removes the value (TD-056).
+    assert CANARY not in _out(capture) and errors._SERVER_TEXT_MARK in capture.text.getvalue()
+    # The label rewritten to ``Detail -`` survives the inline label search (TD-056), so only the diag value
+    # replacement removes the value.
+    capture.logger.error("y %s / %s", e, " ".join(str(e).replace("DETAIL:", "Detail -").split()))
     assert CANARY not in _out(capture) and "[redacted]" in capture.text.getvalue()
 
 

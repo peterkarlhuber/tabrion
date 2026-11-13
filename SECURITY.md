@@ -94,6 +94,10 @@ Accepted residual risks (documented, not vulnerabilities):
     of the error text, are not removed: the filter removes only `DETAIL`, `HINT`, `CONTEXT`, `QUERY`, `LINE n` and
     SQLAlchemy `[parameters]`, or replaces a database error it finds as an object;
   - (R-2) values passed through `extra=` are not inspected;
+  - only the English labels are found (`DETAIL:`, `HINT:`, ...): a server with localized messages (`lc_messages`,
+    for example French `DÉTAIL :` or Spanish `DETALLE:`) is not covered in pre-formatted text; run PostgreSQL with
+    `lc_messages = 'C'` (or `en_US`) for applications that log database errors as text (review F-4 of the TD-056
+    fix). A mid-line `LINE n:` is not removed yet (TODO TB-145);
   - when a formatter or a handler's `emit` fails while a database error is being handled, `logging`'s
     `Handler.handleError` prints the failure's chain, with that error's `DETAIL`, to `sys.stderr`; no filter sees
     that output (Axentra review F-2). A broken call (too few arguments, a missing key, a wrong type) is covered: the
