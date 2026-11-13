@@ -6,13 +6,19 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Changed
+
+- Master builds as `0.2.1.dev0` after the `0.2.0` release commit `52353daee6cd6e37a7efc45b74061a48beb2b280` (TAB-042,
+  the TB-053 pattern), so later commits never build as `0.2.0`. The release commit's full SHA is recorded in
+  `[0.2.0]` below, in the installation guide and in STATUS TAB-042.
+
 ### Security
 
 - Log redaction (`DbErrorRedactionFilter`, `tabrion.errors`): psycopg's `LINE n:` statement echo is removed also
   when it is the only server text label in a message. The cheap pre-check that decides whether a text is scanned had
   no `LINE` entry, so an escaped `\nLINE n:` inside a `repr` (for example a cast error in a list argument) kept the
   statement and its literals (Tabrion Studio security assessment C-02, Low). A `LINE n:` in the middle of a line (a
-  syntax error joined onto one line) is removed as well (TODO TB-145). The scan stays linear in the input length.
+  syntax error joined onto one line) is removed as well (TODO TB-145; its review N-3 edge cases stay open). The scan stays linear in the input length.
 - Dependency confusion (DC-TB-1, TODO TB-132): the `ImportError` hints of a missing extra and the psycopg skip of
   `tabrion.testing` name the Git-pin form `tabrion[<extra>] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>`
   instead of the bare requirement, which a package index would resolve; the README examples pin the `0.2.0` release
@@ -23,12 +29,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 ## [0.2.0] - 2026-11-13
 
 TABRION TAB-042, gate G-T2: `v0.2.0` final, the Studio APIs release (milestone M4). The release commit is the merge
-commit of the pull request that sets this version; its full SHA is recorded by the follow-up pull request that moves
-master to `0.2.1.dev0` (ADR 0009, amendment of 2026-11-08). Consumers pin that commit by its full SHA via
-`git+https`; a tag `v0.2.0` on it is an optional label. No PyPI upload, no GitHub release and no announcement (G-R).
-It satisfies the range `tabrion>=0.2,<0.3`. **No breaking change** (RC-3): every 0.1 name keeps its signature and
-behavior, so `>=0.1,<0.2` consumers move by widening their range and pin; the redaction fix only removes more.
-Between `0.1.0` and this release master built as `0.1.1.dev0` (from `d5821faa`) and then `0.2.0.dev0`.
+commit of the pull request that sets this version (#65): `52353daee6cd6e37a7efc45b74061a48beb2b280` (recorded by the
+follow-up pull request that moves master to `0.2.1.dev0`; ADR 0009, amendment of 2026-11-08). Consumers pin that
+commit by its full SHA via `git+https`; a tag `v0.2.0` on it is an optional label. No PyPI upload, no GitHub release
+and no announcement (G-R). It satisfies the range `tabrion>=0.2,<0.3`. **No breaking change** (RC-3): every 0.1 name
+keeps its signature and behavior, so `>=0.1,<0.2` consumers move by widening their range and pin; the redaction fix
+only removes more. Between `0.1.0` and this release master built as `0.1.1.dev0` (from `d5821faa`) and then
+`0.2.0.dev0`.
 
 ### Added
 
