@@ -335,7 +335,9 @@ Arithmetic (planning document 15 section 9.3): new work packages 10 + 5 + 2 + 3 
 days, of which 39.75 are existing work packages re-planned (STU-026 from 7.5 to 5, STU-CR from 37.25 to 34.75; 44.75
 before) and 72.25 are new (Tabrion 28.5, Studio 43.75). The 151 work packages and the planned efforts of the
 milestone sections above are unchanged until the development-start approval; the owner's gate time is not in the
-agent days.
+agent days. Including CR-DBX the program plans 178 work packages and 465.2 agent days (estimate: 151 + 27 work
+packages; 397.95 + 72.25 - 5 agent days), as in the planning documents; the approved G-A scope stays at 125 work
+packages and 290.7 agent days.
 
 Binding boundaries of the decisions (the Studio side is recorded in tabrion-studio STU-ADR-0003 and its amendment):
 
