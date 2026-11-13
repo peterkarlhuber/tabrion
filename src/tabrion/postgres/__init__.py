@@ -192,7 +192,7 @@ def _apply(connection: psycopg.Connection[Any], pairs: tuple[tuple[str, str], ..
         cursor.execute(sql, params)
 
 
-def configure(connection: psycopg.Connection[Any], settings: SessionSettings = SessionSettings()) -> None:  # noqa: B008
+def configure(connection: psycopg.Connection[Any], settings: SessionSettings = SessionSettings()) -> None:
     """Apply ``settings`` in one ``SELECT set_config(...)`` round trip. Never commits.
 
     Without autocommit the ``SELECT`` opens an implicit transaction that the caller commits.
