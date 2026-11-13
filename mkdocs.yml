@@ -67,6 +67,7 @@ nav:
       - PostgreSQL: guides/postgresql.md
       - Database and Profile (layer B): guides/database.md
       - Transactions: guides/transactions.md
+      - "Query, stream, cancel and inspect (0.2)": guides/studio-apis.md
       - Errors: guides/errors.md
       - Splitting SQL scripts: guides/sql.md
       - Connection URLs and secrets: guides/config.md

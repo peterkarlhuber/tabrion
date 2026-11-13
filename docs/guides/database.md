@@ -170,7 +170,7 @@ SQL text without parameters; the original driver error is in `.original` and nev
 | `pool_timeout`, `pool_pre_ping`, `pool_recycle` | `10.0` s, `True`, `1800.0` s |
 | `connect_timeout` | `10.0` s |
 | `tls` | `TLSMode.AUTO` |
-| `max_rows` | `10_000` (for `query()` from 0.2) |
+| `max_rows` | `10_000` (for `query()`, since 0.2) |
 | `read_only` | `False` |
 
 Derive your own with `dataclasses.replace`; invalid values raise `ConfigurationError("config.invalid_profile")`.

@@ -581,7 +581,7 @@ def test_t111_frame_locals_hold_no_values(db: Database, canary: str) -> None:
 def test_t111_frame_locals_hold_no_values_v02(path: str, canary: str) -> None:
     """I-76 for the 0.2 statement paths (``query``, ``stream``; I-103) that run through ``Transaction._step``: no
     parameter, no SQL text and no row of an earlier stream batch among the frame locals of the traceback."""
-    from tabrion._sa._staged import _StagedDatabase, _StagedTransaction
+    from tabrion import Database, Transaction
 
     text = new_canary("sql-")
     # Row 4 overflows: the first batch (rows 1 and 2, each holding the canary) is fetched, the second fails.
@@ -589,11 +589,10 @@ def test_t111_frame_locals_hold_no_values_v02(path: str, canary: str) -> None:
         "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 9) "
         f"SELECT :v || i, CASE WHEN i > 3 THEN abs(-9223372036854775808) END FROM r -- {text}"
     )
-    database = _StagedDatabase.from_url(f"sqlite:///{path}")
-    assert isinstance(database, _StagedDatabase)
+    database = Database.from_url(f"sqlite:///{path}")
 
-    def staged(transaction: object) -> _StagedTransaction:
-        assert isinstance(transaction, _StagedTransaction)
+    def staged(transaction: object) -> Transaction:
+        assert isinstance(transaction, Transaction)
         return transaction
 
     def query_missing() -> None:
@@ -650,19 +649,18 @@ def test_t111_frame_locals_hold_no_values_v02_early_exits(
     Tabrion's frames are checked for it."""
     import sqlalchemy
 
+    from tabrion import Database, Transaction
     from tabrion._sa import _v02
-    from tabrion._sa._staged import _StagedDatabase, _StagedTransaction
 
     text = new_canary("sql-")
     select = f"SELECT v FROM t WHERE v = :v -- {text}"
-    database = _StagedDatabase.from_url(f"sqlite:///{path}")
-    assert isinstance(database, _StagedDatabase)
+    database = Database.from_url(f"sqlite:///{path}")
 
-    def staged(transaction: object) -> _StagedTransaction:
-        assert isinstance(transaction, _StagedTransaction)
+    def staged(transaction: object) -> Transaction:
+        assert isinstance(transaction, Transaction)
         return transaction
 
-    def ended() -> _StagedTransaction:
+    def ended() -> Transaction:
         with database.read() as tx:
             pass
         return staged(tx)

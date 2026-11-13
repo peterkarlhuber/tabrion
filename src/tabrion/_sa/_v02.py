@@ -1,13 +1,11 @@
-"""The 0.2 methods of ``Database`` and ``Transaction`` (TAB-033), staged for the API freeze. Private.
+"""The 0.2 methods of ``Database`` and ``Transaction`` (TAB-033) as mixins. Private: use ``tabrion.Database``.
 
-G-T1 condition C-6: the 0.1.0 surface must not export a 0.2 name. These mixins hold the frozen 0.2 signatures and
-their implementation, so ``scripts/api_surface.py`` can compare them with ``docs/api/surface.json``, but ``Database``
-and ``Transaction`` inherit from them only when the package version reaches 0.2 (TODO TB-013). Until then only the
-private classes of ``tabrion._sa._staged`` combine them, for Tabrion's own tests. Contract sections 5.3 to 5.6,
+``Database`` and ``Transaction`` in ``tabrion._sa.database`` inherit from these mixins since 0.2 (TAB-042); until
+0.2 they were staged here, off the public classes (G-T1 condition C-6). Contract sections 5.3 to 5.6,
 implementation notes I-100..I-106.
 
 This module imports ``tabrion._sa.database`` as a module and reads its helpers when a method runs, and ``Transaction``
-for the type checker only, so ``database`` can import the mixins at its top in 0.2 without an import cycle that fails
+for the type checker only, so ``database`` imports the mixins at its top without an import cycle that fails
 (G-T1 condition check CC-2, TODO TB-024).
 """
 
@@ -24,12 +22,11 @@ import time
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 import sqlalchemy
-from sqlalchemy.schema import ExecutableDDLElement
+from sqlalchemy.schema import DDL, ExecutableDDLElement
 from sqlalchemy.sql.dml import UpdateBase
-from sqlalchemy.sql.elements import TextClause
-from sqlalchemy.sql.selectable import Selectable
+from sqlalchemy.sql.elements import ClauseElement, TextClause
+from sqlalchemy.sql.selectable import Selectable, TextualSelect
 
-from tabrion._sa import database as _db
 from tabrion._sa._types import Isolation, Statement
 from tabrion._sa.result import Column, Result
 from tabrion.errors import TabrionError, UsageError
@@ -168,6 +165,32 @@ def _extended_protocol(transaction: Transaction) -> Iterator[None]:
         dbapi.prepare_threshold = previous
 
 
+def _sql_text(transaction: Transaction, executable: sqlalchemy.sql.Executable) -> str | None:
+    """The SQL text whose first keywords :func:`_refuse_transaction_control` reads, or ``None`` when none can end the
+    transaction (TB-123, review of #32 C-1).
+
+    ``text()`` and ``text().columns()`` (``TextualSelect``) give their text, ``DDL(...)`` its statement. A Core
+    ``SELECT``, ``INSERT``, ``UPDATE``, ``DELETE`` or schema construct (``CreateTable``) compiles to a statement that
+    starts with its own keyword, so it is not compiled. Any other executable is compiled with the connection's
+    dialect; one that cannot be compiled here is refused by the server or by the status check after it.
+    """
+    if isinstance(executable, TextClause):
+        return executable.text
+    if isinstance(executable, TextualSelect):
+        element = executable.element
+        return element.text if isinstance(element, TextClause) else None
+    if isinstance(executable, DDL):
+        return executable.statement
+    if isinstance(executable, (Selectable, UpdateBase, ExecutableDDLElement)) or not isinstance(
+        executable, ClauseElement
+    ):
+        return None
+    try:
+        return str(executable.compile(dialect=transaction._connection.dialect))
+    except Exception:
+        return None
+
+
 def _refuse_transaction_control(transaction: Transaction, executable: sqlalchemy.sql.Executable) -> None:
     """Before a user statement: a statement that ends the transaction is never sent (I-104, re-review N-1 of #32).
 
@@ -176,15 +199,21 @@ def _refuse_transaction_control(transaction: Transaction, executable: sqlalchemy
     ``(``, ``;`` and comments, read both as PostgreSQL does and as SQLite does; see :func:`_skip_leading`). ``... AND
     CHAIN`` opens a new transaction at once, which the status check after the statement cannot tell from the old one.
     The transaction is marked broken, as by :func:`_still_in_transaction`, which stays as the second line.
+
+    Every executable is checked, not only ``text()`` (TB-123, review of #32 C-1): see :func:`_sql_text`.
     """
-    if not isinstance(executable, TextClause):
+    sql = _sql_text(transaction, executable)
+    if sql is None:
         return
+    ending = False
     for postgres in (False, True):  # both lexers: a text must not pass by reading its comments the other way
-        words = _keywords(executable.text, 2, postgres=postgres)
-        if words and (words[0] in _ENDING_WORDS or words == ["prepare", "transaction"]):
-            with transaction._state:
-                transaction._broken = True
-            raise UsageError("database.transaction_ended")
+        words = _keywords(sql, 2, postgres=postgres)
+        ending = ending or bool(words and (words[0] in _ENDING_WORDS or words == ["prepare", "transaction"]))
+    del sql  # no SQL text in the frames of the traceback (I-76)
+    if ending:
+        with transaction._state:
+            transaction._broken = True
+        raise UsageError("database.transaction_ended")
 
 
 def _still_in_transaction(transaction: Transaction, close: Callable[[], None] | None = None) -> None:
@@ -492,3 +521,8 @@ class _DatabaseV02:
             delay = min(backoff * 2 ** (attempt - 1), max(backoff, _MAX_BACKOFF))
             time.sleep(delay * random.random())  # noqa: S311
             attempt += 1
+
+
+# At the end, not the top (TAB-042): ``tabrion._sa.database`` imports the mixins above at its top, so whichever of the
+# two modules is imported first, the other finds what it needs (TB-024). The methods read ``_db`` only when they run.
+from tabrion._sa import database as _db  # noqa: E402

@@ -334,11 +334,18 @@ def _real_surface(surface_script: Any) -> dict[str, Any]:
 
 
 def test_promoting_the_staged_names_is_an_addition(surface_script: Any) -> None:
-    """Review M-1: the 0.2 release drops ``staged`` from every staged entry; ``--base <0.1>`` must stay consistent."""
-    base = _real_surface(surface_script)
+    """Review M-1: the 0.2 release drops ``staged`` from every staged entry; ``--base <0.1>`` must stay consistent.
+
+    Since 0.2 (TAB-042) no entry is staged, so the 0.1 base is rebuilt from the real surface: every 0.2 entry staged.
+    """
+    promoted = _real_surface(surface_script)
+    base = {
+        path: {**entry, "staged": "tabrion._sa._v02:x"} if entry.get("since") == "0.2" else entry
+        for path, entry in promoted.items()
+    }
     staged = [path for path, entry in base.items() if "staged" in entry]
-    assert staged, "surface.json has no staged name to promote"
-    promoted = {path: {k: v for k, v in entry.items() if k != "staged"} for path, entry in base.items()}
+    assert len(staged) >= 2, "surface.json has no 0.2 name"
+    assert not any("staged" in entry for entry in promoted.values())
     assert surface_script.check_changelog(base, promoted, "## [Unreleased]\n") == []
     # A stub that changed before its promotion and a staged name dropped again were never public either.
     changed = {**promoted, staged[0]: {**promoted[staged[0]], "signature": "() -> None"}}

@@ -1,9 +1,8 @@
 """The 0.2 Studio APIs of layer B on PostgreSQL (TAB-033): ``query``/``Result``, ``stream``, ``cancel``,
 ``inspector``, ``on_begin``, ``savepoint`` and ``run_transaction`` (TAB-T-B15, B26..B40; contract I-100..I-106).
 
-As on SQLite (``tests/unit/test_v02_database.py``), the staged classes of ``tabrion._sa._staged`` stand in for the
-0.2 ``tabrion.Database`` (G-T1 condition C-6). Every table lives in the ``schema`` fixture; every engine has an
-``application_name`` of its own.
+Public since 0.2 (TAB-042), as on SQLite (``tests/unit/test_v02_database.py``). Every table lives in the ``schema``
+fixture; every engine has an ``application_name`` of its own.
 """
 
 # The SQL is built from the schema fixture's generated name and fixed text, never from outside input.
@@ -31,11 +30,14 @@ from sqlalchemy import Connection  # noqa: E402
 
 psycopg = pytest.importorskip("psycopg")
 
-from tabrion import Profile, Transaction  # noqa: E402
-from tabrion._sa._staged import _StagedDatabase, _StagedTransaction  # noqa: E402
+from tabrion import (  # noqa: E402
+    Column,
+    Database,
+    Profile,
+    Transaction,
+)
 import tabrion._sa._v02  # noqa: E402
 import tabrion._sa.database  # noqa: E402
-from tabrion._sa.result import Column  # noqa: E402
 from tabrion.errors import (  # noqa: E402
     Canceled,
     ConnectionFailed,
@@ -55,25 +57,24 @@ from tests.postgres.test_database import sa_url  # noqa: E402
 SECRET = "SECRET-4711"
 
 
-def staged(transaction: Transaction) -> _StagedTransaction:
-    assert isinstance(transaction, _StagedTransaction)
+def staged(transaction: Transaction) -> Transaction:
+    assert isinstance(transaction, Transaction)
     return transaction
 
 
 @pytest.fixture
-def open_db(admin_url: str) -> Iterator[Callable[..., _StagedDatabase]]:
-    """``open_db(profile=None, url=None, **engine_options)``: a staged ``Database`` with its own application name."""
-    opened: list[_StagedDatabase] = []
+def open_db(admin_url: str) -> Iterator[Callable[..., Database]]:
+    """``open_db(profile=None, url=None, **engine_options)``: a ``Database`` with its own application name."""
+    opened: list[Database] = []
 
-    def factory(profile: Profile | None = None, url: str | None = None, **options: Any) -> _StagedDatabase:
+    def factory(profile: Profile | None = None, url: str | None = None, **options: Any) -> Database:
         fields = {name: getattr(profile or Profile(), name) for name in Profile.__dataclass_fields__}
         fields["application_name"] = new_name("t_app_")
         if url is not None:  # the fault proxy reads the plain protocol
             options.setdefault("connect_args", {}).update(sslmode="disable", gssencmode="disable")
-        database = _StagedDatabase.from_url(
+        database = Database.from_url(
             sa_url(url or admin_url), profile=Profile(**fields), engine_options=options or None
         )
-        assert isinstance(database, _StagedDatabase)
         opened.append(database)
         return database
 
@@ -83,7 +84,7 @@ def open_db(admin_url: str) -> Iterator[Callable[..., _StagedDatabase]]:
 
 
 @pytest.fixture
-def db(open_db: Callable[..., _StagedDatabase], schema: str) -> _StagedDatabase:
+def db(open_db: Callable[..., Database], schema: str) -> Database:
     database = open_db()
     database.execute(f"INSERT INTO {schema}.parts (id, label) SELECT n, 'p' || n FROM generate_series(1, 25) n")
     return database
@@ -94,7 +95,7 @@ def db(open_db: Callable[..., _StagedDatabase], schema: str) -> _StagedDatabase:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_b26_query_columns_and_values(db: _StagedDatabase, schema: str, admin: Any) -> None:
+def test_b26_query_columns_and_values(db: Database, schema: str, admin: Any) -> None:
     admin.execute(f"CREATE TYPE {schema}.mood AS ENUM ('ok', 'meh')")
     result = db.query(
         f"SELECT id, label, ARRAY[id, 2] AS pair, 1.50::numeric(5, 2) AS price, 'ok'::{schema}.mood AS mood,"
@@ -120,7 +121,7 @@ def test_b26_query_columns_and_values(db: _StagedDatabase, schema: str, admin: A
     assert result.elapsed_ms > 0
 
 
-def test_b26_query_dml_ddl_and_other(db: _StagedDatabase, schema: str) -> None:
+def test_b26_query_dml_ddl_and_other(db: Database, schema: str) -> None:
     with db.transaction() as transaction:
         tx = staged(transaction)
         inserted = tx.query(f"INSERT INTO {schema}.parts (id, label) VALUES (100, 'x')")
@@ -134,7 +135,7 @@ def test_b26_query_dml_ddl_and_other(db: _StagedDatabase, schema: str) -> None:
     assert db.query(f"SELECT label FROM {schema}.parts WHERE id = 100").rows == (("y",),)
 
 
-def test_b27_max_rows(open_db: Callable[..., _StagedDatabase], db: _StagedDatabase, schema: str) -> None:
+def test_b27_max_rows(open_db: Callable[..., Database], db: Database, schema: str) -> None:
     result = db.query(f"SELECT id FROM {schema}.parts ORDER BY id", max_rows=10)
     assert (result.row_count, result.truncated, result.rows[-1]) == (10, True, (10,))
     exact = db.query(f"SELECT id FROM {schema}.parts", max_rows=25)
@@ -143,7 +144,7 @@ def test_b27_max_rows(open_db: Callable[..., _StagedDatabase], db: _StagedDataba
     assert small.query("SELECT generate_series(1, 1000)").rows == ((1,), (2,), (3,))
 
 
-def test_b28_core_expressions(db: _StagedDatabase, schema: str) -> None:
+def test_b28_core_expressions(db: Database, schema: str) -> None:
     metadata = sqlalchemy.MetaData(schema=schema)
     parts = sqlalchemy.Table("parts", metadata, autoload_with=db.engine)
     result = db.query(sqlalchemy.select(parts.c.id, parts.c.label).where(parts.c.id > 23).order_by(parts.c.id))
@@ -151,7 +152,7 @@ def test_b28_core_expressions(db: _StagedDatabase, schema: str) -> None:
     assert result.columns == (Column("id", "integer", None), Column("label", "text", None))
 
 
-def test_b29_database_query_is_read_only(db: _StagedDatabase, schema: str) -> None:
+def test_b29_database_query_is_read_only(db: Database, schema: str) -> None:
     with pytest.raises(ReadOnlyViolation):
         db.query(f"INSERT INTO {schema}.parts (id) VALUES (500)")
     with pytest.raises(TabrionError) as info:
@@ -161,7 +162,7 @@ def test_b29_database_query_is_read_only(db: _StagedDatabase, schema: str) -> No
     assert info.value.__cause__ is None and info.value.__context__ is None
 
 
-def test_b30_query_timeout(db: _StagedDatabase) -> None:
+def test_b30_query_timeout(db: Database) -> None:
     started = time.monotonic()
     with pytest.raises(StatementTimeout):
         db.query("SELECT pg_sleep(5)", timeout=0.2)
@@ -175,7 +176,7 @@ def test_b30_query_timeout(db: _StagedDatabase) -> None:
         assert transaction.fetch_scalar("SHOW statement_timeout") == before  # the profile value is back
 
 
-def test_b30_prepare_threshold_is_restored(db: _StagedDatabase) -> None:
+def test_b30_prepare_threshold_is_restored(db: Database) -> None:
     with db.read() as transaction:
         dbapi = transaction.connection.connection.dbapi_connection
         assert dbapi is not None
@@ -193,7 +194,7 @@ def test_b30_prepare_threshold_is_restored(db: _StagedDatabase) -> None:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_b31_serialization_failure_is_retried(db: _StagedDatabase, schema: str, admin: Any) -> None:
+def test_b31_serialization_failure_is_retried(db: Database, schema: str, admin: Any) -> None:
     """Attempt 1 reads, another session updates the row, attempt 1 updates it too: 40001, retried; attempt 2 wins."""
     calls: list[int] = []
 
@@ -209,7 +210,7 @@ def test_b31_serialization_failure_is_retried(db: _StagedDatabase, schema: str, 
     assert db.fetch_scalar(f"SELECT label FROM {schema}.parts WHERE id = 1") == "other+"
 
 
-def test_b32_errors_that_are_not_retried(db: _StagedDatabase, schema: str) -> None:
+def test_b32_errors_that_are_not_retried(db: Database, schema: str) -> None:
     calls: list[int] = []
 
     def unique(transaction: Transaction) -> None:
@@ -224,7 +225,7 @@ def test_b32_errors_that_are_not_retried(db: _StagedDatabase, schema: str) -> No
 
 @pytest.mark.slow
 def test_b33_commit_cut_by_the_proxy_is_not_retried(
-    open_db: Callable[..., _StagedDatabase], admin_url: str, schema: str, admin: Any
+    open_db: Callable[..., Database], admin_url: str, schema: str, admin: Any
 ) -> None:
     """The COMMIT reaches the server, the reply is lost: outcome unknown, so run_transaction does not run fn again."""
     params = psycopg.conninfo.conninfo_to_dict(admin_url)
@@ -251,7 +252,7 @@ def test_b33_commit_cut_by_the_proxy_is_not_retried(
 
 @pytest.mark.slow
 def test_b33_a_connection_lost_mid_transaction_is_not_retried(
-    open_db: Callable[..., _StagedDatabase], admin_url: str, schema: str, admin: Any
+    open_db: Callable[..., Database], admin_url: str, schema: str, admin: Any
 ) -> None:
     """The connection goes while a statement is on its way: the client cannot tell whether the server ran it, so the
     classification is ``outcome_unknown`` and ``fn`` runs once (R-NORETRY)."""
@@ -287,7 +288,7 @@ def _cursors(transaction: Transaction) -> int:
     return int(transaction.fetch_scalar("SELECT count(*) FROM pg_cursors WHERE name <> ''"))
 
 
-def test_b34_stream_uses_a_server_cursor(db: _StagedDatabase) -> None:
+def test_b34_stream_uses_a_server_cursor(db: Database) -> None:
     with db.read() as transaction:
         tx = staged(transaction)
         assert _cursors(transaction) == 0
@@ -301,7 +302,7 @@ def test_b34_stream_uses_a_server_cursor(db: _StagedDatabase) -> None:
         assert _cursors(transaction) == 0  # closed after the last batch
 
 
-def test_b34_stream_closed_early_and_at_the_end(db: _StagedDatabase) -> None:
+def test_b34_stream_closed_early_and_at_the_end(db: Database) -> None:
     with db.read() as transaction:
         stream = staged(transaction).stream("SELECT generate_series(1, 1000000)", batch_size=100)
         assert next(stream)[0][0] == 1
@@ -320,12 +321,12 @@ def test_b34_stream_closed_early_and_at_the_end(db: _StagedDatabase) -> None:
         assert _cursors(transaction) == 0
 
 
-def test_b34_stream_needs_rows(db: _StagedDatabase, schema: str) -> None:
+def test_b34_stream_needs_rows(db: Database, schema: str) -> None:
     with pytest.raises(StatementError), db.transaction() as transaction:
         next(staged(transaction).stream(f"UPDATE {schema}.parts SET label = label"))  # DECLARE takes a query only
 
 
-def test_b35_stream_timeout_and_cancel(db: _StagedDatabase) -> None:
+def test_b35_stream_timeout_and_cancel(db: Database) -> None:
     with db.read() as transaction, pytest.raises(StatementTimeout):
         next(staged(transaction).stream("SELECT pg_sleep(5)", timeout=0.2))
     with pytest.raises(Canceled), db.read() as transaction:
@@ -341,7 +342,7 @@ def test_b35_stream_timeout_and_cancel(db: _StagedDatabase) -> None:
 
 
 @pytest.mark.parametrize("method", ["query", "fetch_scalar", "stream"])
-def test_b15_cancel_from_a_second_thread(db: _StagedDatabase, schema: str, method: str) -> None:
+def test_b15_cancel_from_a_second_thread(db: Database, schema: str, method: str) -> None:
     """``cancel_safe`` stops the statement within 1 s (TAB-033 acceptance); the transaction rolls back."""
     called: list[float] = []
     with pytest.raises(Canceled) as info, db.transaction() as transaction:
@@ -371,7 +372,7 @@ def test_b15_cancel_from_a_second_thread(db: _StagedDatabase, schema: str, metho
     assert db.query(f"SELECT count(*) FROM {schema}.parts WHERE id = 700").rows == ((0,),)
 
 
-def test_b40_cancel_never_reaches_the_next_user_of_the_connection(open_db: Callable[..., _StagedDatabase]) -> None:
+def test_b40_cancel_never_reaches_the_next_user_of_the_connection(open_db: Callable[..., Database]) -> None:
     db = open_db(Profile(pool_size=1))
     with db.read() as first:
         pid = first.fetch_scalar("SELECT pg_backend_pid()")
@@ -383,7 +384,7 @@ def test_b40_cancel_never_reaches_the_next_user_of_the_connection(open_db: Calla
         late.join()
 
 
-def test_b40_cancel_while_idle_refuses_the_rest(db: _StagedDatabase, schema: str) -> None:
+def test_b40_cancel_while_idle_refuses_the_rest(db: Database, schema: str) -> None:
     with pytest.raises(Canceled), db.transaction() as transaction:
         transaction.execute(f"INSERT INTO {schema}.parts (id) VALUES (701)")
         staged(transaction).cancel()
@@ -397,7 +398,7 @@ def test_b40_cancel_while_idle_refuses_the_rest(db: _StagedDatabase, schema: str
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_b36_inspector_is_read_only(db: _StagedDatabase, schema: str) -> None:
+def test_b36_inspector_is_read_only(db: Database, schema: str) -> None:
     with db.inspector() as inspector:
         assert inspector.get_table_names(schema=schema) == ["parts"]
         columns = inspector.get_columns("parts", schema=schema)
@@ -413,7 +414,7 @@ def test_b36_inspector_is_read_only(db: _StagedDatabase, schema: str) -> None:
     assert db.query(f"SELECT count(*) FROM {schema}.parts").rows == ((25,),)
 
 
-def test_b36_inspector_catalog_of_500_tables(db: _StagedDatabase, schema: str, admin: Any) -> None:
+def test_b36_inspector_catalog_of_500_tables(db: Database, schema: str, admin: Any) -> None:
     """STU-010: 500 tables; the catalog through ``get_multi_columns`` (one query per kind of object)."""
     admin.execute(
         "DO $$ BEGIN FOR i IN 1..500 LOOP EXECUTE format("
@@ -433,7 +434,7 @@ def test_b36_inspector_catalog_of_500_tables(db: _StagedDatabase, schema: str, a
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def test_b37_on_begin_sets_transaction_local_state(db: _StagedDatabase) -> None:
+def test_b37_on_begin_sets_transaction_local_state(db: Database) -> None:
     def tenant(connection: Connection, read_only: bool) -> None:
         mode = "read" if read_only else "write"
         connection.exec_driver_sql(f"SELECT set_config('app.mode', '{mode}', true)")
@@ -446,7 +447,7 @@ def test_b37_on_begin_sets_transaction_local_state(db: _StagedDatabase) -> None:
     assert db.query("SELECT coalesce(current_setting('app.mode', true), '')").rows == (("",),)
 
 
-def test_b38_savepoint_after_an_error(db: _StagedDatabase, schema: str) -> None:
+def test_b38_savepoint_after_an_error(db: Database, schema: str) -> None:
     with db.transaction() as transaction:
         tx = staged(transaction)
         tx.execute(f"INSERT INTO {schema}.parts (id) VALUES (800)")
@@ -472,7 +473,7 @@ ESCAPES = [
 
 @pytest.mark.parametrize("text", ESCAPES)
 def test_b39_several_commands_are_refused_by_the_server(
-    db: _StagedDatabase, schema: str, admin: Any, monkeypatch: pytest.MonkeyPatch, text: str
+    db: Database, schema: str, admin: Any, monkeypatch: pytest.MonkeyPatch, text: str
 ) -> None:
     """The multi-statement escape of the Studio review: psycopg would send it as one simple query, which ends the
     read-only transaction and writes. ``query`` and ``stream`` prepare the statement, so the server refuses it.
@@ -490,9 +491,7 @@ def test_b39_several_commands_are_refused_by_the_server(
     assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id = 666").fetchone() == (0,)
 
 
-def test_b39_refused_whatever_the_lexer_thinks(
-    open_db: Callable[..., _StagedDatabase], schema: str, admin: Any
-) -> None:
+def test_b39_refused_whatever_the_lexer_thinks(open_db: Callable[..., Database], schema: str, admin: Any) -> None:
     """H-1 of the Studio review: with ``standard_conforming_strings = off`` a client-side split sees one statement
     where the server sees several. The server's own parser decides here, so the text is refused as well."""
     db = open_db(connect_args={"options": "-c standard_conforming_strings=off"})
@@ -505,7 +504,7 @@ def test_b39_refused_whatever_the_lexer_thinks(
     assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id = 667").fetchone() == (0,)
 
 
-def test_b39_lifting_read_only_in_one_statement(db: _StagedDatabase, schema: str) -> None:
+def test_b39_lifting_read_only_in_one_statement(db: Database, schema: str) -> None:
     """One statement cannot lift read-only and write: the server or the read-back before COMMIT refuses (I-56)."""
     with pytest.raises(UsageError) as info:
         db.query("SET TRANSACTION READ WRITE")  # first statement, before any snapshot: allowed by the server
@@ -517,7 +516,7 @@ def test_b39_lifting_read_only_in_one_statement(db: _StagedDatabase, schema: str
     assert db.query(f"SELECT count(*) FROM {schema}.parts WHERE id = 668").rows == ((0,),)
 
 
-def test_b39_read_only_profile(open_db: Callable[..., _StagedDatabase], schema: str) -> None:
+def test_b39_read_only_profile(open_db: Callable[..., Database], schema: str) -> None:
     profile = Profile(read_only=True, postgres=SessionSettings(statement_timeout_ms=10_000))
     readonly = open_db(profile)
     assert readonly.query(f"SELECT count(*) FROM {schema}.parts").rows == ((0,),)
@@ -529,7 +528,7 @@ def test_b39_read_only_profile(open_db: Callable[..., _StagedDatabase], schema: 
         readonly.run_transaction(lambda transaction: None)
 
 
-def test_b39_transient_errors_are_typed(db: _StagedDatabase, schema: str, admin: Any) -> None:
+def test_b39_transient_errors_are_typed(db: Database, schema: str, admin: Any) -> None:
     """A lock wait under ``lock_timeout`` in ``query`` is ``TransientError`` (LOCKED), as in the 0.1 methods."""
     with admin.transaction():
         admin.execute(f"LOCK TABLE {schema}.parts IN ACCESS EXCLUSIVE MODE")
@@ -607,7 +606,7 @@ class SlowCancelProxy:
 
 @pytest.mark.slow
 def test_b40_a_late_cancel_request_never_reaches_the_next_user(
-    open_db: Callable[..., _StagedDatabase], admin_url: str
+    open_db: Callable[..., Database], admin_url: str
 ) -> None:
     """H-1 of the review of #32: ``cancel_safe`` gives up after 2 s, the server receives the request after 3 s. The
     canceled transaction's connection must not go back to the pool, or the request cancels the next user's statement
@@ -635,7 +634,7 @@ def test_b40_a_late_cancel_request_never_reaches_the_next_user(
         proxy.close()
 
 
-def test_b40_every_sent_cancel_keeps_the_connection_out_of_the_pool(open_db: Callable[..., _StagedDatabase]) -> None:
+def test_b40_every_sent_cancel_keeps_the_connection_out_of_the_pool(open_db: Callable[..., Database]) -> None:
     db = open_db(Profile(pool_size=1))
     with pytest.raises(Canceled), db.read() as first:
         pid = first.fetch_scalar("SELECT pg_backend_pid()")
@@ -651,7 +650,7 @@ def test_b40_every_sent_cancel_keeps_the_connection_out_of_the_pool(open_db: Cal
         assert fourth.fetch_scalar("SELECT pg_backend_pid()") == pid
 
 
-def test_l3_cancel_sends_only_while_a_statement_runs(db: _StagedDatabase, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_l3_cancel_sends_only_while_a_statement_runs(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     sent: list[str] = []
     original = tabrion._sa.database._send_cancel
 
@@ -679,7 +678,7 @@ def test_l3_cancel_sends_only_while_a_statement_runs(db: _StagedDatabase, monkey
     ],
 )
 def test_l1_the_callers_sql_cannot_end_the_transaction(
-    open_db: Callable[..., _StagedDatabase],
+    open_db: Callable[..., Database],
     schema: str,
     admin: Any,
     monkeypatch: pytest.MonkeyPatch,
@@ -737,7 +736,7 @@ def test_l1_the_callers_sql_cannot_end_the_transaction(
     ids=["read-chain-read-only", "read-chain", "transaction-rollback-chain", "transaction-commit-chain"],
 )
 def test_n1_and_chain_cannot_end_the_transaction(
-    db: _StagedDatabase, schema: str, admin: Any, block: str, steps: list[str]
+    db: Database, schema: str, admin: Any, block: str, steps: list[str]
 ) -> None:
     """N-1 of the re-review of #32: after ``... AND CHAIN`` PostgreSQL is in a new transaction at once, which the
     status check cannot tell from Tabrion's. The statement is refused before it is sent, nothing is committed, and
@@ -766,7 +765,7 @@ def test_n1_and_chain_cannot_end_the_transaction(
     ["-- x\rCOMMIT /*\n...*/", "-- x\rCOMMIT AND CHAIN", "/* a /* b */ c */ COMMIT AND CHAIN", " ;COMMIT AND CHAIN"],
 )
 def test_n1_comments_are_read_as_the_server_reads_them(
-    db: _StagedDatabase, schema: str, admin: Any, monkeypatch: pytest.MonkeyPatch, text: str
+    db: Database, schema: str, admin: Any, monkeypatch: pytest.MonkeyPatch, text: str
 ) -> None:
     """The Studio reviewer's bypass: PostgreSQL ends a ``--`` comment at ``\\r`` too and nests ``/* */``. The text
     is refused before sending; with the refusal off, the server indeed ends the transaction (so the case is real)."""
@@ -794,7 +793,25 @@ def test_n1_comments_are_read_as_the_server_reads_them(
     admin.execute(f"DELETE FROM {schema}.parts WHERE id = 690")
 
 
-def test_info_on_begin_registration_from_many_threads(db: _StagedDatabase) -> None:
+@pytest.mark.parametrize(
+    "make",
+    [lambda text: sqlalchemy.text(text).columns(sqlalchemy.column("x")), sqlalchemy.DDL],
+    ids=["textual-select", "ddl"],
+)
+def test_tb123_and_chain_in_other_executables_is_refused(db: Database, schema: str, admin: Any, make: Any) -> None:
+    """TB-123 (review of #32 C-1): ``COMMIT AND CHAIN`` inside ``text().columns()`` or ``DDL(...)`` is refused before
+    it is sent, like a plain ``text()``; nothing is committed."""
+    with pytest.raises(UsageError) as at_end, db.transaction() as transaction:
+        staged(transaction).query(f"INSERT INTO {schema}.parts (id) VALUES (695)")
+        with pytest.raises(UsageError) as info:
+            staged(transaction).query(make("/* a /* b */ c */ COMMIT AND CHAIN"))
+        assert info.value.code == "database.transaction_ended"
+        assert transaction._dbapi.info.transaction_status == 2  # INTRANS: not sent
+    assert at_end.value.code == "database.transaction_ended"
+    assert admin.execute(f"SELECT count(*) FROM {schema}.parts WHERE id = 695").fetchone() == (0,)
+
+
+def test_info_on_begin_registration_from_many_threads(db: Database) -> None:
     """Info I-1 of the review of #32: registrations and unregistrations from many threads lose none."""
     seen: list[int] = []
     keep = [db.on_begin(lambda connection, read_only: seen.append(1)) for _ in range(3)]

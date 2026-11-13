@@ -11,8 +11,13 @@
         "nullable: bool | None"
       ],
       "since": "0.2",
-      "stability": "S",
-      "staged": "tabrion._sa.result:Column"
+      "stability": "S"
+    },
+    "tabrion.Column.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, type_name: str | None, nullable: bool | None) -> None",
+      "since": "0.2",
+      "stability": "S"
     },
     "tabrion.Database": {
       "kind": "class",
@@ -113,22 +118,19 @@
       "kind": "method",
       "signature": "(self) -> Iterator[sqlalchemy.Inspector]",
       "since": "0.2",
-      "stability": "S",
-      "staged": "tabrion._sa._v02:_DatabaseV02.inspector"
+      "stability": "S"
     },
     "tabrion.Database.on_begin": {
       "kind": "method",
       "signature": "(self, callback: Callable[[sqlalchemy.Connection, bool], None]) -> Callable[[], None]",
       "since": "0.2",
-      "stability": "X",
-      "staged": "tabrion._sa._v02:_DatabaseV02.on_begin"
+      "stability": "X"
     },
     "tabrion.Database.query": {
       "kind": "method",
       "signature": "(self, statement: Statement, params: Mapping[str, Any] | None = None, *, max_rows: int | None = None, timeout: float | None = None) -> Result",
       "since": "0.2",
-      "stability": "S",
-      "staged": "tabrion._sa._v02:_DatabaseV02.query"
+      "stability": "S"
     },
     "tabrion.Database.read": {
       "kind": "method",
@@ -140,8 +142,7 @@
       "kind": "method",
       "signature": "(self, fn: Callable[[Transaction], T], *, attempts: int = 3, isolation: Isolation | None = None, backoff: float = 0.05) -> T",
       "since": "0.2",
-      "stability": "X",
-      "staged": "tabrion._sa._v02:_DatabaseV02.run_transaction"
+      "stability": "X"
     },
     "tabrion.Database.safe_url": {
       "kind": "property",
@@ -237,8 +238,13 @@
         "statement_kind: Literal['select', 'dml', 'ddl', 'other']"
       ],
       "since": "0.2",
-      "stability": "S",
-      "staged": "tabrion._sa.result:Result"
+      "stability": "S"
+    },
+    "tabrion.Result.__init__": {
+      "kind": "method",
+      "signature": "(self, columns: tuple[Column, ...], rows: tuple[tuple[Any, ...], ...], row_count: int, truncated: bool, elapsed_ms: float, statement_kind: Literal['select', 'dml', 'ddl', 'other']) -> None",
+      "since": "0.2",
+      "stability": "S"
     },
     "tabrion.TLSMode": {
       "kind": "enum",
@@ -277,8 +283,7 @@
       "kind": "method",
       "signature": "(self) -> None",
       "since": "0.2",
-      "stability": "S",
-      "staged": "tabrion._sa._v02:_TransactionV02.cancel"
+      "stability": "S"
     },
     "tabrion.Transaction.connection": {
       "kind": "property",
@@ -314,8 +319,7 @@
       "kind": "method",
       "signature": "(self, statement: Statement, params: Mapping[str, Any] | None = None, *, max_rows: int | None = None, timeout: float | None = None) -> Result",
       "since": "0.2",
-      "stability": "S",
-      "staged": "tabrion._sa._v02:_TransactionV02.query"
+      "stability": "S"
     },
     "tabrion.Transaction.read_only": {
       "kind": "property",
@@ -327,15 +331,13 @@
       "kind": "method",
       "signature": "(self) -> Iterator[None]",
       "since": "0.2",
-      "stability": "X",
-      "staged": "tabrion._sa._v02:_TransactionV02.savepoint"
+      "stability": "X"
     },
     "tabrion.Transaction.stream": {
       "kind": "method",
       "signature": "(self, statement: Statement, params: Mapping[str, Any] | None = None, *, batch_size: int = 500, timeout: float | None = None) -> Iterator[Sequence[sqlalchemy.Row[Any]]]",
       "since": "0.2",
-      "stability": "S",
-      "staged": "tabrion._sa._v02:_TransactionV02.stream"
+      "stability": "S"
     },
     "tabrion.check.Finding": {
       "kind": "dataclass",

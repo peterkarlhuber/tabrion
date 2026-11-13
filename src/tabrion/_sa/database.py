@@ -1,8 +1,8 @@
 """``Database`` and ``Transaction``: layer B over a SQLAlchemy engine. Private: use ``tabrion.Database``.
 
 Contract: ``docs/api/contract.md`` sections 5.2, 5.3 and 5.5, implementation notes I-37..I-44 and I-56 (TAB-018).
-The 0.2 methods (TAB-033) are staged in ``tabrion._sa._v02`` and are not part of these classes before 0.2 (G-T1
-condition C-6, ``docs/api/surface.json``).
+The 0.2 methods (TAB-033) live in the mixins of ``tabrion._sa._v02``, which these classes inherit since 0.2
+(TAB-042; before 0.2 they were staged, G-T1 condition C-6).
 
 ``Statement``, ``Params`` and ``Isolation`` are documentation-only aliases (``tabrion._sa._types``): they name the types
 in the signatures and are not exported from ``tabrion`` (G-T1 F-11, TODO TB-020).
@@ -37,6 +37,7 @@ from tabrion import config as _config
 from tabrion import sqlite as _sqlite
 from tabrion._sa import events as _events
 from tabrion._sa._types import Isolation, Params, Statement
+from tabrion._sa._v02 import _DatabaseV02, _TransactionV02
 from tabrion._sa.profile import Profile, TLSMode
 from tabrion.errors import (
     Classification,
@@ -206,7 +207,7 @@ def _is_database_error(exc: BaseException) -> bool:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-class Transaction:
+class Transaction(_TransactionV02):
     """One Tabrion transaction; bound to the opening thread (only ``cancel`` may come from another thread)."""
 
     _connection: sqlalchemy.Connection
@@ -808,7 +809,7 @@ def _corrupt() -> Classification:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-class Database:
+class Database(_DatabaseV02):
     """A thread-safe handle on a SQLAlchemy engine with Tabrion's profiles and transaction modes."""
 
     _engine: sqlalchemy.Engine
@@ -827,7 +828,7 @@ class Database:
     _callbacks_lock: threading.Lock
 
     _transaction_class: ClassVar[type[Transaction]] = Transaction
-    """What ``transaction()`` and ``read()`` yield (the staged 0.2 classes of ``tabrion._sa._staged`` set their own)."""
+    """What ``transaction()`` and ``read()`` yield."""
 
     def __new__(cls, *args: object, **kwargs: object) -> Database:
         _no_constructor("Database", "Database.from_url(), Database.from_env() or Database.from_engine()")

@@ -188,14 +188,28 @@ def describe_member(raw: Any) -> Entry | None:
     return None
 
 
+def _own_bases(cls: type) -> list[type]:
+    """``cls`` and its private Tabrion bases (the 0.2 mixins of ``tabrion._sa._v02``), most basic first.
+
+    A public class may inherit public methods from a private mixin of the package (TAB-042); those methods are part of
+    the class's surface. Public bases (``TabrionError`` for its subclasses) and foreign ones are described on their own.
+    """
+    return [
+        c
+        for c in reversed(cls.__mro__)
+        if c is cls or (c.__module__.partition(".")[0] == "tabrion" and c.__name__.startswith("_"))
+    ]
+
+
 def class_members(cls: type) -> dict[str, Entry]:
     members: dict[str, Entry] = {}
-    for name, raw in vars(cls).items():
-        if name.startswith("_") and name not in PUBLIC_DUNDERS:
-            continue
-        entry = describe_member(raw)
-        if entry is not None:
-            members[name] = entry
+    for owner in _own_bases(cls):
+        for name, raw in vars(owner).items():
+            if name.startswith("_") and name not in PUBLIC_DUNDERS:
+                continue
+            entry = describe_member(raw)
+            if entry is not None:
+                members[name] = entry
     return members
 
 

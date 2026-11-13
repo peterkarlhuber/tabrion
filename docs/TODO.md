@@ -31,7 +31,8 @@ TAB-040 version-bump pull request: TB-142 and TB-143 done after their merges, TB
 follow-up pull request after the release commit `d5821fa` (review of #56, L-3): TB-008, TB-009, TB-011, TB-017,
 TB-070, TB-086, TB-135 and TB-136 done; TB-130 done except its CI artifact follow-up; bookkeeping pull request after
 `v0.1.0` (reviews of #56 and #57): TB-090 and TB-092 done; TD-056 redaction pull request #62: TB-144 done,
-TB-042 superseded, TB-145 new).
+TB-042 superseded, TB-145 new; 0.2 switch pull request (TAB-042): TB-123 done, TB-121 decided without a change,
+TB-013 in progress, TB-147 new).
 
 | Priority | Count |
 |---|---|
@@ -55,7 +56,7 @@ lane B pull request implements `tabrion.sqlite` (TABRION TAB-013, TAB-014,
 TAB-030 and completed by TAB-031 in the third lane C pull request; `tabrion.check` (TAB-017) is merged, without
 its layer-B part (TB-060); the layer-B pull request implements the layer-B core (TABRION TAB-018,
 [M2 lane B2 evidence](program/STATUS.md#m2-lane-b2-evidence-tab-018)); `tabrion.migrations` and
-`tabrion.testing` still raise `NotImplementedError`. The 0.2 Studio APIs (TABRION TAB-033) are implemented and staged until 0.2 (TB-013).
+`tabrion.testing` still raise `NotImplementedError`. The 0.2 Studio APIs (TABRION TAB-033) are public since the 0.2 switch (TAB-042, TB-013).
 
 ## Priorities and statuses
 
@@ -483,18 +484,20 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-013 · Studio APIs and release 0.2.0 (TABRION TAB-033, TAB-042)
 
-- **Priority:** P1 High · **Status:** In progress (TAB-033 in review; TAB-042 blocked by TAB-040) · **Refs:** TABRION
-  TAB-033, TAB-042, contract I-100..I-106
+- **Priority:** P1 High · **Status:** In progress (the 0.2 switch done on branch
+  `claude/project-thread-bjlq25-t02-v02`, master `0.2.0.dev0`; the release pull request with G-T2 open) · **Refs:**
+  TABRION TAB-033, TAB-042, contract I-100..I-106
 - **What:** TAB-033 implemented `query`/`Result`, `stream`, `cancel`, `inspector` and the experimental `on_begin`,
   `run_transaction`, `savepoint` in the mixins of `tabrion._sa._v02`, tested on both engines through the private
   `tabrion._sa._staged` classes; they stay staged while the version is 0.1 (G-T1 condition C-6). TAB-042 is the
   release 0.2.0 with the 0.2 documentation.
-- **Next step:** with TAB-042, when the version becomes 0.2: `class Transaction(_TransactionV02)` and `class
-  Database(_DatabaseV02)` in `tabrion._sa.database` (the import at the top works, TB-024), export `Result` and
-  `Column` from `tabrion` (`__all__`, `_LAYER_B`, `tests/unit/test_public_api.py`), drop the `staged` keys of
-  `surface.json` and delete `_staged.py`; the tests switch from `_StagedDatabase` to `tabrion.Database`. Studio
-  STU-010 and STU-011 then replace their workaround (`fetch_all` with `prepare_threshold=0`) with `inspector`,
-  `query`, `stream` and `cancel`.
+- **Done in the 0.2 switch:** `class Transaction(_TransactionV02)` and `class Database(_DatabaseV02)` in
+  `tabrion._sa.database`, `Result` and `Column` exported from `tabrion`, the `staged` keys of `surface.json` dropped,
+  `_staged.py` deleted, the tests on `tabrion.Database`; `scripts/api_surface.py` reads the mixins' methods as members
+  of the public classes; guide `docs/guides/studio-apis.md`; TB-123 fixed, TB-121 decided.
+- **Next step:** the release pull request sets `0.2.0` (G-T2, TAB-042). Studio STU-010 and STU-011 then replace
+  their workaround (`fetch_all` with `prepare_threshold=0`, `tabrion_compat`, TD-013) with `inspector`, `query`,
+  `stream` and `cancel`.
 
 ### TB-014 · Connection profile format v1 (TABRION TAB-CR-1)
 
@@ -1321,15 +1324,18 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-121 · The 0.1 methods send a statement without parameters as a simple query (TABRION TAB-033, TB-061)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-018, TAB-033, contract I-56, I-104, TB-061
+- **Priority:** P3 Low · **Status:** Decided for 0.2 (TAB-042: no change) · **Refs:** TABRION TAB-018, TAB-033,
+  contract I-56, I-104, TB-061
 - **What:** `query` and `stream` force the extended query protocol on PostgreSQL, so the server refuses a text with
   several commands (I-104). `execute`, `fetch_one`, `fetch_all` and `fetch_scalar` keep psycopg's default: without
   parameters a text goes as a simple query, and `COMMIT; BEGIN READ WRITE; ...` inside `read()` writes (pinned by
   the `documents_the_gap` tests of TB-061). An engine whose `connect_args` set `prepare_threshold=0` (Studio) is
   covered for every method. The transaction-status check after each statement (I-104) runs for `query`
   and `stream` only.
-- **Next step:** decide with TAB-042 whether `read()` statements always use the extended protocol (a behavior
-  change of 0.1 methods, no signature change); until then tools that run user SQL use `query` or `stream`.
+- **Decision (TAB-042):** 0.2 does not change the protocol of the 0.1 methods: forcing the extended protocol would
+  make a multi-statement text in `execute` fail inside `read()`, a breaking change of a 0.1 behavior (RC-3) for no
+  consumer that needs it. The documented rule stays: tools that run user SQL use `query` or `stream` (contract
+  I-104, Studio STU-011). Revisit for 1.0 together with TB-061.
 
 ### TB-122 · Result details the drivers do not give (TABRION TAB-033, D-120)
 
@@ -1342,16 +1348,27 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-123 · The transaction-control pre-check of `query` and `stream` sees only text statements (TABRION TAB-033, review of #32 C-1)
 
-- **Priority:** P3 Low · **Status:** Open (before TAB-042) · **Refs:** TABRION TAB-033, TAB-042, contract I-104,
-  review of #32 (P-1, condition C-1)
+- **Priority:** P3 Low · **Status:** Done (0.2 switch, branch `claude/project-thread-bjlq25-t02-v02`) · **Refs:**
+  TABRION TAB-033, TAB-042, contract I-104, review of #32 (P-1, condition C-1)
 - **What:** the check that refuses `COMMIT`, `ROLLBACK` and the like before they are sent looks only at a
   `TextClause`. Other executables, such as `sqlalchemy.DDL(...)` and `text(...).columns()` (a `TextualSelect`), skip
   it, and the check after the statement cannot see every form, so the I-104 sentence "the caller's SQL cannot end
   the transaction" does not hold for them yet. The 0.2 names are staged and not public, so 0.1 is not affected.
-- **Next step:** before TAB-042 switches the 0.2 mixins on, lex the compiled SQL of every executable
-  (`str(executable.compile(dialect=connection.dialect))`), or at least unwrap `TextualSelect.element.text` and
-  `DDL.statement`, and add both forms to the `test_n1_*` tests; otherwise narrow the I-104 sentence to text
-  statements.
+- **Done:** `_sql_text` in `tabrion._sa._v02` gives the pre-check the text of `text()`, `TextualSelect.element.text`
+  and `DDL.statement`, skips Core `SELECT`/DML/schema constructs (they start with their own keyword) and compiles any
+  other executable with the connection's dialect. Tests: `test_tb123_other_executables_are_checked` (3 forms x 3
+  texts x `query`/`stream`), `test_tb123_core_constructs_and_harmless_executables_pass`, PostgreSQL
+  `test_tb123_and_chain_in_other_executables_is_refused`.
+
+### TB-147 · A `@compiles` override of a Core DML or schema construct skips the transaction-control pre-check (TABRION TAB-042)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-042, TB-123, contract I-104, review of #63 (Low)
+- **What:** `_sql_text` (`tabrion._sa._v02`) skips every `UpdateBase` and `ExecutableDDLElement` on the assumption
+  that it compiles to its own keyword. A subclass that a `@compiles` hook turns into `COMMIT AND CHAIN` passes the
+  pre-check, and the check after the statement cannot see the chained transaction (probe on PostgreSQL 16). This
+  needs code-authored constructs, not user SQL text; the limit is stated in I-104.
+- **Next step:** compile any construct whose `__visit_name__` is not one of SQLAlchemy's own (or whose class has a
+  `@compiles` override for the dialect) and read the text like any other executable.
 
 ### TB-056 · Layer-B waits outside `timeout` (TABRION TAB-018, TAB-041)
 

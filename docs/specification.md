@@ -66,7 +66,7 @@ Tabrion itself depends on **no** Levuvo platform (P6). Edges are allowed only to
 
 ```
 tabrion/                     package; layer B in the package root (importable only with the extra [sqlalchemy])
-├── __init__.py              lazy exports (PEP 562): Database, Profile, Transaction, TabrionError ... (Result from 0.2)
+├── __init__.py              lazy exports (PEP 562): Database, Profile, Transaction, TabrionError, Result, Column ...
 ├── _version.py
 ├── errors.py                layer A, stdlib: Kind, Classification, classify, safe_message, DbErrorRedactionFilter, hierarchy
 ├── sql.py                   layer A, stdlib: split_statements
@@ -83,11 +83,10 @@ tabrion/                     package; layer B in the package root (importable on
 │   ├── database.py          Database, Transaction, Health
 │   ├── profile.py           Profile, TLS rules
 │   ├── events.py            connect/begin listeners (call tabrion.sqlite/postgres)
-│   ├── result.py            Result, Column (exported from 0.2)
+│   ├── result.py            Result, Column (exported since 0.2)
 │   ├── _check.py            the layer-B checks of tabrion.check
 │   ├── _types.py            the documentation-only aliases Statement, Params, Isolation
-│   ├── _v02.py              0.2 methods of Database and Transaction, implemented, not mixed in before 0.2
-│   └── _staged.py           the 0.2 classes for Tabrion's own tests until 0.2 (TAB-033)
+│   └── _v02.py              0.2 methods of Database and Transaction (mixins the public classes inherit since 0.2)
 ├── migrations.py            layer B, extra [migrations]: status, require_current, SchemaStatus (without env.py)
 └── testing/                 extra [testing] (pytest); pytest plugin only on explicit request (pytest_plugins)
     ├── __init__.py          configure(), fixtures
