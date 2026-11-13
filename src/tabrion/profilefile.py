@@ -187,9 +187,11 @@ class ConnectionProfile:
     def url(self) -> str:
         """A SQLAlchemy URL without any password (``sqlite:///path``, ``postgresql+psycopg://user@host:port/db``).
 
-        The consumer resolves :attr:`password` and adds it (``sqlalchemy.engine.make_url(url).set(password=...)``)."""
+        The consumer resolves :attr:`password` and adds it (``sqlalchemy.engine.make_url(url).set(password=...)``).
+        The SQLite path is not quoted, because SQLAlchemy 2.0 does not unquote it; with a ``%`` in the path, build the
+        URL as ``sqlalchemy.engine.URL.create("sqlite", database=profile.path)`` instead."""
         if self.engine == "sqlite":
-            return f"sqlite:///{quote(self.path or '', safe='/:')}"  # "?" and "#" stay part of the path
+            return f"sqlite:///{self.path}"  # a path holds no "?" or "#" (refused on reading)
         user = f"{quote(self.user, safe='')}@" if self.user else ""
         host = self.host or ""
         query = f"?sslmode={self.sslmode}" if self.sslmode else ""
@@ -199,7 +201,7 @@ class ConnectionProfile:
         elif ":" in host and not host.startswith("["):
             host = f"[{host}]"
         port = f":{self.port}" if self.port is not None and host else ""
-        return f"postgresql+psycopg://{user}{host}{port}/{quote(self.database or '', safe='')}{query}"
+        return f"postgresql+psycopg://{user}{host}{port}/{self.database or ''}{query}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -371,6 +373,10 @@ def _profile(table: Mapping[str, Any], pointer: str, issues: list[ProfileIssue])
         host = reader.host("host")
         port = reader.integer("port", 1, 65_535)
         database = reader.text("database", required=True, limit=_MAX_TEXT)
+        if database is not None and any(char in database for char in "/?#%@"):
+            # SQLAlchemy 2.0 does not unquote the database of a URL and 2.1 does, so these never go into one.
+            issues.append(ProfileIssue(f"{pointer}.database", "profilefile.value"))
+            database = None
         user = reader.text("user", limit=_MAX_TEXT)
         sslmode = reader.choice("sslmode", _SSLMODES)
         if host is not None and sslmode is None:
@@ -463,6 +469,9 @@ class _Reader:
         value = self.text(key, required=required, limit=4_096)
         if value is not None and _is_network_path(value):
             self._issue(key, "profilefile.network_path")
+            return None
+        if value is not None and ("?" in value or "#" in value):
+            self._issue(key, "profilefile.value")  # would start the query or fragment of the SQLAlchemy URL
             return None
         return value
 

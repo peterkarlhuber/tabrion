@@ -503,12 +503,13 @@ required (owner decision of 2026-11-08 11:26Z).
   Studio and Nodestro). Studio STU-006 and Nodestro NOD-CR-3 use the same format. 2 + 0.5 agent days. New public API:
   needs a contract addendum and its own G-T1 style review.
 - **Done:** `tabrion.profilefile` (experimental in 0.2, standard library only): `parse`, `load`, `dump`, contract
-  addendum section 5.9 (I-109), guide `docs/guides/profiles-and-schema.md`, `tests/unit/test_profilefile.py`. The
-  format fixes no file name or extension (R-CR-6), and Studio's `studio.toml` schema version 1 is a valid file. The
-  independent review of the new API is part of the 0.2.0 G-T2 review (TAB-042). Review of #64: C-1 (`load` frame
-  locals), C-2 (Studio's `network_or_device` rules) and C-3 (consumer rule I-109 j) fixed; L-1, L-2, L-3 a and N-1
-  fixed; L-3 b and I-1 are TB-148. The notes were renumbered from I-107/I-108 to I-109/I-110, because I-107 is the
-  `:name::type` hint (TB-139).
+  addendum section 5.9 (I-109), guide `docs/guides/profiles-and-schema.md`, `tests/unit/test_profilefile.py`. The format
+  fixes no file name or extension (R-CR-6), and Studio's `studio.toml` schema version 1 is a valid file. The independent
+  review of the new API is part of the 0.2.0 G-T2 review (TAB-042). Review of #64: C-1 (`load` frame locals), C-2
+  (Studio's `network_or_device` rules) and C-3 (consumer rule I-109 j) fixed; L-1, L-2 (a `?` or `#` in the SQLite path
+  and `/?#%@` in `database` are refused, so `url()` is the same under SQLAlchemy 2.0 and 2.1), L-3 a and N-1 fixed; L-3
+  b and I-1 are TB-148. The notes were renumbered from I-107/I-108 to I-109/I-110, because I-107 is the `:name::type`
+  hint (TB-139).
 - **Next step (consumers):** Studio STU-006/STU-CR-6 and Nodestro NOD-CR-3 adopt it; stability `X` until a
   consumer has used it, then `S` (API stability policy S-1).
 

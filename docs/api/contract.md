@@ -1298,8 +1298,9 @@ def dump(profiles: Iterable[ConnectionProfile]) -> str: ...
 ```
 
 The file (TOML, UTF-8, at most 256 KiB) follows Tabrion Studio's schema version 1 (`studio.toml`, `profiles.toml`):
-`version = 1` and an array of `[[profile]]` tables. It adds keys and secret references, and it differs in one point:
-a libpq multi-host `host = "db1,db2"` is refused (TB-148). The format fixes no file name or extension
+`version = 1` and an array of `[[profile]]` tables. It adds keys and secret references, and it refuses three things
+Studio accepts: a libpq multi-host `host = "db1,db2"` (TB-148), a `?` or `#` in a SQLite `path`, and `/`, `?`, `#`,
+`%` or `@` in `database` (I-109 d). The format fixes no file name or extension
 (R-CR-6); a consumer may pick one.
 
 | I-109 | Rule |
@@ -1307,7 +1308,7 @@ a libpq multi-host `host = "db1,db2"` is refused (TB-148). The format fixes no f
 | a | `version` is required and must be `1`; `name` (1 to 200 characters, no control character, no leading or trailing blank, unique) and `engine` are required; SQLite needs `path`, PostgreSQL `host` and `database`. A key of the other engine is an error (`profilefile.other_engine`); an unknown key is a warning (`profilefile.unknown_key`, pointer without the key). Every error of the file is reported at once in `ProfileFileError.issues` |
 | b | `password` is `env:NAME` (`[A-Za-z_][A-Za-z0-9_]*`), `keyring:` (the consumer's default entry), `keyring:<service>/<user>`, `file:PATH` or `prompt`. Anything else is `profilefile.plain_password`, and the text is never repeated: not in the error, its `issues`, `repr`, chain or frame locals (I-76) |
 | c | `path` and `file:` targets that name another host, a device or a drive-relative path (`//host`, `\\host`, `\\?\`, `\\.\`, the NT prefix `\??\` or `/??/`, `C:x`, `file:...`, and `/net` or `/Network` after normalizing the text, so `/x/../net/host` too) are `profilefile.network_path` (text check, the same on every platform; Studio's `network_or_device`, reviews T-2 and R-3). A relative SQLite path is relative to the profile file's folder; the consumer resolves it and applies `tabrion.sqlite.check_path` |
-| d | `host` must not hold a URL or credentials (`@`, `/` unless it is a socket folder starting with `/`, `?`, `#`, `\`, blank, comma, `://`). `port` 1 to 65 535, default 5432 for a TCP host. `sslmode` is one of libpq's six modes; when left out it is `prefer` for a socket folder, `localhost` and a loopback address and `verify-full` for any other host (Studio review T-4) |
+| d | `host` must not hold a URL or credentials (`@`, `/` unless it is a socket folder starting with `/`, `?`, `#`, `\`, blank, comma, `://`). `database` must not hold `/`, `?`, `#`, `%` or `@`, and a SQLite `path` must not hold `?` or `#`: `url()` writes both unquoted, because SQLAlchemy 2.0 does not unquote the database part of a URL and 2.1 does (review of #64, L-2). `port` 1 to 65 535, default 5432 for a TCP host. `sslmode` is one of libpq's six modes; when left out it is `prefer` for a socket folder, `localhost` and a loopback address and `verify-full` for any other host (Studio review T-4) |
 | e | `mode` defaults to `read_only`; `allow` entries are `schema.table` or `schema.table.column` (SQLite schema `main`), duplicates are dropped; `schema_fingerprint` matches `v1:sha256:[0-9a-f]{64}`; `statement_timeout_ms` 1 to 2 147 483 647 |
 | f | A TOML syntax error keeps only its line number (`pointer = "line N"`), never the parser's message, which may quote the file. Errors are raised outside an `except` block (no `__context__`) |
 | g | `load` refuses a path that is a symbolic link (`profilefile.symlink`), a file that is not regular (`profilefile.not_regular_file`), a larger file (`profilefile.too_large`) and an unreadable one (`profilefile.unreadable`); the path is not in the error |

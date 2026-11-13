@@ -194,7 +194,7 @@ def test_cr1_network_paths_are_refused(path: str) -> None:
     ]
 
 
-@pytest.mark.parametrize("path", ["a.db", "/srv/net/a.db", "/netx/a.db", "C:/data/a.db", "C:\\data\\a.db", "/x/??/a"])
+@pytest.mark.parametrize("path", ["a.db", "/srv/net/a.db", "/netx/a.db", "C:/data/a.db", "C:\\data\\a.db"])
 def test_cr1_local_paths_are_kept(path: str) -> None:
     escaped = path.replace("\\", "\\\\")
     assert pf.parse(_one(f'engine = "sqlite"\npath = "{escaped}"')).profiles[0].path == path
@@ -232,12 +232,21 @@ def test_cr1_dump_refuses_a_plain_value_in_password() -> None:
     assert SECRET not in _frame_locals(info.value) + repr(info.value)
 
 
-def test_cr1_url_quotes_the_sqlite_path_and_brackets_once() -> None:
+def test_cr1_url_sqlite_path_and_brackets_once() -> None:
     # review of #64, L-2 and L-3 a.
+    # "?" and "#" would start the URL's query or fragment, and SQLAlchemy 2.0 does not unquote the path: refused.
+    for path in ("x.db?mode=rw", "x.db#f"):
+        assert _issues(_one(f'engine = "sqlite"\npath = "{path}"')) == [("profile[0].path", "profilefile.value")]
+    for database in ("a/b", "a?b", "a#b", "a%20b", "a@b"):
+        assert _issues(_one(f'engine = "postgresql"\nhost = "h"\ndatabase = "{database}"')) == [
+            ("profile[0].database", "profilefile.value")
+        ]
     sqlalchemy = pytest.importorskip("sqlalchemy")
-    url = pf.ConnectionProfile(name="x", engine="sqlite", path="x.db?mode=rw#f").url()
-    assert sqlalchemy.engine.make_url(url).database == "x.db?mode=rw#f"
-    assert sqlalchemy.engine.make_url(url).query == {}
+    url = pf.ConnectionProfile(name="x", engine="sqlite", path="a b/c.db").url()
+    assert sqlalchemy.engine.make_url(url).database == "a b/c.db"
+    spaced = pf.parse(_one('engine = "postgresql"\nhost = "h"\ndatabase = "my db"\nuser = "u@x"')).profiles[0]
+    parsed = sqlalchemy.engine.make_url(spaced.url())
+    assert (parsed.database, parsed.username) == ("my db", "u@x")  # the same on SQLAlchemy 2.0 and 2.1
     bracketed = pf.parse(_one('engine = "postgresql"\nhost = "[::1]"\ndatabase = "d"')).profiles[0]
     assert bracketed.sslmode == "prefer"
     assert bracketed.url() == "postgresql+psycopg://[::1]:5432/d?sslmode=prefer"
