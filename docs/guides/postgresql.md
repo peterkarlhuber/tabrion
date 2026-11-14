@@ -146,8 +146,10 @@ row-level security.
 
 `grant_runtime_role(owner_conn, role, *, schema=None, protected_tables=(), grant_connect=True)` gives a runtime role
 DML rights on a schema, now and for future objects, and revokes writes on bookkeeping tables. It refuses (and grants
-nothing) when the role is the owner, a superuser, has `BYPASSRLS` or owns tables. It needs a transaction of its own,
-so it refuses to run inside yours.
+nothing) when the role is the owner, a superuser, has `BYPASSRLS`, owns tables, or is a member of any predefined
+`pg_*` role (`details["reasons"]` `predefined_role`; `pg_write_all_data`, for one, writes every table and so the
+bookkeeping tables despite the revoke). `inspect_role(...).broad` names those memberships as `"broad:<role>"`. It
+needs a transaction of its own, so it refuses to run inside yours.
 
 ```pycon
 >>> report = postgres.grant_runtime_role(conn, os.environ["APP_ROLE"], protected_tables=["app_schema_migrations"])

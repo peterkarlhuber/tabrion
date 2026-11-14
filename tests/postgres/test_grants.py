@@ -25,7 +25,7 @@ import uuid
 import pytest
 
 from tabrion.errors import RoleMissing, RoleUnsafe, UsageError
-from tabrion.postgres import grant_runtime_role
+from tabrion.postgres import grant_runtime_role, inspect_role
 from tabrion.testing._faults import FaultProxy, wait_backend_gone
 
 from .conftest import Role, new_name
@@ -800,3 +800,140 @@ def test_r16_a_failing_connect_step_propagates(connect: Callable[..., Any], owne
     assert conn.info.transaction_status == IDLE
     assert snapshot(admin, fixture)["nspacl"]
     assert grant_runtime_role(conn, fixture.runtime.name).connect  # a second run completes
+
+
+# --- TB-150: membership in a predefined role (pg_write_all_data could write the protected tables) ------------------
+
+WRITE_ALL_DATA_CASES = ["direct", "indirect", "noinherit", "set_only", "unusable"]
+
+
+def _grant_predefined(
+    admin: Any, role: str, case: str, nologin_role: Callable[..., str], predefined: str = "pg_write_all_data"
+) -> str | None:
+    """Make ``role`` a member of ``predefined``; returns the role to ``SET ROLE`` to before writing, if any."""
+    ident = sql.Identifier(role)
+    target = sql.Identifier(predefined)
+    if case == "direct":
+        admin.execute(sql.SQL("GRANT {} TO {}").format(target, ident))
+        return None
+    holder = nologin_role()
+    admin.execute(sql.SQL("GRANT {} TO {}").format(target, sql.Identifier(holder)))
+    if case == "indirect":
+        admin.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(holder), ident))
+        return None
+    if case == "noinherit":
+        admin.execute(sql.SQL("ALTER ROLE {} NOINHERIT").format(ident))
+        admin.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(holder), ident))
+        return holder
+    # PostgreSQL 16+: the membership options of the grant itself.
+    options = "INHERIT FALSE, SET TRUE" if case == "set_only" else "INHERIT FALSE, SET FALSE"
+    admin.execute(sql.SQL("GRANT {} TO {} WITH " + options).format(sql.Identifier(holder), ident))
+    return holder if case == "set_only" else None
+
+
+def _refused(admin: Any, connect: Callable[..., Any], fixture: Fixture, target: str, broad: tuple[str, ...]) -> None:
+    conn = owner_connection(connect, fixture, autocommit=False)
+    report = inspect_role(conn, target)
+    assert report.broad == broad
+    assert report.restricted  # restricted (frozen) does not include it
+    assert "broad" not in report.as_dict()
+    with pytest.raises(RoleUnsafe) as info:
+        grant_runtime_role(conn, target, protected_tables=NODESTRO_PROTECTED)
+    assert info.value.code == "postgres.role_unsafe"
+    assert info.value.details == {"reasons": "predefined_role"}
+    assert target not in str(info.value) and fixture.schema not in str(info.value)
+    assert conn.info.transaction_status == IDLE
+    _nothing_granted(admin, fixture, target)
+
+
+@pytest.mark.parametrize("case", WRITE_ALL_DATA_CASES)
+def test_tb150_member_of_pg_write_all_data_is_refused(
+    admin: Any,
+    connect: Callable[..., Any],
+    make_fixture: Callable[..., Fixture],
+    nologin_role: Callable[..., str],
+    case: str,
+) -> None:
+    """A member of ``pg_write_all_data`` (direct, indirect, NOINHERIT, ``SET``-only or with no usable option) is
+    reported by ``inspect_role`` and refused before anything is granted: the ``REVOKE`` on the protected tables
+    would not hold for it. A membership with neither ``INHERIT`` nor ``SET`` cannot be used, but counts (I-20)."""
+    fixture = make_fixture()
+    _grant_predefined(admin, fixture.runtime.name, case, nologin_role)
+    _refused(admin, connect, fixture, fixture.runtime.name, ("broad:pg_write_all_data",))
+
+
+@pytest.mark.parametrize("predefined", ["pg_read_all_data", "pg_monitor", "pg_signal_backend"])
+def test_tb150_member_of_any_predefined_role_is_refused(
+    admin: Any,
+    connect: Callable[..., Any],
+    make_fixture: Callable[..., Fixture],
+    nologin_role: Callable[..., str],
+    predefined: str,
+) -> None:
+    """ADR 0015 D-2: no membership in any predefined role; ``broad`` lists the roles reached (pg_monitor reaches
+    three more)."""
+    fixture = make_fixture()
+    _grant_predefined(admin, fixture.runtime.name, "indirect", nologin_role, predefined)
+    expected = {
+        "pg_read_all_data": ("pg_read_all_data",),
+        "pg_monitor": ("pg_monitor", "pg_read_all_settings", "pg_read_all_stats", "pg_stat_scan_tables"),
+        "pg_signal_backend": ("pg_signal_backend",),
+    }[predefined]
+    _refused(admin, connect, fixture, fixture.runtime.name, tuple(f"broad:{name}" for name in expected))
+
+
+def test_tb150_the_database_owner_is_refused(connect: Callable[..., Any], closed_database: Any) -> None:
+    """The database owner is an implicit member of ``pg_database_owner`` (the owner of ``public``)."""
+    db_admin, fixture = closed_database
+    database = sql.Identifier(str(db_admin.info.dbname))
+    db_admin.execute(sql.SQL("ALTER DATABASE {} OWNER TO {}").format(database, sql.Identifier(fixture.runtime.name)))
+    conn = owner_connection(connect, fixture)
+    assert inspect_role(conn, fixture.runtime.name).broad == ("broad:pg_database_owner",)
+    with pytest.raises(RoleUnsafe) as info:
+        grant_runtime_role(conn, fixture.runtime.name)
+    assert info.value.details == {"reasons": "predefined_role"}
+
+
+@pytest.mark.parametrize("case", ["direct", "set_only"])
+def test_tb150_the_reference_grant_leaves_the_bookkeeping_writable(
+    admin: Any,
+    connect: Callable[..., Any],
+    make_fixture: Callable[..., Fixture],
+    nologin_role: Callable[..., str],
+    case: str,
+) -> None:
+    """The threat, shown with the reference (Axentra before #87): it grants, the ``REVOKE`` runs, and the runtime role
+    still writes ``axentra_schema_migrations`` (a ``SET``-only member after ``SET ROLE``). ``has_table_privilege``
+    does not see the ``SET``-only path, so only the membership check catches it."""
+    fixture = make_fixture()
+    target = fixture.runtime.name
+    via = _grant_predefined(admin, target, case, nologin_role)
+    axentra_grant_runtime_role(owner_connection(connect, fixture), target)
+    runtime = connect(fixture.runtime.url, autocommit=True)
+    privilege = runtime.execute(
+        "SELECT has_table_privilege(current_user, %s::regclass, 'INSERT')",
+        (f"{_quoted(fixture.schema)}.axentra_schema_migrations",),
+    ).fetchone()
+    assert privilege == ((case == "direct"),)
+    if via is not None:
+        runtime.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(via)))
+    table = sql.Identifier(fixture.schema, "axentra_schema_migrations")
+    runtime.execute(sql.SQL("INSERT INTO {} (version) VALUES (999999)").format(table))
+
+
+def test_tb150_a_plain_role_is_not_reported(connect: Callable[..., Any], make_fixture: Callable[..., Fixture]) -> None:
+    fixture = make_fixture()
+    conn = owner_connection(connect, fixture)
+    assert inspect_role(conn, fixture.runtime.name).broad == ()
+    assert grant_runtime_role(conn, fixture.runtime.name, protected_tables=AXENTRA_PROTECTED).broad == ()
+
+
+def test_tb150_a_superuser_is_reported(
+    admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture]
+) -> None:
+    """A superuser is a member of every role (as for ``bypass_rls``, I-20), so of every predefined one."""
+    fixture = make_fixture()
+    user = str(admin.execute("SELECT current_user").fetchone()[0])
+    broad = inspect_role(owner_connection(connect, fixture), user).broad
+    assert {"broad:pg_write_all_data", "broad:pg_read_all_data", "broad:pg_execute_server_program"} <= set(broad)
+    assert f"broad:{user}" not in broad and list(broad) == sorted(broad)

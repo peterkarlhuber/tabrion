@@ -24,10 +24,25 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- `tabrion.postgres.RoleReport` gets the field `broad: tuple[str, ...] = ()` at the end
+  (`tabrion.postgres.RoleReport.__init__` takes it as an optional last argument; additive under S-4): the predefined
+  roles the role can reach, as `"broad:<role>"` (TB-150, ADR 0015 D-2). It is not part of `restricted` or of
+  `as_dict()`, so the consumers' dict formats stay as they are.
 - Master builds as `0.2.2.dev0` after the `0.2.1` release commit `af0458d54467571abfc1afdd44d76e1f4d727c06` (the
   TB-053 pattern), so later commits never build as `0.2.1`. The release commit's full SHA is recorded in `[0.2.1]`
   below, in the installation guide and in STATUS TAB-042; the README examples pin it (`[0.2.1]` Security, DC-TB-1,
   still names the `0.2.0` pin that was current when it was released).
+
+### Security
+
+- `tabrion.postgres.grant_runtime_role` refuses a runtime role that is a member of any predefined role (`pg_*` or an
+  oid below `FirstNormalObjectId`), directly, through other roles, NOINHERIT or `SET`-only, with `RoleUnsafe`
+  reason `predefined_role`, before anything is granted (TB-150). Before, a member of `pg_write_all_data` got the
+  grants and kept `INSERT, UPDATE, DELETE` on the protected migration bookkeeping tables despite the `REVOKE`, and
+  `inspect_role` reported it as restricted; `inspect_role` now names such memberships in `RoleReport.broad`. A
+  database owner used as the runtime role is refused too (implicit member of `pg_database_owner`). Consumers that
+  map `RoleUnsafe` reasons to their own texts should handle the new value; Axentra (#87) and Nodestro (#169)
+  already refuse `pg_write_all_data` themselves.
 
 ## [0.2.1] - 2026-11-14
 

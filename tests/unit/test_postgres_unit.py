@@ -260,6 +260,17 @@ def test_role_report_as_dict() -> None:
     assert report.owned_tables == ("a", "b")
 
 
+def test_role_report_broad_defaults_empty_and_stays_out_of_as_dict_and_restricted() -> None:
+    """TB-150: ``broad`` is a field at the end with a default (API stability policy S-4); it is a finding of its own,
+    so the frozen ``restricted`` and the consumers' ``as_dict()`` formats stay as they were."""
+    assert _report().broad == ()
+    assert [field.name for field in dataclasses.fields(RoleReport)][-1] == "broad"
+    report = _report(broad=("broad:pg_write_all_data",))
+    assert report.restricted
+    assert "broad" not in report.as_dict()
+    assert report.as_dict() == _report().as_dict()
+
+
 @pytest.mark.parametrize(
     ("changes", "restricted"),
     [({}, True), ({"superuser": True}, False), ({"bypass_rls": True}, False), ({"owned_tables": ("t",)}, False)],

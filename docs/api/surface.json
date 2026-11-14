@@ -814,14 +814,15 @@
         "superuser: bool",
         "bypass_rls: bool",
         "owned_tables: tuple[str, ...]",
-        "can_create: bool"
+        "can_create: bool",
+        "broad: tuple[str, ...] = ()"
       ],
       "since": "0.1",
       "stability": "S"
     },
     "tabrion.postgres.RoleReport.__init__": {
       "kind": "method",
-      "signature": "(self, role: str, owner: str, schema: str, database: str, tables: int, connect: bool, superuser: bool, bypass_rls: bool, owned_tables: tuple[str, ...], can_create: bool) -> None",
+      "signature": "(self, role: str, owner: str, schema: str, database: str, tables: int, connect: bool, superuser: bool, bypass_rls: bool, owned_tables: tuple[str, ...], can_create: bool, broad: tuple[str, ...] = ()) -> None",
       "since": "0.1",
       "stability": "S"
     },

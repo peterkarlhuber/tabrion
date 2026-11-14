@@ -41,13 +41,14 @@ follow-up pull request after the `0.2.0` release commit `52353da`: TB-013 done, 
 by the owner decision on K-Q; C-02 / DC-TB-1 pull request: TB-132 done, TB-145's `LINE n:` part done, its N-3
 cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 follow-up pull request: TB-145 done;
 `0.2.1` version pull request: TB-013 records the patch release; `0.2.2.dev0` follow-up pull request after the
-`0.2.1` release commit `af0458d`: TB-013 records its SHA and the G-T2 runs).
+`0.2.1` release commit `af0458d`: TB-013 records its SHA and the G-T2 runs; predefined-role pull request: TB-150
+new, P2 from 10 to 11).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 3 |
-| P2 Medium | 10 |
+| P2 Medium | 11 |
 | P3 Low | 43 |
 | P4 Optional | 6 |
 
@@ -1085,10 +1086,30 @@ required (owner decision of 2026-11-08 11:26Z).
   `CREATEROLE` on servers before 16, are ways to superuser-equivalent power that `check_role` does not name.
   `pg_read_all_data` and `pg_write_all_data` do not bypass row-level security. A new reason code would extend the
   frozen reason set (a contract addendum); a finding of `tabrion.check` (TAB-017) would not.
+- **Update (TB-150):** `inspect_role` now names every predefined-role membership in `RoleReport.broad`, and
+  `grant_runtime_role` refuses it (`predefined_role`); `role_info`, `check_role` and `CREATEROLE` stay open here.
 - **Next step:** decide with TAB-017: a `tabrion.check` finding for these memberships (preferred, no API change), or a
   reason code in 0.2 by contract addendum. TAB-017 implements only the codes of specification section 9: a new
   code is a specification and contract addendum (owner decision); until then TAB-PG-001 covers only roles with
   `rolsuper` (I-20, I-53).
+
+### TB-150 · `grant_runtime_role` accepted a member of a predefined role such as `pg_write_all_data`
+
+- **Priority:** P2 Medium · **Status:** In progress (PR_LINK) · **Refs:** TABRION TAB-031, TAB-016,
+  contract I-20, I-35, ADR 0015 D-2, TB-036; consumers: axentra #87, nodestro-runtime #169 (RT-079)
+- **What:** `grant_runtime_role` revokes writes on `protected_tables` from the runtime role, but a member of
+  `pg_write_all_data` (PostgreSQL 14+) keeps `INSERT, UPDATE, DELETE` on every table through the predefined role, so
+  the migration bookkeeping stayed writable; `inspect_role` reported such a role as restricted. Axentra and
+  Nodestro refuse it locally since #87 and #169. Fix: `RoleReport.broad` (new field at the end, not in `as_dict()`)
+  names every predefined role (`pg_*` or an oid below `FirstNormalObjectId`, ADR 0015 D-2) the role can reach
+  (direct, indirect, NOINHERIT, `SET`-only, the database owner's `pg_database_owner`), and `grant_runtime_role`
+  refuses a non-empty one with the new reason `predefined_role` before anything is granted. Tests:
+  `tests/postgres/test_grants.py::test_tb150_*`, `tests/unit/test_postgres_unit.py`.
+- **Open after the fix:** (1) the owner confirms the new reason value and field (a security fix under S-5; the
+  reason name is the one of the planned 0.3 addendum); (2) `role_info`/`check_role` still do not report predefined
+  roles (TB-036); (3) privileges on a protected table that come from `PUBLIC` or from another role the runtime role
+  inherits are not checked after the `REVOKE` (Axentra and Nodestro re-check with `has_table_privilege`); (4) the
+  consumers may drop their local `pg_write_all_data` checks once they pin a Tabrion with this fix.
 
 ### TB-037 · Review follow-ups L-1 and I-3 of TAB-015/TAB-016
 
