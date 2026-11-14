@@ -8,6 +8,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Docs: ecosystem migration record `docs/ecosystem/migration.md` (QA-23): before/after per consumer repository with the
+  MIG and PIN pull requests and merge SHAs, compatibility (`0.1.0` to `0.2.1`, `tabrion>=0.2,<0.3`), test evidence,
+  rollback and what was not migrated; `docs/program/STATUS.md` migration and QA rows synced. No code change.
 - Docs: CR-DBX conditional development start (owner, 2026-11-14 11:01Z, G-CX). ADR 0014, `docs/adr/README.md`,
   `docs/program/STATUS.md` (G-CX row, CR-DBX section, O-10) and TB-149 in `docs/TODO.md`: TAB-XW work starts without
   a new approval once S-1..S-4 (Studio 1.0 and QA-S1, security, migration incl. W6, CI) are proven; H-2 and G-R are
