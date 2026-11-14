@@ -652,10 +652,13 @@ def safe_message(error: BaseException | Classification) -> str:
 #: there the text is removed to the end of the text, or inside a traceback up to the next line of its structure,
 #: because a value may span several lines (review M-2). The run of blanks before an inline label starts only after a
 #: non-blank character: without the look-behind every start position inside a long run of blanks rescans the run
-#: (quadratic time, a log-injection DoS; Axentra review F-3).
+#: (quadratic time, a log-injection DoS; Axentra review F-3). A "blank" is any white space other than a line break,
+#: so a no-break space after the label counts as well, and an inline label directly before a line break starts a
+#: removed part even with one blank or none, since its value may start on the next line (TB-145).
 _SERVER_TEXT_START = re.compile(
-    r"^[ \t]*(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):"
-    r"|(?<![ \t])[ \t]*\b(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):(?: {2}|[ \t]+(?=[^ \t\r\n]))"
+    r"^[^\S\r\n]*(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):"
+    r"|(?<![^\S\r\n])[^\S\r\n]*\b(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):"
+    r"(?: {2}|[^\S\r\n]+(?=\S)|[^\S\r\n]*\r?\n)"
 )
 #: The header line of a formatted traceback. Only after one has been seen in a text does :data:`_BOUNDARY` end a
 #: removed part (Axentra review F-4): in free text the removal runs to the end.
@@ -681,7 +684,7 @@ _PARAMETERS_INLINE = re.compile(r"\[parameters: .*")
 #: The same parts in escaped form, as ``repr()`` prints them (``'...\\nDETAIL:  Key (email)=(...)'``, review H-2):
 #: removed from the escaped newline to the end of the line.
 _ESCAPED_SERVER_TEXT = re.compile(
-    r"(?:\\r)?\\n[ \t]*(?:(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):|\[(?:parameters|SQL): ).*"
+    r"(?:\\r)?\\n[^\S\r\n]*(?:(?:DETAIL|HINT|CONTEXT|QUERY|LINE \d+):|\[(?:parameters|SQL): ).*"
 )
 #: Cheap tests that decide whether a text is scanned at all (:func:`_has_server_text_marker`). Together they must
 #: cover every label of :data:`_SERVER_TEXT_START` and :data:`_ESCAPED_SERVER_TEXT`: without :data:`_LINE_LABEL` a
