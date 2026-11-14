@@ -38,7 +38,9 @@ from tabrion import sqlite as _sqlite
 from tabrion._sa import events as _events
 from tabrion._sa._types import Isolation, Params, Statement
 from tabrion._sa._v02 import _DatabaseV02, _TransactionV02
+from tabrion._sa._v03 import _TransactionV03
 from tabrion._sa.profile import Profile, TLSMode
+from tabrion._since import released
 from tabrion.errors import (
     Classification,
     ConfigurationError,
@@ -207,7 +209,18 @@ def _is_database_error(exc: BaseException) -> bool:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-class Transaction(_TransactionV02):
+# Since 0.3 (ADR 0015 Consequences): ``execute_checked`` joins the public class only when the package version is 0.3 or
+# later; before that it stays staged in ``tabrion._sa._v03`` (``tabrion._since``, as G-T1 condition C-6 did for 0.2).
+# Type checkers see the 0.2 class.
+if TYPE_CHECKING or not released("0.3"):
+    _TransactionBase = _TransactionV02
+else:
+
+    class _TransactionBase(_TransactionV03, _TransactionV02):
+        """The 0.2 and 0.3 mixins of ``Transaction``."""
+
+
+class Transaction(_TransactionBase):
     """One Tabrion transaction; bound to the opening thread (only ``cancel`` may come from another thread)."""
 
     _connection: sqlalchemy.Connection
@@ -226,6 +239,7 @@ class Transaction(_TransactionV02):
     _sending: bool
     _cancel_sent: bool
     _broken: bool
+    _failure: TabrionError | None
     _cleanups: list[Callable[[], None]]
 
     def __new__(cls, *args: object, **kwargs: object) -> Transaction:
@@ -259,6 +273,7 @@ class Transaction(_TransactionV02):
         self._sending = False
         self._cancel_sent = False
         self._broken = False
+        self._failure = None
         self._cleanups = []
         return self
 
@@ -271,6 +286,14 @@ class Transaction(_TransactionV02):
             raise UsageError("database.transaction_ended")
         if threading.get_ident() != self._thread:
             raise UsageError("database.wrong_thread")
+        if self._failure is not None:
+            raise UsageError("transaction.failed")
+
+    def _fail(self, error: TabrionError) -> None:
+        """Mark the transaction failed (``execute_checked``, I-120): every later statement raises
+        ``UsageError("transaction.failed")``, and the end of the block rolls back, also when the caller caught
+        ``error``."""
+        self._failure = error
 
     @property
     def read_only(self) -> bool:
@@ -1066,6 +1089,11 @@ class Database(_DatabaseV02):
                 failure = _canceled_error()  # a canceled transaction is never committed (I-102)
             if failure is None and transaction._broken:
                 failure = UsageError("database.transaction_ended")  # the caller's SQL ended it (I-104)
+            if failure is None and transaction._failure is not None:
+                # A failed execute_checked whose error the caller caught: never committed, and the block raises a
+                # fresh copy of that error (same class, code and value-free details; I-120).
+                caught = transaction._failure
+                failure = type(caught)(caught.code, details=caught.details)
             if failure is not None:
                 _rollback(connection)
                 if transaction._must_not_return_to_pool() and (postgres or _sqlite_file_backed(connection)):

@@ -149,6 +149,7 @@ def test_core_contract_names_the_stdlib_modules() -> None:
         "tabrion.check",
         "tabrion.profilefile",
         "tabrion._deprecated",
+        "tabrion._since",
     }
     assert {"psycopg", "sqlalchemy", "alembic", "pytest"} <= set(core["forbidden_modules"])  # type: ignore[call-overload]
 
@@ -175,7 +176,7 @@ def test_levuvo_contract_names_every_known_platform() -> None:
 def test_layer_b_and_migrations_contracts() -> None:
     """G-T1 condition C-5 (doc 02 section 2): layer B and the migration helpers have their own denylists."""
     by_name = {c["name"]: c for c in _contracts()}
-    assert by_name[LAYER_B]["source_modules"] == ["tabrion._sa", "tabrion.schema"]
+    assert by_name[LAYER_B]["source_modules"] == ["tabrion._sa", "tabrion.schema", "tabrion.rowedit"]
     assert {"pytest", "alembic", "psycopg_pool", "tabrion.testing", "tabrion.migrations"} <= set(
         by_name[LAYER_B]["forbidden_modules"]  # type: ignore[call-overload]
     )
