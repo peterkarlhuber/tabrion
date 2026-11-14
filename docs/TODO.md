@@ -499,7 +499,9 @@ required (owner decision of 2026-11-08 11:26Z).
   migration documentation under `docs/ecosystem/` (QA-23) and the closing record (QA-24).
 - **Status note (QA-17):** the copy of the dependency policy (no edges) and the vendored checker with its test are in
   the QA-17 pull request (nodestro-studio holds the policy, ST-061).
-- **Next step:** QA-18, QA-19, QA-21, QA-23 and QA-24.
+- **Status note (2026-11-14):** QA-16 is done in tabrion, axentra, orkexa and tabrion-studio (`33b8e4b`); QA-17,
+  QA-18, QA-19, QA-21 and QA-23 are done (`docs/program/STATUS.md`).
+- **Next step:** QA-24 (closing record).
 
 ## M4: Tabrion 0.2
 

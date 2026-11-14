@@ -8,6 +8,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Docs: migration follow-ups after the owner accepted the migration report (2026-11-14 18:52Z).
+  `docs/ecosystem/migration.md` and `docs/program/STATUS.md` record QA-16 as done including tabrion-studio, the QA-7
+  rest, the binding Nodestro pip floor 26.1, `POISON_VERSION` 0.2.99 in every copy, the TB-150 fix and the
+  Windows/OneDrive release gate (DSK-021). `docs/TODO.md` TB-012 status note. No code change.
 - **Experimental, planned for 0.3** (TABRION TAB-XW-6, CR-DBX; not importable while the version is below 0.3): the
   guided write transaction, contract section 5.11 (moved from addendum A.5). `Transaction.execute_checked(statement,
   params, *, expect_rowcount, max_affected, timeout)` runs one statement and checks its row count; a mismatch raises
