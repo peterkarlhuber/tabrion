@@ -149,6 +149,7 @@ def test_core_contract_names_the_stdlib_modules() -> None:
         "tabrion.check",
         "tabrion.profilefile",
         "tabrion._deprecated",
+        "tabrion._since",
     }
     assert {"psycopg", "sqlalchemy", "alembic", "pytest"} <= set(core["forbidden_modules"])  # type: ignore[call-overload]
 
@@ -175,7 +176,7 @@ def test_levuvo_contract_names_every_known_platform() -> None:
 def test_layer_b_and_migrations_contracts() -> None:
     """G-T1 condition C-5 (doc 02 section 2): layer B and the migration helpers have their own denylists."""
     by_name = {c["name"]: c for c in _contracts()}
-    assert by_name[LAYER_B]["source_modules"] == ["tabrion._sa", "tabrion.schema"]
+    assert by_name[LAYER_B]["source_modules"] == ["tabrion._sa", "tabrion.schema", "tabrion.rowedit"]
     assert {"pytest", "alembic", "psycopg_pool", "tabrion.testing", "tabrion.migrations"} <= set(
         by_name[LAYER_B]["forbidden_modules"]  # type: ignore[call-overload]
     )
@@ -283,7 +284,16 @@ def test_prefix_scan_detects_a_probe(tmp_path: Path) -> None:
 # G-T1 F-09 and F-10 (TODO TB-019): "stdlib-only" as an allowlist. import-linter's core contract forbids a list of
 # packages, so any other third-party import (for example ``pluggy``, which comes with pytest) would pass it, and the
 # root package ``tabrion`` (whose ``__getattr__`` reaches layer B) is in no contract at all.
-CORE_FILES = ("errors.py", "sql.py", "config.py", "sqlite.py", "check.py", "profilefile.py", "_deprecated.py")
+CORE_FILES = (
+    "errors.py",
+    "sql.py",
+    "config.py",
+    "sqlite.py",
+    "check.py",
+    "profilefile.py",
+    "_deprecated.py",
+    "_since.py",
+)
 CORE_IMPORTABLE = frozenset(
     {
         "tabrion.errors",
@@ -293,6 +303,9 @@ CORE_IMPORTABLE = frozenset(
         "tabrion.check",
         "tabrion.profilefile",
         "tabrion._deprecated",
+        "tabrion._since",
+        # The version constant (standard library only, in no contract): the 0.3 gate reads it (ADR 0015).
+        "tabrion._version",
     }
 )
 

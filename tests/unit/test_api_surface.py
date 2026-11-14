@@ -1,4 +1,5 @@
-"""TAB-023 (G-T1 condition C-6): ``scripts/api_surface.py`` freezes every signature and keeps 0.2 names out of 0.1.
+"""TAB-023 (G-T1 condition C-6): ``scripts/api_surface.py`` freezes every signature and keeps 0.2 names out of 0.1
+(and 0.3 names out of 0.2, ADR 0015).
 
 The positive control runs the check on the repository; the mutation probes change one thing in a copy of the package
 and expect the check to fail and name it.
@@ -90,6 +91,23 @@ MUTATIONS: dict[str, tuple[list[Edit], str]] = {
     "0.2 mixin method signature changed": (
         [("_sa/_v02.py", "batch_size: int = 500", "batch_size: int = 100")],
         "tabrion.Transaction.stream: changed",
+    ),
+    # ADR 0015 Consequences: a 0.3 name stays unimportable below 0.3 (tabrion._since); removing a gate turns it red.
+    "0.3 method on the public class before 0.3": (
+        [("_sa/database.py", 'if TYPE_CHECKING or not released("0.3"):', "if TYPE_CHECKING:")],
+        "tabrion.Transaction.execute_checked: since 0.3, but the 0.2 surface exports it",
+    ),
+    "0.3 error bound before 0.3": (
+        [("errors.py", 'if _released("0.3"):', "if True:")],
+        "tabrion.errors.RowCountMismatch: since 0.3, but the 0.2 surface exports it",
+    ),
+    "0.3 module importable before 0.3": (
+        [("rowedit.py", 'if not released("0.3"):', "if False:")],
+        "tabrion.rowedit.update_row: since 0.3, but it is importable from its public path",
+    ),
+    "0.3 staged signature changed": (
+        [("_sa/_v03.py", "max_affected: int | None = None,", "max_affected: int | None = 1,")],
+        "tabrion.Transaction.execute_checked: staged signature changed",
     ),
     "deprecation without surface.json and CHANGELOG (TAB-051)": (
         [

@@ -66,6 +66,8 @@ the server has no citext \(contrib\)
 the PostgreSQL extension '[a-z_]+' is [a-z_ ]+ and could not be activated( \([A-Za-z_][A-Za-z0-9_]*, SQLSTATE ([0-9A-Z]{5}|-)\))?
 LDP-[A-Z0-9-]+ needs server version \d+
 a NOINHERIT admin needs the membership options of PostgreSQL 16 \(contract I-60\)
+# TB-150: the predefined role pg_maintain exists from PostgreSQL 17 (pg jobs on PostgreSQL 16).
+pg_maintain exists from PostgreSQL 17
 # TAB-T-009 restarts the server: nightly job "pg restart" only.
 TABRION_PG_RESTART_COMMAND is not set: the server restart runs in the nightly job 'pg restart' only
 

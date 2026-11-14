@@ -200,7 +200,7 @@ Deferred or open after W6 (owner acceptance of the migration report, 2026-11-14 
   tabrion-studio #110 (`782bc8e`).
 - **QA-7 and QA-16 rest: done.** See the test evidence above.
 - **`pg_write_all_data`: fixed (TB-150, D-124).** `grant_runtime_role` refuses a member of any predefined role before
-  granting and re-checks inside the transaction (#77). axentra words the new reason `predefined_role` (#98,
+  granting and re-checks inside the transaction (#77, `bf6b88c`). axentra words the new reason `predefined_role` (#98,
   `e64ed63`). Open: TB-036 (`check_role`/`diagnose` do not report predefined roles) and the write re-check after the
   REVOKE (TB-150 item 3).
 - **Lock drift.** The studio lock holds axentra `3b80af1` (master `b64edbb`, docs only) and nodestro-integrations

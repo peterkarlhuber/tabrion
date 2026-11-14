@@ -12,6 +12,17 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `docs/ecosystem/migration.md` and `docs/program/STATUS.md` record QA-16 as done including tabrion-studio, the QA-7
   rest, the binding Nodestro pip floor 26.1, `POISON_VERSION` 0.2.99 in every copy, the TB-150 fix and the
   Windows/OneDrive release gate (DSK-021). `docs/TODO.md` TB-012 status note. No code change.
+- **Experimental, planned for 0.3** (TABRION TAB-XW-6, CR-DBX; not importable while the version is below 0.3): the
+  guided write transaction, contract section 5.11 (moved from addendum A.5). `Transaction.execute_checked(statement,
+  params, *, expect_rowcount, max_affected, timeout)` runs one statement and checks its row count; a mismatch raises
+  the new `tabrion.errors.RowCountMismatch` (`transaction.rowcount_mismatch`, `transaction.too_many_rows`, counts
+  only) and fails the transaction, which rolls back even when the error is caught. The new module `tabrion.rowedit`
+  (`insert_row`, `update_row`, `delete_row`) builds one-row statements with an optimistic, NULL-safe predicate on the
+  old values (PostgreSQL `IS NOT DISTINCT FROM`, SQLite `IS`), bound parameters only and the exact primary key
+  (`rowedit.primary_key_required`) and at least one old value (`rowedit.old_required`); the limits cover the
+  statement's own rows, not those of rules or triggers. False conflicts with floating-point and JSON values are documented (N-5). The
+  names are in `surface.json` with `since` 0.3 and stability X; `tabrion._since` keeps them unimportable before 0.3,
+  and `scripts/api_surface.py` and `tests/unit/test_v03_gate.py` check both states.
 - Docs: TABRION TAB-XW-1 (CR-DBX, Tabrion 0.3 write and DDL primitives). ADR 0015
   (`docs/adr/0015-crdbx-write-and-ddl-primitives.md`): DDL and diff on SQLAlchemy Core and Alembic operations
   (E-X3); revision text only for Alembic projects, never `env.py`, project code or `alembic upgrade` (E-X4); direct
@@ -44,10 +55,37 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- `tabrion.postgres.RoleReport` gets the field `broad: tuple[str, ...] = ()` at the end
+  (`tabrion.postgres.RoleReport.__init__` takes it as an optional last argument; additive under S-4): the predefined
+  roles the role can reach, as `"broad:<role>"` (TB-150, ADR 0015 D-2). It is not part of `restricted` or of
+  `as_dict()`, so the consumers' dict formats stay as they are.
 - Master builds as `0.2.2.dev0` after the `0.2.1` release commit `af0458d54467571abfc1afdd44d76e1f4d727c06` (the
   TB-053 pattern), so later commits never build as `0.2.1`. The release commit's full SHA is recorded in `[0.2.1]`
   below, in the installation guide and in STATUS TAB-042; the README examples pin it (`[0.2.1]` Security, DC-TB-1,
   still names the `0.2.0` pin that was current when it was released).
+
+### Security
+
+- `tabrion.postgres.grant_runtime_role` refuses a runtime role that is a member of any predefined role (`pg_*` or an
+  oid below `FirstNormalObjectId`), directly, through other roles, NOINHERIT or `SET`-only, with `RoleUnsafe`
+  reason `predefined_role`, before anything is granted (TB-150). Before, a member of `pg_write_all_data` got the
+  grants and kept `INSERT, UPDATE, DELETE` on the protected migration bookkeeping tables despite the `REVOKE`, and
+  `inspect_role` reported it as restricted; `inspect_role` now names such memberships in `RoleReport.broad`. The
+  membership is read again inside the grant transaction, so one granted concurrently rolls the grants back. Contract
+  I-35 and decision D-124 (owner-confirmed, ADR 0015 D-2).
+  **Behavior changes for consumers:**
+  - Runtime roles that were accepted before and are now refused at deploy time:
+    - a role that owns the database (implicit member of `pg_database_owner`), in any schema (in `public` it was
+      already refused as `table_owner`);
+    - a role that holds a monitoring or operations role: `pg_monitor`, `pg_read_all_stats`, `pg_read_all_settings`,
+      `pg_stat_scan_tables`, `pg_signal_backend`, `pg_checkpoint`, `pg_maintain` (PostgreSQL 17+) and the rest;
+    - a role that holds `pg_read_all_data` or `pg_write_all_data`.
+    In each case the membership may be direct or through other roles, with any INHERIT, SET or ADMIN option.
+  - `details["reasons"]` can contain `predefined_role` next to the earlier values. A superuser runtime role is now
+    refused with `superuser,bypass_rls,table_owner,predefined_role`.
+  - Consumers that compare `reasons` exactly, or map each value to a text of their own, should handle
+    `predefined_role` before they pin a Tabrion with this fix. Axentra's `_refusal` gives an empty phrase for an
+    unknown value. Axentra (#87) and Nodestro (#169) already refuse `pg_write_all_data` themselves.
 
 ## [0.2.1] - 2026-11-14
 

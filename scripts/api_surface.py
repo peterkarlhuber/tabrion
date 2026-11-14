@@ -72,11 +72,17 @@ PUBLIC_MODULES = (
     "tabrion.check",
     "tabrion.profilefile",
     "tabrion.schema",
+    "tabrion.rowedit",
     "tabrion.migrations",
     "tabrion.testing",
     "tabrion.testing.profiles",
 )
 """Contract section 0. Order matters only to break ties when choosing the canonical path of a re-exported name."""
+
+MODULE_SINCE = {"tabrion.rowedit": "0.3"}
+"""Public modules of a later minor (ADR 0015 Consequences): before that version their import raises ``ImportError``
+(``tabrion._since``), so :func:`collect` leaves them out and their names count as staged; from that version on they
+are collected like every other module, and an import error fails the check."""
 
 PUBLIC_DUNDERS = ("__init__", "__enter__", "__exit__", "__call__")
 SKIP = ("__version__",)
@@ -220,11 +226,17 @@ def class_members(cls: type) -> dict[str, Entry]:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
+def public_modules() -> list[str]:
+    """``PUBLIC_MODULES`` without the modules of a later minor than the package's (``MODULE_SINCE``)."""
+    current = package_minor()
+    return [name for name in PUBLIC_MODULES if minor(MODULE_SINCE.get(name, "0.0")) <= current]
+
+
 def collect() -> dict[str, Entry]:
     """Every public path -> its description; re-exports point to the canonical path with ``alias_of``."""
     paths: dict[int, list[str]] = {}
     objects: dict[str, Any] = {}
-    for module_name in PUBLIC_MODULES:
+    for module_name in public_modules():
         module = importlib.import_module(module_name)
         for name in module.__all__:
             if name in SKIP:
@@ -256,11 +268,15 @@ def resolve(path: str) -> Any:
 
     Any successful attribute lookup counts, not only ``__all__``: ``from tabrion import Result`` works whenever
     ``tabrion.__getattr__`` (PEP 562) can produce the name, whether or not ``__all__`` lists it (G-T1 CC-1).
-    Class members are looked up with inheritance, so a 0.2 mixin that is mixed in early counts as well.
+    Class members are looked up with inheritance, so a 0.2 mixin that is mixed in early counts as well. A module whose
+    import fails (a module of a later minor, ``MODULE_SINCE``) makes its names unresolvable.
     """
     for module_name in sorted(PUBLIC_MODULES, key=len, reverse=True):
         if path.startswith(module_name + "."):
-            obj: Any = importlib.import_module(module_name)
+            try:
+                obj: Any = importlib.import_module(module_name)
+            except ImportError:
+                raise LookupError(path) from None
             for part in path[len(module_name) + 1 :].split("."):
                 try:
                     obj = getattr(obj, part)
