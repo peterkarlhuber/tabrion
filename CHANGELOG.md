@@ -6,17 +6,6 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
-## [0.2.1] - 2026-11-14
-
-TABRION TAB-042 follow-up: `v0.2.1` final, a patch release with the log redaction fixes C-02 (#67) and TB-145 (#70)
-and the license change. The release commit is the merge commit of the pull request that sets this version; its full
-SHA is recorded by the follow-up pull request that moves master to `0.2.2.dev0` (ADR 0009, amendment of 2026-11-08).
-Consumers pin that commit by its full SHA via `git+https`; a tag `v0.2.1` on it is an optional label. No PyPI upload,
-no GitHub release and no announcement (G-R). It satisfies the range `tabrion>=0.2,<0.3`. **No API change**: the public
-surface (`docs/api/surface.json`, 235 names) is the same as in `0.2.0` (`scripts/api_surface.py --base 52353da`); the
-redaction fixes only remove more, and the install hints change message text only. Between `0.2.0` and this release
-master built as `0.2.1.dev0` (from `52353daee6cd6e37a7efc45b74061a48beb2b280`).
-
 ### Added
 
 - Docs: CR-DBX conditional development start (owner, 2026-11-14 11:01Z, G-CX). ADR 0014, `docs/adr/README.md`,
@@ -24,6 +13,28 @@ master built as `0.2.1.dev0` (from `52353daee6cd6e37a7efc45b74061a48beb2b280`).
   a new approval once S-1..S-4 (Studio 1.0 and QA-S1, security, migration incl. W6, CI) are proven; H-2 and G-R are
   needed for public releases only; write and admin code stays behind default-off kill switches until its gate. No
   code change.
+
+### Changed
+
+- Master builds as `0.2.2.dev0` after the `0.2.1` release commit `af0458d54467571abfc1afdd44d76e1f4d727c06` (the
+  TB-053 pattern), so later commits never build as `0.2.1`. The release commit's full SHA is recorded in `[0.2.1]`
+  below, in the installation guide and in STATUS TAB-042; the README examples pin it (`[0.2.1]` Security, DC-TB-1,
+  still names the `0.2.0` pin that was current when it was released).
+
+## [0.2.1] - 2026-11-14
+
+TABRION TAB-042 follow-up: `v0.2.1` final, a patch release with the log redaction fixes C-02 (#67) and TB-145 (#70)
+and the license change. The release commit is the merge commit of the pull request that sets this version (#71):
+`af0458d54467571abfc1afdd44d76e1f4d727c06` (recorded by the follow-up pull request that moves master to `0.2.2.dev0`;
+ADR 0009, amendment of 2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.2.1` on it is
+an optional label. No PyPI upload, no GitHub release and no announcement (G-R). It satisfies the range
+`tabrion>=0.2,<0.3`. **No API change**: the public surface (`docs/api/surface.json`, 235 names) is the same as in
+`0.2.0` (`scripts/api_surface.py --base 52353da`); the redaction fixes only remove more, and the install hints change
+message text only. Between `0.2.0` and this release master built as `0.2.1.dev0` (from
+`52353daee6cd6e37a7efc45b74061a48beb2b280`).
+
+### Added
+
 - Docs: ADR 0014 records Tabrion's scope in change request CR-DBX (planning document 15, owner decisions of
   2026-11-13; planning confirmed, implementation not started): DDL, diff and migration-plan building blocks for
   Tabrion 0.3 on SQLAlchemy Core and Alembic operations, no own builder, no schema tool UI, no `pg_dump` wrapper, no
