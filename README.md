@@ -90,5 +90,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [SUPPORT.md]
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The name "Tabrion" and the logos are not covered by the MIT license; see
-[TRADEMARKS.md](TRADEMARKS.md). psycopg (extra `postgres`) is LGPL-3.0 and is installed separately, never bundled.
+Proprietary: Copyright (c) 2026 Levuvo. All rights reserved. See [LICENSE](LICENSE). The name "Tabrion" and the logos
+are covered separately; see [TRADEMARKS.md](TRADEMARKS.md). psycopg (extra `postgres`) is LGPL-3.0 and is installed separately, never bundled.

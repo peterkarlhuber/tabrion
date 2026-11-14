@@ -37,7 +37,7 @@ def test_core_wheel_requires_nothing(wheel: Path) -> None:
     extras = set(meta.get_all("Provides-Extra") or [])
     assert extras == {"postgres", "sqlalchemy", "migrations", "testing", "all", "dev"}
     assert meta["Requires-Python"] == ">=3.11"
-    assert meta["License-Expression"] == "MIT"
+    assert meta["License-Expression"] == "LicenseRef-Proprietary"
 
 
 def test_wheel_contains_only_the_package(wheel: Path) -> None:
