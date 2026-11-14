@@ -136,14 +136,15 @@ was a stale lock, not a code defect, and both were rerun.
   `tests/architecture/test_forbidden_probe.py` (one mutation probe per contract).
 - **QA-17 (dependency policy).** nodestro-studio `tests/test_dependency_policy.py` (8 negative cases, cycles);
   vendored copies with red probes in axentra, orkexa, nodestro-api #140 (`f1755fe`), nodestro-integrations #91
-  (`2db82e7`) and nodestro-examples #105 (`39c8afa`). nodestro-runtime #180 is open.
+  (`2db82e7`), nodestro-examples #105 (`39c8afa`) and nodestro-runtime #180 (`f7fc3a1`).
 - **QA-18 (optional edges).** `test_optional_edges.py` in orkexa, nodestro-runtime and nodestro-api (blocked module,
   probe, meta test against K-33).
 - **QA-19/QA-20.** nodestro-studio #194 adds `.github/workflows/tabrion-compat.yml` and `scripts/tabrion_compat.py`. It
   is manual (`workflow_dispatch` with `tabrion_ref`) and report only. Jobs: the consumer suites at a given Tabrion ref
   (QA-20), five clean-install cells and negative resolution cases with pip 25.0 and the latest pip (QA-19). Workflow
-  review: accept with conditions, C-1 fixed (`35ab074`). The first dispatch runs after the merge, because the
-  workflow must be on master. The pull request is open on 2026-11-14.
+  review: accept with conditions, C-1 fixed (`35ab074`). Merged as `5ecf681`. The first dispatch, run 43623198089
+  against Tabrion master on 2026-11-14, is green in every job: all four consumer suites, all clean-install cells and
+  all negative resolution cases on pip 25.0 and the latest pip.
 - **Security reviews.** axentra MIG-AXE-0 (#61), runtime #169 and #171, axentra #87, runtime #176 (MIG-NOD-9), the
   repair flow (api #136, studio #192, desktop #76), and a re-check of the #171 conditions (C1, N1, N2 and N4 met; N3
   tracked as a gate).
@@ -187,15 +188,16 @@ By design (plan document 06 section 9):
 Deferred or open after W6:
 
 - **Windows reparse points and OneDrive (RT-080).** The re-check of runtime #171 tracks the refusal on a real Windows
-  machine as a gate before the first desktop release. nodestro-runtime #181 (test and RT-080 update) is open.
+  machine as a gate before the first desktop release. nodestro-runtime #181 (test and RT-080 update) is merged
+  (`f8e4308`).
 - **`POISON_VERSION`** in the shared `check_tabrion_source.py` (studio and its copies) still names `0.1.0`. It should
   move to `0.2.x`.
-- **QA-19 gaps.** The cells for orkexa[postgres] standalone, nodestro-api[server] and pip 25.0 on Nodestro, and real
-  negative resolutions, are covered only by nodestro-studio #194. An owner decision on the Nodestro pip floor (26.1)
-  is open.
+- **Nodestro pip floor.** The cells for orkexa[postgres] standalone, nodestro-api[server], pip 25.0 and the negative
+  resolutions are covered by nodestro-studio #194 (run 43623198089 green). An owner decision on the Nodestro pip
+  floor (26.1) is open.
 - **QA-7 and QA-17 rest.** nodestro-api has no `check_tabrion_api.py` or `docs/api-consumers.md`. The `--surface`
   check fails on `SessionSettings.__dataclass_fields__` in axentra and is not run in CI anywhere.
-  nodestro-runtime QA-17 (#180) is open. The tabrion-studio part of QA-16 is open.
+  The tabrion-studio part of QA-16 is open.
 - **`pg_write_all_data`.** Tabrion's `grant_runtime_role` and `inspect_role` do not refuse it, although it bypasses a
   protected migrations table. axentra #87 and runtime #169 refuse it locally. A Tabrion follow-up is needed.
 - **Lock drift.** The studio lock holds axentra `3b80af1` (master `b64edbb`, docs only) and nodestro-integrations
