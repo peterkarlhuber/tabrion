@@ -142,8 +142,8 @@ class RoleReport:
     owned_tables: tuple[str, ...]
     can_create: bool
     broad: tuple[str, ...] = ()
-    """``"broad:<role>"`` for each predefined role (named ``pg_*`` or with an oid below ``FirstNormalObjectId``) that
-    the role is a member of, directly or indirectly, NOINHERIT too, sorted (TB-150, ADR 0015 D-2). A finding:
+    """``"broad:<role>"`` for each predefined role (named ``pg_*`` and with an oid below ``FirstNormalObjectId``) that
+    the role is a member of, directly or indirectly, NOINHERIT too, sorted (TB-150, ADR 0015 D-2, D-124). A finding:
     ``pg_write_all_data``, for one, writes every table, the migration bookkeeping included. Not part of
     ``restricted`` or ``as_dict()``."""
 
@@ -211,19 +211,7 @@ def inspect_role(connection: psycopg.Connection[Any], role: str, *, schema: str 
             # own text).
             raise RoleMissing("postgres.role_missing")
         role_oid = attributes[0]
-        # Predefined roles (ADR 0015 D-2: a name starting with pg_, which is reserved, or an oid below
-        # FirstNormalObjectId) that ``role`` can become (TB-150). 'MEMBER' also counts a NOINHERIT membership and one
-        # granted WITH INHERIT FALSE: SET ROLE, to the role or to one in between, still reaches it; and the implicit
-        # membership of the database owner in pg_database_owner.
-        cursor.execute(
-            "SELECT p.rolname::pg_catalog.text FROM pg_catalog.pg_roles p"
-            " WHERE (pg_catalog.left(p.rolname::pg_catalog.text, 3) OPERATOR(pg_catalog.=) 'pg_'"
-            "   OR p.oid OPERATOR(pg_catalog.<) 16384::pg_catalog.oid)"
-            " AND p.oid OPERATOR(pg_catalog.<>) %s::pg_catalog.oid"
-            " AND pg_catalog.pg_has_role(%s::pg_catalog.oid, p.oid, 'MEMBER')",
-            (role_oid, role_oid),
-        )
-        broad = tuple(sorted(f"broad:{name}" for (name,) in cursor.fetchall()))
+        broad = _predefined_memberships(cursor, role)
         tables: list[tuple[Any, ...]] = []
         if schema_oid is not None:
             cursor.execute(
@@ -254,6 +242,28 @@ def inspect_role(connection: psycopg.Connection[Any], role: str, *, schema: str 
         can_create=bool(privileges[1]),
         broad=broad,
     )
+
+
+# Predefined roles (TB-150, ADR 0015 D-2, D-124): built in (an oid below FirstNormalObjectId, 16384) and named pg_
+# (a reserved prefix; CREATE ROLE refuses it), so the bootstrap superuser (oid 10) is not one. 'MEMBER' follows every
+# chain of pg_auth_members, whatever its INHERIT, SET or ADMIN option: a NOINHERIT or SET-only member still reaches
+# the role with SET ROLE (has_table_privilege and 'USAGE' miss that), and an ADMIN-only member can grant it to itself.
+# It also counts the database owner's implicit membership of pg_database_owner (for the current database). A fixed
+# statement; the role name is a bound parameter.
+_PREDEFINED_SQL = (
+    "SELECT p.rolname::pg_catalog.text FROM pg_catalog.pg_roles p, pg_catalog.pg_roles r"
+    " WHERE r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
+    " AND pg_catalog.left(p.rolname::pg_catalog.text, 3) OPERATOR(pg_catalog.=) 'pg_'"
+    " AND p.oid OPERATOR(pg_catalog.<) 16384::pg_catalog.oid"
+    " AND p.oid OPERATOR(pg_catalog.<>) r.oid"
+    " AND pg_catalog.pg_has_role(r.oid, p.oid, 'MEMBER')"
+)
+
+
+def _predefined_memberships(cursor: psycopg.Cursor[tuple[Any, ...]], role: str) -> tuple[str, ...]:
+    """``"broad:<role>"`` for each predefined role ``role`` can reach, sorted (``RoleReport.broad``)."""
+    cursor.execute(_PREDEFINED_SQL, (role,))
+    return tuple(sorted(f"broad:{name}" for (name,) in cursor.fetchall()))
 
 
 _TABLE_PRIVILEGES = "SELECT, INSERT, UPDATE, DELETE"
@@ -294,6 +304,11 @@ def _grant_arguments(role: object, schema: object, protected_tables: object, gra
     return tables
 
 
+def _refuse_predefined(cursor: psycopg.Cursor[tuple[Any, ...]], role: str) -> None:
+    if _predefined_memberships(cursor, role):
+        raise RoleUnsafe("postgres.role_unsafe", details={"reasons": "predefined_role"})
+
+
 def grant_runtime_role(
     connection: psycopg.Connection[Any],
     role: str,
@@ -318,7 +333,9 @@ def grant_runtime_role(
     tables of the schema; ``superuser`` and ``bypass_rls`` as :func:`inspect_role` reports them (also through
     membership); ``predefined_role`` when ``role`` is a member of any predefined role (``broad`` of
     :func:`inspect_role`, also indirect or NOINHERIT; ADR 0015 D-2): ``pg_write_all_data`` could write
-    ``protected_tables`` despite the ``REVOKE`` (TB-150). ``RoleMissing`` for an unknown role,
+    ``protected_tables`` despite the ``REVOKE`` (TB-150); read again inside the grant transaction, before the first
+    and after the last statement, so a membership granted in between rolls everything back. ``RoleMissing`` for an
+    unknown role,
     ``UsageError("postgres.schema_missing")`` for a schema that does not exist. Needs a transaction of its own:
     ``UsageError("postgres.nested_transaction")`` while the caller's transaction runs (contract T-NOTX, I-35).
     ``ValueError`` when neither ``schema`` nor a current schema names one, and for a name longer than 63 bytes
@@ -374,6 +391,9 @@ def grant_runtime_role(
     target = sql.Identifier(role)
     namespace = sql.Identifier(before.schema)
     with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:
+        # The membership may have been granted since the check above (review F-3 of #77): read it again in the grant
+        # transaction, before the first statement and after the last; a hit rolls everything back.
+        _refuse_predefined(cursor, role)
         for statement in _GRANTS:
             cursor.execute(sql.SQL(statement).format(schema=namespace, role=target))
         for table in tables:
@@ -391,6 +411,7 @@ def grant_runtime_role(
                         namespace, sql.Identifier(table), target
                     )
                 )
+        _refuse_predefined(cursor, role)
     if grant_connect and not before.connect:
         try:
             with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:

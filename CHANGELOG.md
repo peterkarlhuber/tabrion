@@ -39,10 +39,22 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   oid below `FirstNormalObjectId`), directly, through other roles, NOINHERIT or `SET`-only, with `RoleUnsafe`
   reason `predefined_role`, before anything is granted (TB-150). Before, a member of `pg_write_all_data` got the
   grants and kept `INSERT, UPDATE, DELETE` on the protected migration bookkeeping tables despite the `REVOKE`, and
-  `inspect_role` reported it as restricted; `inspect_role` now names such memberships in `RoleReport.broad`. A
-  database owner used as the runtime role is refused too (implicit member of `pg_database_owner`). Consumers that
-  map `RoleUnsafe` reasons to their own texts should handle the new value; Axentra (#87) and Nodestro (#169)
-  already refuse `pg_write_all_data` themselves.
+  `inspect_role` reported it as restricted; `inspect_role` now names such memberships in `RoleReport.broad`. The
+  membership is read again inside the grant transaction, so one granted concurrently rolls the grants back. Contract
+  I-35 and decision D-124 (owner-confirmed, ADR 0015 D-2).
+  **Behavior changes for consumers:**
+  - Runtime roles that were accepted before and are now refused at deploy time:
+    - a role that owns the database (implicit member of `pg_database_owner`), in any schema (in `public` it was
+      already refused as `table_owner`);
+    - a role that holds a monitoring or operations role: `pg_monitor`, `pg_read_all_stats`, `pg_read_all_settings`,
+      `pg_stat_scan_tables`, `pg_signal_backend`, `pg_checkpoint`, `pg_maintain` (PostgreSQL 17+) and the rest;
+    - a role that holds `pg_read_all_data` or `pg_write_all_data`.
+    In each case the membership may be direct or through other roles, with any INHERIT, SET or ADMIN option.
+  - `details["reasons"]` can contain `predefined_role` next to the earlier values. A superuser runtime role is now
+    refused with `superuser,bypass_rls,table_owner,predefined_role`.
+  - Consumers that compare `reasons` exactly, or map each value to a text of their own, should handle
+    `predefined_role` before they pin a Tabrion with this fix. Axentra's `_refusal` gives an empty phrase for an
+    unknown value. Axentra (#87) and Nodestro (#169) already refuse `pg_write_all_data` themselves.
 
 ## [0.2.1] - 2026-11-14
 

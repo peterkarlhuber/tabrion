@@ -1101,12 +1101,13 @@ required (owner decision of 2026-11-08 11:26Z).
   `pg_write_all_data` (PostgreSQL 14+) keeps `INSERT, UPDATE, DELETE` on every table through the predefined role, so
   the migration bookkeeping stayed writable; `inspect_role` reported such a role as restricted. Axentra and
   Nodestro refuse it locally since #87 and #169. Fix: `RoleReport.broad` (new field at the end, not in `as_dict()`)
-  names every predefined role (`pg_*` or an oid below `FirstNormalObjectId`, ADR 0015 D-2) the role can reach
-  (direct, indirect, NOINHERIT, `SET`-only, the database owner's `pg_database_owner`), and `grant_runtime_role`
-  refuses a non-empty one with the new reason `predefined_role` before anything is granted. Tests:
-  `tests/postgres/test_grants.py::test_tb150_*`, `tests/unit/test_postgres_unit.py`.
-- **Open after the fix:** (1) the owner confirms the new reason value and field (a security fix under S-5; the
-  reason name is the one of the planned 0.3 addendum); (2) `role_info`/`check_role` still do not report predefined
+  names every predefined role (`pg_*` and an oid below `FirstNormalObjectId`, ADR 0015 D-2) the role can reach
+  (direct, indirect, NOINHERIT, `SET`-only, ADMIN-only, the database owner's `pg_database_owner`), and
+  `grant_runtime_role` refuses a non-empty one with the new reason `predefined_role` before anything is granted,
+  and again inside the grant transaction (review F-3 of #77). The new reason value and field are decision D-124
+  (owner-confirmed, review F-1 of #77). Tests: `tests/postgres/test_grants.py::test_tb150_*`,
+  `tests/unit/test_postgres_unit.py`.
+- **Open after the fix:** (2) `role_info`/`check_role` still do not report predefined
   roles (TB-036); (3) privileges on a protected table that come from `PUBLIC` or from another role the runtime role
   inherits are not checked after the `REVOKE` (Axentra and Nodestro re-check with `has_table_privilege`); (4) the
   consumers may drop their local `pg_write_all_data` checks once they pin a Tabrion with this fix.
