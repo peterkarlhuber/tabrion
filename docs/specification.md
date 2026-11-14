@@ -60,6 +60,27 @@ Tabrion itself depends on **no** Levuvo platform (P6). Edges are allowed only to
 | UI logic, connection-profile storage, keyring | belongs in Tabrion Studio |
 | AI, vector, RAG functions | Orkexa; Tabrion only reports the technical extension status (for example pgvector) |
 
+**Clarification for CR-DBX (TAB-XW-1; owner decisions of 2026-11-13, planning document 15 E-X3..E-X6 and section
+3.1; [ADR 0014](adr/0014-crdbx-tabrion-scope.md), [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md)).** The
+non-goals above apply unchanged to Tabrion 0.2. Under CR-DBX only, Tabrion 0.3 adds experimental modules (TAB-XW-2..
+TAB-XW-9; planned surface in the [contract addendum 0.3](api/contract-0.3-addendum.md)); a consumer such as Studio
+uses them only after its own area gate (G-S2, G-S3, G-S4), and Tabrion itself enables nothing:
+
+- DDL, diff and a migration plan **composed from SQLAlchemy Core and Alembic operations**. This is not an own query
+  language or builder: SQLAlchemy stays the builder (E-X3).
+- For Alembic projects, revision **text** only. Tabrion never runs `env.py`, project code or `alembic upgrade`
+  (E-X4).
+- An executor that runs one confirmed plan **once**, only on a database without migration management and only for a
+  declared DEV or TEST environment, bound to the plan hash and the schema fingerprint and after a drift check. It is
+  **not a migration runner** and writes no version table; the row "PostgreSQL migration runner in 0.x" stays (E-X4,
+  [ADR 0007](adr/0007-no-shared-migration-runner.md)).
+- SQLite `restore()` (TAB-XW-7) and database role DDL that never grants SUPERUSER, BYPASSRLS, CREATEROLE or
+  REPLICATION, also not through membership (TAB-XW-8). Database role DDL is not a tenant or user model; that row stays
+  (E-X6).
+- Unchanged non-goals: `pg_dump`/`pg_restore` wrappers and PostgreSQL backup orchestration. Studio runs the verified
+  system tools; a `pg_dump` archive holds no global roles, role memberships, tablespaces or other cluster objects
+  (E-X5). Upsert and merge helpers stay a non-goal; the guided write transaction (TAB-XW-6) only checks row counts.
+
 ---
 
 ## 2. Module structure
@@ -335,7 +356,7 @@ Reasons:
 |---|---|---|
 | SQLite | `backup()` as online backup API (like Nodestro's snapshot), target `0600` and atomic, with `quick_check` of the result; `integrity_check`, `quick_check`, `foreign_key_check`; backup required before `migrate` | schedules, rotation, encryption, Litestream |
 | PostgreSQL | diagnosis only: `diagnose()` reports `archive_mode`, `wal_level`, whether a role with `pg_read_all_data` exists (findings `TAB-PG-020..022`) | `pg_dump`/`pg_restore`, PITR with pgBackRest/WAL-G, restore drill. The documentation takes over the kit baseline; version rule: restore only to the same or a newer major (finding PG16 ↔ PG17) |
-| SQLite restore | `restore()` is **not** included: replacing an open database is product-specific (Nodestro `maintenance()`); the documentation shows the pattern | — |
+| SQLite restore | `restore()` is **not** included in 0.1 and 0.2: replacing an open database is product-specific (Nodestro `maintenance()`); the documentation shows the pattern. *Planned for 0.3 under CR-DBX only:* `restore()` (atomic, 0600, with a round-trip restore test) and `delete_database_file` (TAB-XW-7, [contract addendum 0.3](api/contract-0.3-addendum.md)) | — |
 
 ---
 

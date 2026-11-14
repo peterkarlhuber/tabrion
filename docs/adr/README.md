@@ -23,6 +23,7 @@ security guarantees, verification, revision triggers.
 | [0012](0012-architecture-checks.md) | Automated architecture checks AC-1..AC-7 against the edge list | Accepted |
 | [0013](0013-axentra-adopts-tabrion.md) | Axentra adopts Tabrion with unchanged RLS, DbScope and M10 guarantees | Accepted |
 | [0014](0014-crdbx-tabrion-scope.md) | Tabrion scope for CR-DBX: DDL, diff and plan building blocks; no `pg_dump` wrapper, no role-admin UI | Accepted as planning (2026-11-13); development start approved conditionally (G-CX, 2026-11-14), starts once S-1..S-4 are proven |
+| [0015](0015-crdbx-write-and-ddl-primitives.md) | Tabrion 0.3 write and DDL primitives: SQLAlchemy and Alembic, revision text only, plan binding and guards | Accepted (TAB-XW-1, 2026-11-14); the primitives are planned, not implemented |
 
 ## Status values
 
