@@ -21,10 +21,10 @@ def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_license_is_mit_in_the_file_and_the_metadata() -> None:
-    assert _text(ROOT / "LICENSE").startswith("MIT License\n")
+def test_license_is_proprietary_in_the_file_and_the_metadata() -> None:
+    assert _text(ROOT / "LICENSE").startswith("Tabrion\nCopyright (c) 2026 Levuvo. All rights reserved.\n")
     project = tomllib.loads(_text(ROOT / "pyproject.toml"))["project"]
-    assert project["license"] == "MIT"
+    assert project["license"] == "LicenseRef-Proprietary"
     assert "LICENSE" in project["license-files"]
 
 

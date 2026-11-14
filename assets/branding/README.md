@@ -6,7 +6,7 @@ byte (`tests/unit/test_branding.py` checks its sha256). Every other image here i
 must not be edited by hand.
 
 **License:** the logos and every image in this folder and in `docs/assets/branding/` are © Peter Karlhuber and are
-**not** covered by the repository's MIT license; see [TRADEMARKS.md](../../TRADEMARKS.md). The scripts are MIT.
+**not** covered by the repository's LICENSE; see [TRADEMARKS.md](../../TRADEMARKS.md). The scripts are covered by LICENSE.
 
 The committed master is the supplied file with its metadata chunks removed (a C2PA content-credentials manifest,
 `caBX`, and an `eXIf` chunk with the dimensions). The image data is untouched: the test pins the sha256 of the
