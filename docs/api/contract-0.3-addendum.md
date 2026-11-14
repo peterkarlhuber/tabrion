@@ -70,16 +70,16 @@ class ColumnShape:
     name: str
     type: str
     nullable: bool
-    default: str | None = None        # new: the server default as the dialect reflects it; level 2 only
+    default: str | None = None  # new: the server default as the dialect reflects it; level 2 only
 
 
 @dataclass(frozen=True, slots=True)
 class ForeignKeyShape:
     name: str | None
     columns: tuple[str, ...]
-    referred_table: str               # "schema.table"
+    referred_table: str  # "schema.table"
     referred_columns: tuple[str, ...]
-    on_delete: str | None = None      # "CASCADE", "SET NULL", "RESTRICT", "NO ACTION", "SET DEFAULT"
+    on_delete: str | None = None  # "CASCADE", "SET NULL", "RESTRICT", "NO ACTION", "SET DEFAULT"
     on_update: str | None = None
 
 
@@ -92,13 +92,13 @@ class UniqueShape:
 @dataclass(frozen=True, slots=True)
 class CheckShape:
     name: str | None
-    sqltext: str                      # as the dialect reflects it
+    sqltext: str  # as the dialect reflects it
 
 
 @dataclass(frozen=True, slots=True)
 class IndexShape:
     name: str
-    columns: tuple[str, ...]          # an expression index gives its expression text
+    columns: tuple[str, ...]  # an expression index gives its expression text
     unique: bool = False
 
 
@@ -107,21 +107,26 @@ class TableShape:
     name: str
     columns: tuple[ColumnShape, ...]
     primary_key: tuple[str, ...]
-    foreign_keys: tuple[ForeignKeyShape, ...] = ()       # new, level 2
-    unique_constraints: tuple[UniqueShape, ...] = ()     # new, level 2
-    check_constraints: tuple[CheckShape, ...] = ()       # new, level 2
-    indexes: tuple[IndexShape, ...] = ()                 # new, level 2
+    foreign_keys: tuple[ForeignKeyShape, ...] = ()  # new, level 2
+    unique_constraints: tuple[UniqueShape, ...] = ()  # new, level 2
+    check_constraints: tuple[CheckShape, ...] = ()  # new, level 2
+    indexes: tuple[IndexShape, ...] = ()  # new, level 2
 
 
 @dataclass(frozen=True, slots=True)
 class SchemaSnapshot:
     dialect: str
     tables: tuple[TableShape, ...]
-    level: Literal[1, 2] = 1                             # new
+    level: Literal[1, 2] = 1  # new
 
 
-def snapshot(inspector: sqlalchemy.Inspector, *, tables: Iterable[str] | None = None,
-             schemas: Iterable[str] | None = None, level: Literal[1, 2] = 1) -> SchemaSnapshot: ...
+def snapshot(
+    inspector: sqlalchemy.Inspector,
+    *,
+    tables: Iterable[str] | None = None,
+    schemas: Iterable[str] | None = None,
+    level: Literal[1, 2] = 1,
+) -> SchemaSnapshot: ...
 def fingerprint(snapshot: SchemaSnapshot) -> str: ...  # "v1:sha256:<hex>" for level 1, "v2:sha256:<hex>" for level 2
 ```
 
@@ -146,15 +151,17 @@ def fingerprint(snapshot: SchemaSnapshot) -> str: ...  # "v1:sha256:<hex>" for l
 ```python
 @dataclass(frozen=True, slots=True)
 class DdlStatement:
-    sql: str              # dialect SQL compiled by SQLAlchemy; identifiers quoted, no bound values
-    target: str           # "schema.table", "schema.table.column" or the index or constraint name
-    transactional: bool   # False for CREATE INDEX CONCURRENTLY and other non-transactional statements
+    sql: str  # dialect SQL compiled by SQLAlchemy; identifiers quoted, no bound values
+    target: str  # "schema.table", "schema.table.column" or the index or constraint name
+    transactional: bool  # False for CREATE INDEX CONCURRENTLY and other non-transactional statements
 
 
-def create_statements(model: SchemaSnapshot, *, dialect: Literal["sqlite", "postgresql"]
-                      ) -> tuple[DdlStatement, ...]: ...           # every table in dependency order, then indexes
-def table_statements(table: TableShape, *, dialect: Literal["sqlite", "postgresql"]
-                     ) -> tuple[DdlStatement, ...]: ...            # CREATE TABLE and its indexes
+def create_statements(
+    model: SchemaSnapshot, *, dialect: Literal["sqlite", "postgresql"]
+) -> tuple[DdlStatement, ...]: ...  # every table in dependency order, then indexes
+def table_statements(
+    table: TableShape, *, dialect: Literal["sqlite", "postgresql"]
+) -> tuple[DdlStatement, ...]: ...  # CREATE TABLE and its indexes
 ```
 
 - Compiled with SQLAlchemy Core (`CreateTable`, `CreateIndex`) against the named dialect, without a connection. A
@@ -171,44 +178,46 @@ def table_statements(table: TableShape, *, dialect: Literal["sqlite", "postgresq
 ```python
 class RiskClass(StrEnum):
     ADDITIVE = "additive"
-    DATA_CHANGING = "data_changing"           # type change, NOT NULL on existing rows, default backfill
-    DESTRUCTIVE = "destructive"               # drop table, column, constraint, narrowing type
-    REBUILD = "rebuild"                       # SQLite table rebuild
-    LOCKING = "locking"                       # PostgreSQL ACCESS EXCLUSIVE on an existing table
+    DATA_CHANGING = "data_changing"  # type change, NOT NULL on existing rows, default backfill
+    DESTRUCTIVE = "destructive"  # drop table, column, constraint, narrowing type
+    REBUILD = "rebuild"  # SQLite table rebuild
+    LOCKING = "locking"  # PostgreSQL ACCESS EXCLUSIVE on an existing table
     NON_TRANSACTIONAL = "non_transactional"
 
 
 @dataclass(frozen=True, slots=True)
 class PlanStep:
     index: int
-    operation: str                            # "create_table", "drop_table", "add_column", "drop_column",
-                                              # "alter_column", "add_constraint", "drop_constraint",
-                                              # "create_index", "drop_index", "rebuild_table"
+    operation: str  # "create_table", "drop_table", "add_column", "drop_column",
+    # "alter_column", "add_constraint", "drop_constraint",
+    # "create_index", "drop_index", "rebuild_table"
     target: str
     statements: tuple[DdlStatement, ...]
-    risks: tuple[RiskClass, ...]              # sorted, at least one
+    risks: tuple[RiskClass, ...]  # sorted, at least one
     transactional: bool
 
 
 @dataclass(frozen=True, slots=True)
 class MigrationPlan:
     dialect: str
-    source_fingerprint: str                   # "v2:sha256:..." of the snapshot the plan starts from
+    source_fingerprint: str  # "v2:sha256:..." of the snapshot the plan starts from
     target_fingerprint: str
     steps: tuple[PlanStep, ...]
-    plan_hash: str                            # "sha256:<64 hex>" over the canonical JSON of all fields above
+    plan_hash: str  # "sha256:<64 hex>" over the canonical JSON of all fields above
 
     @property
     def risks(self) -> tuple[RiskClass, ...]: ...
     def to_json(self) -> str: ...
     @classmethod
-    def from_json(cls, text: str) -> MigrationPlan: ...   # recomputes plan_hash; PlanMismatch("plan.invalid")
+    def from_json(cls, text: str) -> MigrationPlan: ...  # recomputes plan_hash; PlanMismatch("plan.invalid")
 
 
-def plan(current: SchemaSnapshot, target: SchemaSnapshot, *,
-         server_version: tuple[int, ...] | None = None) -> MigrationPlan: ...
-def revision_text(plan: MigrationPlan, *, revision: str, down_revision: str | None,
-                  message: str) -> str: ...  # extra migrations
+def plan(
+    current: SchemaSnapshot, target: SchemaSnapshot, *, server_version: tuple[int, ...] | None = None
+) -> MigrationPlan: ...
+def revision_text(
+    plan: MigrationPlan, *, revision: str, down_revision: str | None, message: str
+) -> str: ...  # extra migrations
 def migration_markers(database: Database) -> tuple[str, ...]: ...
 ```
 
@@ -254,8 +263,8 @@ class ExecutionResult:
     plan_hash: str
     dry_run: bool
     steps_run: int
-    untested_steps: tuple[int, ...]   # dry run: the non-transactional steps that did not run
-    fingerprint_after: str | None     # None for a dry run
+    untested_steps: tuple[int, ...]  # dry run: the non-transactional steps that did not run
+    fingerprint_after: str | None  # None for a dry run
 
 
 def execute_plan(
@@ -311,15 +320,22 @@ Order of checks, each before any statement runs:
 
 ```python
 class Transaction:
-    def execute_checked(self, statement: Statement, params: Mapping[str, Any] | None = None, *,
-                        expect_rowcount: int | None = None, max_affected: int | None = None,
-                        timeout: float | None = None) -> int: ...   # 0.3, X
+    def execute_checked(
+        self,
+        statement: Statement,
+        params: Mapping[str, Any] | None = None,
+        *,
+        expect_rowcount: int | None = None,
+        max_affected: int | None = None,
+        timeout: float | None = None,
+    ) -> int: ...  # 0.3, X
 
 
 # module tabrion.rowedit (extra sqlalchemy)
 def insert_row(table: sqlalchemy.Table, values: Mapping[str, Any]) -> sqlalchemy.Insert: ...
-def update_row(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any],
-               new: Mapping[str, Any]) -> sqlalchemy.Update: ...
+def update_row(
+    table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]
+) -> sqlalchemy.Update: ...
 def delete_row(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any]) -> sqlalchemy.Delete: ...
 ```
 
@@ -345,11 +361,12 @@ def delete_row(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str
 class RestoreResult:
     path: Path
     pages: int
-    integrity_check: str        # "ok" or the first message
+    integrity_check: str  # "ok" or the first message
 
 
-def restore(source: str | os.PathLike[str], target: str | os.PathLike[str], *,
-            overwrite: bool = False, verify: bool = True) -> RestoreResult: ...
+def restore(
+    source: str | os.PathLike[str], target: str | os.PathLike[str], *, overwrite: bool = False, verify: bool = True
+) -> RestoreResult: ...
 def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = False) -> tuple[Path, ...]: ...
 ```
 
@@ -389,36 +406,51 @@ class RoleOptions:
 @dataclass(frozen=True, slots=True)
 class RolePrivileges:
     role: str
-    attributes: tuple[str, ...]          # "login", "inherit", "createdb", "superuser", "bypass_rls", ...
-    member_of: tuple[str, ...]           # direct memberships
-    reachable: tuple[str, ...]           # every role reachable through membership (inherit or SET ROLE)
-    dangerous: tuple[str, ...]           # "superuser:<role>", "bypass_rls:<role>", "createrole:<role>",
-                                         # "replication:<role>", "createrole_pre16", "trigger:<table>",
-                                         # "security_definer:<function>", "schema_create:<schema>"
-    broad: tuple[str, ...]               # "broad:<role>" for memberships in predefined pg_* roles (finding)
+    attributes: tuple[str, ...]  # "login", "inherit", "createdb", "superuser", "bypass_rls", ...
+    member_of: tuple[str, ...]  # direct memberships
+    reachable: tuple[str, ...]  # every role reachable through membership (inherit or SET ROLE)
+    dangerous: tuple[str, ...]  # "superuser:<role>", "bypass_rls:<role>", "createrole:<role>",
+    # "replication:<role>", "createrole_pre16", "trigger:<table>",
+    # "security_definer:<function>", "schema_create:<schema>"
+    broad: tuple[str, ...]  # "broad:<role>" for memberships in predefined pg_* roles (finding)
     owned_objects: int
     default_privileges: int
+
     @property
-    def safe(self) -> bool: ...          # not dangerous
+    def safe(self) -> bool: ...  # not dangerous
     def as_dict(self) -> dict[str, object]: ...
 
 
-def role_privileges(connection: psycopg.Connection, role: str) -> RolePrivileges: ...   # read-only; RoleMissing
-def create_role(connection: psycopg.Connection, role: str, *, options: RoleOptions = RoleOptions(),
-                password: str | None = None) -> RolePrivileges: ...
-def alter_role(connection: psycopg.Connection, role: str, *, options: RoleOptions | None = None,
-               password: str | None = None) -> RolePrivileges: ...
+def role_privileges(connection: psycopg.Connection, role: str) -> RolePrivileges: ...  # read-only; RoleMissing
+def create_role(
+    connection: psycopg.Connection, role: str, *, options: RoleOptions = RoleOptions(), password: str | None = None
+) -> RolePrivileges: ...
+def alter_role(
+    connection: psycopg.Connection, role: str, *, options: RoleOptions | None = None, password: str | None = None
+) -> RolePrivileges: ...
 def drop_role(connection: psycopg.Connection, role: str) -> None: ...
 def grant_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...
 def revoke_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...
-def grant_privileges(connection: psycopg.Connection, role: str, *,
-                     privileges: Sequence[Literal["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES",
-                                                  "USAGE", "CREATE", "CONNECT", "EXECUTE"]],   # no TRIGGER (K-2)
-                     on: Literal["table", "sequence", "function", "schema", "database"],
-                     objects: Sequence[str]) -> RolePrivileges: ...
-def revoke_privileges(connection: psycopg.Connection, role: str, *, privileges: Sequence[str],
-                      on: Literal["table", "sequence", "function", "schema", "database"],
-                      objects: Sequence[str]) -> RolePrivileges: ...
+def grant_privileges(
+    connection: psycopg.Connection,
+    role: str,
+    *,
+    privileges: Sequence[
+        Literal[
+            "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "USAGE", "CREATE", "CONNECT", "EXECUTE"
+        ]
+    ],  # no TRIGGER (K-2)
+    on: Literal["table", "sequence", "function", "schema", "database"],
+    objects: Sequence[str],
+) -> RolePrivileges: ...
+def revoke_privileges(
+    connection: psycopg.Connection,
+    role: str,
+    *,
+    privileges: Sequence[str],
+    on: Literal["table", "sequence", "function", "schema", "database"],
+    objects: Sequence[str],
+) -> RolePrivileges: ...
 ```
 
 - **D-1, PostgreSQL 16 and later only:** every function except `role_privileges` raises
@@ -460,11 +492,17 @@ def revoke_privileges(connection: psycopg.Connection, role: str, *, privileges: 
 ## A.8 `tabrion.postgres`: `create_database` and `drop_database` (TAB-XW-9)
 
 ```python
-def create_database(connection: psycopg.Connection, name: str, *, owner: str | None = None,
-                    template: Literal["template0", "template1"] = "template1", encoding: str = "UTF8",
-                    locale: str | None = None) -> None: ...
+def create_database(
+    connection: psycopg.Connection,
+    name: str,
+    *,
+    owner: str | None = None,
+    template: Literal["template0", "template1"] = "template1",
+    encoding: str = "UTF8",
+    locale: str | None = None,
+) -> None: ...
 def drop_database(connection: psycopg.Connection, name: str, *, force: bool = False) -> None: ...
-def database_sessions(connection: psycopg.Connection, name: str) -> int: ...   # read-only, for the preview
+def database_sessions(connection: psycopg.Connection, name: str) -> int: ...  # read-only, for the preview
 ```
 
 - Both need an autocommit connection that is idle (`CREATE`/`DROP DATABASE` cannot run in a transaction); Tabrion
