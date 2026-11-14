@@ -262,3 +262,27 @@ def test_canary_values_never_reach_an_error_or_a_log(db: Database, caplog: pytes
         )
     assert_clean(timeout.value, canary)
     assert_logs_clean(phase_records(caplog), canary)
+
+
+def test_trigger_changes_are_not_counted(db: Database) -> None:
+    """Review I-1 of #78 (I-120 g): the count is the statement's own; rows a trigger changes are neither counted nor
+    limited, and they commit with the statement."""
+    db.execute("CREATE TABLE log (n INTEGER)")
+    db.execute(
+        "CREATE TRIGGER fan AFTER UPDATE ON items BEGIN"
+        " INSERT INTO log SELECT n FROM items; DELETE FROM items WHERE id = 5; END"
+    )
+    with db.transaction() as tx:
+        assert checked(tx).execute_checked("UPDATE items SET label = 'x' WHERE id = 1", max_affected=1) == 1
+    assert db.fetch_scalar("SELECT count(*) FROM log") == 5
+    assert db.fetch_scalar("SELECT count(*) FROM items") == 4
+
+
+def test_max_affected_is_checked_after_the_work(db: Database) -> None:
+    """Review I-2 of #78 (I-120 h): the statement runs to its end before the limit is checked, and the rollback undoes
+    it; ``max_affected`` bounds what is committed, ``timeout`` bounds the work."""
+    with pytest.raises(_RowCountMismatch), db.transaction() as tx:
+        checked(tx).execute_checked("UPDATE items SET n = n + 100", max_affected=1)
+    assert db.fetch_scalar("SELECT max(n) FROM items") == 5
+    with pytest.raises(StatementTimeout), db.transaction() as tx:
+        checked(tx).execute_checked(f"UPDATE items SET n = ({COUNT_FOREVER})", max_affected=1, timeout=0.2)

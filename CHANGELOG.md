@@ -15,7 +15,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   only) and fails the transaction, which rolls back even when the error is caught. The new module `tabrion.rowedit`
   (`insert_row`, `update_row`, `delete_row`) builds one-row statements with an optimistic, NULL-safe predicate on the
   old values (PostgreSQL `IS NOT DISTINCT FROM`, SQLite `IS`), bound parameters only and the exact primary key
-  (`rowedit.primary_key_required`). False conflicts with floating-point and JSON values are documented (N-5). The
+  (`rowedit.primary_key_required`) and at least one old value (`rowedit.old_required`); the limits cover the
+  statement's own rows, not those of rules or triggers. False conflicts with floating-point and JSON values are documented (N-5). The
   names are in `surface.json` with `since` 0.3 and stability X; `tabrion._since` keeps them unimportable before 0.3,
   and `scripts/api_surface.py` and `tests/unit/test_v03_gate.py` check both states.
 - Docs: TABRION TAB-XW-1 (CR-DBX, Tabrion 0.3 write and DDL primitives). ADR 0015

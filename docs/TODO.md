@@ -613,7 +613,10 @@ required (owner decision of 2026-11-08 11:26Z).
   `surface.json` with `since` 0.3, `X` and a `staged` location and are unimportable below 0.3 through
   `tabrion._since` (the C-6 mechanism, proven at 0.2 and 0.3 by `tests/unit/test_v03_gate.py`). N-5 is
   `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict`, with the residual risk in I-121 (d) and
-  the guide [Transactions](guides/transactions.md#guided-writes-03-experimental).
+  the guide [Transactions](guides/transactions.md#guided-writes-03-experimental). Review of #78 (planning folder
+  `reviews/pr78-tabxw6-review.md`, ACCEPTED) folded in: L-1 an empty `old` is refused (`rowedit.old_required`),
+  I-1 rules and triggers are not counted (documented, PostgreSQL rule probe as a test), I-2 `max_affected` bounds
+  what is committed, `timeout` the work (I-120 g, h).
 - **Open (follow-up work packages):** TAB-XW-2 `tabrion.schema` v2; TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
   (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;

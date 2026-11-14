@@ -102,7 +102,12 @@ class _TransactionV03:
     ) -> int:
         """Since 0.3, experimental. One statement whose affected row count must be ``expect_rowcount`` and at most
         ``max_affected`` (one of the two is required); otherwise ``RowCountMismatch``, and the transaction is failed:
-        every later statement raises ``UsageError("transaction.failed")`` and the block rolls back (I-120)."""
+        every later statement raises ``UsageError("transaction.failed")`` and the block rolls back (I-120).
+
+        The count is that of the statement itself only (the driver's ``rowcount``): rows that rules or triggers change
+        as a side effect are not counted and not limited, so a preview must name the rules and triggers of the target
+        table (Studio TX-16; I-120 g). ``max_affected`` limits what is committed, not the work: the limits are checked
+        after the statement ran, so the bound on the work (time and locks) is ``timeout`` (I-120 h)."""
         transaction = _tx(self)
         values: dict[str, Any] | None = None
         try:

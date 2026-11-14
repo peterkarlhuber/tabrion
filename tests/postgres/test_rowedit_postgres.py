@@ -213,3 +213,27 @@ def test_canary_values_never_reach_an_error(db: Database, table: Table) -> None:
     with pytest.raises(IntegrityViolation) as duplicate, db.transaction() as tx:
         run(tx, insert_row(table, {"id": 51, "tag": canary}))  # DETAIL: Key (tag)=(<canary>) already exists
     assert_clean(duplicate.value, canary)
+
+
+def test_rules_and_triggers_are_not_counted(db: Database, table: Table, admin: Any) -> None:
+    """Review I-1 of #78 (documents the behavior, I-120 g): the count is the statement's own. A rule (``DO ALSO``) and
+    a trigger change other rows in the same transaction without being counted or limited, and the transaction
+    commits; Studio's preview names them (TX-16)."""
+    schema = table.schema
+    admin.execute(f"CREATE TABLE {schema}.other (id int PRIMARY KEY)")
+    admin.execute(f"INSERT INTO {schema}.other SELECT g FROM generate_series(1, 100) g")
+    admin.execute(f"CREATE TABLE {schema}.audit (id int)")
+    admin.execute(f"CREATE RULE wipe AS ON UPDATE TO {schema}.items DO ALSO DELETE FROM {schema}.other")
+    admin.execute(
+        f"CREATE FUNCTION {schema}.audit_fn() RETURNS trigger LANGUAGE plpgsql AS"
+        f" $$BEGIN INSERT INTO {schema}.audit SELECT g FROM generate_series(1, 50) g; RETURN NEW; END$$"
+    )
+    admin.execute(
+        f"CREATE TRIGGER audit AFTER UPDATE ON {schema}.items FOR EACH ROW EXECUTE FUNCTION {schema}.audit_fn()"
+    )
+    seen = read(db, table)
+    with db.transaction() as tx:
+        assert run(tx, update_row(table, {"id": 1}, seen, {"label": "uno"}), expect_rowcount=1, max_affected=1) == 1
+    assert db.fetch_scalar(f"SELECT count(*) FROM {schema}.other") == 0  # the rule deleted 100 rows, uncounted
+    assert db.fetch_scalar(f"SELECT count(*) FROM {schema}.audit") == 50  # the trigger inserted 50, uncounted
+    assert read(db, table)["label"] == "uno"

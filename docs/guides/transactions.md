@@ -169,7 +169,12 @@ If the row changed or is gone, the statement matches 0 rows: `execute_checked` r
 later statement raises `UsageError("transaction.failed")`, and the block rolls back even if you catch the error. Show
 the user the current row and let them decide. `max_affected` limits a statement that may touch several rows
 (`transaction.too_many_rows` above it); one of the two limits is required. The error carries counts only, never a
-value.
+value. Pass every column you showed the user in `old`; an empty `old` is refused (`rowedit.old_required`).
+
+**What the limits do not cover.** The count is that of your statement only: rows that a PostgreSQL rule or a trigger
+(on either engine) changes as a side effect are not counted or limited and commit with it, so a preview should name
+the rules and triggers of the table. And `max_affected` limits what is committed, not the work: the statement runs to
+its end before the count is checked, then rolls back. The bound on the work is `timeout`.
 
 **False conflicts (N-5).** The comparison is exact, which is the safe side: when in doubt, nothing is written.
 Tabrion compares text under a binary collation (a case-insensitive collation cannot hide a change), PostgreSQL

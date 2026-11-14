@@ -107,7 +107,7 @@ def test_values_are_bound_never_in_the_sql_text(dialect: Any) -> None:
 def test_an_sql_expression_as_a_value_is_bound_not_compiled(db: Database) -> None:
     """A value is always a bound parameter: a SQL construct passed as a value is never compiled into the text."""
     expression = sqlalchemy.literal_column("label || 'x'")
-    statement = update_row(ITEMS, {"id": 1}, {}, {"label": expression})
+    statement = update_row(ITEMS, {"id": 1}, {"label": "one"}, {"label": expression})
     assert "label || 'x'" not in str(compiled(statement, SQLITE))
 
 
@@ -155,6 +155,22 @@ def test_composite_primary_key(db: Database) -> None:
     assert db.fetch_scalar("SELECT v FROM pair") == "new"
 
 
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: update_row(ITEMS, {"id": 1}, {}, {"label": "x"}),
+        lambda: delete_row(ITEMS, {"id": 1}, {}),
+        lambda: update_row(PAIR, {"a": 1, "b": "x"}, {}, {"v": "x"}),
+    ],
+    ids=["update", "delete", "composite-key"],
+)
+def test_empty_old_is_refused(build: Any) -> None:
+    """Review L-1 of #78: without an old value the statement would win over every concurrent change."""
+    with pytest.raises(UsageError) as caught:
+        build()
+    assert caught.value.code == "rowedit.old_required"
+
+
 def test_null_key_value_is_refused() -> None:
     with pytest.raises(ValueError, match="must not be None"):
         update_row(ITEMS, {"id": None}, {}, {"label": "x"})
@@ -167,7 +183,7 @@ def test_null_key_value_is_refused() -> None:
         (lambda: insert_row(ITEMS, [("id", 1)]), TypeError),  # type: ignore[arg-type]
         (lambda: insert_row(ITEMS, {1: 1}), TypeError),  # type: ignore[dict-item]
         (lambda: update_row(ITEMS, [1], {}, {"label": "x"}), TypeError),  # type: ignore[arg-type]
-        (lambda: update_row(ITEMS, {"id": 1}, {}, {}), ValueError),
+        (lambda: update_row(ITEMS, {"id": 1}, {"label": "one"}, {}), ValueError),
         (lambda: update_row(ITEMS, {"id": 1}, {"nope": 1}, {"label": "x"}), ValueError),
         (lambda: delete_row(ITEMS, {"id": 1}, None), TypeError),  # type: ignore[arg-type]
     ],
@@ -182,7 +198,7 @@ def test_unknown_column_message_names_no_key_or_value() -> None:
     for build in (
         lambda: insert_row(ITEMS, {canary: canary}),
         lambda: update_row(ITEMS, {"id": 1}, {canary: canary}, {"label": "x"}),
-        lambda: update_row(ITEMS, {"id": 1}, {}, {canary: canary}),
+        lambda: update_row(ITEMS, {"id": 1}, {"label": "one"}, {canary: canary}),
     ):
         with pytest.raises(ValueError) as caught:
             build()
