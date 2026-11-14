@@ -8,6 +8,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Docs: the owner accepted QA-S1 for tabrion-studio 1.0 on 2026-11-14 16:34Z. `docs/program/STATUS.md` (QA-S1 and
+  STU-054 done, M6, M7, G-CX: start condition S-1 met, S-2..S-4 open) and TB-149 in `docs/TODO.md`. Not a release:
+  H-2 and G-R stay open. No code change.
 - Docs: CR-DBX conditional development start (owner, 2026-11-14 11:01Z, G-CX). ADR 0014, `docs/adr/README.md`,
   `docs/program/STATUS.md` (G-CX row, CR-DBX section, O-10) and TB-149 in `docs/TODO.md`: TAB-XW work starts without
   a new approval once S-1..S-4 (Studio 1.0 and QA-S1, security, migration incl. W6, CI) are proven; H-2 and G-R are
