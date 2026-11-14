@@ -1010,3 +1010,33 @@ def test_tb150_a_membership_granted_after_the_check_is_refused_in_the_transactio
     assert calls == [target]
     assert conn.info.transaction_status == IDLE
     _nothing_granted(admin, fixture, target)
+
+
+def test_tb150_a_membership_granted_during_the_transaction_rolls_it_back(
+    admin: Any,
+    connect: Callable[..., Any],
+    make_fixture: Callable[..., Fixture],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-check R-2 of #77: ``pg_write_all_data`` granted (and committed) while the grant transaction runs, after its
+    statements, is found by the read after the last statement; the transaction rolls back and nothing is granted."""
+    from tabrion.postgres import roles
+
+    fixture = make_fixture()
+    target = fixture.runtime.name
+    statements = roles._GRANTS
+
+    class GrantMidway:
+        """Yields the grant statements, then commits the membership from the admin connection."""
+
+        def __iter__(self) -> Iterator[str]:
+            yield from statements
+            admin.execute(sql.SQL("GRANT pg_write_all_data TO {}").format(sql.Identifier(target)))
+
+    monkeypatch.setattr(roles, "_GRANTS", GrantMidway())
+    conn = owner_connection(connect, fixture)
+    with pytest.raises(RoleUnsafe) as info:
+        roles.grant_runtime_role(conn, target, protected_tables=NODESTRO_PROTECTED)
+    assert info.value.details == {"reasons": "predefined_role"}
+    assert conn.info.transaction_status == IDLE
+    _nothing_granted(admin, fixture, target)

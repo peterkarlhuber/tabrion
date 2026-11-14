@@ -390,6 +390,13 @@ PROBES = [
         "    if False:\n",
         "tests/postgres/test_grants.py::test_tb150_a_membership_granted_after_the_check_is_refused_in_the_transaction",
     ),
+    # TB-150 (re-check R-2 of #77): the read after the last statement of the grant transaction.
+    (
+        "postgres/roles.py",
+        "                )\n        _refuse_predefined(cursor, role)\n    if grant_connect",
+        "                )\n    if grant_connect",
+        "tests/postgres/test_grants.py::test_tb150_a_membership_granted_during_the_transaction_rolls_it_back",
+    ),
     # TAB-031: an owner without the right to grant CONNECT is not an error.
     (
         "postgres/roles.py",
