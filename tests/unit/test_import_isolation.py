@@ -42,7 +42,7 @@ def test_layer_b_names_give_the_installation_hint_without_sqlalchemy() -> None:
         "    try:\n"
         "        getattr(tabrion, name)\n"
         "    except ImportError as exc:\n"
-        "        assert 'pip install \"tabrion[sqlalchemy]\"' in str(exc), exc\n"
+        "        assert 'pip install \"tabrion[sqlalchemy] @ git+https://' in str(exc), exc\n"
         "    else:\n"
         "        raise AssertionError(name + ' imported without SQLAlchemy')\n"
         "assert tabrion.safe_url is not None and tabrion.TabrionError is not None\n"

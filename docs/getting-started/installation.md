@@ -97,11 +97,24 @@ it, as psycopg's documentation describes.
 A module whose extra is missing fails on import with a hint, for example:
 
 ```text
-ImportError: tabrion.Database needs the extra "sqlalchemy": pip install "tabrion[sqlalchemy]"
+ImportError: tabrion.Database needs the extra "sqlalchemy": pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>" (Tabrion is not on PyPI: pin the commit you use)
 ```
+
+Replace `<commit-sha>` with the full commit your project already pins, so that every package of the installation
+keeps the same Tabrion (K-34).
 
 The core imports no optional package: `import tabrion.sqlite` works in an environment without psycopg, SQLAlchemy
 and Alembic. CI checks this on every pull request (job `core without extras`).
+
+## Supply chain: unregistered PyPI name
+
+The names `tabrion` and `tabrion-studio` are not registered on PyPI, by owner decision (2026-11-13); a regular PyPI
+release would need a separate G-R decision. Install Tabrion only through the pinned Git URL above or a lock file with
+hashes (`--require-hashes`): with a direct-URL candidate, pip and uv never ask a package index for the name. An
+install that resolves the bare name from an index (no pin, a later upgrade without the pin, Dependabot, IDE helpers)
+would take whatever a third party registers under it, and SBOM and audit tools may map the name to that foreign
+project. [SECURITY.md](https://github.com/peterkarlhuber/tabrion/blob/master/SECURITY.md#scope)
+lists this residual risk.
 
 ## Development install
 

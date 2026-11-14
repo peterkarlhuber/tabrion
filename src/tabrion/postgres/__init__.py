@@ -6,7 +6,7 @@ Contract: ``docs/api/contract.md`` section 4. ``configure``, ``session_configura
 
 psycopg is imported inside the functions only: ``tabrion.Profile`` (layer B, extra ``sqlalchemy``) holds a
 ``SessionSettings``, and a SQLite-only application installs SQLAlchemy without psycopg. A call without psycopg
-raises ``ImportError`` with the hint ``pip install "tabrion[postgres]"``.
+raises ``ImportError`` with the hint ``pip install "tabrion[postgres] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"``.
 
 Rules T-NOTX and R-SET (``docs/api/contract.md``, preamble) apply to every function here: each one reads through
 its own ``tuple_row`` cursor, never changes the row factory or ``autocommit``, never ends a transaction it did not

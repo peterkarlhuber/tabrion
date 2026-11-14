@@ -49,9 +49,23 @@ PROBES = [
     # B-06-1: server text lines in a preformatted message must go.
     (
         "errors.py",
-        "    if not any(marker in text for marker in _SUSPICIOUS):\n        return text\n",
+        "    if not _has_server_text_marker(text):\n        return text\n",
         "    return text\n",
         "tests/unit/test_errors.py::test_e23_preformatted_messages_lose_server_text",
+    ),
+    # C-02: the pre-check must let a lone ``LINE n:`` echo through to the scan (escaped and plain).
+    (
+        "errors.py",
+        " or _LINE_LABEL.search(text) is not None\n",
+        "\n",
+        "tests/unit/test_errors.py::test_c02_escaped_line_echo_without_another_label_is_stripped",
+    ),
+    # TB-145: ``LINE n:`` in the middle of a line starts a removed part.
+    (
+        "errors.py",
+        '    r"|(?<![ \\t])[ \\t]*\\b(?:DETAIL|HINT|CONTEXT|QUERY|LINE \\d+):',
+        '    r"|(?<![ \\t])[ \\t]*\\b(?:DETAIL|HINT|CONTEXT|QUERY):',
+        "tests/unit/test_errors.py::test_tb145_mid_line_line_echo_is_stripped",
     ),
     # A formatter that formats exc_info itself must not see the original exception.
     (
