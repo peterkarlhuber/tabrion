@@ -24,6 +24,11 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   functions or `CREATE` on shared schemas, K-3 injection-safe revision text; decisions role DDL only on
   PostgreSQL 16 and later, no predefined `pg_*` role, a required `environment` keyword, v2 fingerprints opt-in;
   notes N-1..N-5.
+- Docs: ecosystem migration record `docs/ecosystem/migration.md` (QA-23): before/after per consumer repository with the
+  MIG and PIN pull requests and merge SHAs, compatibility (`0.1.0` to `0.2.1`, `tabrion>=0.2,<0.3`), test evidence,
+  rollback and what was not migrated; `docs/program/STATUS.md` migration and QA rows synced (QA-17, QA-19, QA-20 and
+  QA-23 done; QA-20 evidence: nodestro-studio `tabrion-compat.yml` run 43623198089 against Tabrion master, green).
+  No code change.
 - Docs: the owner accepted QA-S1 for tabrion-studio 1.0 on 2026-11-14 16:34Z. `docs/program/STATUS.md` (QA-S1 and
   STU-054 done, M6, M7, G-CX: start condition S-1 met, S-2..S-4 open) and TB-149 in `docs/TODO.md`. Not a release:
   H-2 and G-R stay open. No code change.

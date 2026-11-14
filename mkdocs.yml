@@ -84,6 +84,8 @@ nav:
   - API contract: api/contract.md
   - "API contract addendum 0.3 (planned)": api/contract-0.3-addendum.md
   - API consumers: api-consumers.md
+  - Ecosystem:
+      - Migration to Tabrion: ecosystem/migration.md
   - Development:
       - API stability policy: development/api-stability.md
   - Architecture decisions:
