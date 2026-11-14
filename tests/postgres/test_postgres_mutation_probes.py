@@ -378,9 +378,16 @@ PROBES = [
     (
         "postgres/roles.py",
         "    with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n"
-        "        for statement in _GRANTS:\n",
-        "    with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n        for statement in _GRANTS:\n",
+        "        # The membership may have been granted",
+        "    with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n        # The membership may have been granted",
         "tests/postgres/test_grants.py::test_r17_atomic_when_the_connection_is_lost",
+    ),
+    # TB-150 (review F-3 of #77): the predefined membership is read again inside the grant transaction.
+    (
+        "postgres/roles.py",
+        "    if _predefined_memberships(cursor, role):\n",
+        "    if False:\n",
+        "tests/postgres/test_grants.py::test_tb150_a_membership_granted_after_the_check_is_refused_in_the_transaction",
     ),
     # TAB-031: an owner without the right to grant CONNECT is not an error.
     (
