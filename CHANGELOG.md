@@ -8,6 +8,11 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Docs: CR-DBX conditional development start (owner, 2026-11-14 11:01Z, G-CX). ADR 0014, `docs/adr/README.md`,
+  `docs/program/STATUS.md` (G-CX row, CR-DBX section, O-10) and TB-149 in `docs/TODO.md`: TAB-XW work starts without
+  a new approval once S-1..S-4 (Studio 1.0 and QA-S1, security, migration incl. W6, CI) are proven; H-2 and G-R are
+  needed for public releases only; write and admin code stays behind default-off kill switches until its gate. No
+  code change.
 - Docs: ADR 0014 records Tabrion's scope in change request CR-DBX (planning document 15, owner decisions of
   2026-11-13; planning confirmed, implementation not started): DDL, diff and migration-plan building blocks for
   Tabrion 0.3 on SQLAlchemy Core and Alembic operations, no own builder, no schema tool UI, no `pg_dump` wrapper, no

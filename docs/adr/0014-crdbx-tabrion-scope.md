@@ -1,9 +1,17 @@
 # ADR 0014: Tabrion scope for CR-DBX: DDL, diff and plan building blocks; no `pg_dump` wrapper, no role-admin UI
 
 - **Status:** Accepted as planning (owner decisions on change request CR-DBX of 2026-11-13 23:28Z, E-X1 and E-X2,
-  and 23:35Z, E-X3..E-X13 as recommended with binding refinements of E-X4, E-X5, E-X6 and E-X9). This accepts the
-  plan, **not** the start of implementation: no TAB-XW work package starts before Studio 1.0 (G-R), the repository
-  migration and a separate development-start approval (G-CX).
+  and 23:35Z, E-X3..E-X13 as recommended with binding refinements of E-X4, E-X5, E-X6 and E-X9). This accepted the
+  plan, not the start of implementation.
+- **Development start (owner, 2026-11-14 11:01Z, G-CX):** approved conditionally; it replaces the earlier "separate
+  development-start approval". TAB-XW work starts automatically, without a new approval, once all start conditions
+  are proven with evidence and the current SHA: S-1 Studio 1.0 functionally complete and QA-S1 accepted by the owner;
+  S-2 relevant security findings fixed and required technical reviews complete; S-3 Tabrion migration complete
+  including W6 and all necessary pin cascades; S-4 mandatory CI green without relevant integration or security
+  blockers. H-2 and G-R stay mandatory for public releases but are not preconditions for internal development. New
+  write or admin functionality is integrated before its gate (G-S2, G-S3, G-S4) only behind kill switches that are
+  off by default and proven effective; this approves no activation and no productive use. No tag, no public release
+  and no publication without G-R. The refinements of E-X3..E-X13 stay in force.
 - **Plan reference:** planning document 15 (CR-DBX: Database Manager, Schema Designer and Data Editor), sections 3,
   5, 7 and 9.1; work packages TAB-XW-1..TAB-XW-10.
 
@@ -79,7 +87,7 @@ Tabrion 0.2 already has the read side: `tabrion.schema` (`snapshot`, `fingerprin
 ## Consequences
 
 - Planned work packages TAB-XW-1..TAB-XW-10 (19 + 9.5 agent days) in [STATUS.md](../program/STATUS.md#change-request-cr-dbx-planning-document-15)
-  and [TODO TB-149](../TODO.md); none starts before the development-start approval.
+  and [TODO TB-149](../TODO.md); none starts before the G-CX start conditions S-1..S-4 are proven.
 - TAB-XW-1 writes the contract addendum and the precision of specification section 1.3.
 - `tabrion.profilefile` gets the profile modes `read_write` and `admin` (E-X8) with the addendum; the multi-host
   question of TB-148 (W-10) is decided with STU-CR-6.

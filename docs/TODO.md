@@ -576,8 +576,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** Blocked (planned, not started; needs the development-start approval G-CX after
-  Studio 1.0 and the repository migration) · **Refs:** planning document 15 sections 3, 5, 9.1;
+- **Priority:** P3 Low · **Status:** Blocked (planned, not started; development start approved conditionally (G-CX,
+  2026-11-14); starts once S-1..S-4 are proven) · **Refs:** planning document 15 sections 3, 5, 9.1;
   [ADR 0014](adr/0014-crdbx-tabrion-scope.md); [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15);
   E-X3, E-X4, E-X5, E-X6, E-X11
 - **What:** the owner accepted the CR-DBX planning on 2026-11-13 (not the start of implementation). Tabrion's part is
@@ -589,7 +589,8 @@ required (owner decision of 2026-11-08 11:26Z).
   TB-035), PostgreSQL `create_database`/`drop_database` (-9), G-T2 for 0.3 with an independent API review (-10).
   Boundaries (ADR 0014): built on SQLAlchemy Core and Alembic operations, no own builder, no schema tool UI, no
   `pg_dump`/`pg_restore` wrapper, no role-admin UI, no vector functions, never running a project's `env.py`.
-- **Next step:** none before the development-start approval. Then TAB-XW-1 first; TB-148 (1) and TB-035 are inputs.
+- **Next step:** none before the G-CX start conditions S-1..S-4 are proven (Studio 1.0 and QA-S1, security, migration
+  incl. W6, CI). Then TAB-XW-1 first; TB-148 (1) and TB-035 are inputs.
 
 ## Tests and quality assurance
 
