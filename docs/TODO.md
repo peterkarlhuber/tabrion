@@ -39,7 +39,8 @@ TB-042 superseded, TB-145 new; 0.2 switch pull request (TAB-042): TB-123 done, T
 TB-013 in progress, TB-147 new; TAB-CR-1/2 pull request: TB-014 and TB-015 done, TB-148 new; `0.2.1.dev0`
 follow-up pull request after the `0.2.0` release commit `52353da`: TB-013 done, TB-145 extended, TB-075 closed
 by the owner decision on K-Q; C-02 / DC-TB-1 pull request: TB-132 done, TB-145's `LINE n:` part done, its N-3
-cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 follow-up pull request: TB-145 done).
+cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 follow-up pull request: TB-145 done;
+`0.2.1` version pull request: TB-013 records the patch release).
 
 | Priority | Count |
 |---|---|
@@ -512,6 +513,10 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Release (TAB-042):** #65 set `0.2.0`; its merge commit `52353daee6cd6e37a7efc45b74061a48beb2b280` is `v0.2.0`
   final (2026-11-13). G-T2 passed (planning folder `reviews/tab-042-review.md`; its blocker B-1, a `%` in a SQLite
   profile path, was fixed in #65 before the merge). Master then builds as `0.2.1.dev0`.
+- **Patch `0.2.1`:** the version pull request sets `0.2.1` on master `de8247d` (C-02 #67, TB-145 #70, DC-TB-1, the
+  proprietary license #69; no API change against `52353da`); its merge commit is `v0.2.1` final, and the
+  `0.2.2.dev0` follow-up records its SHA, the CI push run, the QA-11 dry run (`previous` = `52353da`) and the
+  downstream nightly, and moves the README pins to it.
 - **Next step:** Studio STU-010 and STU-011 then replace
   their workaround (`fetch_all` with `prepare_threshold=0`, `tabrion_compat`, TD-013) with `inspector`, `query`,
   `stream` and `cancel`.

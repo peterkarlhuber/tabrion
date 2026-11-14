@@ -6,6 +6,17 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-14
+
+TABRION TAB-042 follow-up: `v0.2.1` final, a patch release with the log redaction fixes C-02 (#67) and TB-145 (#70)
+and the license change. The release commit is the merge commit of the pull request that sets this version; its full
+SHA is recorded by the follow-up pull request that moves master to `0.2.2.dev0` (ADR 0009, amendment of 2026-11-08).
+Consumers pin that commit by its full SHA via `git+https`; a tag `v0.2.1` on it is an optional label. No PyPI upload,
+no GitHub release and no announcement (G-R). It satisfies the range `tabrion>=0.2,<0.3`. **No API change**: the public
+surface (`docs/api/surface.json`, 235 names) is the same as in `0.2.0` (`scripts/api_surface.py --base 52353da`); the
+redaction fixes only remove more, and the install hints change message text only. Between `0.2.0` and this release
+master built as `0.2.1.dev0` (from `52353daee6cd6e37a7efc45b74061a48beb2b280`).
+
 ### Added
 
 - Docs: CR-DBX conditional development start (owner, 2026-11-14 11:01Z, G-CX). ADR 0014, `docs/adr/README.md`,
@@ -25,9 +36,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   1.2), narrows G-CR and TB-004 to the open Nodestro decisions, and fixes stale rows: G-S1 passed for tabrion-studio
   `9a5d4fa`, the M6 and M7 rows synced to tabrion-studio `807acc6`, and VER-1, MIG-AXE-1, MIG-NOD-1 and MIG-ORK-1
   done.
-- Master builds as `0.2.1.dev0` after the `0.2.0` release commit `52353daee6cd6e37a7efc45b74061a48beb2b280` (TAB-042,
-  the TB-053 pattern), so later commits never build as `0.2.0`. The release commit's full SHA is recorded in
-  `[0.2.0]` below, in the installation guide and in STATUS TAB-042.
+- License: Tabrion is proprietary software of Levuvo (all rights reserved; use only with written consent) instead of
+  MIT. `LICENSE` follows the Levuvo template, the package metadata says `license = "LicenseRef-Proprietary"`, and the
+  README, `TRADEMARKS.md`, the branding notes and the MkDocs copyright follow. The open-source components Tabrion uses
+  keep their own licenses.
+- The `0.2.0` release commit `52353daee6cd6e37a7efc45b74061a48beb2b280` is recorded in `[0.2.0]` below, in the
+  installation guide and in STATUS TAB-042; the README examples pin it.
 
 ### Security
 
@@ -38,7 +52,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   when it is the only server text label in a message. The cheap pre-check that decides whether a text is scanned had
   no `LINE` entry, so an escaped `\nLINE n:` inside a `repr` (for example a cast error in a list argument) kept the
   statement and its literals (Tabrion Studio security assessment C-02, Low). A `LINE n:` in the middle of a line (a
-  syntax error joined onto one line) is removed as well (TODO TB-145; its review N-3 edge cases stay open). The scan stays linear in the input length.
+  syntax error joined onto one line) is removed as well (TODO TB-145). The scan stays linear in the input length.
 - Dependency confusion (DC-TB-1, TODO TB-132): the `ImportError` hints of a missing extra and the psycopg skip of
   `tabrion.testing` name the Git-pin form `tabrion[<extra>] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>`
   instead of the bare requirement, which a package index would resolve; the README examples pin the `0.2.0` release
