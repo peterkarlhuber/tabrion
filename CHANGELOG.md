@@ -6,8 +6,20 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Added
+
+- Docs: ADR 0014 records Tabrion's scope in change request CR-DBX (planning document 15, owner decisions of
+  2026-11-13; planning confirmed, implementation not started): DDL, diff and migration-plan building blocks for
+  Tabrion 0.3 on SQLAlchemy Core and Alembic operations, no own builder, no schema tool UI, no `pg_dump` wrapper, no
+  role-admin UI, no vector functions. `docs/TODO.md` TB-149 lists TAB-XW-1..TAB-XW-10 as blocked on the
+  development-start approval. No code change.
+
 ### Changed
 
+- Docs: `docs/program/STATUS.md` adds CR-DBX (milestone M11, gates G-CX and G-S4, M7b as Studio 1.1, M10 as Studio
+  1.2), narrows G-CR and TB-004 to the open Nodestro decisions, and fixes stale rows: G-S1 passed for tabrion-studio
+  `9a5d4fa`, the M6 and M7 rows synced to tabrion-studio `807acc6`, and VER-1, MIG-AXE-1, MIG-NOD-1 and MIG-ORK-1
+  done.
 - Master builds as `0.2.1.dev0` after the `0.2.0` release commit `52353daee6cd6e37a7efc45b74061a48beb2b280` (TAB-042,
   the TB-053 pattern), so later commits never build as `0.2.0`. The release commit's full SHA is recorded in
   `[0.2.0]` below, in the installation guide and in STATUS TAB-042.

@@ -100,6 +100,7 @@ nav:
       - "0011 LDP internal, T-NOTX": adr/0011-ldp-internal-and-t-notx.md
       - "0012 Architecture checks": adr/0012-architecture-checks.md
       - "0013 Axentra adopts Tabrion": adr/0013-axentra-adopts-tabrion.md
+      - "0014 Tabrion scope for CR-DBX": adr/0014-crdbx-tabrion-scope.md
   - Program:
       - Status: program/STATUS.md
       - Risks and rollback: program/risks.md
