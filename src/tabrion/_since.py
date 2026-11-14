@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 
-from tabrion import _version
+import tabrion._version as _version
 
 __all__: list[str] = []
 

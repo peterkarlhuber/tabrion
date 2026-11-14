@@ -226,14 +226,17 @@ def class_members(cls: type) -> dict[str, Entry]:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
+def public_modules() -> list[str]:
+    """``PUBLIC_MODULES`` without the modules of a later minor than the package's (``MODULE_SINCE``)."""
+    current = package_minor()
+    return [name for name in PUBLIC_MODULES if minor(MODULE_SINCE.get(name, "0.0")) <= current]
+
+
 def collect() -> dict[str, Entry]:
     """Every public path -> its description; re-exports point to the canonical path with ``alias_of``."""
     paths: dict[int, list[str]] = {}
     objects: dict[str, Any] = {}
-    current = package_minor()
-    for module_name in PUBLIC_MODULES:
-        if module_name in MODULE_SINCE and minor(MODULE_SINCE[module_name]) > current:
-            continue
+    for module_name in public_modules():
         module = importlib.import_module(module_name)
         for name in module.__all__:
             if name in SKIP:

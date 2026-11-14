@@ -284,7 +284,16 @@ def test_prefix_scan_detects_a_probe(tmp_path: Path) -> None:
 # G-T1 F-09 and F-10 (TODO TB-019): "stdlib-only" as an allowlist. import-linter's core contract forbids a list of
 # packages, so any other third-party import (for example ``pluggy``, which comes with pytest) would pass it, and the
 # root package ``tabrion`` (whose ``__getattr__`` reaches layer B) is in no contract at all.
-CORE_FILES = ("errors.py", "sql.py", "config.py", "sqlite.py", "check.py", "profilefile.py", "_deprecated.py")
+CORE_FILES = (
+    "errors.py",
+    "sql.py",
+    "config.py",
+    "sqlite.py",
+    "check.py",
+    "profilefile.py",
+    "_deprecated.py",
+    "_since.py",
+)
 CORE_IMPORTABLE = frozenset(
     {
         "tabrion.errors",
@@ -294,6 +303,9 @@ CORE_IMPORTABLE = frozenset(
         "tabrion.check",
         "tabrion.profilefile",
         "tabrion._deprecated",
+        "tabrion._since",
+        # The version constant (standard library only, in no contract): the 0.3 gate reads it (ADR 0015).
+        "tabrion._version",
     }
 )
 
