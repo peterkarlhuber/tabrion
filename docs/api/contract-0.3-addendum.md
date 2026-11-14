@@ -434,9 +434,10 @@ def revoke_privileges(
   `grant_membership` refuses (`RoleUnsafe`, reasons `reachable_*`) when `role`, or any role reachable from it, has
   one of these attributes. **N-3:** reachability counts INHERIT, the SET option and the ADMIN option. Test
   `tests/postgres/test_role_ddl.py::test_admin_option_on_dangerous_role_counts_as_reachable`.
-- **D-2, no predefined roles (allowlist):** `grant_membership` refuses every role named `pg_*` or with an oid below
-  `FirstNormalObjectId` (reason `predefined_role`), including `pg_read_all_data` and `pg_write_all_data`; existing
-  memberships appear in `RolePrivileges.broad` as a finding. Tests
+- **D-2, no predefined roles (allowlist):** a role is predefined when its name starts with `pg_` and its oid is below
+  16384 (`FirstNormalObjectId`); the bootstrap superuser is not `broad`, it is covered by the superuser check.
+  `grant_membership` refuses every predefined role (reason `predefined_role`), including `pg_read_all_data` and
+  `pg_write_all_data`; existing memberships appear in `RolePrivileges.broad` as a finding. Tests
   `tests/postgres/test_role_ddl.py::test_membership_in_any_predefined_role_refused`,
   `::test_existing_predefined_membership_reported_broad`.
 - **K-2, escalation without attributes:** `TRIGGER` is not grantable; `EXECUTE` on a `SECURITY DEFINER` function

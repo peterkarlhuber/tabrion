@@ -141,6 +141,11 @@ class RoleReport:
     bypass_rls: bool
     owned_tables: tuple[str, ...]
     can_create: bool
+    broad: tuple[str, ...] = ()
+    """``"broad:<role>"`` for each predefined role (named ``pg_*`` and with an oid below ``FirstNormalObjectId``) that
+    the role is a member of, directly or indirectly, NOINHERIT too, sorted (TB-150, ADR 0015 D-2, D-124). A finding:
+    ``pg_write_all_data``, for one, writes every table, the migration bookkeeping included. Not part of
+    ``restricted`` or ``as_dict()``."""
 
     @property
     def restricted(self) -> bool:
@@ -172,7 +177,7 @@ def inspect_role(connection: psycopg.Connection[Any], role: str, *, schema: str 
     ``storage_postgres.py:947-984``). Without a current schema and without ``schema`` the report names the schema
     ``""`` and finds no tables; a ``schema`` that does not exist is named as given, with no tables and
     ``can_create=False``. ``superuser`` and ``bypass_rls`` hold when ``role`` is a member of a superuser or
-    ``BYPASSRLS`` role (contract I-20).
+    ``BYPASSRLS`` role (contract I-20); ``broad`` names the predefined roles it is a member of (TB-150).
     """
     if not isinstance(role, str):
         raise TypeError("role must be a str")
@@ -206,6 +211,7 @@ def inspect_role(connection: psycopg.Connection[Any], role: str, *, schema: str 
             # own text).
             raise RoleMissing("postgres.role_missing")
         role_oid = attributes[0]
+        broad = _predefined_memberships(cursor, role)
         tables: list[tuple[Any, ...]] = []
         if schema_oid is not None:
             cursor.execute(
@@ -234,7 +240,30 @@ def inspect_role(connection: psycopg.Connection[Any], role: str, *, schema: str 
         bypass_rls=bool(attributes[2]),
         owned_tables=tuple(str(name) for name, owned in tables if owned),
         can_create=bool(privileges[1]),
+        broad=broad,
     )
+
+
+# Predefined roles (TB-150, ADR 0015 D-2, D-124): built in (an oid below FirstNormalObjectId, 16384) and named pg_
+# (a reserved prefix; CREATE ROLE refuses it), so the bootstrap superuser (oid 10) is not one. 'MEMBER' follows every
+# chain of pg_auth_members, whatever its INHERIT, SET or ADMIN option: a NOINHERIT or SET-only member still reaches
+# the role with SET ROLE (has_table_privilege and 'USAGE' miss that), and an ADMIN-only member can grant it to itself.
+# It also counts the database owner's implicit membership of pg_database_owner (for the current database). A fixed
+# statement; the role name is a bound parameter.
+_PREDEFINED_SQL = (
+    "SELECT p.rolname::pg_catalog.text FROM pg_catalog.pg_roles p, pg_catalog.pg_roles r"
+    " WHERE r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
+    " AND pg_catalog.left(p.rolname::pg_catalog.text, 3) OPERATOR(pg_catalog.=) 'pg_'"
+    " AND p.oid OPERATOR(pg_catalog.<) 16384::pg_catalog.oid"
+    " AND p.oid OPERATOR(pg_catalog.<>) r.oid"
+    " AND pg_catalog.pg_has_role(r.oid, p.oid, 'MEMBER')"
+)
+
+
+def _predefined_memberships(cursor: psycopg.Cursor[tuple[Any, ...]], role: str) -> tuple[str, ...]:
+    """``"broad:<role>"`` for each predefined role ``role`` can reach, sorted (``RoleReport.broad``)."""
+    cursor.execute(_PREDEFINED_SQL, (role,))
+    return tuple(sorted(f"broad:{name}" for (name,) in cursor.fetchall()))
 
 
 _TABLE_PRIVILEGES = "SELECT, INSERT, UPDATE, DELETE"
@@ -275,6 +304,11 @@ def _grant_arguments(role: object, schema: object, protected_tables: object, gra
     return tables
 
 
+def _refuse_predefined(cursor: psycopg.Cursor[tuple[Any, ...]], role: str) -> None:
+    if _predefined_memberships(cursor, role):
+        raise RoleUnsafe("postgres.role_unsafe", details={"reasons": "predefined_role"})
+
+
 def grant_runtime_role(
     connection: psycopg.Connection[Any],
     role: str,
@@ -297,10 +331,15 @@ def grant_runtime_role(
     Refused before anything is granted (``RoleUnsafe``, details ``reasons``): ``table_owner`` when ``role`` is the
     connecting role or can become it (``SET ROLE``, contract I-20), owns the schema or can become its owner, or owns
     tables of the schema; ``superuser`` and ``bypass_rls`` as :func:`inspect_role` reports them (also through
-    membership). ``RoleMissing`` for an unknown role, ``UsageError("postgres.schema_missing")`` for a schema that
-    does not exist. Needs a transaction of its own: ``UsageError("postgres.nested_transaction")`` while the caller's
-    transaction runs (contract T-NOTX, I-35). ``ValueError`` when neither ``schema`` nor a current schema names one,
-    and for a name longer than 63 bytes (PostgreSQL would truncate it to another object's name).
+    membership); ``predefined_role`` when ``role`` is a member of any predefined role (``broad`` of
+    :func:`inspect_role`, also indirect or NOINHERIT; ADR 0015 D-2): ``pg_write_all_data`` could write
+    ``protected_tables`` despite the ``REVOKE`` (TB-150); read again inside the grant transaction, before the first
+    and after the last statement, so a membership granted in between rolls everything back. ``RoleMissing`` for an
+    unknown role,
+    ``UsageError("postgres.schema_missing")`` for a schema that does not exist. Needs a transaction of its own:
+    ``UsageError("postgres.nested_transaction")`` while the caller's transaction runs (contract T-NOTX, I-35).
+    ``ValueError`` when neither ``schema`` nor a current schema names one, and for a name longer than 63 bytes
+    (PostgreSQL would truncate it to another object's name).
 
     Check the result, not only for exceptions: ``connect`` is ``False`` when the owner may not grant ``CONNECT``
     (PostgreSQL only warns), and ``can_create=True`` (``CREATE`` on the schema, granted by someone else) is not
@@ -341,6 +380,9 @@ def grant_runtime_role(
             ("superuser", before.superuser),
             ("bypass_rls", before.bypass_rls),
             ("table_owner", role == before.owner or bool(row[0]) or bool(row[2]) or bool(before.owned_tables)),
+            # Any predefined role (ADR 0015 D-2); pg_write_all_data writes every table, so the REVOKE on
+            # protected_tables would not hold (TB-150).
+            ("predefined_role", bool(before.broad)),
         )
         if flag
     ]
@@ -349,6 +391,9 @@ def grant_runtime_role(
     target = sql.Identifier(role)
     namespace = sql.Identifier(before.schema)
     with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:
+        # The membership may have been granted since the check above (review F-3 of #77): read it again in the grant
+        # transaction, before the first statement and after the last; a hit rolls everything back.
+        _refuse_predefined(cursor, role)
         for statement in _GRANTS:
             cursor.execute(sql.SQL(statement).format(schema=namespace, role=target))
         for table in tables:
@@ -366,6 +411,7 @@ def grant_runtime_role(
                         namespace, sql.Identifier(table), target
                     )
                 )
+        _refuse_predefined(cursor, role)
     if grant_connect and not before.connect:
         try:
             with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:

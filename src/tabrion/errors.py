@@ -1317,7 +1317,11 @@ class RoleMissing(TabrionError):
 
 
 class RoleUnsafe(TabrionError):
-    """Code ``postgres.role_unsafe``; details ``reasons`` (comma list of superuser, bypass_rls, table_owner)."""
+    """Code ``postgres.role_unsafe``; details ``reasons``.
+
+    A comma list of ``superuser``, ``bypass_rls`` and ``table_owner``; ``grant_runtime_role`` may add
+    ``predefined_role`` (TB-150).
+    """
 
 
 class UnsafePath(TabrionError):
