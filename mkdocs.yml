@@ -2,7 +2,7 @@ site_name: Tabrion
 site_description: Safe, model-neutral database building blocks for Python applications on SQLite and PostgreSQL.
 repo_url: https://github.com/peterkarlhuber/tabrion
 repo_name: peterkarlhuber/tabrion
-copyright: Copyright &copy; 2026 Peter Karlhuber – MIT License
+copyright: Copyright &copy; 2026 Levuvo. All rights reserved.
 strict: true
 
 theme:
