@@ -24,7 +24,11 @@ from typing import Any, Literal
 try:
     import sqlalchemy
 except ImportError:
-    raise ImportError('tabrion.schema needs the extra "sqlalchemy": pip install "tabrion[sqlalchemy]"') from None
+    raise ImportError(
+        'tabrion.schema needs the extra "sqlalchemy": '
+        'pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"'
+        " (Tabrion is not on PyPI: pin the commit you use)"
+    ) from None
 
 from tabrion.errors import UsageError
 

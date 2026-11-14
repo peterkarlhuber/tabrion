@@ -97,7 +97,9 @@ Accepted residual risks (documented, not vulnerabilities):
   - only the English labels are found (`DETAIL:`, `HINT:`, ...): a server with localized messages (`lc_messages`,
     for example French `DÉTAIL :` or Spanish `DETALLE:`) is not covered in pre-formatted text; run PostgreSQL with
     `lc_messages = 'C'` (or `en_US`) for applications that log database errors as text (review F-4 of the TD-056
-    fix). A mid-line `LINE n:` is not removed yet (TODO TB-145);
+    fix). psycopg's `LINE n:` statement echo is removed at the start of a line, in the middle of one and in its
+    escaped `repr` form (`\nLINE n:`), also when no other label is in the text (security assessment C-02, TODO
+    TB-145);
   - when a formatter or a handler's `emit` fails while a database error is being handled, `logging`'s
     `Handler.handleError` prints the failure's chain, with that error's `DETAIL`, to `sys.stderr`; no filter sees
     that output (Axentra review F-2). A broken call (too few arguments, a missing key, a wrong type) is covered: the
@@ -166,4 +168,21 @@ Accepted residual risks (documented, not vulnerabilities):
 - `tabrion.testing._faults` (internal, for tests only) listens on `127.0.0.1` and relays the PostgreSQL protocol in
   plain text: its `dsn()` disables TLS and GSS encryption, so the password travels unencrypted over loopback. Never
   point it at a production server or use it outside a test.
+- **Supply chain: unregistered PyPI name.** By owner decision (2026-11-13), the names `tabrion` and
+  `tabrion-studio` are **not registered on PyPI**, not even as placeholders; a regular PyPI release needs a separate
+  G-R decision. Install Tabrion only from the pinned Git URL (`tabrion[...] @
+  git+https://github.com/peterkarlhuber/tabrion@<full commit sha>`) or from a lock file with hashes
+  (`--require-hashes`); then pip and uv never ask a package index for the name. If a third party registers the name,
+  everything that resolves the bare name from an index is exposed, and a poisoned sdist runs its build code during
+  the install, before any test or check can flag it:
+  - a `pip install tabrion` or `pip install "tabrion[...]"` without the pin, and installing a consumer
+    (`pip install -e ".[dev]"`, `pip install .`) without its pin or lock file;
+  - a later `pip install -U ...` (or `--upgrade-strategy eager`) in a pinned environment without the pin, which
+    replaces the pinned Tabrion with the index one;
+  - Dependabot's pip ecosystem and IDE "install missing package" helpers, unless they ignore `tabrion`;
+  - SBOM, `pip-audit` and other audit tools that map the name `tabrion` to the foreign PyPI project's advisories or
+    metadata.
+
+  Tabrion's own `ImportError` and skip hints name the Git-pin form, never the bare name, and a unit test keeps
+  `src/`, `docs/` and the README free of a bare install command (TODO TB-132, DC-TB-1).
 - Vulnerabilities in SQLite, PostgreSQL, psycopg, SQLAlchemy or Alembic belong to their maintainers.

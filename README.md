@@ -40,13 +40,14 @@ What it provides (see the [specification](docs/specification.md)):
 
 ## Installation
 
-Install from Git (Python 3.11 to 3.14); reproducible installs pin a full commit SHA
-([installation](docs/getting-started/installation.md)):
+Install from Git (Python 3.11 to 3.14), pinned to the full commit SHA of a final version
+([installation](docs/getting-started/installation.md)); the examples pin `0.2.0`. Tabrion is not on PyPI: never
+install the bare name from a package index ([SECURITY.md](SECURITY.md), supply chain).
 
 ```bash
-pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion.git"               # core, no dependency
-pip install "tabrion[postgres] @ git+https://github.com/peterkarlhuber/tabrion.git"     # + psycopg
-pip install "tabrion[sqlalchemy,migrations] @ git+https://github.com/peterkarlhuber/tabrion.git"
+pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@52353daee6cd6e37a7efc45b74061a48beb2b280"                     # core
+pip install "tabrion[postgres] @ git+https://github.com/peterkarlhuber/tabrion@52353daee6cd6e37a7efc45b74061a48beb2b280"           # + psycopg
+pip install "tabrion[sqlalchemy,migrations] @ git+https://github.com/peterkarlhuber/tabrion@52353daee6cd6e37a7efc45b74061a48beb2b280"
 ```
 
 Extras: `postgres`, `sqlalchemy`, `migrations` (implies `sqlalchemy`), `testing`, `all`. Every combination is

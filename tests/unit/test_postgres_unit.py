@@ -321,7 +321,7 @@ def test_postgres_functions_give_the_installation_hint_without_psycopg() -> None
         "    try:\n"
         "        call()\n"
         "    except ImportError as exc:\n"
-        "        assert 'pip install \"tabrion[postgres]\"' in str(exc), exc\n"
+        "        assert 'pip install \"tabrion[postgres] @ git+https://' in str(exc), exc\n"
         "    else:\n"
         "        raise AssertionError('no ImportError without psycopg')\n"
         "print('hint ok')\n"

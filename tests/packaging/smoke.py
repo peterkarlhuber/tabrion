@@ -65,7 +65,7 @@ def main(arg: str) -> None:
         try:
             _ = tabrion.Database
         except ImportError as exc:
-            assert 'pip install "tabrion[sqlalchemy]"' in str(exc), exc
+            assert 'pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@' in str(exc), exc
         else:
             raise AssertionError("tabrion.Database imported without SQLAlchemy")
     if "migrations" in extras:
