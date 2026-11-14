@@ -1095,7 +1095,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-150 · `grant_runtime_role` accepted a member of a predefined role such as `pg_write_all_data`
 
-- **Priority:** P2 Medium · **Status:** In progress (PR_LINK) · **Refs:** TABRION TAB-031, TAB-016,
+- **Priority:** P2 Medium · **Status:** In progress ([#77](https://github.com/peterkarlhuber/tabrion/pull/77)) · **Refs:** TABRION TAB-031, TAB-016,
   contract I-20, I-35, ADR 0015 D-2, TB-036; consumers: axentra #87, nodestro-runtime #169 (RT-079)
 - **What:** `grant_runtime_role` revokes writes on `protected_tables` from the runtime role, but a member of
   `pg_write_all_data` (PostgreSQL 14+) keeps `INSERT, UPDATE, DELETE` on every table through the predefined role, so
