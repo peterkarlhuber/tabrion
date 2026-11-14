@@ -72,7 +72,7 @@ TABRION_PG_RESTART_COMMAND is not set: the server restart runs in the nightly jo
 # --- Optional extras and checkouts: core-only and packaging jobs, the sdist ---
 # Module-level importorskip where an extra is not installed ("core without extras", "lowest versions", packaging).
 could not import '(psycopg|psycopg_pool|sqlalchemy|alembic|jsonschema)': No module named '(psycopg|psycopg_pool|sqlalchemy|alembic|jsonschema)'
-PostgreSQL tests need psycopg: pip install "tabrion\[postgres\]"
+PostgreSQL tests need psycopg: pip install "tabrion\[postgres\] @ git\+https://github\.com/peterkarlhuber/tabrion@<commit-sha>" \(Tabrion is not on PyPI: pin the commit you use\)
 # The example apps and the branding/Git checks need a repository checkout, not an sdist.
 examples/ is not in the sdist
 needs a repository checkout

@@ -30,7 +30,11 @@ __all__ = [
     "settle",
 ]
 
-INSTALL_HINT = 'tabrion.postgres needs the extra "postgres": pip install "tabrion[postgres]"'
+INSTALL_HINT = (
+    'tabrion.postgres needs the extra "postgres": '
+    'pip install "tabrion[postgres] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"'
+    " (Tabrion is not on PyPI: pin the commit you use)"
+)
 
 
 def require_psycopg() -> None:

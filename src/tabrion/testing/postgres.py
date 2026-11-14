@@ -37,6 +37,12 @@ __all__ = [
     "truncate_tables",
 ]
 
+#: The install hint of a missing psycopg, in the Git-pin form: Tabrion is not on PyPI (TB-132, DC-TB-1).
+_POSTGRES_EXTRA = (
+    'pip install "tabrion[postgres] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"'
+    " (Tabrion is not on PyPI: pin the commit you use)"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PostgresSchema:
@@ -133,8 +139,8 @@ def _postgres_url() -> str:
         import psycopg  # noqa: F401
     except ImportError:
         if required:
-            pytest.fail('PostgreSQL is required but psycopg is missing: pip install "tabrion[postgres]"', pytrace=False)
-        pytest.skip('PostgreSQL tests need psycopg: pip install "tabrion[postgres]"')
+            pytest.fail(f"PostgreSQL is required but psycopg is missing: {_POSTGRES_EXTRA}", pytrace=False)
+        pytest.skip(f"PostgreSQL tests need psycopg: {_POSTGRES_EXTRA}")
     return _Url(found[1])
 
 

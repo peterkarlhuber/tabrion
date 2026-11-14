@@ -12,7 +12,11 @@ from collections.abc import Sequence
 try:
     import pytest as _pytest  # noqa: F401  # the extra "testing"
 except ImportError:
-    raise ImportError('tabrion.testing needs the extra "testing": pip install "tabrion[testing]"') from None
+    raise ImportError(
+        'tabrion.testing needs the extra "testing": '
+        'pip install "tabrion[testing] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"'
+        " (Tabrion is not on PyPI: pin the commit you use)"
+    ) from None
 
 from tabrion.testing import _config, profiles
 from tabrion.testing.postgres import (

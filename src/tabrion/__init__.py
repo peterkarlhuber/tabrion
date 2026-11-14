@@ -51,7 +51,13 @@ _LAYER_B = {
     "Column": "tabrion._sa.result",
 }
 
-_SQLALCHEMY_HINT = 'tabrion.{name} needs the extra "sqlalchemy": pip install "tabrion[sqlalchemy]"'
+#: Never the bare requirement ``tabrion[...]`` without its ``@ git+...`` part: Tabrion is not on PyPI, so that would
+#: ask a package index for a package that is not ours (dependency confusion, TB-132, DC-TB-1).
+_SQLALCHEMY_HINT = (
+    'tabrion.{name} needs the extra "sqlalchemy": '
+    'pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"'
+    " (Tabrion is not on PyPI: pin the commit you use)"
+)
 
 
 def __getattr__(name: str) -> Any:

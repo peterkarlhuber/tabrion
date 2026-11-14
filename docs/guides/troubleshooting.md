@@ -80,7 +80,7 @@ tabrion.errors.UsageError: database.invalid_statement
 
 `ImportError: tabrion.Database needs the extra "sqlalchemy"` and the like: install the extra named in the message,
 **in the Git-pin form** of [Installation](../getting-started/installation.md#extras)
-(`pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"`). Do not run the
-bare `pip install "tabrion[...]"` the message shows: Tabrion is not on PyPI, and a package of that name there would
-not be ours (TODO TB-132). `import tabrion`, `tabrion.errors`, `tabrion.sql`,
+(`pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"`), as the message
+shows, with the full commit your project pins. Never drop the `@ git+...` part: Tabrion is not on PyPI, and a package
+of that name there would not be ours (TODO TB-132). `import tabrion`, `tabrion.errors`, `tabrion.sql`,
 `tabrion.config`, `tabrion.sqlite` and `tabrion.check` never need an extra.
