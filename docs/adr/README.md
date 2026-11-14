@@ -22,6 +22,7 @@ security guarantees, verification, revision triggers.
 | [0011](0011-ldp-internal-and-t-notx.md) | "Levuvo Database Profile" as an internal test asset; contract rule T-NOTX | Accepted |
 | [0012](0012-architecture-checks.md) | Automated architecture checks AC-1..AC-7 against the edge list | Accepted |
 | [0013](0013-axentra-adopts-tabrion.md) | Axentra adopts Tabrion with unchanged RLS, DbScope and M10 guarantees | Accepted |
+| [0014](0014-crdbx-tabrion-scope.md) | Tabrion scope for CR-DBX: DDL, diff and plan building blocks; no `pg_dump` wrapper, no role-admin UI | Accepted as planning (2026-11-13); implementation needs the development-start approval |
 
 ## Status values
 

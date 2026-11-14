@@ -1,10 +1,18 @@
 # Program status
 
 The status of every work package of the Tabrion program: the backlog of planning document 09 (125 work packages,
-M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. QA-12
+M1-M8) and change request CR-DB of planning document 14 (26 work packages, M9, M10 and two in M4), 151 in total. Change
+request CR-DBX of planning document 15 (Data Editor, Schema Designer, Database Manager) is accepted as planning only;
+its 27 new work packages are listed by reference in [their own section](#change-request-cr-dbx-planning-document-15)
+and are not in the 151 until the development-start approval. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-13, TAB-042 done: `v0.2.0` final `52353da` (#65), G-T2 passed, master `0.2.1.dev0`; D-78 closed by
+> **Last update:** 2026-11-13, CR-DBX planning integrated (owner decisions of 23:28Z on E-X1, E-X2 and of 23:35Z on
+> E-X3..E-X13 with the refinements of E-X4, E-X5, E-X6 and E-X9; planning confirmed, implementation not started):
+> milestone M11, gates G-CX and G-S4, M7b as Studio 1.1 and M10 as Studio 1.2 (E-X10), G-CR narrowed (W-1), stale
+> rows fixed (W-11): G-S1 passed for tabrion-studio master `9a5d4fa`, the M6 and M7 rows synced to the Studio
+> `docs/TODO.md` at master `807acc6`, VER-1, MIG-AXE-1, MIG-NOD-1 and MIG-ORK-1 done after a check on GitHub.
+> Before: 2026-11-13, TAB-042 done: `v0.2.0` final `52353da` (#65), G-T2 passed, master `0.2.1.dev0`; D-78 closed by
 > the owner decision of 21:44Z (qualitative criteria K-Q instead of a fixed line limit). Before: 2026-11-13, lane JQ and early QA rows verified on GitHub and set to done: JQ-1..JQ-3 (nodestro-runtime
 > #143), JQ-4 with pin wave W7 (#144), MIG-AXE-0 (axentra #61), QA-13 (axentra #63, nodestro-runtime #145), QA-25
 > (axentra #64), QA-21 (all four consumers). Before: 2026-11-12, owner decisions of 15:37Z on STU-024 (D-122) and 15:45Z on STU-021 (D-123); the
@@ -45,15 +53,16 @@ the owning thread reports it.
 |---|---|---|---|---|
 | M1 | Foundation: repositories, skeleton, API freeze | G-A | G-T1 (TAB-002) | Done: conditional (#1 merged; G-T1 conditions below; GOV-3 continues in tabrion-studio; branch protection is optional, owner decision of 2026-11-08 11:26Z) |
 | M2 | Tabrion 0.1, internal alpha, reference applications; lane JQ in parallel | G-T1 | G-T2 (TAB-040) | In progress (TAB-010..TAB-012 done, [M2 evidence](#m2-evidence); TAB-013, TAB-014 done (#4, `af0f3dc`), [lane B evidence](#m2-lane-b-evidence-tab-013-tab-014); G-T2 for 0.1.0 passed 2026-11-12 (TAB-040, release commit `d5821fa`); lane JQ done 2026-11-08 (nodestro-runtime #143, #144); RA-EVAL remains) |
-| M3 | Versioning, Axentra security evidence, waves W1 and W2, architecture checks | TAB-040 `v0.1.0` final (RC-8) | G-M per step | Not started |
+| M3 | Versioning, Axentra security evidence, waves W1 and W2, architecture checks | TAB-040 `v0.1.0` final (RC-8) | G-M per step | In progress (VER-1, QA-13, QA-25, MIG-AXE-1, MIG-NOD-1 and MIG-ORK-1 done; PIN-W1 and the S2a steps open) |
 | M4 | Tabrion 0.2 (Studio APIs); TAB-CR-1/2 from CR-DB | G-T2 | G-T2 for 0.2 (TAB-042); no PyPI publication planned, one only after G-R | Done: `v0.2.0` final `52353da` (2026-11-13), G-T2 passed |
 | M5 | Waves W3-W6 | M3 | G-M per step | Not started |
-| M6 | Studio MVP 0.1 | GOV-3, TAB-002 (skeleton), TAB-042 (main part) | G-S1 (STU-016) | In progress (tabrion-studio master `34ae38b`: STU-015 done, the backends of STU-010, STU-013 and STU-014 merged; [M6 table](#m6-studio-mvp-01-g-s1)) |
-| M7 | Studio 1.0 without the data editor | G-S1 | G-R for a public release (STU-028) | In progress (STU-024 done and STU-021's backend merged before STU-017 by the owner-accepted D-122 and D-123; the other M7 packages wait for STU-017) |
-| M7b | Conditional data editor (STU-026) | G-S2 | outside the 1.0 acceptance | Not started |
+| M6 | Studio MVP 0.1 | GOV-3, TAB-002 (skeleton), TAB-042 (main part) | G-S1 (STU-016) | In progress: exit gate G-S1 passed 2026-11-13 for tabrion-studio master `9a5d4fa`; open STU-017 (docs, tag without publication), the rest of STU-053 and QA-S1 ([M6 table](#m6-studio-mvp-01-g-s1), synced to master `807acc6`) |
+| M7 | Studio 1.0 without the data editor | G-S1 | G-R for a public release (STU-028) | In progress (tabrion-studio master `807acc6`: STU-020..STU-025 done, partly before STU-017 by D-122, D-123 and the owner's allowance of normal ordering decisions; STU-054 waits on the manual QA-S1; STU-028 preparation only; G-R not granted) |
+| M7b | **Studio 1.1 (CR-DBX):** shared write foundation and Data Editor (STU-026, STU-XW-1..5, STU-XDE-1..2; E-X2, E-X10) | Studio 1.0 (G-R), repository migration, development-start approval (G-CX) | **G-S2** (enables writing; outside the 1.0 acceptance) | Not started (planned, development start not approved) |
 | M8 | Program close | M5, M7 | QA-24 closing record, then M-REV six-month review | Not started |
 | **M9** | **Nodestro database nodes and export (CR-DB)**: database connections, node `database`, agent database tools, export with drivers, E2E, security review | M4 (Tabrion 0.2 final), PIN-W6 (SQLite wave in Nodestro), JQ-3; its own lane in parallel to M6/M7 | Security review of the Nodestro database work before the write operations merge (NOD-CR-15); G-R for any release | Not started |
-| **M10** | **Studio 1.1 schema designer (CR-DB)**: new-database wizards, designer, migration generation, role wizard | M7 (Studio 1.0) | **G-S3** (STU-CR-8) | Not started |
+| **M10** | **Studio 1.2 Schema Designer (CR-DB, re-planned by CR-DBX E-X10; was "Studio 1.1")**: new-database wizards, designer, plan preview, Alembic revision text, runtime-role wizard (STU-CR-1..8, STU-XSD-1..3) | M7b (Studio 1.1), TAB-XW-2..5, G-CX | **G-S3** (STU-CR-8) | Not started (planned, development start not approved) |
+| **M11** | **Studio 1.3 Database Manager (CR-DBX)**: profile pairs, create, backup and restore, delete, PostgreSQL roles (STU-XDM-1..7) | M10 (Studio 1.2), TAB-XW-7..9, G-CX | **G-S4** (STU-XDM-7) | Not started (planned, development start not approved) |
 
 | Gate | Meaning | Status |
 |---|---|---|
@@ -62,12 +71,18 @@ the owning thread reports it.
 | G-T1 | API freeze of the Tabrion contract (TAB-002) | **Passed with conditions** 2026-11-08 (independent review, planning folder `reviews/g-t1-review.md`); conditions C-1..C-8 in [G-T1 conditions](#g-t1-conditions) |
 | G-T2 | Tabrion release gate (0.1.0 by TAB-040, 0.2.0 by TAB-042) | 0.1.0: every checklist item met or covered by a deviation (D-67, D-78, D-79, D-86; independent review of #56, planning folder `reviews/tab-56-review.md`); release commit `d5821faa8742dea012abda3b663549c038d76543` (2026-11-12), QA-11 dry run 43191784224 on it passed. The CI push run on that commit (43191770959) is green: **Passed 2026-11-12**. 0.2.0: every checklist item met (independent review of #65, planning folder `reviews/tab-042-review.md`; its blocker B-1, a `%` in a SQLite profile path, fixed in #65 before the merge; core size under the qualitative criteria K-Q, D-78 closed by the owner decision of 2026-11-13 21:44Z); release commit `52353daee6cd6e37a7efc45b74061a48beb2b280` (2026-11-13), CI push run 43512306041 green, QA-11 dry run 43516309205 passed, master nightly 43512394163 green (its downstream job 132185657621, the consumers' database tests against this commit, green; the integrator's AC-5 workflow QA-20 is not built yet): **Passed 2026-11-13**. No trademark check required (owner decision of 2026-11-08 11:26Z) |
 | G-M | Merge gate per migration, JQ and pin step (rollback probe QA-14, AC checks) | Per step |
-| G-S1 | Studio MVP security review (STU-016) | Open |
-| G-S2 | Owner decision on Studio write functions (STU-026) | Open |
-| G-S3 | Studio 1.1 security review and acceptance of the schema designer (STU-CR-8; defined by STU-CR-1) | Open (added with CR-DB) |
-| G-CR | Inclusion of CR-DB and decisions E-CR-1..E-CR-8 | Inclusion approved 2026-11-08; the individual decisions E-CR-1..E-CR-7 are to be confirmed (O-6); E-CR-8 (M9, M10, TAB-CR-1/2 in 0.2) is in force |
-| G-R | Owner approval per public release (PyPI, npm, GitHub release, announcement); no standing approval (E-PyPI) | Open for every release |
+| G-S1 | Studio MVP security review (STU-016) | **Passed 2026-11-13** for tabrion-studio master `9a5d4faa69f1c974999d258b36258fbc10b3323f`, on the owner's condition that all 21 required CI jobs are green on that SHA (met, run 43457105100); the owner accepted the 13 recommendations of the G-S1 decision package (Studio TODO STU-016). It enables no write function and is no release approval (G-R) |
+| G-S2 | Owner security decision that enables the Studio 1.1 write foundation and Data Editor (STU-026, STU-XW, STU-XDE; CR-DBX) | Open. Until then every write path stays technically locked (STU-ADR-0003 and its CR-DBX amendment in tabrion-studio) |
+| G-S3 | Studio 1.2 security review and acceptance of the Schema Designer (STU-CR-8; defined by STU-CR-1) | Open (added with CR-DB; Studio 1.2 by CR-DBX E-X10). Until then the Schema Designer stays technically locked |
+| G-S4 | Studio 1.3 security review and acceptance of the Database Manager (STU-XDM-7; defined by STU-XDM-1) | Open (added with CR-DBX, E-X9). Until then the Database Manager stays technically locked |
+| G-CX | Inclusion of CR-DBX and the development-start approval (planning document 15, E-X1) | Planning accepted 2026-11-13 (E-X1, E-X2 at 23:28Z; E-X3..E-X13 at 23:35Z with refinements). The development start is **not** approved: it needs Studio 1.0 (G-R), the repository migration and a separate owner approval. G-CX never enables a write or admin function; each stays locked until G-S2, G-S3 or G-S4, and an independent human security review is mandatory before any public release |
+| G-CR | Inclusion of CR-DB and decisions E-CR-1..E-CR-8 | Inclusion approved 2026-11-08. E-CR-8 (M9, M10, TAB-CR-1/2 in 0.2) is in force. E-CR-2 (Studio schema designer with G-S3, narrower non-goals) is decided by the CR-DBX acceptance of 2026-11-13 in changed form: Studio 1.2 instead of 1.1 (E-X10), role management beyond the runtime role only in Studio 1.3 under G-S4 (E-X6). The Nodestro decisions E-CR-1, E-CR-3..E-CR-7 are still to be confirmed (O-6, TODO TB-004; W-1) |
+| G-R | Owner approval per public release (PyPI, npm, GitHub release, announcement); no standing approval (E-PyPI) | Open for every release; stays locked (CR-DBX changes nothing) |
 | G-EM | Merge of the migration runners | Decided **no** (2026-11-07 23:26Z); MIG-AXE-7, S6, S7 dropped |
+
+**Milestone names (E-X13):** M9, M10 and M11 in this file are program milestones. The Nodestro guarantees that older
+texts also call "M9" (atomic migration, ADR 0007) and "M10" (shared Nodestro/Axentra pool, ADR 0003, 0006, 0011,
+0013, the contract and the specification) are called NOD-M9 and NOD-M10 in new texts; the old references stay valid.
 
 ## Work packages
 
@@ -149,14 +164,14 @@ Planned effort: 34.3 + 8.35 agent days.
 | QA-14 | Rollback probe per MIG and JQ step | all affected | JQ-3 | - | 6 + 0 | QA | Not started |  |
 | QA-18 | AC-3: blocked-module test per optional edge | tabrion, orkexa, nodestro-runtime, nodestro-api | TAB-005 | - | 1.5 + 0.5 | QA | Done (tabrion part) | tabrion: merged in [#36](https://github.com/peterkarlhuber/tabrion/pull/36) (`ea2061f`), landed through [#44](https://github.com/peterkarlhuber/tabrion/pull/44) (`5bf4012`): `tests/packaging/edges.py`, `tests/unit/test_optional_edges.py` (one blocked-module test and one mutation probe per optional edge), `tests/packaging/test_independent.py`; orkexa, nodestro-runtime and nodestro-api are open. |
 | QA-13 | Snapshot tools for rollback evidence | nodestro-runtime, axentra | TAB-038 | - | 2 + 0.5 | QA | Done | axentra [#63](https://github.com/peterkarlhuber/axentra/pull/63) (`298f782`, 2026-11-11: golden files from the old code) and nodestro-runtime [#145](https://github.com/peterkarlhuber/nodestro-runtime/pull/145) (`979c11c`, 2026-11-11: server profile); review planning folder `reviews/qa-13-25-review.md` |
-| VER-1 | Versioning infrastructure V-B0 (RC-1/RC-2/RC-8, requirements/tabrion.txt, drift nightly) | nodestro-studio, orkexa, axentra, nodestro-runtime | TAB-040 | - | 1.5 + 0.5 | Migration | Not started |  |
+| VER-1 | Versioning infrastructure V-B0 (RC-1/RC-2/RC-8, requirements/tabrion.txt, drift nightly) | nodestro-studio, orkexa, axentra, nodestro-runtime | TAB-040 | - | 1.5 + 0.5 | Migration | Done | Merged in every listed repository on 2026-11-13: axentra [#76](https://github.com/peterkarlhuber/axentra/pull/76) (`1afe7bb`) and [#77](https://github.com/peterkarlhuber/axentra/pull/77) (`e18c6f3`), orkexa [#88](https://github.com/peterkarlhuber/orkexa/pull/88) (`68cb46c`) and [#90](https://github.com/peterkarlhuber/orkexa/pull/90) (`905947c`), nodestro-runtime [#156](https://github.com/peterkarlhuber/nodestro-runtime/pull/156) (`56ae282`, pin guard), nodestro-studio [#176](https://github.com/peterkarlhuber/nodestro-studio/pull/176) (`ac98031`, `check_versions.py`); the later move to version ranges with one lock (nodestro-studio #177, #179; runtime #159; api #126) is CI-FAST work outside this plan |
 | MIG-NOD-3 | Error texts SQLite and PostgreSQL (B-06-2) and filter (S2a) | nodestro-runtime, nodestro-api | TAB-040, JQ-4, VER-1 | G-M | 1.5 + 0.5 | Migration | Not started |  |
 | QA-15 | AC-6: check_versions.py: one Tabrion version, cascade, cycles, policy | nodestro-studio | QA-17, VER-1 | - | 2 + 0.5 | QA | Not started |  |
 | QA-25 | Security evidence for the Axentra adoption (MIG-T-AXE-1..9, snapshots of the old code) | axentra | QA-13 | - | 3 + 1 | QA | Done | axentra [#64](https://github.com/peterkarlhuber/axentra/pull/64) (`925b116`, 2026-11-11): security evidence MIG-T-AXE-1..9; review planning folder `reviews/qa-13-25-review.md` |
 | MIG-AXE-3 | B-06-1: safe logging through tabrion.errors and filter (S2a); replaces MIG-AXE-0 | axentra | QA-25, TAB-040, VER-1, MIG-AXE-0 | G-M | 1.5 + 0.75 | Migration | Not started |  |
-| MIG-AXE-1 | Axentra test fixtures through tabrion.testing (S1) | axentra | QA-25, TAB-040, VER-1 | G-M | 1.5 + 0.5 | Migration | Not started |  |
-| MIG-NOD-1 | PostgreSQL test fixtures through tabrion.testing (S1) | nodestro-runtime, nodestro-api | TAB-040, JQ-4, VER-1 | G-M | 2 + 0.5 | Migration | Not started |  |
-| MIG-ORK-1 | PostgreSQL test support through tabrion[testing] (S1) | orkexa | TAB-040, VER-1 | G-M | 1 + 0.25 | Migration | Not started |  |
+| MIG-AXE-1 | Axentra test fixtures through tabrion.testing (S1) | axentra | QA-25, TAB-040, VER-1 | G-M | 1.5 + 0.5 | Migration | Done | axentra [#78](https://github.com/peterkarlhuber/axentra/pull/78) (`1dbd98f`, 2026-11-13): the PostgreSQL test fixtures run on `tabrion.testing` |
+| MIG-NOD-1 | PostgreSQL test fixtures through tabrion.testing (S1) | nodestro-runtime, nodestro-api | TAB-040, JQ-4, VER-1 | G-M | 2 + 0.5 | Migration | Done | nodestro-runtime [#156](https://github.com/peterkarlhuber/nodestro-runtime/pull/156) (`56ae282`) and nodestro-api [#123](https://github.com/peterkarlhuber/nodestro-api/pull/123) (`fff4d6a`), 2026-11-13: PostgreSQL test helpers and the skip/require rule through `tabrion.testing` |
+| MIG-ORK-1 | PostgreSQL test support through tabrion[testing] (S1) | orkexa | TAB-040, VER-1 | G-M | 1 + 0.25 | Migration | Done | orkexa [#91](https://github.com/peterkarlhuber/orkexa/pull/91) (`3165be2`, 2026-11-13): the PostgreSQL test support uses `tabrion.testing`; the VER-1 pin it builds on is orkexa #88 (`68cb46c`) |
 | PIN-W1 | Pin wave W1 (S1 fixtures) | tabrion to (orkexa ∥ axentra) to runtime to api to sdk to studio to builds | MIG-NOD-1, MIG-AXE-1, MIG-ORK-1, QA-15 | G-M | 0.9 + 0.3 | Migration | Not started |  |
 | QA-7 | Direct consumer tests and docs/api-consumers.md | axentra, orkexa, nodestro-runtime | MIG-AXE-1, MIG-ORK-1, MIG-NOD-1 | - | 2 + 0.5 | QA | Not started |  |
 | PIN-W2 | Pin wave W2 (S2a errors; first base edge axentra to tabrion) | tabrion to (orkexa ∥ axentra) to runtime to api to sdk to studio to builds | PIN-W1, MIG-AXE-3, MIG-NOD-3 | G-M | 0.9 + 0.3 | Migration | Not started |  |
@@ -199,7 +214,7 @@ Planned effort: 18.85 + 9.2 agent days.
 
 Planned effort: 59 + 18 agent days.
 
-The authoritative Studio status is `docs/TODO.md` in tabrion-studio; the rows below mirror it as of master `34ae38b` (2026-11-12).
+The authoritative Studio status is `docs/TODO.md` in tabrion-studio; the rows below mirror it as of master `807acc6` (2026-11-13).
 
 | WP | Title | Repositories | Depends on | Gate | Effort (impl + review) | Lane | Status | Evidence |
 |---|---|---|---|---|---|---|---|---|
@@ -215,17 +230,17 @@ The authoritative Studio status is `docs/TODO.md` in tabrion-studio; the rows be
 | STU-051 | Status displays and dialogs | tabrion-studio | STU-005 | - | 1.5 + 0.5 | Studio | Done | Merged in tabrion-studio [#5](https://github.com/peterkarlhuber/tabrion-studio/pull/5) (`99bcd10`) with STU-005 |
 | STU-007 | Secret management | tabrion-studio | STU-006 | - | 1.5 + 0.75 | Studio | Done | Merged in tabrion-studio [#10](https://github.com/peterkarlhuber/tabrion-studio/pull/10) (`0af1831`); review accepted with conditions, the rest is Studio TODO TD-010 |
 | STU-009 | Connection registry and read-only enforcement | tabrion-studio | STU-007, TAB-040 | - | 2.5 + 1.25 | Studio | Done | Merged in tabrion-studio [#15](https://github.com/peterkarlhuber/tabrion-studio/pull/15) (`6afe5be`, 2026-11-12); pins tabrion `v0.1.0` by its full SHA `d5821faa8742dea012abda3b663549c038d76543` (`constraints/tabrion-integration.txt`) |
-| STU-008 | Connection manager UI and connection test | tabrion-studio | STU-005, STU-007, STU-009 | - | 3 + 0.75 | Studio | In progress | Main part merged in tabrion-studio [#11](https://github.com/peterkarlhuber/tabrion-studio/pull/11) (`e8b1d05`), follow-ups [#13](https://github.com/peterkarlhuber/tabrion-studio/pull/13) (`dc94f5d`) and [#14](https://github.com/peterkarlhuber/tabrion-studio/pull/14) (`160f60b`); the parts that need STU-009 (connection test and Connect in the page) are Studio TODO TD-011 |
-| STU-014 | Diagnosis (MVP) | tabrion-studio | STU-009 | - | 3 + 0.75 | Studio | In progress | Backend merged in tabrion-studio [#25](https://github.com/peterkarlhuber/tabrion-studio/pull/25) (`69b5942`, 2026-11-12; reviews `stu-014-review.md` and delta accepted); the diagnostics view in the page is open (Studio TODO) |
+| STU-008 | Connection manager UI and connection test | tabrion-studio | STU-005, STU-007, STU-009 | - | 3 + 0.75 | Studio | Done | Studio TODO at master `807acc6`: done; the connection test and "Connect" in [#42](https://github.com/peterkarlhuber/tabrion-studio/pull/42). History: Main part merged in tabrion-studio [#11](https://github.com/peterkarlhuber/tabrion-studio/pull/11) (`e8b1d05`), follow-ups [#13](https://github.com/peterkarlhuber/tabrion-studio/pull/13) (`dc94f5d`) and [#14](https://github.com/peterkarlhuber/tabrion-studio/pull/14) (`160f60b`); the parts that need STU-009 (connection test and Connect in the page) are Studio TODO TD-011 |
+| STU-014 | Diagnosis (MVP) | tabrion-studio | STU-009 | - | 3 + 0.75 | Studio | Done | Studio TODO at master `807acc6`: done; the deviations of the page are Studio TD-032 (dependency resolved by #85). History: Backend merged in tabrion-studio [#25](https://github.com/peterkarlhuber/tabrion-studio/pull/25) (`69b5942`, 2026-11-12; reviews `stu-014-review.md` and delta accepted); the diagnostics view in the page is open (Studio TODO) |
 | STU-015 | Migration status Alembic and SQLite | tabrion-studio | STU-009 | - | 2 + 0.5 | Studio | Done | Backend merged in tabrion-studio [#29](https://github.com/peterkarlhuber/tabrion-studio/pull/29) (`fc34a94`, 2026-11-12; Windows TD-024 done), the page (status view, code-trust dialog) in [#32](https://github.com/peterkarlhuber/tabrion-studio/pull/32) (`2cfb380`; review C-1 and delta checks accepted) |
-| STU-010 | Explorer | tabrion-studio | STU-009, TAB-042 | - | 4 + 1 | Studio | In progress | Backend (catalog, table detail, extensions, SQLite facts) merged in tabrion-studio [#19](https://github.com/peterkarlhuber/tabrion-studio/pull/19) (`144eac7`, 2026-11-12) on the same tabrion `v0.1.0` pin, through `tabrion_compat.inspector` until TAB-042 (TD-013); the page and the E2E test against the reference apps come with STU-012 and STU-050 |
+| STU-010 | Explorer | tabrion-studio | STU-009, TAB-042 | - | 4 + 1 | Studio | Done | Studio TODO at master `807acc6`: done; the page (`/explorer`) in [#43](https://github.com/peterkarlhuber/tabrion-studio/pull/43) and [#46](https://github.com/peterkarlhuber/tabrion-studio/pull/46), follow-up #51. History: Backend (catalog, table detail, extensions, SQLite facts) merged in tabrion-studio [#19](https://github.com/peterkarlhuber/tabrion-studio/pull/19) (`144eac7`, 2026-11-12) on the same tabrion `v0.1.0` pin, through `tabrion_compat.inspector` until TAB-042 (TD-013); the page and the E2E test against the reference apps come with STU-012 and STU-050 |
 | STU-011 | Query engine (SSE, caps, cancel) | tabrion-studio | STU-009, TAB-042 | - | 4 + 2 | Studio | Done: conditional | Merged in tabrion-studio [#18](https://github.com/peterkarlhuber/tabrion-studio/pull/18) (`98c4ccd`, 2026-11-12) on the same tabrion `v0.1.0` pin. Condition: built on tabrion 0.1 primitives behind `services/tabrion_compat.py` until TAB-042 (tabrion 0.2) exists; that module and the known gaps are tabrion-studio TODO TD-013 |
-| STU-012 | SQL editor UI (MVP) | tabrion-studio | STU-011 | - | 5 + 1.25 | Studio | Not started |  |
-| STU-013 | Data viewer | tabrion-studio | STU-011 | - | 3 + 0.75 | Studio | In progress | Backend merged in tabrion-studio [#24](https://github.com/peterkarlhuber/tabrion-studio/pull/24) (`43c48d2`, 2026-11-12; review and delta accepted); the grid tab in the page is open (Studio TODO) |
-| STU-050 | UX acceptance MVP | tabrion-studio | STU-008, STU-010, STU-012, STU-013, STU-014, STU-015, STU-051, QA-9 | - | 2 + 0.5 | Studio | Not started |  |
-| STU-052 | Keyboard and command palette | tabrion-studio | STU-012 | - | 2 + 0.5 | Studio | In progress | First part merged in tabrion-studio [#16](https://github.com/peterkarlhuber/tabrion-studio/pull/16) (`b0c9b9c`) and [#22](https://github.com/peterkarlhuber/tabrion-studio/pull/22) (`490f6a7`); the rest waits for STU-012 (Studio TODO TD-020) |
+| STU-012 | SQL editor UI (MVP) | tabrion-studio | STU-011 | - | 5 + 1.25 | Studio | Done | Studio TODO at master `807acc6`: done in [#41](https://github.com/peterkarlhuber/tabrion-studio/pull/41), follow-ups #48 and #50 (export dialog); the rest is Studio TD-033 |
+| STU-013 | Data viewer | tabrion-studio | STU-011 | - | 3 + 0.75 | Studio | Done | Studio TODO at master `807acc6`: done; what the page leaves for later is Studio TD-042. History: Backend merged in tabrion-studio [#24](https://github.com/peterkarlhuber/tabrion-studio/pull/24) (`43c48d2`, 2026-11-12; review and delta accepted); the grid tab in the page is open (Studio TODO) |
+| STU-050 | UX acceptance MVP | tabrion-studio | STU-008, STU-010, STU-012, STU-013, STU-014, STU-015, STU-051, QA-9 | - | 2 + 0.5 | Studio | Done | Studio TODO at master `807acc6`: done in [#62](https://github.com/peterkarlhuber/tabrion-studio/pull/62); the Firefox and WebKit jobs in #59 and #63, required since #67 |
+| STU-052 | Keyboard and command palette | tabrion-studio | STU-012 | - | 2 + 0.5 | Studio | Done | Studio TODO at master `807acc6`: done (the rest PR); format and history left for 1.0 (STU-020). History: First part merged in tabrion-studio [#16](https://github.com/peterkarlhuber/tabrion-studio/pull/16) (`b0c9b9c`) and [#22](https://github.com/peterkarlhuber/tabrion-studio/pull/22) (`490f6a7`); the rest waits for STU-012 (Studio TODO TD-020) |
 | STU-053 | Accessibility audit MVP | tabrion-studio | STU-050 | - | 1.5 + 0.5 | Studio | In progress | First part merged in tabrion-studio [#20](https://github.com/peterkarlhuber/tabrion-studio/pull/20) (`79d51dd`); the rest is Studio TODO TD-022 |
-| STU-016 | MVP hardening and security review, G-S1 | tabrion-studio | STU-050, STU-003, STU-031, STU-018, STU-052, STU-053 | G-S1 | 3 + 1 | Studio | Not started |  |
+| STU-016 | MVP hardening and security review, G-S1 | tabrion-studio | STU-050, STU-003, STU-031, STU-018, STU-052, STU-053 | G-S1 | 3 + 1 | Studio | Done | G-S1 passed 2026-11-13 for master `9a5d4faa69f1c974999d258b36258fbc10b3323f` (row G-S1); independent review accepted (re-review at `2a8a229`); STU-026 stays locked behind G-S2, G-R not granted |
 | STU-017 | MVP documentation and tag 0.1.0 | tabrion-studio | STU-016 | - | 2 + 0.5 | Studio | In progress | First part (user guide) merged in tabrion-studio [#27](https://github.com/peterkarlhuber/tabrion-studio/pull/27) (`847757c`); the rest is Studio TODO TD-023 |
 | QA-S1 | Usability walkthrough with Peter (MVP and 1.0) | - | STU-017 | - | 1 + 0 | QA | Not started |  |
 
@@ -235,22 +250,24 @@ Planned effort: 21 + 5.25 agent days.
 
 | WP | Title | Repositories | Depends on | Gate | Effort (impl + review) | Lane | Status | Evidence |
 |---|---|---|---|---|---|---|---|---|
-| STU-020 | Favorites, history, scripts, autocomplete | tabrion-studio | STU-017 | - | 5 + 1.25 | Studio | Not started |  |
-| STU-021 | Export CSV/JSON | tabrion-studio | STU-011, STU-013 (before: STU-017; D-123) | - | 1.5 + 0.5 | Studio | In progress | Backend merged in tabrion-studio [#33](https://github.com/peterkarlhuber/tabrion-studio/pull/33) (`92dd95a`, 2026-11-12; review `stu-021-review.md` accepted with conditions, delta accepted; 1 million rows under 100 MB); the export dialog in the page is open; TD-026 (Studio). Started before STU-017 by the owner-accepted change [D-123](#deviation-log) |
-| STU-022 | DDL, policies, row estimates | tabrion-studio | STU-017 | - | 2 + 0.5 | Studio | Not started |  |
-| STU-023 | ER diagram (xyflow and dagre) | tabrion-studio | STU-017 | - | 3 + 0.75 | Studio | Not started |  |
+| STU-020 | Favorites, history, scripts, autocomplete | tabrion-studio | STU-017 | - | 5 + 1.25 | Studio | Done | Studio TODO at master `807acc6`: backend [#71](https://github.com/peterkarlhuber/tabrion-studio/pull/71), page [#73](https://github.com/peterkarlhuber/tabrion-studio/pull/73), delta review in [#82](https://github.com/peterkarlhuber/tabrion-studio/pull/82); started before STU-017 under the owner's allowance of normal ordering decisions |
+| STU-021 | Export CSV/JSON | tabrion-studio | STU-011, STU-013 (before: STU-017; D-123) | - | 1.5 + 0.5 | Studio | Done | Studio TODO at master `807acc6`: done; the export dialog in #50. History: Backend merged in tabrion-studio [#33](https://github.com/peterkarlhuber/tabrion-studio/pull/33) (`92dd95a`, 2026-11-12; review `stu-021-review.md` accepted with conditions, delta accepted; 1 million rows under 100 MB); the export dialog in the page is open; TD-026 (Studio). Started before STU-017 by the owner-accepted change [D-123](#deviation-log) |
+| STU-022 | DDL, policies, row estimates | tabrion-studio | STU-017 | - | 2 + 0.5 | Studio | Done | Studio TODO at master `807acc6`: backend [#38](https://github.com/peterkarlhuber/tabrion-studio/pull/38), page [#54](https://github.com/peterkarlhuber/tabrion-studio/pull/54); started before STU-017 under the owner's allowance of normal ordering decisions |
+| STU-023 | ER diagram (xyflow and dagre) | tabrion-studio | STU-017 | - | 3 + 0.75 | Studio | Done | Studio TODO at master `807acc6`: done in [#72](https://github.com/peterkarlhuber/tabrion-studio/pull/72); the diagram needs only the explorer of STU-010 |
 | STU-024 | Migration status of the Levuvo formats | tabrion-studio | STU-015 (before: STU-017; D-122) | - | 3 + 0.75 | Studio | Done | Backend merged in tabrion-studio [#30](https://github.com/peterkarlhuber/tabrion-studio/pull/30) (`21349a2`, 2026-11-12; review `stu-024-review.md` accepted with conditions F-1, F-2 fixed), the page in [#32](https://github.com/peterkarlhuber/tabrion-studio/pull/32) (`2cfb380`); minimal view is Studio TD-025. Done before STU-017 by the owner-accepted change [D-122](#deviation-log) |
-| STU-025 | Diagnosis report and backup hints | tabrion-studio | STU-017 | - | 1.5 + 0.5 | Studio | Not started |  |
-| STU-054 | UX acceptance 1.0 (without data editor) | tabrion-studio | STU-020, STU-021, STU-022, STU-023, STU-024, STU-025 | - | 2 + 0.5 | Studio | Not started |  |
-| STU-028 | 1.0 documentation, clean install, release preparation | tabrion-studio | STU-054 | G-R (release only) | 3 + 0.5 | Studio | Not started |  |
+| STU-025 | Diagnosis report and backup hints | tabrion-studio | STU-017 | - | 1.5 + 0.5 | Studio | Done | Studio TODO at master `807acc6`: backend [#40](https://github.com/peterkarlhuber/tabrion-studio/pull/40), page part in [#47](https://github.com/peterkarlhuber/tabrion-studio/pull/47), the command-line report `tabrion-studio diagnose` in [#85](https://github.com/peterkarlhuber/tabrion-studio/pull/85) |
+| STU-054 | UX acceptance 1.0 (without data editor) | tabrion-studio | STU-020, STU-021, STU-022, STU-023, STU-024, STU-025 | - | 2 + 0.5 | Studio | In progress | Studio TODO at master `807acc6`: [#84](https://github.com/peterkarlhuber/tabrion-studio/pull/84) merged with the 1.0 section of `docs/architecture/ux-acceptance.md`; the owner decisions of 2026-11-13 are done (refused writes answer 400/405, only the write mode answers 403); the acceptance waits on the manual QA-S1 |
+| STU-028 | 1.0 documentation, clean install, release preparation | tabrion-studio | STU-054 | G-R (release only) | 3 + 0.5 | Studio | In progress | Studio TODO at master `807acc6`: preparation only (`docs/development/release-checklist.md`, `scripts/release_bom.py`); G-R not granted: no tag, no release, no upload |
 
-### M7b: Conditional package: data editor (only after G-S2, outside the 1.0 acceptance)
+### M7b: Studio 1.1 Data Editor (only after G-S2, outside the 1.0 acceptance; CR-DBX)
 
-Planned effort: 5 + 2.5 agent days.
+Planned effort: 5 + 2.5 agent days. CR-DBX re-plans STU-026 to 3.5 + 1.5 agent days and moves unlocking and the change
+log into the shared write foundation STU-XW-1..5 (planning document 15 section 9.2); the row keeps the plan value until
+the development-start approval. See [CR-DBX](#change-request-cr-dbx-planning-document-15).
 
 | WP | Title | Repositories | Depends on | Gate | Effort (impl + review) | Lane | Status | Evidence |
 |---|---|---|---|---|---|---|---|---|
-| STU-026 | Data editor for non-production (conditional, only after G-S2; not part of the 1.0 acceptance) | tabrion-studio | STU-017 | G-S2 | 5 + 2.5 | Studio | Not started |  |
+| STU-026 | Data editor for non-production (conditional, only after G-S2; not part of the 1.0 acceptance) | tabrion-studio | STU-017 | G-S2 | 5 + 2.5 | Studio | Not started | Planned as Studio 1.1 under CR-DBX; needs G-CX (development start) and stays technically locked until G-S2 |
 
 ### M8: Program close
 
@@ -263,7 +280,11 @@ Planned effort: 4 + 1.5 agent days.
 
 ### Change request CR-DB (planning document 14 section 8)
 
-Added 2026-11-08 after the owner took CR-DB into the program. Milestones per planning document 14 section 9: TAB-CR-1 and TAB-CR-2 in Tabrion 0.2 (M4), the Nodestro work packages in M9, the Studio work packages in M10. ARC-CR-1 is not placed by the plan; it is listed under M9 because the Nodestro edge it records (E-CR-1) is needed first there. Planned effort: 80 + 27.25 agent days (architecture 1.5 + 0.5, Tabrion 3.5 + 1, Nodestro 47.5 + 16, Studio 1.1 27.5 + 9.75). Short forms in "Depends on" (`-4`) refer to the same prefix (NOD-CR-4).
+Added 2026-11-08 after the owner took CR-DB into the program. Since the CR-DBX acceptance of 2026-11-13, M10 is Studio
+1.2 (E-X10), the STU-CR packages also depend on the CR-DBX write foundation and Tabrion building blocks (planning
+document 15 section 9.2: STU-CR-1 on STU-XW-5, STU-CR-2/-3 on TAB-XW-9, STU-CR-4 on TAB-XW-2, STU-CR-5 on TAB-XW-5
+and re-planned to 4 + 1.5, STU-CR-6 on STU-XW-4), and STU-CR-5 writes an Alembic revision instead of running one
+(E-X4). The rows keep the CR-DB values until the development-start approval. Milestones per planning document 14 section 9: TAB-CR-1 and TAB-CR-2 in Tabrion 0.2 (M4), the Nodestro work packages in M9, the Studio work packages in M10. ARC-CR-1 is not placed by the plan; it is listed under M9 because the Nodestro edge it records (E-CR-1) is needed first there. Planned effort: 80 + 27.25 agent days (architecture 1.5 + 0.5, Tabrion 3.5 + 1, Nodestro 47.5 + 16, Studio 1.1 27.5 + 9.75). Short forms in "Depends on" (`-4`) refer to the same prefix (NOD-CR-4).
 
 | WP | Title | Repositories | Depends on | Milestone | Effort (impl + review) | Lane | Status | Evidence |
 |---|---|---|---|---|---|---|---|---|
@@ -293,6 +314,48 @@ Added 2026-11-08 after the owner took CR-DB into the program. Milestones per pla
 | STU-CR-6 | Role wizard and profile export | tabrion-studio | STU-CR-3, TAB-CR-1 | M10 | 2.5 + 1 | Studio | Not started | |
 | STU-CR-7 | i18n de/en, docs, E2E | tabrion-studio | STU-CR-5, -6 | M10 | 3 + 0.75 | Studio | Not started | |
 | STU-CR-8 | Security review G-S3 and fixes | tabrion-studio | STU-CR-7 | M10 | 2 + 2 | Studio | Not started | |
+
+### Change request CR-DBX (planning document 15)
+
+Added 2026-11-13: the owner accepted CR-DBX as a change request of its own (E-X1, E-X2 at 23:28Z; E-X3..E-X13 at
+23:35Z as recommended, with binding refinements of E-X4, E-X5, E-X6 and E-X9). This confirms the **planning, not the
+start of implementation**: work starts only after Studio 1.0 (G-R), the repository migration and a separate
+development-start approval (G-CX). The work packages are defined in planning document 15 section 9 and are not
+repeated here; their rows are added when the development start is approved.
+
+| Area | Work packages | Milestone | Gate | Effort (impl + review) | Status |
+|---|---|---|---|---|---|
+| Tabrion 0.3, experimental (E-X3, E-X11; [ADR 0014](../adr/0014-crdbx-tabrion-scope.md), TODO TB-149) | TAB-XW-1..TAB-XW-10 (10) | none of its own; before M10 | G-T2 for 0.3 with an independent API review (TAB-XW-10) | 19 + 9.5 | Not started (planned) |
+| Shared write foundation (Studio) | STU-XW-1..STU-XW-5 (5) | M7b (Studio 1.1) | G-S2 | 7 + 3 | Not started (planned) |
+| Data Editor | STU-026 (existing) and STU-XDE-1..2 (2) | M7b (Studio 1.1) | G-S2 | 7 + 2.5 | Not started (planned) |
+| Schema Designer | STU-CR-1..8 (existing) and STU-XSD-1..3 (3) | M10 (Studio 1.2) | G-S3 | 32 + 11.25 | Not started (planned) |
+| Database Manager | STU-XDM-1..STU-XDM-7 (7) | M11 (Studio 1.3) | G-S4 | 14 + 6.75 | Not started (planned) |
+
+Arithmetic (planning document 15 section 9.3): new work packages 10 + 5 + 2 + 3 + 7 = 27; effort 79 + 33 = 112 agent
+days, of which 39.75 are existing work packages re-planned (STU-026 from 7.5 to 5, STU-CR from 37.25 to 34.75; 44.75
+before) and 72.25 are new (Tabrion 28.5, Studio 43.75). The 151 work packages and the planned efforts of the
+milestone sections above are unchanged until the development-start approval; the owner's gate time is not in the
+agent days. Including CR-DBX the program plans 178 work packages and 465.2 agent days (estimate: 151 + 27 work
+packages; 397.95 + 72.25 - 5 agent days), as in the planning documents; the approved G-A scope stays at 125 work
+packages and 290.7 agent days.
+
+Binding boundaries of the decisions (the Studio side is recorded in tabrion-studio STU-ADR-0003 and its amendment):
+
+- **E-X4:** direct schema changes only on DEV and TEST databases without existing migration management. For Alembic
+  projects Studio by default only generates revisions and never runs `env.py`. Preview, plan binding (plan hash and
+  fingerprint), a drift check and an explicit confirmation are mandatory.
+- **E-X5:** PostgreSQL backup and restore only through the verified system tools `pg_dump`/`pg_restore`, with safe
+  process execution and secret handling and mandatory restore tests; `pg_dump` is documented as not being a complete
+  backup of global roles and cluster objects. Tabrion has no `pg_dump` wrapper; it adds SQLite `restore()` in 0.3.
+- **E-X6:** role management for PostgreSQL only, through a separate admin profile with the minimal rights it needs;
+  Studio never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION; existing grants, role memberships and indirect
+  privileges are checked on every change; the admin rights themselves are provisioned outside Studio.
+- **E-X7:** PROD stays write-locked; on PROD only a backup. **E-X8:** separate write and admin profiles with their own
+  roles, coupled to the read profile.
+- **E-X9:** G-CX is not an approval to enable write features. Every new write and admin feature stays technically
+  locked until its gate: G-S2 (Data Editor), G-S3 (Schema Designer), G-S4 (Database Manager). An appropriate
+  independent human security review is mandatory before any public release; G-R stays locked.
+- **E-X12:** no new repositories. **E-X13:** see "Milestone names" under [Milestones and gates](#milestones-and-gates).
 
 ## M1 evidence
 
@@ -666,7 +729,8 @@ technically or legally required.
 | O-3 | ~~Manual TM register check (TMview/EUIPO/DPMA/WIPO) before G-T2; rename if conflict. Also assess the prior user of the name (R-36).~~ | GOV-1 | Dropped (owner decision of 2026-11-08 11:26Z): not ordered and removed from G-T2; a later public marketing under the name needs a new assessment |
 | O-4 | G-T1 review of [contract.md](../api/contract.md), including its open points | TAB-002, G-T1 | Done 2026-11-08: passed with conditions (C-1..C-8) |
 | O-5 | Enable private vulnerability reporting in the repository settings (SECURITY.md points to it) | TAB-006 | Optional (owner decision of 2026-11-08 11:26Z) |
-| O-6 | Confirm the CR-DB decisions E-CR-1..E-CR-7 (planning document 14 section 9.1) | G-CR, ARC-CR-1, STU-CR-1 | Open |
+| O-6 | Confirm the CR-DB decisions E-CR-1..E-CR-7 (planning document 14 section 9.1); E-CR-2 is decided in changed form by the CR-DBX acceptance of 2026-11-13 (W-1), so E-CR-1 and E-CR-3..E-CR-7 (Nodestro, M9) remain | G-CR, ARC-CR-1, NOD-CR-1 | Open (narrowed 2026-11-13) |
+| O-10 | Development-start approval for CR-DBX (G-CX), after Studio 1.0 (G-R) and the repository migration; later the gate decisions G-S2, G-S3 and G-S4 and the independent human security review before any public release | TAB-XW-1, STU-XW-5, M7b, M10, M11 | Open (not before Studio 1.0) |
 | O-7 | The same branch protection as O-1 for `peterkarlhuber/tabrion-studio` | GOV-3 | Optional (owner decision of 2026-11-08 11:26Z) |
 | O-8 | Record the planning errata of F-17 (doc 05 section 2.3 lazy-import comment, doc 02 section 9 `tabrion.check(target)`) in the planning documents | G-T1 | Open |
 | O-9 | Upload `assets/branding/social-preview.png` as the social preview in the repository settings (no API for it) | TAB-006 | Optional, not a blocker (owner decision of 2026-11-08 11:26Z) |
