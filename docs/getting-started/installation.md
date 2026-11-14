@@ -11,20 +11,25 @@ pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha
 ## Final versions
 
 A final version is the merge commit of the version-bump pull request that sets a final package version; `v0.1.0`
-final (TABRION TAB-040) is the one that sets `0.1.0`, `v0.2.0` final (TAB-042) the one that sets `0.2.0`. Its full
-SHA is recorded here, in the CHANGELOG section of the version and in `docs/program/STATUS.md` (TAB-040, TAB-042),
-and the next pull request bumps master to the next `.dev0` version (`0.1.1.dev0`, `0.2.1.dev0`), so no other commit
-builds as that version. Consumers pin that commit by its full SHA; a tag (`v0.1.0`, `v0.2.0`) on it is an optional
-label, never what a pin names.
+final (TABRION TAB-040) is the one that sets `0.1.0`, `v0.2.0` final (TAB-042) the one that sets `0.2.0`, and
+`v0.2.1` final (patch) the one that sets `0.2.1`. Its full SHA is recorded here, in the CHANGELOG section of the
+version and in `docs/program/STATUS.md` (TAB-040, TAB-042), and the next pull request bumps master to the next
+`.dev0` version (`0.1.1.dev0`, `0.2.1.dev0`, `0.2.2.dev0`), so no other commit builds as that version. Consumers pin
+that commit by its full SHA; a tag (`v0.1.0`, `v0.2.0`, `v0.2.1`) on it is an optional label, never what a pin names.
 
 | Version | Release commit (full SHA) | Date |
 |---|---|---|
+| `0.2.1` | the merge commit of the version pull request that sets `0.2.1`; its SHA is recorded by the `0.2.2.dev0` follow-up | 2026-11-14 |
 | `0.2.0` | `52353daee6cd6e37a7efc45b74061a48beb2b280` | 2026-11-13 |
 | `0.1.0` | `d5821faa8742dea012abda3b663549c038d76543` | 2026-11-12 |
 
 `0.2.0` adds the Studio APIs, `tabrion.profilefile` and `tabrion.schema` and changes no 0.1 name (no breaking
 change, CHANGELOG `[0.2.0]`). A consumer that needs a 0.2 name declares `tabrion[...]>=0.2,<0.3` and pins the
 `0.2.0` release commit; one that needs only 0.1 names may stay on `>=0.1,<0.2` and `d5821faa`.
+
+`0.2.1` is a patch release with the same public API as `0.2.0` (CHANGELOG `[0.2.1]`): it removes more server text
+from logs (C-02, TB-145), its install hints name the Git pin, and its license is proprietary. A consumer on
+`>=0.2,<0.3` moves by changing only its pin; the redaction fixes are not in `0.2.0` or `0.1.0`.
 
 Pin only a recorded release commit. pip does not check that: it accepts a pin on any master commit whose version is
 inside the range, for example `0.1.1.dev0`; only the architecture check AC-6 (planned, QA-15) refuses it. Always
