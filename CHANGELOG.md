@@ -8,6 +8,17 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- **Experimental, planned for 0.3** (TABRION TAB-XW-6, CR-DBX; not importable while the version is below 0.3): the
+  guided write transaction, contract section 5.11 (moved from addendum A.5). `Transaction.execute_checked(statement,
+  params, *, expect_rowcount, max_affected, timeout)` runs one statement and checks its row count; a mismatch raises
+  the new `tabrion.errors.RowCountMismatch` (`transaction.rowcount_mismatch`, `transaction.too_many_rows`, counts
+  only) and fails the transaction, which rolls back even when the error is caught. The new module `tabrion.rowedit`
+  (`insert_row`, `update_row`, `delete_row`) builds one-row statements with an optimistic, NULL-safe predicate on the
+  old values (PostgreSQL `IS NOT DISTINCT FROM`, SQLite `IS`), bound parameters only and the exact primary key
+  (`rowedit.primary_key_required`) and at least one old value (`rowedit.old_required`); the limits cover the
+  statement's own rows, not those of rules or triggers. False conflicts with floating-point and JSON values are documented (N-5). The
+  names are in `surface.json` with `since` 0.3 and stability X; `tabrion._since` keeps them unimportable before 0.3,
+  and `scripts/api_surface.py` and `tests/unit/test_v03_gate.py` check both states.
 - Docs: TABRION TAB-XW-1 (CR-DBX, Tabrion 0.3 write and DDL primitives). ADR 0015
   (`docs/adr/0015-crdbx-write-and-ddl-primitives.md`): DDL and diff on SQLAlchemy Core and Alembic operations
   (E-X3); revision text only for Alembic projects, never `env.py`, project code or `alembic upgrade` (E-X4); direct

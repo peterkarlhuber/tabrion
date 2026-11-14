@@ -297,6 +297,13 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.Transaction.execute_checked": {
+      "kind": "method",
+      "signature": "(self, statement: Statement, params: Mapping[str, Any] | None = None, *, expect_rowcount: int | None = None, max_affected: int | None = None, timeout: float | None = None) -> int",
+      "since": "0.3",
+      "stability": "X",
+      "staged": "tabrion._sa._v03:_TransactionV03.execute_checked"
+    },
     "tabrion.Transaction.fetch_all": {
       "kind": "method",
       "signature": "(self, statement: Statement, params: Mapping[str, Any] | None = None, *, timeout: float | None = None) -> list[sqlalchemy.Row[Any]]",
@@ -585,6 +592,15 @@
       ],
       "since": "0.1",
       "stability": "S"
+    },
+    "tabrion.errors.RowCountMismatch": {
+      "kind": "exception",
+      "bases": [
+        "TabrionError"
+      ],
+      "since": "0.3",
+      "stability": "X",
+      "staged": "tabrion.errors:_RowCountMismatch"
     },
     "tabrion.errors.SchemaNotCurrent": {
       "kind": "exception",
@@ -1203,6 +1219,27 @@
       "signature": "(text: str | bytes) -> ProfileFile",
       "since": "0.2",
       "stability": "X"
+    },
+    "tabrion.rowedit.delete_row": {
+      "kind": "function",
+      "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any]) -> sqlalchemy.Delete",
+      "since": "0.3",
+      "stability": "X",
+      "staged": "tabrion._sa._rowedit:delete_row"
+    },
+    "tabrion.rowedit.insert_row": {
+      "kind": "function",
+      "signature": "(table: sqlalchemy.Table, values: Mapping[str, Any]) -> sqlalchemy.Insert",
+      "since": "0.3",
+      "stability": "X",
+      "staged": "tabrion._sa._rowedit:insert_row"
+    },
+    "tabrion.rowedit.update_row": {
+      "kind": "function",
+      "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]) -> sqlalchemy.Update",
+      "since": "0.3",
+      "stability": "X",
+      "staged": "tabrion._sa._rowedit:update_row"
     },
     "tabrion.safe_url": {
       "kind": "function",

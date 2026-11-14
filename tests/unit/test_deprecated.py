@@ -205,7 +205,7 @@ def test_tabrion_0_1_deprecates_nothing() -> None:
         "import importlib, sys\n"
         f"sys.path.insert(0, {str(ROOT / 'scripts')!r})\n"
         "import api_surface\n"
-        "for name in api_surface.PUBLIC_MODULES:\n"
+        "for name in api_surface.public_modules():\n"
         "    importlib.import_module(name)\n"
         "from tabrion._deprecated import REGISTRY\n"
         "assert not REGISTRY, sorted(REGISTRY)\n"
@@ -345,7 +345,8 @@ def test_promoting_the_staged_names_is_an_addition(surface_script: Any) -> None:
     }
     staged = [path for path, entry in base.items() if "staged" in entry]
     assert len(staged) >= 2, "surface.json has no 0.2 name"
-    assert not any("staged" in entry for entry in promoted.values())
+    # Names of a later minor (0.3, ADR 0015) are staged in the real surface; the 0.2 names are not.
+    assert not any("staged" in entry for entry in promoted.values() if entry["since"] in ("0.1", "0.2"))
     assert surface_script.check_changelog(base, promoted, "## [Unreleased]\n") == []
     # A stub that changed before its promotion and a staged name dropped again were never public either.
     changed = {**promoted, staged[0]: {**promoted[staged[0]], "signature": "() -> None"}}

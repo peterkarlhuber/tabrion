@@ -1,8 +1,8 @@
 # API contract
 
-The binding public API of Tabrion 0.1 and 0.2: every public name, its signature, semantics, errors and test IDs.
-This is the English version of planning document 04 (revision 3) and the subject of the API freeze **G-T1**
-(TAB-002). Implementation follows in TAB-010..TAB-033.
+The binding public API of Tabrion 0.1 and 0.2, and the 0.3 names moved here from the addendum: every public name, its
+signature, semantics, errors and test IDs. This is the English version of planning document 04 (revision 3) and the
+subject of the API freeze **G-T1** (TAB-002). Implementation follows in TAB-010..TAB-033.
 
 !!! note "M1 status"
     In M1 every name below exists as a typed stub in `src/tabrion/` with the listed signature and `__all__`; each
@@ -23,6 +23,12 @@ This is the English version of planning document 04 (revision 3) and the subject
     [contract addendum 0.3](contract-0.3-addendum.md). It is **planned, not implemented**: none of its names is part
     of this contract, of section 0 or of `surface.json` until its work package (TAB-XW-2..TAB-XW-9) moves it here.
     Design rules: [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md).
+
+!!! note "0.3 status (TAB-XW-6)"
+    The guided write transaction (`Transaction.execute_checked`, `tabrion.rowedit`, `RowCountMismatch`) is implemented
+    and moved here from the addendum: [section 5.11](#511-guided-write-transaction-since-03-experimental-tab-xw-6).
+    Its names are frozen in `surface.json` with `since: "0.3"` and stability X, and stay unimportable while the package
+    version is below 0.3 ([I-122](#511-guided-write-transaction-since-03-experimental-tab-xw-6)).
 
 !!! note "M2 status"
     `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011) and `tabrion.config` (TAB-012) are implemented; what the
@@ -101,6 +107,9 @@ This applies to every layer A function that takes a connection
 | `tabrion.migrations` (extra `migrations`) | `status`, `require_current`, `SchemaStatus` | 0.1 | S | apps, Studio |
 | `tabrion` (layer B) | `Result`, `Column`, `Database.query`, `Transaction.query`, `Transaction.stream`, `Transaction.cancel`, `Database.inspector` | 0.2 | S | Studio |
 | `tabrion` (layer B) | `Database.run_transaction`, `Database.on_begin`, `Transaction.savepoint` | 0.2 | X | apps |
+| `tabrion` (layer B) | `Transaction.execute_checked` (section 5.11) | 0.3 | X | Studio (STU-026) |
+| `tabrion.rowedit` (extra `sqlalchemy`) | `insert_row`, `update_row`, `delete_row` (section 5.11) | 0.3 | X | Studio (STU-026) |
+| `tabrion.errors` | `RowCountMismatch` (section 1.4) | 0.3 | X | Studio |
 | `tabrion.testing` | `configure`, fixtures (section 6) including a database per session, `RoleSetup`, `truncate_tables`, roles without superuser, `require_extension`, `profiles.*` | 0.1 | S | **AX**, **N**, **O** (dev extra), apps |
 | *(internal)* | Vectors `conformance/` and the loader `tests/support/conformance.py` (sections 10, 11) | - | internal | Tabrion's own tests **only** (K-35) |
 
@@ -115,7 +124,7 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 | Module | `__all__` |
 |---|---|
 | `tabrion` | `Column`, `Database`, `Health`, `Profile`, `Result`, `TLSMode`, `TabrionError`, `Transaction`, `__version__`, `safe_url` (`Column` and `Result` since 0.2) |
-| `tabrion.errors` | `Kind`, `Classification`, `classify`, `safe_message`, `DbErrorRedactionFilter`, and the 25 error classes of section 1.4 |
+| `tabrion.errors` | `Kind`, `Classification`, `classify`, `safe_message`, `DbErrorRedactionFilter`, and the 25 error classes of section 1.4 (from 0.3 also `RowCountMismatch`) |
 | `tabrion.sql` | `split_statements` |
 | `tabrion.config` | `safe_url`, `url_from_env` |
 | `tabrion.sqlite` | the names of section 3, plus `Migration` |
@@ -124,6 +133,7 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 | `tabrion.migrations` | `status`, `require_current`, `SchemaStatus` |
 | `tabrion.profilefile` (since 0.2, experimental) | `FORMAT_VERSION`, `ConnectionProfile`, `ProfileFile`, `ProfileFileError`, `ProfileIssue`, `SecretRef`, `parse`, `load`, `dump` (section 5.9) |
 | `tabrion.schema` (since 0.2, experimental, extra `sqlalchemy`) | `ColumnShape`, `TableShape`, `SchemaSnapshot`, `SchemaDifference`, `snapshot`, `fingerprint`, `compare` (section 5.10) |
+| `tabrion.rowedit` (since 0.3, experimental, extra `sqlalchemy`; not importable before 0.3) | `delete_row`, `insert_row`, `update_row` (section 5.11) |
 | `tabrion.testing` | `configure`, `profiles`, the fixtures of section 6 (including `tabrion_role_setup`), `postgres_server_version`, `truncate_tables`, `require_extension`, `RoleSetup`, `TestRoles`, `PostgresSchema`, `PostgresDatabaseHandle` |
 | `tabrion.testing.profiles` | `SQLiteConnect`, `ProfileCase`, `PortabilityCase`, `sqlite_profile_cases`, `portability_cases` |
 
@@ -132,6 +142,11 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 they were staged in a private module, and since 0.2 (TAB-042) they are public. `scripts/api_surface.py` (TAB-023, CI
 job "api surface") compares the code with that file on every pull request: a changed signature fails, and a name
 whose `since` is newer than the package version must not be importable from its public path.
+
+**0.3 names are not importable before 0.3** (ADR 0015 Consequences, the same rule). `Transaction.execute_checked`,
+`tabrion.errors.RowCountMismatch` and the module `tabrion.rowedit` are frozen with `since: "0.3"`, stability X and a
+`staged` location; below 0.3 the class lacks the method, the error module lacks the name and `import tabrion.rowedit`
+raises `ImportError`. The version alone decides (I-122); there is no flag or setting.
 
 Layer B names are exported lazily (PEP 562). Without SQLAlchemy, `tabrion.Database` raises `ImportError` with the
 hint `pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha>"`; `tabrion.migrations` without Alembic and
@@ -317,6 +332,8 @@ class SchemaNotCurrent(TabrionError)        # layer B Alembic gate, details curr
 class RoleMissing(TabrionError)             # "postgres.role_missing"
 class RoleUnsafe(TabrionError)              # "postgres.role_unsafe", details reasons (comma list)
 class UnsafePath(TabrionError)              # "sqlite.symlink" / "sqlite.unsafe_path" / "sqlite.unsafe_owner" / "sqlite.unsafe_mode"
+class RowCountMismatch(TabrionError)        # 0.3, X: "transaction.rowcount_mismatch" (details expected, actual)
+                                            # and "transaction.too_many_rows" (details limit, actual); section 5.11
 ```
 
 **Drop-in rule:** the codes equal the Nodestro codes without the prefix `storage.`. Nodestro maps
@@ -1390,6 +1407,63 @@ def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDif
 | b | The fingerprint is the SHA-256 of the snapshot's canonical JSON (`to_json`: sorted keys, no blanks, ASCII) with the prefix `v1:sha256:`. Table creation order and data do not count; column order does, and `compare` names a new order of the columns both snapshots have as `column_order` (table only, not breaking), so a changed fingerprint always has a named difference. The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy upgrade that writes a type differently changes the fingerprint, and `compare` then names the column (`column_type`) |
 | c | `compare` refuses snapshots of different dialects (`UsageError("schema.dialect_mismatch")`); a difference names a table and a column, never data. `from_json` refuses anything but a format-1 snapshot, including deep nesting and a `primary_key` that is not a list (`UsageError("schema.invalid_snapshot")`, no `__context__`) |
 | d | Tests: `tests/unit/test_schema.py` (SQLite: shape, stable and sensitive fingerprint, selection, every difference kind including `column_order`, views left out, JSON round trip and refusals, read-only inspector, table cap) and `tests/postgres/test_schema_postgres.py` (types such as `TEXT[]` and `TIMESTAMP WITH TIME ZONE`, a composite primary key, drift) |
+
+### 5.11 Guided write transaction (since 0.3, experimental; TAB-XW-6)
+
+Change request CR-DBX (planning document 15, ADR 0015, section 9 of the contract addendum's A.5): the building block
+under Studio's Data Editor (STU-026). One write statement whose affected row count is checked, and row statements with
+an optimistic predicate on the old values, so a row changed by someone else since it was read is reported as a
+conflict instead of being overwritten. Tabrion builds and checks; it never asks, confirms or logs (ADR 0014,
+ADR 0015 section 7). No upsert and no merge (specification section 1.3).
+
+```python
+class Transaction:
+    def execute_checked(
+        self,
+        statement: Statement,
+        params: Mapping[str, Any] | None = None,
+        *,
+        expect_rowcount: int | None = None,
+        max_affected: int | None = None,
+        timeout: float | None = None,
+    ) -> int: ...  # 0.3, X
+
+
+# module tabrion.rowedit (extra sqlalchemy)
+def insert_row(table: sqlalchemy.Table, values: Mapping[str, Any]) -> sqlalchemy.Insert: ...
+def update_row(
+    table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]
+) -> sqlalchemy.Update: ...
+def delete_row(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any]) -> sqlalchemy.Delete: ...
+```
+
+- `execute_checked` runs one statement and compares the affected row count: a count other than `expect_rowcount`
+  or above `max_affected` raises `RowCountMismatch` and **marks the transaction failed**: every later statement raises
+  `UsageError("transaction.failed")` and leaving the block rolls back, even if the caller caught the error. A
+  `read()` transaction refuses it (`ReadOnlyViolation`). One of the two limits is required
+  (`UsageError("transaction.limit_required")`).
+- `update_row` and `delete_row` build the optimistic predicate `WHERE <pk> = :key AND <column> IS NOT DISTINCT FROM
+  :old` (SQLite `IS`) for every column in `old`, with bound parameters only. A table without a primary key, or a
+  `key` that is not exactly the primary key, raises `UsageError("rowedit.primary_key_required")` (no `rowid` or
+  `ctid` as a write key). `old` must name at least one column (`UsageError("rowedit.old_required")`, review L-1 of
+  #78): callers such as the Data Editor (STU-026) pass **every column they displayed**, so a concurrent change of any
+  shown value is a conflict. An optimistic conflict is `RowCountMismatch("transaction.rowcount_mismatch")` with
+  `actual` 0 when the statement runs with `expect_rowcount=1`.
+- **What the limits cover (review I-1 and I-2 of #78):** `expect_rowcount` and `max_affected` bound the rows of the
+  statement itself only. Rows that PostgreSQL rules (`DO ALSO`, `DO INSTEAD`) or triggers on either engine change as
+  a side effect are neither counted nor limited, and they commit with the statement; a consumer's preview must name
+  the rules and triggers of the target table (Studio TX-16). `max_affected` limits what is **committed**, not the
+  work: the count is checked after the statement ran to its end, and the rollback undoes it; the bound on the work
+  (time, and through it locks) is `timeout` (and the server's `lock_timeout`).
+- **N-5 (ADR 0015 section 9):** the comparison is exact, so floating-point and JSON values that changed on their way
+  through the client can report a false conflict (the safe side: nothing is written); see I-121 for what Tabrion
+  does against it and the residual risk, and the guide [Transactions](../guides/transactions.md#guided-writes-03-experimental).
+
+| # | Rule |
+|---|---|
+| I-120 | **`execute_checked`.** (a) Arguments are checked before anything runs: `expect_rowcount` and `max_affected` are `int` of at least 0 (`TypeError`, `ValueError`; `bool` is refused), `timeout` as everywhere (section 5.3), `params` one mapping (a sequence, that is `executemany`, raises `TypeError`: its count is a sum the limits cannot reason about); then the thread and state (`database.wrong_thread`, `database.transaction_ended`, `transaction.failed`), then `transaction.limit_required`, then `read()` (`ReadOnlyViolation("database.read_only")`, nothing sent, the transaction stays usable). (b) The statement runs under the transaction's rules of section 5.3 and I-102: the timeout per dialect (PostgreSQL `SET LOCAL statement_timeout`, SQLite the deadline of the progress handler; `StatementTimeout`), `cancel()`, error translation (I-39). (c) The count is the driver's `rowcount` with SQLAlchemy's `preserve_rowcount` (also for an `INSERT`, whose cursor SQLAlchemy closes early otherwise), never clamped: an unknown count (`-1`, a `SELECT` on SQLite) is a mismatch (`transaction.rowcount_mismatch`, `expected` may be `None`, `actual` -1). `max_affected` is checked first (`transaction.too_many_rows`), then `expect_rowcount`. The limits are checked after the statement ran: on both engines the transaction's rollback undoes what it changed. (d) **One command:** as `query` (I-104) the statement goes through PostgreSQL's extended protocol, so a text with several commands is refused (`StatementError`, 42601) and the count is always that of the one command; SQLite refuses a second statement itself; a statement that ends the transaction is refused before it is sent, and one that did is caught after it (`database.transaction_ended`, I-104). (e) **Failed transaction:** after a mismatch, every later call of the transaction (`execute`, `fetch_*`, `query`, `stream`, `savepoint`, `execute_checked`, `connection`) raises `UsageError("transaction.failed")` without sending anything; the end of the block rolls back and raises the mismatch again (a fresh `RowCountMismatch` with the same code and details, without `__context__`) when the caller caught it. (g) **Statement only:** the count is the driver's count of the statement itself; changes made by PostgreSQL rules or by triggers are not in it and not limited by it, and they commit with the statement (`tests/postgres/test_rowedit_postgres.py::test_rules_and_triggers_are_not_counted`, `tests/unit/test_execute_checked.py::test_trigger_changes_are_not_counted`). (h) **Committed, not work:** the limits are checked after the statement ran, so a statement over millions of rows runs to its end and is then rolled back; `timeout` is the bound on the work (`test_max_affected_is_checked_after_the_work`). (f) **No values:** `RowCountMismatch` carries counts only (`details` `expected`, `actual` or `limit`, `actual`), no `statement`, no `original`; the parameters and the statement are dropped from the frames on the way out (I-76). Tests: `tests/unit/test_execute_checked.py`, `tests/postgres/test_rowedit_postgres.py` (rollback on a mismatch, a caught mismatch still rolls back, `max_affected` over a multi-row statement, several commands, timeout on both engines, read-only, canary values in no error, frame or log) |
+| I-121 | **`tabrion.rowedit`.** (a) `table` must be a `sqlalchemy.Table` (`TypeError`); `values`, `key`, `old` and `new` are mappings of column keys (`str`) of that table: another key raises `ValueError` whose message names neither the key nor a value. `key` must name exactly the primary key columns (also a composite key), and its values must not be `None` (`ValueError`); `old` names at least one column (`UsageError("rowedit.old_required")`; an empty `old` would turn the optimistic check off, review L-1 of #78), and callers pass every column they displayed; `new` names at least one column; an empty `values` inserts the defaults. (b) Identifiers are quoted by the dialect's compiler; every value is a `bindparam` of the column's type, or SQL `NULL` for `None` (also for a JSON column, never the JSON text `null`); a SQL construct passed as a value is bound as a parameter, never compiled into the text. (c) The predicate of each `old` column is a SQLAlchemy construct compiled per dialect: PostgreSQL `IS NOT DISTINCT FROM`, SQLite `IS` (both NULL-safe: `None` matches only `NULL`). Text columns (`String` and its subclasses, not `Enum`) compare under a binary collation, PostgreSQL `COLLATE "C"`, SQLite `COLLATE BINARY`, so a case-insensitive or nondeterministic collation cannot hide a concurrent change that only that collation ignores. PostgreSQL `json` columns, which have no equality operator, compare as `jsonb` (both sides cast; key order, blanks and duplicate keys do not count). On PostgreSQL a floating-point value is cast to the column's type, so a `real` column compares `real` with `real` (psycopg sends a Python `float` as `float8`, and `0.1::real` never equals `0.1::float8`). (d) **Residual risk (N-5):** the comparison is otherwise exact as stored. A floating-point value that was rounded or formatted on its way through the client, a SQLite JSON column whose stored text differs from SQLAlchemy's serialization of the value read (blanks, key order, number form), a SQLite `NaN` (stored as `NULL`), a PostgreSQL `real` value at a double-rounding edge and a column type without an equality operator (`xml`, `point`: `StatementError`) report a false conflict or an error: nothing is written. A type with its own case-insensitive equality operator (`citext`) is compared by that operator, so a concurrent change of only the case is not detected there; leave such columns out of `old` or compare them yourself. (e) The functions only build statements; run them with `execute_checked(statement, expect_rowcount=1)`. Tests: `tests/unit/test_rowedit.py` (with `test_float_and_json_old_values_may_conflict`, ADR 0015 section 9), `tests/postgres/test_rowedit_postgres.py` |
+| I-122 | **Staged until 0.3** (ADR 0015 Consequences; the mechanism of I-106). The implementation lives in private modules: the mixin `tabrion._sa._v03._TransactionV03`, the functions in `tabrion._sa._rowedit`, the error as `tabrion.errors._RowCountMismatch` (whose `__name__` is `RowCountMismatch`). `tabrion._since.released("0.3")` reads `tabrion._version.__version__`: below 0.3 `Transaction` does not inherit the mixin, `tabrion.errors` does not bind `RowCountMismatch` (nor list it in `__all__`) and `import tabrion.rowedit` raises `ImportError`; from 0.3 on all three are public with the signatures frozen in `surface.json`. `scripts/api_surface.py` checks both states (`MODULE_SINCE` for the module) and `tests/unit/test_v03_gate.py` proves them on copies of the package at 0.2 and 0.3; Tabrion's own tests use the private `tabrion._sa._staged` classes until then. The 0.3 switch drops the `staged` keys of `surface.json` (as TAB-042 did for 0.2) |
 
 ## 6. `tabrion.testing` (extra `testing`)
 

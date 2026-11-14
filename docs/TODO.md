@@ -25,6 +25,8 @@
 > [ADR 0014](adr/0014-crdbx-tabrion-scope.md).
 > TAB-XW-1 2026-11-14 (branch `claude/project-thread-rdo6g3-tabxw1`): TB-149 in progress (ADR 0015, contract addendum
 > 0.3, specification section 1.3), TB-148 (1) decided for 0.3 (multi-host stays refused, W-10).
+> TAB-XW-6 2026-11-14 (branch `claude/project-thread-rdo6g3-tabxw6`): TB-149 stays in progress, TAB-XW-6 done
+> (guided write transaction, contract section 5.11, staged until 0.3); counts unchanged.
 
 ## Summary
 
@@ -589,7 +591,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 in review; TAB-XW-2..TAB-XW-10 open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -602,9 +604,21 @@ required (owner decision of 2026-11-08 11:26Z).
   primitives only without enable semantics; the gates G-S2/G-S3/G-S4 are Studio's), the planned contract addendum 0.3
   (names, signatures, error codes of TAB-XW-2..TAB-XW-9, marked planned and not implemented) and the CR-DBX
   clarification of specification sections 1.3 and 8.
+- **TAB-XW-6 done** (branch `claude/project-thread-rdo6g3-tabxw6`): the guided write transaction.
+  `Transaction.execute_checked` (row count against `expect_rowcount` and `max_affected`, `RowCountMismatch` marks the
+  transaction failed and the block rolls back even when the error is caught, one command through PostgreSQL's
+  extended protocol, timeout per dialect) and `tabrion.rowedit` (`insert_row`, `update_row`, `delete_row`: primary
+  key exactly, bound parameters only, NULL-safe optimistic predicate, binary collation for text, PostgreSQL `json` as
+  `jsonb` and `real` as `real`), moved from addendum A.5 into contract section 5.11 (I-120..I-122). The names are in
+  `surface.json` with `since` 0.3, `X` and a `staged` location and are unimportable below 0.3 through
+  `tabrion._since` (the C-6 mechanism, proven at 0.2 and 0.3 by `tests/unit/test_v03_gate.py`). N-5 is
+  `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict`, with the residual risk in I-121 (d) and
+  the guide [Transactions](guides/transactions.md#guided-writes-03-experimental). Review of #78 (planning folder
+  `reviews/pr78-tabxw6-review.md`, ACCEPTED) folded in: L-1 an empty `old` is refused (`rowedit.old_required`),
+  I-1 rules and triggers are not counted (documented, PostgreSQL rule probe as a test), I-2 `max_affected` bounds
+  what is committed, `timeout` the work (I-120 g, h).
 - **Open (follow-up work packages):** TAB-XW-2 `tabrion.schema` v2; TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
-  (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-6 `Transaction.execute_checked`
-  and `tabrion.rowedit`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
+  (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
   TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
   its names to `surface.json` (`since` 0.3, `X`).
@@ -630,7 +644,8 @@ required (owner decision of 2026-11-08 11:26Z).
   - **D-3:** the caller-declared environment is acceptable: a required keyword without a default, typed
     `Literal["dev", "test"]`, a guard rail and not a boundary; Studio fills it from the user-local profile.
   - **D-4:** v2 fingerprints stay opt-in in 0.3 (`snapshot(level=1)` stays the default).
-- **Next step:** review and merge TAB-XW-1; then TAB-XW-2 (and in parallel TAB-XW-6..9, which depend on nothing).
+- **Next step:** TAB-XW-2 (and in parallel TAB-XW-7..9, which depend on nothing); at the 0.3 switch the `staged` keys
+  of the 0.3 names go and `tabrion._since` decides nothing any more (as TAB-042 for 0.2).
 
 ## Tests and quality assurance
 

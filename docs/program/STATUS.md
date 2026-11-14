@@ -7,7 +7,10 @@ its 27 new work packages are listed by reference in [their own section](#change-
 and are not in the 151 until the development-start approval. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-14, TABRION TAB-XW-1 (CR-DBX): ADR 0015, the planned contract addendum 0.3 and the
+> **Last update:** 2026-11-14, TABRION TAB-XW-6 (CR-DBX): the guided write transaction (`Transaction.execute_checked`,
+> `tabrion.rowedit`, `RowCountMismatch`), experimental 0.3 and unimportable before 0.3; contract section 5.11 (moved
+> from addendum A.5), the CR-DBX section.
+> Before: 2026-11-14, TABRION TAB-XW-1 (CR-DBX): ADR 0015, the planned contract addendum 0.3 and the
 > CR-DBX clarification of specification section 1.3; the G-CX row and O-10 record that S-1..S-4 are proven (planning
 > file `cr-dbx-startbedingungen.md`, about 17:55Z), the CR-DBX section the TAB-XW-1 status. Docs only, no code.
 > Before: 2026-11-14, QA-17, QA-19, QA-20 and QA-23 done: nodestro-runtime #180 (`f7fc3a1`) merged,
@@ -345,7 +348,7 @@ section 9 and are not repeated here; their rows are added when the development s
 
 | Area | Work packages | Milestone | Gate | Effort (impl + review) | Status |
 |---|---|---|---|---|---|
-| Tabrion 0.3, experimental (E-X3, E-X11; [ADR 0014](../adr/0014-crdbx-tabrion-scope.md), [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md), TODO TB-149) | TAB-XW-1..TAB-XW-10 (10) | none of its own; before M10 | G-T2 for 0.3 with an independent API review (TAB-XW-10) | 19 + 9.5 | In progress: TAB-XW-1 in review (ADR 0015, [contract addendum 0.3](../api/contract-0.3-addendum.md), specification section 1.3); TAB-XW-2..TAB-XW-10 not started |
+| Tabrion 0.3, experimental (E-X3, E-X11; [ADR 0014](../adr/0014-crdbx-tabrion-scope.md), [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md), TODO TB-149) | TAB-XW-1..TAB-XW-10 (10) | none of its own; before M10 | G-T2 for 0.3 with an independent API review (TAB-XW-10) | 19 + 9.5 | In progress: TAB-XW-1 done ([#76](https://github.com/peterkarlhuber/tabrion/pull/76), `9174675`: ADR 0015, [contract addendum 0.3](../api/contract-0.3-addendum.md), specification section 1.3); TAB-XW-6 in review (guided write transaction: `Transaction.execute_checked`, `tabrion.rowedit`, `RowCountMismatch`; [contract section 5.11](../api/contract.md#511-guided-write-transaction-since-03-experimental-tab-xw-6), I-120..I-122; staged until 0.3; N-5 test `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict`); the other work packages as their pull requests record |
 | Shared write foundation (Studio) | STU-XW-1..STU-XW-5 (5) | M7b (Studio 1.1) | G-S2 | 7 + 3 | Not started (planned) |
 | Data Editor | STU-026 (existing) and STU-XDE-1..2 (2) | M7b (Studio 1.1) | G-S2 | 7 + 2.5 | Not started (planned) |
 | Schema Designer | STU-CR-1..8 (existing) and STU-XSD-1..3 (3) | M10 (Studio 1.2) | G-S3 | 32 + 11.25 | Not started (planned) |
