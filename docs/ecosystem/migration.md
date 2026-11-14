@@ -111,7 +111,7 @@ nodestro-api has no `docs/api-consumers.md` of its own: it imports only `tabrion
 | Standalone pin files | axentra and orkexa `requirements/tabrion.txt` pin `af0458d` by full SHA |
 | Studio lock | nodestro-studio `25095d2`: tabrion `af0458d`, orkexa `3d2aef5`, nodestro-runtime `8ee7eca`, nodestro-api `6ef484d`, axentra `3b80af1` |
 | api portable build | `portable_locks/tabrion.txt` names the archive of `af0458d` with a SHA-256 hash |
-| pip floor | axentra and orkexa test pip 25.0 and the current pip. nodestro-runtime, nodestro-api and nodestro-studio require `pip>=26.1` (the lock uses `--uploaded-prior-to`). pip 26 accepts a pre-release when it is the only fit (documented deviation in nodestro-studio #194) |
+| pip floor | axentra and orkexa test pip 25.0 and the current pip. nodestro-runtime, nodestro-api and nodestro-studio require `pip>=26.1` (binding owner decision of 2026-11-14 18:52Z): the lock uses `--uploaded-prior-to` and its git references as constraints; nodestro-studio `scripts/pip_cutoff.py` refuses an older pip early with an upgrade hint (#197, `358e2bb`). pip 26 accepts a pre-release when it is the only fit (documented deviation in nodestro-studio #194) |
 
 The API stayed compatible: `0.2.1` has no API change against `0.2.0`, and the consumer suites passed on `af0458d`
 before the range switch (G-T2 nightly downstream job 132432986041). The QA audit of 2026-11-14 found the
@@ -131,9 +131,12 @@ was a stale lock, not a code defect, and both were rerun.
     MIG-T-AXE-1..9 (axentra #64); `catalog.json` identical, `roles.json` changed for the stricter check (#87).
   - orkexa `tests/test_sqlite_storage_snapshots.py` (#97).
 - **QA-7 (direct consumer tests).** axentra, orkexa and nodestro-runtime each have `docs/api-consumers.md` (23, 24 and
-  31 names) checked by `check_tabrion_api.py --check-export` in CI, and every name has a test.
-- **QA-16 (import contracts).** axentra and orkexa `pyproject.toml` `[tool.importlinter]` plus
-  `tests/architecture/test_forbidden_probe.py` (one mutation probe per contract).
+  31 names) checked by `check_tabrion_api.py --check-export` in CI, and every name has a test. nodestro-api has its own
+  list and CI step (#142, `8155ad8`). `--surface` checks `__x__` names by their owner in every copy (source
+  tabrion-studio #113, `a94cdc3`), and axentra's lint job runs it (#96, `8369bf3`).
+- **QA-16 (import contracts).** axentra, orkexa and tabrion-studio `pyproject.toml` `[tool.importlinter]` plus
+  `tests/architecture/test_forbidden_probe.py` (one mutation probe per contract; tabrion-studio `33b8e4b`, green on
+  master `ff3d88e`, run 43621888750).
 - **QA-17 (dependency policy).** nodestro-studio `tests/test_dependency_policy.py` (8 negative cases, cycles);
   vendored copies with red probes in axentra, orkexa, nodestro-api #140 (`f1755fe`), nodestro-integrations #91
   (`2db82e7`), nodestro-examples #105 (`39c8afa`) and nodestro-runtime #180 (`f7fc3a1`).
@@ -185,21 +188,21 @@ By design (plan document 06 section 9):
 | Move to SQLAlchemy | Nodestro, Axentra | ADR 0003, K-30 |
 | Vendoring of the LDP vectors | all | K-35 |
 
-Deferred or open after W6:
+Deferred or open after W6 (owner acceptance of the migration report, 2026-11-14 18:52Z):
 
-- **Windows reparse points and OneDrive (RT-080).** The re-check of runtime #171 tracks the refusal on a real Windows
-  machine as a gate before the first desktop release. nodestro-runtime #181 (test and RT-080 update) is merged
-  (`f8e4308`).
-- **`POISON_VERSION`** in the shared `check_tabrion_source.py` (studio and its copies) still names `0.1.0`. It should
-  move to `0.2.x`.
-- **Nodestro pip floor.** The cells for orkexa[postgres] standalone, nodestro-api[server], pip 25.0 and the negative
-  resolutions are covered by nodestro-studio #194 (run 43623198089 green). An owner decision on the Nodestro pip
-  floor (26.1) is open.
-- **QA-7 and QA-17 rest.** nodestro-api has no `check_tabrion_api.py` or `docs/api-consumers.md`. The `--surface`
-  check fails on `SessionSettings.__dataclass_fields__` in axentra and is not run in CI anywhere.
-  The tabrion-studio part of QA-16 is open.
-- **`pg_write_all_data`.** Tabrion's `grant_runtime_role` and `inspect_role` do not refuse it, although it bypasses a
-  protected migrations table. axentra #87 and runtime #169 refuse it locally. A Tabrion follow-up is needed.
+- **Windows reparse points and OneDrive (RT-080).** A binding gate before the first desktop release: the refusal is
+  checked on a real Windows machine (nodestro-desktop TODO DSK-021, #78 `4ae3dec`; nodestro-runtime #181 `f8e4308`).
+- **Nodestro pip floor: decided.** `pip>=26.1` is binding for nodestro-runtime, nodestro-api, nodestro-studio, the
+  server image and the desktop backend (nodestro-studio #197 `358e2bb`, nodestro-desktop #78, nodestro-server #89
+  `665bc67`). axentra and orkexa keep pip 25.0.
+- **`POISON_VERSION`: done.** The shared `check_tabrion_source.py` serves a poisoned `0.2.99` (inside `>=0.2,<0.3`,
+  above the pinned `0.2.1`): nodestro-studio #198 (`60bc2f1`), nodestro-runtime #182 (`41deb16`), orkexa #102 (`c5c69dd`), axentra #97 (`aea059f`) and
+  tabrion-studio #110 (`782bc8e`).
+- **QA-7 and QA-16 rest: done.** See the test evidence above.
+- **`pg_write_all_data`: fixed (TB-150, D-124).** `grant_runtime_role` refuses a member of any predefined role before
+  granting and re-checks inside the transaction (#77). axentra words the new reason `predefined_role` (#98,
+  `e64ed63`). Open: TB-036 (`check_role`/`diagnose` do not report predefined roles) and the write re-check after the
+  REVOKE (TB-150 item 3).
 - **Lock drift.** The studio lock holds axentra `3b80af1` (master `b64edbb`, docs only) and nodestro-integrations
   `62138e2`.
 - **CR-DBX** (planning document 15): implementation not started. Migration including W6 is its start condition S-3.

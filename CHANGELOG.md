@@ -8,6 +8,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Docs: migration follow-ups after the owner accepted the migration report (2026-11-14 18:52Z).
+  `docs/ecosystem/migration.md` and `docs/program/STATUS.md` record QA-16 as done including tabrion-studio, the QA-7
+  rest, the binding Nodestro pip floor 26.1, `POISON_VERSION` 0.2.99 in every copy, the TB-150 fix and the
+  Windows/OneDrive release gate (DSK-021). `docs/TODO.md` TB-012 status note. No code change.
 - Docs: TABRION TAB-XW-1 (CR-DBX, Tabrion 0.3 write and DDL primitives). ADR 0015
   (`docs/adr/0015-crdbx-write-and-ddl-primitives.md`): DDL and diff on SQLAlchemy Core and Alembic operations
   (E-X3); revision text only for Alembic projects, never `env.py`, project code or `alembic upgrade` (E-X4); direct
