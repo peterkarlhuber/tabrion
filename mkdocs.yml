@@ -82,6 +82,7 @@ nav:
       - Troubleshooting: guides/troubleshooting.md
   - Specification: specification.md
   - API contract: api/contract.md
+  - "API contract addendum 0.3 (planned)": api/contract-0.3-addendum.md
   - API consumers: api-consumers.md
   - Development:
       - API stability policy: development/api-stability.md
@@ -101,6 +102,7 @@ nav:
       - "0012 Architecture checks": adr/0012-architecture-checks.md
       - "0013 Axentra adopts Tabrion": adr/0013-axentra-adopts-tabrion.md
       - "0014 Tabrion scope for CR-DBX": adr/0014-crdbx-tabrion-scope.md
+      - "0015 CR-DBX write and DDL primitives": adr/0015-crdbx-write-and-ddl-primitives.md
   - Program:
       - Status: program/STATUS.md
       - Risks and rollback: program/risks.md

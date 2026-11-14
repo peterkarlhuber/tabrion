@@ -1,0 +1,249 @@
+# ADR 0015: Tabrion 0.3 write and DDL primitives: SQLAlchemy and Alembic, revision text only, plan binding and guards
+
+- **Status:** Accepted (2026-11-14, TABRION TAB-XW-1). The content was decided by the owner on change request CR-DBX
+  (2026-11-13 23:35Z: E-X3..E-X13 as recommended, with the binding refinements of E-X4, E-X5, E-X6 and E-X9 in
+  planning document 15 section 3.1). The development start is the conditional approval G-CX of 2026-11-14 11:01Z;
+  its start conditions S-1..S-4 are proven in the planning file `cr-dbx-startbedingungen.md` (overall status met,
+  2026-11-14 about 17:55Z, tabrion master `4eca6ac`). This record writes the design down; it implements nothing and
+  enables nothing.
+- **Plan reference:** planning document 15 sections 3, 3.1, 3.2, 5, 6, 7, 9.1 and 9.4; work package TAB-XW-1;
+  builds on [ADR 0014](0014-crdbx-tabrion-scope.md) (scope) and [ADR 0007](0007-no-shared-migration-runner.md) (no
+  runner).
+
+## Context
+
+[ADR 0014](0014-crdbx-tabrion-scope.md) decided **what** of CR-DBX lives in Tabrion: the schema model v2, DDL, the
+diff into a migration plan, an executor, a guided write transaction, SQLite `restore()` and file deletion, role DDL
+and PostgreSQL `create_database`/`drop_database` (TAB-XW-2..TAB-XW-9). It left to TAB-XW-1 **how** these building
+blocks behave, and that is what the owner's refinements of 2026-11-13 23:35Z bind:
+
+- **E-X4 (refined):** direct schema changes only on DEV and TEST databases without existing migration management.
+  For Alembic projects only revisions are produced (a text file, written into the project by Studio after project
+  trust); no `env.py`, no project code and no `alembic upgrade` is ever run. Preview, plan binding (plan hash and
+  fingerprint), a drift check right before execution (abort on any difference) and an explicit confirmation are
+  mandatory for every change.
+- **E-X5 (refined):** PostgreSQL backup and restore only through verified system `pg_dump`/`pg_restore`, run by
+  Studio; restore tests are mandatory; `pg_dump` is not a complete backup.
+- **E-X6 (refined):** role management never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, neither directly
+  nor through membership in a role that has them; existing privileges, memberships and indirect privileges are
+  checked before every change.
+- **E-X9 (refined):** G-CX enables no write function; every new write or admin function stays technically locked
+  until its area gate (G-S2, G-S3, G-S4).
+
+Two contradictions of planning document 15 section 2 touch this repository: W-6 (change request 14 wanted to "run"
+Alembic revisions "through `tabrion.migrations`", which only offers `status`/`require_current` and never runs
+`env.py`) and W-7 (the non-goals of specification section 1.3 against the new building blocks). Both are resolved in
+the plan (section 2.1); this record carries the resolution into the repository.
+
+## Decision
+
+### 1. Built on SQLAlchemy and Alembic, no own builder (E-X3)
+
+- Schema DDL is produced by SQLAlchemy Core (`CreateTable`, `CreateIndex`, `DropTable`, the dialect compilers) and
+  by Alembic operations, with identifiers quoted by the dialect's preparer. Role and database DDL (TAB-XW-8,
+  TAB-XW-9), which SQLAlchemy does not model, is composed with `psycopg.sql` and `Identifier`, as
+  `grant_runtime_role` does today. Beyond that Tabrion only sends fixed statements without identifiers
+  (`PRAGMA foreign_keys`, `SET LOCAL lock_timeout`).
+- The non-goal "Own query language or builder" of [specification section 1.3](../specification.md#13-non-goals-binding)
+  stays: composing SQLAlchemy and Alembic constructs is not a builder. Section 1.3 gets a CR-DBX clarification in
+  the same pull request.
+- The new modules are experimental (`X`) in Tabrion 0.3 (E-X11) and need the extra `sqlalchemy`; revision text needs
+  the extra `migrations` (Alembic). The standard-library core gains only the SQLite primitives of TAB-XW-7.
+
+### 2. Alembic projects get revision text only (E-X4)
+
+- `tabrion.plan.revision_text` returns a **string**. Tabrion never writes it to a project, never reads a project's
+  directory, `alembic.ini` or `env.py`, never imports project code and never calls `alembic upgrade`,
+  `alembic.command.*` or a `MigrationContext` that runs revisions. Writing the file after project trust is the
+  consumer's job (Studio STU-XSD-3).
+- The rendered text is inert data from Tabrion's point of view: every identifier and the message are written as
+  Python string literals (`repr`), never as code, so a table name or a message cannot inject statements into the
+  revision file.
+- `tabrion.migrations` keeps `status` and `require_current` (ADR 0007); nothing in 0.3 makes it a runner.
+
+### 3. Direct execution only without migration management, declared DEV or TEST (E-X4)
+
+- The executor (`tabrion.plan.execute_plan`, TAB-XW-5) runs one confirmed plan **once**: no version table, no
+  ordering, no history, no "upgrade to head". It is not a migration runner ([ADR 0007](0007-no-shared-migration-runner.md)
+  stays).
+- It refuses a database with migration management before it runs anything (`PlanRefused`, reason
+  `migration_managed`): an `alembic_version` table, the Nodestro and Axentra bookkeeping tables
+  (`nodestro_schema_migrations`, `axentra_schema_migrations`) or a SQLite `user_version` above 0
+  (`tabrion.sqlite.migrate`). `tabrion.plan.migration_markers` reports the same markers for a preview.
+- The caller must declare the environment (`environment="dev"` or `"test"`); anything else is refused (reason
+  `environment`). Tabrion cannot know a database's environment: this is a second lock behind the consumer's own
+  PROD lock (E-X7: PROD stays technically locked in Studio), not a replacement for it.
+
+### 4. Plan binding, drift check, dry run (E-X4, R-X3)
+
+- A `MigrationPlan` carries the fingerprint of the snapshot it was computed from (`source_fingerprint`), the target
+  fingerprint and a `plan_hash`: SHA-256 over the canonical JSON of dialect, both fingerprints and every step with its
+  exact SQL text. `MigrationPlan.from_json` recomputes the hash and refuses a plan whose content does not match it.
+- `execute_plan` takes the hash the user saw in the preview (`plan_hash=`) and the fingerprint the preview was made
+  against (`expected_fingerprint=`). It runs exactly that plan or nothing:
+  1. the plan's own hash must equal `plan_hash` (`PlanMismatch`), and `source_fingerprint` must equal
+     `expected_fingerprint` (`PlanMismatch`);
+  2. **right before the first step**, inside the execution transaction where the engine allows it, a fresh snapshot
+     of the database must have the fingerprint `expected_fingerprint`; any difference aborts before a statement runs
+     (`SchemaDrift`, with both fingerprints and the named differences, never data);
+  3. every step's risk class must be in the caller's `allow` set (the classes the user confirmed); otherwise refused
+     before anything runs (reason `risk_not_allowed`).
+- **Dry run:** PostgreSQL runs every transactional step in one transaction and rolls it back; SQLite runs the plan on
+  a private backup copy (`tabrion.sqlite.backup`, 0600, deleted afterwards). Non-transactional steps
+  (`CREATE INDEX CONCURRENTLY`, `CREATE`/`DROP DATABASE`, `VACUUM`) are never run in a dry run and are reported as
+  untested.
+- **Execution:** PostgreSQL in one transaction with `SET LOCAL lock_timeout` (default 5 s, planning document 03
+  section 5.3); non-transactional steps one at a time, after the transaction, each marked. SQLite rebuilds (new table,
+  copy, drop, rename, indexes and triggers recreated from `sqlite_schema`) with `PRAGMA foreign_keys=OFF` outside the
+  transaction, `foreign_key_check` before the commit (a violation rolls back) and the pragma restored afterwards
+  (R-CR-5). A failure reports the step and whether the database was rolled back or is partly changed (only possible
+  after a non-transactional step). Write statements are never retried (R-NORETRY).
+- Tabrion **does not confirm**: "confirmed" means the caller passed the hash, the fingerprint and the allowed risk
+  classes. Asking the user, showing the preview and logging the action stay in Studio (STU-XW-3, STU-XW-2).
+
+### 5. Role DDL never grants dangerous attributes, also not indirectly (E-X6, TB-035, TB-036)
+
+- `tabrion.postgres` role DDL (TAB-XW-8) has **no parameter** for SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION:
+  they cannot be requested. `RoleOptions` covers `LOGIN`, `INHERIT`, `CREATEDB`, `CONNECTION LIMIT` and
+  `VALID UNTIL` only.
+- Before every change the function computes the affected role's privileges (`role_privileges`): attributes, direct
+  memberships, every role reachable through membership (with INHERIT and, from PostgreSQL 16, the SET option),
+  object ownership and default privileges. It refuses (`RoleUnsafe`, nothing executed) a change after which the
+  role, or any role that can reach it, could reach a role with SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, or
+  one of the superuser-equivalent predefined roles `pg_execute_server_program`, `pg_read_server_files`,
+  `pg_write_server_files` (TB-036). `WITH ADMIN OPTION` and `WITH GRANT OPTION` are not offered.
+- The check runs in the same transaction as the change, right before it (role DDL is transactional in
+  PostgreSQL); a refused check leaves nothing changed.
+- A password is hashed on the client (`scram-sha-256` through libpq's `PQencryptPassword`) and sent only as the
+  verifier, so the clear text never reaches the server log, an error, a `repr` or a frame local.
+- Tabrion grants itself nothing and creates no admin role. The admin profile with the minimal rights is provided
+  outside Studio (E-X6); `role_privileges` on the session user lets Studio report an over-privileged admin profile
+  as a finding (STU-XW-1, STU-XDM-1).
+
+### 6. `pg_dump` scope limits (E-X5)
+
+- Tabrion contains no `pg_dump`/`pg_restore` wrapper and no backup orchestration; the non-goal of specification
+  section 1.3 stays unchanged. Studio runs the verified system tools (absolute path from its settings, client version
+  at least the server version, no `PATH` fallback, an argument list without a shell, the password only through a
+  temporary 0600 `PGPASSFILE`).
+- Every Tabrion text that mentions a PostgreSQL backup (guides, docstrings) states that a `pg_dump` archive is **not
+  a complete backup**: global roles, role memberships, tablespaces and other cluster objects are not in it.
+- Tabrion's share is the SQLite side: `backup()` (exists) and `restore()` (TAB-XW-7, atomic, 0600, with a round-trip
+  test backup, restore, `integrity_check` and fingerprint equal), plus `delete_database_file` with the `-wal`,
+  `-shm` and `-journal` side files.
+
+### 7. Primitives only: no enable or activate semantics; the gates live in Studio (E-X9)
+
+- Tabrion provides building blocks. It has **no** feature flag, kill switch, "writes enabled" setting, gate check or
+  activation state, and no environment variable or configuration that unlocks anything. A primitive that is
+  imported can be called; whether a product may call it is the product's decision.
+- The gates G-S2 (write foundation and Data Editor), G-S3 (Schema Designer) and G-S4 (Database Manager) and their
+  default-off server-side kill switches are in tabrion-studio (STU-ADR-0003 and its successor in STU-XW-5). Tabrion
+  shipping a primitive in 0.3 enables nothing in Studio.
+- Tabrion never asks, confirms or logs a user action (ADR 0014). It refuses unsafe input (the guards above) and
+  never relaxes a guard because a caller says so: there is no `force` for the attribute ban, for plan binding or for
+  migration management. The only explicit opt-ins are `drop_database(force=True)` (`WITH (FORCE)`, planning document
+  15 section 4) and `overwrite=True` on file targets, as in `backup()`.
+
+### 8. Follow-up work packages
+
+| WP | Content | Depends on | Contract addendum |
+|---|---|---|---|
+| TAB-XW-2 | `tabrion.schema` v2: foreign keys, unique, check, index, default; fingerprint `v2:`, v1 stays readable | TAB-CR-2 | [A.1](../api/contract-0.3-addendum.md#a1-tabrionschema-v2-tab-xw-2) |
+| TAB-XW-3 | DDL for SQLite and PostgreSQL from a target model (`tabrion.ddl`) | TAB-XW-2 | [A.2](../api/contract-0.3-addendum.md#a2-tabrionddl-tab-xw-3) |
+| TAB-XW-4 | Diff to `MigrationPlan`, risk classes, SQLite rebuild, Alembic revision text (`tabrion.plan`) | TAB-XW-3 | [A.3](../api/contract-0.3-addendum.md#a3-tabrionplan-diff-plan-and-revision-text-tab-xw-4) |
+| TAB-XW-5 | Executor with dry run, plan binding, drift check, `lock_timeout`, foreign key check | TAB-XW-4 | [A.4](../api/contract-0.3-addendum.md#a4-tabrionplanexecute_plan-tab-xw-5) |
+| TAB-XW-6 | Guided write transaction (`expect_rowcount`, optimistic predicate, `max_affected`) | - | [A.5](../api/contract-0.3-addendum.md#a5-guided-write-transaction-tab-xw-6) |
+| TAB-XW-7 | SQLite `restore`, `delete_database_file` | - | [A.6](../api/contract-0.3-addendum.md#a6-tabrionsqlite-restore-and-delete_database_file-tab-xw-7) |
+| TAB-XW-8 | Role DDL with the attribute ban, also indirect (TB-035, TB-036) | - | [A.7](../api/contract-0.3-addendum.md#a7-tabrionpostgres-role-ddl-tab-xw-8) |
+| TAB-XW-9 | PostgreSQL `create_database`/`drop_database` | - | [A.8](../api/contract-0.3-addendum.md#a8-tabrionpostgres-create_database-and-drop_database-tab-xw-9) |
+| TAB-XW-10 | G-T2 for 0.3 with an independent API review (as TAB-042) | TAB-XW-1..9 | the whole addendum |
+
+## Rationale
+
+- Revision text only keeps Tabrion and Studio away from running project code: an Alembic `env.py` is arbitrary
+  Python with the project's credentials (Studio threat T-08). Producing text costs the user one `alembic upgrade`;
+  running it would make Tabrion a code-execution path.
+- Refusing managed databases keeps one owner per schema: a direct change to a database with a version table would
+  make the next migration fail or, worse, apply on top of an unexpected shape.
+- Plan hash plus fingerprint plus a drift check right before execution closes the gap between preview and execution
+  (R-X3): a swapped plan, a stale preview and a concurrent schema change all abort before the first statement.
+- The attribute ban by construction (no parameter) is stronger than a check of a parameter, and the reachability
+  check closes the membership path that TB-035 found in the consumers' role checks.
+- Keeping gates and switches out of Tabrion keeps one place where a write function is enabled (Studio) and keeps
+  Tabrion a library for other consumers (Nodestro, applications) that have their own rules.
+
+## Rejected alternatives
+
+| Alternative | Reason |
+|---|---|
+| Run Alembic revisions for the user (`command.upgrade`, a `MigrationContext`) | Runs `env.py` and project code (T-08); contradicts E-X4 and W-6; would make Tabrion a runner (ADR 0007) |
+| Direct execution on any non-PROD database, also with migration management | Two owners of one schema; refused by E-X4 |
+| A Tabrion feature flag or setting `writes_enabled` | Two places that enable writing; the gates are Studio's (E-X9). A library flag is also trivially set by any caller |
+| Plan binding by plan hash only, without the fingerprint and a drift check | A plan stays valid against a changed database; R-X3 needs both |
+| A `force`/`allow_dangerous` parameter for role attributes | E-X6 forbids the grant in every case; a parameter would be an invitation |
+| Role checks on direct attributes only | Misses membership and `SET ROLE` paths (TB-035, review H-1) |
+| A `pg_dump` wrapper in Tabrion | Non-goal of specification section 1.3; E-X5 option a rejected |
+| An own DDL builder or SQL templates | Non-goal; SQLAlchemy Core and Alembic already compile dialect-correct DDL |
+
+## Consequences
+
+- TAB-XW-2..TAB-XW-9 implement the planned surface of the [contract addendum for 0.3](../api/contract-0.3-addendum.md);
+  names and signatures there are planned, not implemented, and may still change until TAB-XW-10. Each work package
+  moves its section into [the contract](../api/contract.md), adds the names to `docs/api/surface.json` with
+  `"since": "0.3"` and stability `X`, and keeps them unimportable before the version is 0.3 (as G-T1 condition C-6
+  did for 0.2).
+- [Specification section 1.3](../specification.md#13-non-goals-binding) gets the CR-DBX clarification and section 8
+  the note on SQLite `restore()` in 0.3.
+- `tabrion.profilefile` keeps refusing libpq multi-host profiles in 0.3 (W-10, TB-148 (1)); the profile `mode`
+  `admin` (E-X8) is added with TAB-XW-8, `read_write` exists since 0.2.
+- Studio's work packages that use these primitives (STU-026, STU-CR-2..5, STU-XSD-2..3, STU-XDM-2..4) stay locked by
+  Studio until their gate.
+
+## Security guarantees
+
+- No code path in Tabrion runs `env.py`, project code or `alembic upgrade`; no Tabrion function reads a project
+  directory.
+- The executor refuses a database with migration management and an undeclared or non-DEV/TEST environment, and runs
+  exactly the plan whose hash and source fingerprint it was given, after a drift check; otherwise nothing runs.
+- No role DDL grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, directly or through membership, nor the
+  superuser-equivalent predefined roles.
+- No secret in plans, revision text, errors, `repr`, logs or frame locals (redaction of `tabrion.errors`, canary
+  `SECRET-4711` tests); a role password reaches the server only as a SCRAM verifier.
+- Tabrion has no switch that enables a write or admin function.
+- R-SET and T-NOTX stay: the executor sets only `lock_timeout` (`SET LOCAL`, on the allowlist) and the SQLite
+  `foreign_keys` pragma on a connection it opened itself; `create_database`/`drop_database` need an autocommit
+  connection and never switch it.
+
+## Verification
+
+Acceptance criteria of planning document 15 section 9.4 for the Tabrion work packages, checked in TAB-XW-10:
+
+- **TAB-XW-4:** a detected Alembic marker gives revision text only; negative tests that no `env.py`, no project
+  module and no `alembic.command` is touched (import and file-access probes); identifier and message injection into
+  the revision text is inert.
+- **TAB-XW-5:** plan binding (plan hash and fingerprint), drift check right before execution with abort, tests for a
+  swapped plan, an edited plan, drift between preview and execution, and the negative tests "Alembic version table",
+  "Nodestro or Axentra bookkeeping table", "SQLite `user_version` > 0" and "environment `prod` or missing"; dry run
+  leaves the database unchanged (fingerprint before and after); SQLite rebuild golden tests (triggers, views, indexes
+  kept, R-X2) with `foreign_key_check`.
+- **TAB-XW-7:** SQLite `restore` round trip: backup, restore, `integrity_check` `ok` and fingerprint equal.
+- **TAB-XW-8:** the attribute ban, also indirect: a member of a SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION role
+  (INHERIT and NOINHERIT, with and without the SET option on PostgreSQL 16 and later), chains of two and more roles,
+  the predefined roles; `role_privileges` shows existing privileges, memberships and indirect privileges; password
+  canaries.
+- Mutation probes for each guard (a removed check turns a test red) and the independent API review (TAB-XW-10).
+
+## Revision triggers
+
+- A consumer needs Tabrion to apply Alembic revisions or to run a migration with a version table (a new decision on
+  ADR 0007 and E-X4).
+- The owner changes E-X4, E-X5, E-X6, E-X7 or E-X9, or allows writing on PROD.
+- PostgreSQL adds a role attribute or predefined role with superuser-equivalent power (extend the ban list).
+- A consumer other than Studio asks for a gate or switch in Tabrion.
+
+## Changes from the plan
+
+None in substance. Two precisions of the plan's text, both within E-X4 and E-X6: the "DEV/TEST" condition becomes an
+explicit `environment` declaration by the caller (Tabrion cannot detect it), and "migration management" is
+detected by the markers listed in section 3 of this record.

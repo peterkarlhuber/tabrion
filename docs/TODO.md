@@ -23,6 +23,8 @@
 > 23:28Z and 23:35Z, planning confirmed, implementation not started): TB-149 new (TABRION TAB-XW-1..TAB-XW-10, blocked
 > on the development-start approval), TB-004 narrowed to the Nodestro decisions (W-1), TB-148 (1) linked to W-10;
 > [ADR 0014](adr/0014-crdbx-tabrion-scope.md).
+> TAB-XW-1 2026-11-14 (branch `claude/project-thread-rdo6g3-tabxw1`): TB-149 in progress (ADR 0015, contract addendum
+> 0.3, specification section 1.3), TB-148 (1) decided for 0.3 (multi-host stays refused, W-10).
 
 ## Summary
 
@@ -41,7 +43,8 @@ follow-up pull request after the `0.2.0` release commit `52353da`: TB-013 done, 
 by the owner decision on K-Q; C-02 / DC-TB-1 pull request: TB-132 done, TB-145's `LINE n:` part done, its N-3
 cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 follow-up pull request: TB-145 done;
 `0.2.1` version pull request: TB-013 records the patch release; `0.2.2.dev0` follow-up pull request after the
-`0.2.1` release commit `af0458d`: TB-013 records its SHA and the G-T2 runs).
+`0.2.1` release commit `af0458d`: TB-013 records its SHA and the G-T2 runs; TAB-XW-1 pull request: TB-149 in
+progress, counts unchanged).
 
 | Priority | Count |
 |---|---|
@@ -567,7 +570,10 @@ required (owner decision of 2026-11-08 11:26Z).
 - **Next step:** decide (1) with Studio STU-CR-6 (accept a list of hosts, each checked, or keep refusing and state
   it); add a warning issue for (3) if a consumer asks for it. (1) is contradiction W-10 of planning document 15: the
   CR-DBX profile import and export (STU-XDM-5) and the profile modes `read_write`/`admin` (E-X8, TAB-XW-1 addendum)
-  build on the same format, so the decision is due before TAB-XW-1 at the latest.
+  build on the same format, so the decision is due before TAB-XW-1 at the latest. **Decided for 0.3 by TAB-XW-1**
+  (W-10 resolution of planning document 15 section 2.1, [contract addendum 0.3](api/contract-0.3-addendum.md) A.9):
+  multi-host stays refused and Studio refuses to export such a profile; extending the format is not planned. (2)-(4)
+  stay open.
 
 ### TB-016 · PyPI path (TABRION TAB-043), not planned
 
@@ -583,21 +589,31 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** Blocked (planned, not started; development start approved conditionally (G-CX,
-  2026-11-14); starts once S-1..S-4 are proven) · **Refs:** planning document 15 sections 3, 5, 9.1;
-  [ADR 0014](adr/0014-crdbx-tabrion-scope.md); [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15);
-  E-X3, E-X4, E-X5, E-X6, E-X11
-- **What:** the owner accepted the CR-DBX planning on 2026-11-13 (not the start of implementation). Tabrion's part is
-  the experimental 0.3 cycle TAB-XW-1..TAB-XW-10 (19 + 9.5 agent days), defined in planning document 15 section 9.1 and
-  not repeated here: ADR and contract addendum (TAB-XW-1), `tabrion.schema` v2 (-2), DDL (-3), diff to
-  `MigrationPlan` with Alembic revision text only (-4), executor with dry run, plan binding and drift check for DEV and
-  TEST databases without migration management (-5), guided write transaction (-6), SQLite `restore()` and
-  `delete_database_file` (-7), role DDL that never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION (-8, with
-  TB-035), PostgreSQL `create_database`/`drop_database` (-9), G-T2 for 0.3 with an independent API review (-10).
-  Boundaries (ADR 0014): built on SQLAlchemy Core and Alembic operations, no own builder, no schema tool UI, no
-  `pg_dump`/`pg_restore` wrapper, no role-admin UI, no vector functions, never running a project's `env.py`.
-- **Next step:** none before the G-CX start conditions S-1..S-4 are proven (Studio 1.0 and QA-S1, security, migration
-  incl. W6, CI). S-1 is met since the owner accepted QA-S1 on 2026-11-14 16:34Z; S-2, S-3 and S-4 are open. Then TAB-XW-1 first; TB-148 (1) and TB-035 are inputs.
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 in review; TAB-XW-2..TAB-XW-10 open) · **Refs:** planning
+  document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
+  [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
+  [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
+- **What:** Tabrion's part of CR-DBX is the experimental 0.3 cycle TAB-XW-1..TAB-XW-10 (19 + 9.5 agent days),
+  defined in planning document 15 section 9.1. The development start (G-CX) is in effect since the start conditions
+  S-1..S-4 were proven on 2026-11-14 (about 17:55Z, planning file `cr-dbx-startbedingungen.md`). **TAB-XW-1** (this
+  pull request, docs only): ADR 0015 (SQLAlchemy and Alembic, revision text only, no `env.py`/project code/`alembic
+  upgrade`, direct DDL only on declared DEV/TEST databases without migration management, plan hash plus fingerprint,
+  drift check right before execution, dry run, role attribute ban also through membership, `pg_dump` scope limits,
+  primitives only without enable semantics; the gates G-S2/G-S3/G-S4 are Studio's), the planned contract addendum 0.3
+  (names, signatures, error codes of TAB-XW-2..TAB-XW-9, marked planned and not implemented) and the CR-DBX
+  clarification of specification sections 1.3 and 8.
+- **Open (follow-up work packages):** TAB-XW-2 `tabrion.schema` v2; TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
+  (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-6 `Transaction.execute_checked`
+  and `tabrion.rowedit`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (refuses the predefined roles
+  of TB-036; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
+  TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
+  its names to `surface.json` (`since` 0.3, `X`).
+- **Questions for the review of TAB-XW-1 / TAB-XW-10:** (a) role DDL needs CREATEROLE on the admin role (E-X8), which
+  before PostgreSQL 16 is close to superuser power (TB-036): restrict TAB-XW-8 to PostgreSQL 16 and later, or report
+  CREATEROLE on 14/15 as an over-privileged admin profile? (b) `snapshot(level=)` keeps level 1 as the default so
+  stored `v1:` fingerprints stay valid; decide whether the default moves to 2 in 0.3. (c) Whether
+  `pg_read_all_data`/`pg_write_all_data` join the refused predefined roles (they do not bypass RLS, TB-036).
+- **Next step:** review and merge TAB-XW-1; then TAB-XW-2 (and in parallel TAB-XW-6..9, which depend on nothing).
 
 ## Tests and quality assurance
 

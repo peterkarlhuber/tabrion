@@ -8,6 +8,17 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Docs: TABRION TAB-XW-1 (CR-DBX, Tabrion 0.3 write and DDL primitives). ADR 0015
+  (`docs/adr/0015-crdbx-write-and-ddl-primitives.md`): DDL and diff on SQLAlchemy Core and Alembic operations
+  (E-X3); revision text only for Alembic projects, never `env.py`, project code or `alembic upgrade` (E-X4); direct
+  DDL only on a declared DEV/TEST database without migration management; plan binding (plan hash and fingerprint),
+  drift check right before execution and dry run; role DDL that never grants SUPERUSER, BYPASSRLS, CREATEROLE or
+  REPLICATION, also not through membership (E-X6); `pg_dump` scope limits (E-X5); primitives only, without any
+  enable or activate switch, the gates G-S2/G-S3/G-S4 stay in Studio (E-X9). The planned contract addendum
+  `docs/api/contract-0.3-addendum.md` (names, signatures and error codes of TAB-XW-2..TAB-XW-9, **planned for 0.3,
+  not implemented**), the CR-DBX clarification of specification sections 1.3 and 8, a pointer in `docs/api/contract.md`,
+  `docs/adr/README.md`, `mkdocs.yml`, `docs/program/STATUS.md` (G-CX in effect after S-1..S-4, O-10, CR-DBX section)
+  and `docs/TODO.md` (TB-149 in progress, TB-148 (1) decided for 0.3). No code change, no API change.
 - Docs: the owner accepted QA-S1 for tabrion-studio 1.0 on 2026-11-14 16:34Z. `docs/program/STATUS.md` (QA-S1 and
   STU-054 done, M6, M7, G-CX: start condition S-1 met, S-2..S-4 open) and TB-149 in `docs/TODO.md`. Not a release:
   H-2 and G-R stay open. No code change.
