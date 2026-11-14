@@ -1,8 +1,9 @@
 # API contract addendum 0.3 (CR-DBX, planned)
 
 !!! warning "Planned 0.3, not implemented"
-    Everything on this page is **planned for Tabrion 0.3 and not implemented**. None of these names exists in the
-    code, in `__all__` or in [`surface.json`](surface.json); none may be imported or relied on. Names, signatures and
+    Everything on this page is **planned for Tabrion 0.3 and not implemented**, except the sections marked as moved
+    into the contract (A.5, TAB-XW-6). None of the other names exists in the code, in `__all__` or in
+    [`surface.json`](surface.json); none may be imported or relied on. Names, signatures and
     error codes may still change until the independent API review of TAB-XW-10. When a work package implements its
     part, it moves that section into [the contract](contract.md) with implementation notes, adds the names to
     `surface.json` with `"since": "0.3"` and stability `X`, and deletes the section here.
@@ -24,8 +25,8 @@ Every planned name is experimental (`X`) and arrives with 0.3. No stable name ch
 | `tabrion.schema` | `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `IndexShape`; new fields of `ColumnShape`, `TableShape`, `SchemaSnapshot`; `snapshot(level=)`; new `SchemaDifference.kind` values | TAB-XW-2 | `sqlalchemy` |
 | `tabrion.ddl` (new) | `DdlStatement`, `create_statements`, `table_statements` | TAB-XW-3 | `sqlalchemy` |
 | `tabrion.plan` (new) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers`, `ExecutionResult`, `execute_plan` | TAB-XW-4, TAB-XW-5 | `sqlalchemy`; `revision_text` also `migrations` |
-| `tabrion.rowedit` (new) | `insert_row`, `update_row`, `delete_row` | TAB-XW-6 | `sqlalchemy` |
-| `tabrion` (layer B) | `Transaction.execute_checked` | TAB-XW-6 | `sqlalchemy` |
+| `tabrion.rowedit` (new) | `insert_row`, `update_row`, `delete_row` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
+| `tabrion` (layer B) | `Transaction.execute_checked` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
 | `tabrion.sqlite` | `restore`, `RestoreResult`, `delete_database_file` | TAB-XW-7 | none (standard library) |
 | `tabrion.postgres` | `RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges`, `revoke_privileges` | TAB-XW-8 | `postgres` |
 | `tabrion.postgres` | `create_database`, `drop_database`, `database_sessions` | TAB-XW-9 | `postgres` |
@@ -39,7 +40,8 @@ attributes SUPERUSER, BYPASSRLS, CREATEROLE and REPLICATION, libpq multi-host pr
 ## A.0.1 Planned errors (`tabrion.errors`, since 0.3, X)
 
 ```python
-class RowCountMismatch(TabrionError)   # "transaction.rowcount_mismatch" (details expected, actual)
+class RowCountMismatch(TabrionError)   # implemented (TAB-XW-6, contract section 1.4 and 5.11):
+                                        # "transaction.rowcount_mismatch" (details expected, actual)
                                         # "transaction.too_many_rows" (details limit, actual)
 class PlanError(TabrionError)          # base of the plan errors
     class PlanMismatch(PlanError)          # "plan.hash_mismatch", "plan.fingerprint_mismatch", "plan.invalid"
@@ -318,41 +320,12 @@ Order of checks, each before any statement runs:
 
 ## A.5 Guided write transaction (TAB-XW-6)
 
-```python
-class Transaction:
-    def execute_checked(
-        self,
-        statement: Statement,
-        params: Mapping[str, Any] | None = None,
-        *,
-        expect_rowcount: int | None = None,
-        max_affected: int | None = None,
-        timeout: float | None = None,
-    ) -> int: ...  # 0.3, X
-
-
-# module tabrion.rowedit (extra sqlalchemy)
-def insert_row(table: sqlalchemy.Table, values: Mapping[str, Any]) -> sqlalchemy.Insert: ...
-def update_row(
-    table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]
-) -> sqlalchemy.Update: ...
-def delete_row(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any]) -> sqlalchemy.Delete: ...
-```
-
-- `execute_checked` runs one statement and compares the affected row count: a count other than `expect_rowcount`
-  or above `max_affected` raises `RowCountMismatch` and **marks the transaction failed**: every later statement raises
-  `UsageError("transaction.failed")` and leaving the block rolls back, even if the caller caught the error. A
-  `read()` transaction refuses it (`ReadOnlyViolation`). One of the two limits is required
-  (`UsageError("transaction.limit_required")`).
-- `update_row` and `delete_row` build the optimistic predicate `WHERE <pk> = :key AND <column> IS NOT DISTINCT FROM
-  :old` (SQLite `IS`) for every column in `old`, with bound parameters only. A table without a primary key, or a
-  `key` that is not exactly the primary key, raises `UsageError("rowedit.primary_key_required")` (no `rowid` or
-  `ctid` as a write key). No upsert and no merge (specification section 1.3).
-- **N-5:** `IS NOT DISTINCT FROM` on floating-point, JSON or collation-dependent columns can report a false
-  conflict (safe side: nothing is written); the guide says so. Test
-  `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict`.
-- **Tests:** a concurrent change gives `RowCountMismatch` and leaves the row unchanged; caught error still rolls
-  back; `max_affected` over a multi-row statement; NULL in `old`; parameter canary in errors.
+**Implemented (TAB-XW-6) and moved into the contract:**
+[section 5.11](contract.md#511-guided-write-transaction-since-03-experimental-tab-xw-6) with the implementation notes
+I-120..I-122. `Transaction.execute_checked`, `tabrion.rowedit.insert_row`, `update_row`, `delete_row` and
+`tabrion.errors.RowCountMismatch` are in `surface.json` with `"since": "0.3"`, stability `X` and a `staged` location,
+and stay unimportable while the package version is below 0.3. N-5 is test
+`tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict`.
 
 ## A.6 `tabrion.sqlite`: `restore` and `delete_database_file` (TAB-XW-7)
 

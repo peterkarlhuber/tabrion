@@ -8,12 +8,13 @@ fail. Not marked ``packaging``: it runs in the default test job (and needs the d
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 import shutil
 
 import pytest
 
-from tests.conftest import SRC
+from tests.conftest import ROOT, SRC
 from tests.support import run_python
 
 FORBIDDEN = ("orkexa", "axentra", "tabrion_studio", "levuvo")
@@ -31,7 +32,21 @@ def _modules(src: Path) -> list[str]:
     return names
 
 
+def _module_since() -> dict[str, str]:
+    """``scripts/api_surface.py``'s public modules of a later minor (ADR 0015): ``tabrion.rowedit`` -> ``"0.3"``."""
+    text = (ROOT / "scripts" / "api_surface.py").read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and [t.id for t in node.targets if isinstance(t, ast.Name)] == ["MODULE_SINCE"]:
+            value = ast.literal_eval(node.value)
+            assert isinstance(value, dict)
+            return {str(k): str(v) for k, v in value.items()}
+    raise AssertionError("MODULE_SINCE not found")
+
+
 def _source(modules: list[str]) -> str:
+    """Import every module; a module of a later minor than the package's must refuse its import (``tabrion._since``)
+    and is then skipped, as its implementation module is imported on its own."""
     return (
         "import importlib, importlib.abc, sys\n"
         f"FORBIDDEN, PREFIXES = {FORBIDDEN!r}, {FORBIDDEN_PREFIXES!r}\n"
@@ -42,7 +57,17 @@ def _source(modules: list[str]) -> str:
         "            raise ImportError(f'forbidden edge: tabrion imports {name}', name=name)\n"
         "        return None\n"
         "sys.meta_path.insert(0, Block())\n"
+        f"LATER = {_module_since()!r}\n"
         f"for m in {modules!r}:\n"
+        "    if m in LATER:\n"
+        "        from tabrion._since import released\n"
+        "        if not released(LATER[m]):\n"
+        "            try:\n"
+        "                importlib.import_module(m)\n"
+        "            except ImportError as exc:\n"
+        "                assert exc.name == m, exc\n"
+        "                continue\n"
+        "            raise AssertionError(f'{m} is importable before {LATER[m]}')\n"
         "    importlib.import_module(m)\n"
         "loaded = sorted(n for n in sys.modules if n.partition('.')[0] in FORBIDDEN or n.startswith(PREFIXES))\n"
         "assert not loaded, loaded\n"

@@ -131,3 +131,57 @@ There is no upsert helper in Tabrion; the dialect `insert` of SQLAlchemy has `on
 ```pycon
 >>> db.close()
 ```
+
+## Guided writes (0.3, experimental)
+
+!!! note "Planned for 0.3"
+    `Transaction.execute_checked` and `tabrion.rowedit` are implemented and frozen for Tabrion 0.3 (experimental),
+    but not importable while the package version is below 0.3
+    ([contract section 5.11](../api/contract.md#511-guided-write-transaction-since-03-experimental-tab-xw-6)). This
+    section describes them ahead of that release; its example is shown, not run.
+
+A data editor writes one row the user changed and must not overwrite a change someone else made since the row was
+read. `tabrion.rowedit` builds the statement with an **optimistic predicate** on the values the user saw, and
+`execute_checked` runs it with a limit on the affected rows:
+
+```text
+from tabrion.rowedit import update_row
+
+seen = {"id": 7, "label": "old", "price": 2.5}          # the row as read
+with db.transaction() as tx:
+    tx.execute_checked(update_row(items, {"id": 7}, seen, {"label": "new"}), expect_rowcount=1)
+```
+
+The statement compares every column of `old` NULL-safe and with bound parameters only:
+
+```sql
+-- PostgreSQL
+UPDATE items SET label = $1
+WHERE items.id = $2
+  AND (items.label COLLATE "C") IS NOT DISTINCT FROM $3
+  AND items.price IS NOT DISTINCT FROM CAST($4 AS REAL)
+-- SQLite
+UPDATE items SET label = ? WHERE items.id = ? AND (items.label COLLATE "BINARY") IS ? AND items.price IS ?
+```
+
+If the row changed or is gone, the statement matches 0 rows: `execute_checked` raises `RowCountMismatch`
+(`transaction.rowcount_mismatch`, `expected` 1, `actual` 0), nothing is written, and the transaction is failed: every
+later statement raises `UsageError("transaction.failed")`, and the block rolls back even if you catch the error. Show
+the user the current row and let them decide. `max_affected` limits a statement that may touch several rows
+(`transaction.too_many_rows` above it); one of the two limits is required. The error carries counts only, never a
+value. Pass every column you showed the user in `old`; an empty `old` is refused (`rowedit.old_required`).
+
+**What the limits do not cover.** The count is that of your statement only: rows that a PostgreSQL rule or a trigger
+(on either engine) changes as a side effect are not counted or limited and commit with it, so a preview should name
+the rules and triggers of the table. And `max_affected` limits what is committed, not the work: the statement runs to
+its end before the count is checked, then rolls back. The bound on the work is `timeout`.
+
+**False conflicts (N-5).** The comparison is exact, which is the safe side: when in doubt, nothing is written.
+Tabrion compares text under a binary collation (a case-insensitive collation cannot hide a change), PostgreSQL
+`json` as `jsonb` (key order and blanks do not count) and a PostgreSQL `real` as `real`. What it cannot repair are
+values that changed on their way through your client: a floating-point number that was rounded or formatted for
+display, a SQLite JSON column whose stored text is written differently from what `json.dumps` makes of the value you
+read (blanks, key order), a SQLite `NaN` (stored as `NULL`). Such a row reports a conflict on every attempt: pass the
+values exactly as read, or leave such columns out of `old` (then a concurrent change of only them is not detected).
+A column type without an equality operator (`xml`, `point`) cannot be in `old`, and `citext` compares
+case-insensitively by its own operator.

@@ -174,6 +174,7 @@ source_modules = [
     "tabrion.check",
     "tabrion.profilefile",
     "tabrion._deprecated",
+    "tabrion._since",
 ]
 forbidden_modules = [
     "psycopg",
@@ -210,7 +211,7 @@ forbidden_modules = [
 id = "layer-b-sqlalchemy-only"
 name = "Layer B needs only SQLAlchemy"
 type = "forbidden"
-source_modules = ["tabrion._sa", "tabrion.schema"]
+source_modules = ["tabrion._sa", "tabrion.schema", "tabrion.rowedit"]
 forbidden_modules = ["pytest", "alembic", "psycopg_pool", "tabrion.testing", "tabrion.migrations"]
 
 # Doc 02 section 2: the migration helpers never import pytest (G-T1 condition C-5).
@@ -227,15 +228,17 @@ name = "Layer B builds on layer A, never the reverse"
 type = "layers"
 layers = [
     "tabrion.testing",
-    "tabrion.migrations",
+    # tabrion.rowedit (since 0.3, ADR 0015) builds on the layer-B implementation it re-exports.
+    "tabrion.migrations | tabrion.rowedit",
     "tabrion._sa | tabrion.schema",
     "tabrion.postgres",
     "tabrion.sqlite | tabrion.check | tabrion.profilefile",
     "tabrion.sql | tabrion.config",
     # The foundation: every layer-A module raises or classifies with it (config raises ConfigurationError, TAB-012).
     "tabrion.errors",
-    # The deprecation helper (TAB-051): standard library only, so every module can deprecate a name with it.
-    "tabrion._deprecated",
+    # The deprecation helper (TAB-051) and the version gate of names of a later minor (ADR 0015): standard library
+    # only, so every module can deprecate a name or stage one with them.
+    "tabrion._deprecated | tabrion._since",
 ]
 
 [[tool.importlinter.contracts]]

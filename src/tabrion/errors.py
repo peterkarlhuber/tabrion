@@ -29,6 +29,8 @@ import traceback
 from types import MappingProxyType, TracebackType
 from typing import Any, Literal
 
+from tabrion._since import released as _released
+
 __all__ = [
     "BackupFailed",
     "BackupRequired",
@@ -1327,3 +1329,20 @@ class UnsafePath(TabrionError):
 
     The message never names the path.
     """
+
+
+class _RowCountMismatch(TabrionError):
+    """Codes ``transaction.rowcount_mismatch`` (details ``expected``, ``actual``) and ``transaction.too_many_rows``
+    (details ``limit``, ``actual``), raised by ``Transaction.execute_checked`` (since 0.3, experimental; contract
+    section 5.11). An optimistic conflict of ``tabrion.rowedit`` is this error with ``actual`` 0.
+
+    Public as ``tabrion.errors.RowCountMismatch`` from 0.3 on; before 0.3 the name is not bound (``tabrion._since``).
+    ``__qualname__`` stays the private name, so a pickled error loads in either state.
+    """
+
+
+_RowCountMismatch.__name__ = "RowCountMismatch"
+
+if _released("0.3"):
+    RowCountMismatch = _RowCountMismatch
+    __all__ += ["RowCountMismatch"]
