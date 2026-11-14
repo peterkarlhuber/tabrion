@@ -63,9 +63,23 @@ PROBES = [
     # TB-145: ``LINE n:`` in the middle of a line starts a removed part.
     (
         "errors.py",
-        '    r"|(?<![ \\t])[ \\t]*\\b(?:DETAIL|HINT|CONTEXT|QUERY|LINE \\d+):',
-        '    r"|(?<![ \\t])[ \\t]*\\b(?:DETAIL|HINT|CONTEXT|QUERY):',
+        '    r"|(?<![^\\S\\r\\n])[^\\S\\r\\n]*\\b(?:DETAIL|HINT|CONTEXT|QUERY|LINE \\d+):',
+        '    r"|(?<![^\\S\\r\\n])[^\\S\\r\\n]*\\b(?:DETAIL|HINT|CONTEXT|QUERY):',
         "tests/unit/test_errors.py::test_tb145_mid_line_line_echo_is_stripped",
+    ),
+    # TB-145 (delta check D-2): an inline label directly before a line break starts a removed part.
+    (
+        "errors.py",
+        '|[^\\S\\r\\n]*\\r?\\n)"',
+        ')"',
+        "tests/unit/test_errors.py::test_tb145_line_break_or_no_break_space_after_an_inline_label",
+    ),
+    # TB-145 (delta check D-2): a no-break space after the label counts as a blank.
+    (
+        "errors.py",
+        "|[^\\S\\r\\n]+(?=\\S)|",
+        "|[ \\t]+(?=\\S)|",
+        "tests/unit/test_errors.py::test_tb145_line_break_or_no_break_space_after_an_inline_label",
     ),
     # A formatter that formats exc_info itself must not see the original exception.
     (
@@ -211,8 +225,8 @@ PROBES = [
     # Axentra review F-3 (TB-031 port): the look-behind keeps the inline label search linear.
     (
         "errors.py",
-        "|(?<![ \\t])[ \\t]*\\b(?:DETAIL",
-        "|[ \\t]*\\b(?:DETAIL",
+        "|(?<![^\\S\\r\\n])[^\\S\\r\\n]*\\b(?:DETAIL",
+        "|[^\\S\\r\\n]*\\b(?:DETAIL",
         "tests/unit/test_errors.py::test_f3_long_run_of_blanks_is_linear",
     ),
     # Axentra review F-4: structure lines end a removal only inside a traceback.

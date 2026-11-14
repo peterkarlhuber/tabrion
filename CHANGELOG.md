@@ -26,6 +26,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Security
 
+- Log redaction: an inline `DETAIL:`/`HINT:`/`CONTEXT:`/`QUERY:`/`LINE n:` label directly before a line break now
+  starts a removed part even with one blank or none after it, and a no-break space or another non-ASCII blank after
+  or before a label counts as a blank. Both forms kept the value (Tabrion Studio delta check D-2, TB-145).
 - Log redaction (`DbErrorRedactionFilter`, `tabrion.errors`): psycopg's `LINE n:` statement echo is removed also
   when it is the only server text label in a message. The cheap pre-check that decides whether a text is scanned had
   no `LINE` entry, so an escaped `\nLINE n:` inside a `repr` (for example a cast error in a list argument) kept the

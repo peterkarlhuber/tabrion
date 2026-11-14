@@ -1094,6 +1094,30 @@ def test_td056_two_blanks_with_the_value_on_the_next_line(text: str) -> None:
     assert CANARY not in errors._strip_server_text(traceback)
 
 
+@pytest.mark.parametrize("label", ["DETAIL", "HINT", "CONTEXT", "QUERY", "LINE 1"])
+@pytest.mark.parametrize("gap", ["\n", " \n", "\t\r\n", "\u00a0", "\u00a0\n", "\u2009"])
+def test_tb145_line_break_or_no_break_space_after_an_inline_label(label: str, gap: str) -> None:
+    """TB-145 (delta check D-2): an inline label directly before a line break, and a label followed by a no-break
+    space or another non-ASCII blank, start a removed part, in free text and inside a traceback."""
+    mark = errors._SERVER_TEXT_MARK
+    text = f"insert failed {label}:{gap}Key (email)=({CANARY}) already exists."
+    assert errors._strip_server_text(text) == f"insert failed {mark}"
+    traceback = f'Traceback (most recent call last):\n  File "a", line 1, in f\nE: {text}\n'
+    assert CANARY not in errors._strip_server_text(traceback)
+
+
+def test_tb145_no_break_space_before_a_line_start_or_escaped_label() -> None:
+    mark = errors._SERVER_TEXT_MARK
+    assert errors._strip_server_text(f"a\n\u00a0DETAIL:{CANARY}") == f"a\n{mark}"
+    assert errors._strip_server_text(f"x\\n\u00a0DETAIL:  {CANARY}") == f"x {mark}"
+
+
+def test_tb145_filter_strips_a_label_before_a_line_break(capture: Any) -> None:
+    capture.logger.error("sync failed DETAIL: \nKey (email)=(%s) already exists.", CANARY)
+    capture.logger.error("sync failed DETAIL:\u00a0(%s)", CANARY)
+    assert CANARY not in _out(capture)
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -1345,6 +1369,8 @@ def test_c02_line_label_scan_is_linear() -> None:
     text = "a LINE 1:" + "\t" * 50_000  # tabs after the label but no value
     assert errors._strip_server_text(text) == text
     text = "a LINE " + "1" * 50_000  # a long number and no colon: the gate fails once, linearly
+    assert errors._strip_server_text(text) == text
+    text = "a" + "\u00a0" * 50_000 + " DETAIL:"  # a run of no-break spaces before a label without a value
     assert errors._strip_server_text(text) == text
     text = "LINE 1" * 20_000  # many label starts, none complete
     assert errors._strip_server_text(text) == text

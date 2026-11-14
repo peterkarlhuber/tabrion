@@ -39,14 +39,14 @@ TB-042 superseded, TB-145 new; 0.2 switch pull request (TAB-042): TB-123 done, T
 TB-013 in progress, TB-147 new; TAB-CR-1/2 pull request: TB-014 and TB-015 done, TB-148 new; `0.2.1.dev0`
 follow-up pull request after the `0.2.0` release commit `52353da`: TB-013 done, TB-145 extended, TB-075 closed
 by the owner decision on K-Q; C-02 / DC-TB-1 pull request: TB-132 done, TB-145's `LINE n:` part done, its N-3
-cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44).
+cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 follow-up pull request: TB-145 done).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 3 |
 | P2 Medium | 10 |
-| P3 Low | 44 |
+| P3 Low | 43 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -1320,8 +1320,8 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-145 · A mid-line `LINE n:` keeps the statement text (review F-3 of the TD-056 fix)
 
-- **Priority:** P3 Low · **Status:** Open (the `LINE n:` part and C-02 done in the C-02 / DC-TB-1 pull request;
-  the N-3 cases open) · **Refs:** TABRION TAB-010, contract I-6,
+- **Priority:** P3 Low · **Status:** Done (the `LINE n:` part and C-02 in the C-02 / DC-TB-1 pull request; the
+  N-3 cases in the D-2 follow-up pull request) · **Refs:** TABRION TAB-010, contract I-6,
   TB-144, planning folder `reviews/tab-042-td056-review.md` F-3, Tabrion Studio security assessment C-02
 - **What:** `LINE \d+:` is only in the line-start alternative of `_SERVER_TEXT_START`. A syntax error joined onto
   one line (`syntax error at or near "x" LINE 1: INSERT ... VALUES ('...')`) keeps the statement text with its
@@ -1340,8 +1340,13 @@ required (owner decision of 2026-11-08 11:26Z).
   regression from 0.1.0): `DETAIL:` followed by one blank, a line break and the value (`dup key DETAIL: \nKey
   (email)=(...)`, refused by the lookahead `(?=[^ \t\r\n])`; needs a formatter that cuts psycopg's two blanks to one
   and keeps the line break), and `DETAIL:` followed by U+00A0 and the value.
-- **Next step:** treat a lone blank before a line break and U+00A0 like psycopg's blanks, with tests like
-  `test_td056_*`.
+- **Done (N-3 cases, Tabrion Studio delta check D-2):** a blank in `_SERVER_TEXT_START` and
+  `_ESCAPED_SERVER_TEXT` is any white space except a line break (`[^\S\r\n]`), so U+00A0 and other non-ASCII
+  blanks count; an inline label directly before a line break (with one blank or none) starts a removed part.
+  psycopg's two-blank rule stays two ASCII spaces, so `DETAIL:` followed only by tabs is still kept. Tests:
+  `test_tb145_line_break_or_no_break_space_after_an_inline_label` (five labels, six gaps, free text and traceback),
+  `test_tb145_no_break_space_before_a_line_start_or_escaped_label`, `test_tb145_filter_strips_a_label_before_a_line_break`,
+  a no-break-space run in `test_c02_line_label_scan_is_linear`, and two mutation probes.
 
 ### TB-050 · Redacting `Handler.handleError` needs a public install function (Axentra review F-2)
 
