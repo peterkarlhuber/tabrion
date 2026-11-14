@@ -597,7 +597,7 @@ required (owner decision of 2026-11-08 11:26Z).
   Boundaries (ADR 0014): built on SQLAlchemy Core and Alembic operations, no own builder, no schema tool UI, no
   `pg_dump`/`pg_restore` wrapper, no role-admin UI, no vector functions, never running a project's `env.py`.
 - **Next step:** none before the G-CX start conditions S-1..S-4 are proven (Studio 1.0 and QA-S1, security, migration
-  incl. W6, CI). Then TAB-XW-1 first; TB-148 (1) and TB-035 are inputs.
+  incl. W6, CI). S-1 is met since the owner accepted QA-S1 on 2026-11-14 16:34Z; S-2, S-3 and S-4 are open. Then TAB-XW-1 first; TB-148 (1) and TB-035 are inputs.
 
 ## Tests and quality assurance
 
