@@ -8,6 +8,22 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- Docs: TABRION TAB-XW-1 (CR-DBX, Tabrion 0.3 write and DDL primitives). ADR 0015
+  (`docs/adr/0015-crdbx-write-and-ddl-primitives.md`): DDL and diff on SQLAlchemy Core and Alembic operations
+  (E-X3); revision text only for Alembic projects, never `env.py`, project code or `alembic upgrade` (E-X4); direct
+  DDL only on a declared DEV/TEST database without migration management; plan binding (plan hash and fingerprint),
+  drift check right before execution and dry run; role DDL that never grants SUPERUSER, BYPASSRLS, CREATEROLE or
+  REPLICATION, also not through membership (E-X6); `pg_dump` scope limits (E-X5); primitives only, without any
+  enable or activate switch, the gates G-S2/G-S3/G-S4 stay in Studio (E-X9). The planned contract addendum
+  `docs/api/contract-0.3-addendum.md` (names, signatures and error codes of TAB-XW-2..TAB-XW-9, **planned for 0.3,
+  not implemented**), the CR-DBX clarification of specification sections 1.3 and 8, a pointer in `docs/api/contract.md`,
+  `docs/adr/README.md`, `mkdocs.yml`, `docs/program/STATUS.md` (G-CX in effect after S-1..S-4, O-10, CR-DBX section)
+  and `docs/TODO.md` (TB-149 in progress, TB-148 (1) decided for 0.3). No code change, no API change. The security
+  review of #76 (accepted with conditions) is written in as requirements with named tests: K-1 SQLite rebuild SQL
+  from `sqlite_schema` as one checked statement, K-2 no escalation through `TRIGGER`, foreign `SECURITY DEFINER`
+  functions or `CREATE` on shared schemas, K-3 injection-safe revision text; decisions role DDL only on
+  PostgreSQL 16 and later, no predefined `pg_*` role, a required `environment` keyword, v2 fingerprints opt-in;
+  notes N-1..N-5.
 - Docs: ecosystem migration record `docs/ecosystem/migration.md` (QA-23): before/after per consumer repository with the
   MIG and PIN pull requests and merge SHAs, compatibility (`0.1.0` to `0.2.1`, `tabrion>=0.2,<0.3`), test evidence,
   rollback and what was not migrated; `docs/program/STATUS.md` migration and QA rows synced (QA-17, QA-19, QA-20 and

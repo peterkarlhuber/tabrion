@@ -17,6 +17,13 @@ This is the English version of planning document 04 (revision 3) and the subject
     is in [implementation notes I-100..I-106](#58-implementation-notes-tab-033); the guide is
     [Query, stream, cancel and inspect](../guides/studio-apis.md).
 
+!!! note "0.3 planning (CR-DBX, TAB-XW-1)"
+    The planned 0.3 surface of change request CR-DBX (schema v2, DDL, migration plan and executor, guided write
+    transaction, SQLite restore, role DDL, PostgreSQL create and drop database) is in the
+    [contract addendum 0.3](contract-0.3-addendum.md). It is **planned, not implemented**: none of its names is part
+    of this contract, of section 0 or of `surface.json` until its work package (TAB-XW-2..TAB-XW-9) moves it here.
+    Design rules: [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md).
+
 !!! note "M2 status"
     `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011) and `tabrion.config` (TAB-012) are implemented; what the
     implementation settled is listed under [Implementation notes (M2)](#implementation-notes-m2). In
