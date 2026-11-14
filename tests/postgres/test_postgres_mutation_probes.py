@@ -379,7 +379,8 @@ PROBES = [
         "postgres/roles.py",
         "    with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n"
         "        # The membership may have been granted",
-        "    with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n        # The membership may have been granted",
+        "    with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:\n"
+        "        # The membership may have been granted",
         "tests/postgres/test_grants.py::test_r17_atomic_when_the_connection_is_lost",
     ),
     # TB-150 (review F-3 of #77): the predefined membership is read again inside the grant transaction.
