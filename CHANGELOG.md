@@ -18,7 +18,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `docs/api/contract-0.3-addendum.md` (names, signatures and error codes of TAB-XW-2..TAB-XW-9, **planned for 0.3,
   not implemented**), the CR-DBX clarification of specification sections 1.3 and 8, a pointer in `docs/api/contract.md`,
   `docs/adr/README.md`, `mkdocs.yml`, `docs/program/STATUS.md` (G-CX in effect after S-1..S-4, O-10, CR-DBX section)
-  and `docs/TODO.md` (TB-149 in progress, TB-148 (1) decided for 0.3). No code change, no API change.
+  and `docs/TODO.md` (TB-149 in progress, TB-148 (1) decided for 0.3). No code change, no API change. The security
+  review of #76 (accepted with conditions) is written in as requirements with named tests: K-1 SQLite rebuild SQL
+  from `sqlite_schema` as one checked statement, K-2 no escalation through `TRIGGER`, foreign `SECURITY DEFINER`
+  functions or `CREATE` on shared schemas, K-3 injection-safe revision text; decisions role DDL only on
+  PostgreSQL 16 and later, no predefined `pg_*` role, a required `environment` keyword, v2 fingerprints opt-in;
+  notes N-1..N-5.
 - Docs: the owner accepted QA-S1 for tabrion-studio 1.0 on 2026-11-14 16:34Z. `docs/program/STATUS.md` (QA-S1 and
   STU-054 done, M6, M7, G-CX: start condition S-1 met, S-2..S-4 open) and TB-149 in `docs/TODO.md`. Not a release:
   H-2 and G-R stay open. No code change.

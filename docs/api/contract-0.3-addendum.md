@@ -9,6 +9,9 @@
 
 Work package TABRION TAB-XW-1 (change request CR-DBX, planning document 15 sections 5 and 9.1). The design rules are
 [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md); the scope is [ADR 0014](../adr/0014-crdbx-tabrion-scope.md).
+The conditions K-1..K-3, decisions D-1..D-4 and notes N-1..N-5 of the security review of #76 are binding
+requirements; each is repeated below at its function with its named test, and the full table is
+[ADR 0015 section 9](../adr/0015-crdbx-write-and-ddl-primitives.md#9-conditions-decisions-and-notes-of-the-security-review-of-76-binding-requirements).
 The conventions of the contract apply unchanged: keyword-only parameters after `*`, frozen slotted dataclasses, times
 in seconds as `float`, T-NOTX for connections handed to Tabrion, R-SET, R-NORETRY, no values in errors.
 
@@ -44,7 +47,8 @@ class PlanError(TabrionError)          # base of the plan errors
                                            # .differences: tuple[SchemaDifference, ...]
     class PlanRefused(PlanError)           # "plan.refused": details reason in
                                            # {"environment", "migration_managed", "risk_not_allowed",
-                                           #  "dialect_mismatch", "engine_unsupported"}, markers (comma list)
+                                           #  "dialect_mismatch", "engine_unsupported", "unsafe_schema_sql"},
+                                           # markers (comma list)
     class PlanFailed(PlanError)            # "plan.failed": details step, completed, state in {"rolled_back", "partial"};
                                            # original set; never chained
 class DatabaseInUse(TabrionError)      # "postgres.database_in_use" (details sessions), "sqlite.in_use"
@@ -52,7 +56,8 @@ class DatabaseInUse(TabrionError)      # "postgres.database_in_use" (details ses
 
 - `RoleUnsafe` (exists, `postgres.role_unsafe`) gets new values in `details["reasons"]`: `createrole`,
   `replication`, `reachable_superuser`, `reachable_bypass_rls`, `reachable_createrole`, `reachable_replication`,
-  `predefined_role`, `owns_objects`, `current_user`. New reason values and new error classes are additive (API
+  `predefined_role`, `owns_objects`, `current_user`, `security_definer`, `schema_create`. New `UsageError` codes:
+  `postgres.role_ddl_requires_16` (D-1), `plan.invalid_revision` (K-3). New reason values and new error classes are additive (API
   stability policy S-4).
 - The rules of contract section 1.4 apply: `str` is the safe message, no `__cause__`, `details` never hold data
   values, passwords, revision text or SQL with literals. A fingerprint and a plan hash are not secrets.
@@ -128,6 +133,8 @@ def fingerprint(snapshot: SchemaSnapshot) -> str: ...  # "v1:sha256:<hex>" for l
   `unique_missing`, `unique_added`, `check_missing`, `check_added`, `index_missing`, `index_added`. A new difference
   names the table, the column where there is one, and the constraint or index name in a new field
   `SchemaDifference.name: str | None = None`; never data. Only the `_added` kinds of indexes are not breaking.
+- **D-4:** level 2 stays opt-in in 0.3; `level=1` stays the default. Tests `tests/unit/test_schema_v2.py::test_default_level_is_1`,
+  `::test_v1_fingerprint_unchanged_against_02_golden`.
 - `compare` refuses snapshots of different levels (`UsageError("schema.level_mismatch")`).
 - A level-2 `SchemaSnapshot` is also the **target model** that the Schema Designer edits and that `tabrion.ddl` and
   `tabrion.plan` take; a consumer builds it with `dataclasses.replace` or `from_json`. There is no separate model.
@@ -208,14 +215,29 @@ def migration_markers(database: Database) -> tuple[str, ...]: ...
 - `plan` needs two level-2 snapshots of the same dialect (`PlanRefused`, reason `dialect_mismatch`;
   `UsageError("plan.level_required")`). It orders steps so that dependencies hold (drop foreign keys before tables,
   create referenced tables first). On SQLite an `ALTER` that SQLite cannot do in place becomes one `rebuild_table`
-  step (new table, copy, drop, rename, indexes and triggers recreated from `sqlite_schema`); `server_version` decides
-  whether `DROP COLUMN` (3.35 and later) is possible in place.
+  step (new table, copy, drop, rename, indexes, triggers and views recreated from `sqlite_schema`); `server_version`
+  decides whether `DROP COLUMN` (3.35 and later) is possible in place.
+- **K-1 (schema SQL from the file is attacker data):** every text taken from `sqlite_schema` for a rebuild becomes
+  exactly one `DdlStatement` and is run with `execute`, never `executescript`. It must pass
+  `sqlite3.complete_statement` with no remainder after the first statement, and its head must match the row's
+  `type` and name (`CREATE [TEMP] TRIGGER <name>`, `CREATE [TEMP] VIEW <name>`, `CREATE [UNIQUE] INDEX <name>`).
+  Otherwise `plan` refuses (`PlanRefused`, reason `unsafe_schema_sql`), and `execute_plan` checks again. Tests
+  `tests/unit/test_plan_sqlite_rebuild.py::test_rebuild_refuses_second_statement_in_schema_sql`,
+  `::test_rebuild_refuses_type_or_name_mismatch`, `::test_rebuild_never_uses_executescript`.
 - The plan is deterministic: the same two snapshots and server version give the same `plan_hash`.
 - **`revision_text`** renders an Alembic revision file (`upgrade()` with `op.*` calls, `downgrade()` raising
   `NotImplementedError` unless every step is reversible) as a string. It imports Alembic's operation renderers and
   nothing else: no `env.py`, no project module, no file access. `revision`, `down_revision`, `message` and every
-  identifier are written as Python string literals; `revision` must match `[0-9a-zA-Z_]{1,32}`
-  (`UsageError("plan.invalid_revision")`). SQLite rebuilds render as `op.batch_alter_table(..., recreate="always")`
+  identifier are written as Python string literals.
+- **K-3:** the module docstring is a fixed text with no caller text; the message appears only as a `repr` literal,
+  so `"""`, `\`, a line break or NUL cannot break out. `revision` must match `[0-9a-zA-Z_]{1,64}` and
+  `down_revision` the same or `None` (`UsageError("plan.invalid_revision")`). Tests
+  `tests/unit/test_plan_revision_text.py::test_message_cannot_break_docstring` (`"""`, `\`, `\r\n`, `\x00`),
+  `::test_revision_ids_validated` (a `down_revision` of `"; import os`), `::test_revision_text_ast_has_only_literals`
+  (each output through `ast.parse`). The file name or slug is Studio's (STU-XSD-3: no path parts, no `..`).
+- **N-2:** `from_json` proves integrity, not authenticity: a consumer never takes a plan from an untrusted source
+  (project file, URL, import); Studio keeps plans server-side (Studio #109 TX-08). Test
+  `tests/unit/test_plan.py::test_from_json_docstring_states_integrity_only`. SQLite rebuilds render as `op.batch_alter_table(..., recreate="always")`
   with a comment that points to the migrations guide (foreign keys off around a batch rebuild).
 - **`migration_markers`** reads the catalog only and returns the markers of migration management it finds:
   `"alembic_version"`, `"nodestro_schema_migrations"`, `"axentra_schema_migrations"`, `"sqlite_user_version"`. An
@@ -259,7 +281,19 @@ Order of checks, each before any statement runs:
 4. Every risk of every step is in `allow`, else `PlanRefused` (reason `risk_not_allowed`).
 5. The database's dialect equals `plan.dialect`, else `PlanRefused` (reason `dialect_mismatch`).
 6. **Drift check:** a level-2 snapshot taken inside the execution transaction (PostgreSQL) or under
-   `BEGIN IMMEDIATE` (SQLite) has the fingerprint `expected_fingerprint`, else `SchemaDrift`.
+   `BEGIN IMMEDIATE` (SQLite) has the fingerprint `expected_fingerprint`, else `SchemaDrift`. **N-1:** on PostgreSQL
+   the executor first locks the plan's target tables (`LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE` or the stronger
+   mode a step needs, under `lock_timeout`) and only then computes the fingerprint. Tests
+   `tests/postgres/test_plan_execute_postgres.py::test_locks_taken_before_drift_fingerprint`,
+   `::test_concurrent_ddl_after_check_blocked`.
+
+- **D-3:** `environment` has no default and is typed `Literal["dev", "test"]`; it is a guard rail, not a boundary.
+  Studio fills it from the user-local stored profile, never from the request (Studio #109 K-1). Tests
+  `tests/unit/test_plan_execute.py::test_environment_is_required_keyword_without_default`,
+  `::test_environment_other_values_refused`.
+- **K-1 at execution:** each recreated `sqlite_schema` text runs as one statement on the caller's connection under
+  the caller's authorizer, with `trusted_schema = OFF` and defensive mode (`SQLITE_DBCONFIG_DEFENSIVE`; Studio
+  TX-16). Test `tests/unit/test_plan_sqlite_rebuild.py::test_rebuild_runs_under_authorizer_and_defensive`.
 
 - **Execution and dry run:** as [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) section 4. On PostgreSQL
   `SET LOCAL lock_timeout`, one transaction for the transactional steps, then each non-transactional step alone; a
@@ -298,6 +332,9 @@ def delete_row(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str
   :old` (SQLite `IS`) for every column in `old`, with bound parameters only. A table without a primary key, or a
   `key` that is not exactly the primary key, raises `UsageError("rowedit.primary_key_required")` (no `rowid` or
   `ctid` as a write key). No upsert and no merge (specification section 1.3).
+- **N-5:** `IS NOT DISTINCT FROM` on floating-point, JSON or collation-dependent columns can report a false
+  conflict (safe side: nothing is written); the guide says so. Test
+  `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict`.
 - **Tests:** a concurrent change gives `RowCountMismatch` and leaves the row unchanged; caught error still rolls
   back; `max_affected` over a multi-row statement; NULL in `old`; parameter canary in errors.
 
@@ -328,6 +365,11 @@ def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = Fal
   when another connection holds the file; then it deletes the file and its `-wal`, `-shm` and `-journal` side files
   and returns the deleted paths. A process that opens the file after the lock check is not prevented (documented
   race; the consumer stops its own connections first).
+- **N-4:** the check and the delete work through a directory file descriptor opened with `O_NOFOLLOW`; device and
+  inode of the checked file are compared again right before the unlink (a swapped file is refused); side files that
+  are symbolic links are only unlinked, never followed. Tests
+  `tests/unit/test_sqlite_delete.py::test_swap_between_check_and_unlink_refused`,
+  `::test_side_file_symlink_unlinked_not_followed`.
 - **Tests:** the round trip of planning document 15 section 9.4 (backup, restore into a new file, `integrity_check`
   `ok`, schema fingerprint equal), WAL mode, a corrupt source, the 0600 mode, a held lock, the side files.
 
@@ -351,7 +393,9 @@ class RolePrivileges:
     member_of: tuple[str, ...]           # direct memberships
     reachable: tuple[str, ...]           # every role reachable through membership (inherit or SET ROLE)
     dangerous: tuple[str, ...]           # "superuser:<role>", "bypass_rls:<role>", "createrole:<role>",
-                                         # "replication:<role>", "predefined:<role>"
+                                         # "replication:<role>", "createrole_pre16", "trigger:<table>",
+                                         # "security_definer:<function>", "schema_create:<schema>"
+    broad: tuple[str, ...]               # "broad:<role>" for memberships in predefined pg_* roles (finding)
     owned_objects: int
     default_privileges: int
     @property
@@ -369,7 +413,7 @@ def grant_membership(connection: psycopg.Connection, role: str, *, member: str) 
 def revoke_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...
 def grant_privileges(connection: psycopg.Connection, role: str, *,
                      privileges: Sequence[Literal["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES",
-                                                  "TRIGGER", "USAGE", "CREATE", "CONNECT", "EXECUTE"]],
+                                                  "USAGE", "CREATE", "CONNECT", "EXECUTE"]],   # no TRIGGER (K-2)
                      on: Literal["table", "sequence", "function", "schema", "database"],
                      objects: Sequence[str]) -> RolePrivileges: ...
 def revoke_privileges(connection: psycopg.Connection, role: str, *, privileges: Sequence[str],
@@ -377,10 +421,25 @@ def revoke_privileges(connection: psycopg.Connection, role: str, *, privileges: 
                       objects: Sequence[str]) -> RolePrivileges: ...
 ```
 
+- **D-1, PostgreSQL 16 and later only:** every function except `role_privileges` raises
+  `UsageError("postgres.role_ddl_requires_16")` on 15 and earlier; `role_privileges` reports CREATEROLE before 16 as
+  `dangerous` (`createrole_pre16`). Tests `tests/postgres/test_role_ddl.py::test_role_ddl_refused_before_16`,
+  `::test_createrole_pre16_reported_dangerous`.
 - **Attribute ban (E-X6):** no parameter requests SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION.
-  `grant_membership` refuses (`RoleUnsafe`, reasons `reachable_*` or `predefined_role`) when `role`, or any role
-  reachable from it, has one of these attributes or is `pg_execute_server_program`, `pg_read_server_files` or
-  `pg_write_server_files`. `alter_role` and `grant_privileges` refuse a target role that already has a dangerous
+  `grant_membership` refuses (`RoleUnsafe`, reasons `reachable_*`) when `role`, or any role reachable from it, has
+  one of these attributes. **N-3:** reachability counts INHERIT, the SET option and the ADMIN option. Test
+  `tests/postgres/test_role_ddl.py::test_admin_option_on_dangerous_role_counts_as_reachable`.
+- **D-2, no predefined roles (allowlist):** `grant_membership` refuses every role named `pg_*` or with an oid below
+  `FirstNormalObjectId` (reason `predefined_role`), including `pg_read_all_data` and `pg_write_all_data`; existing
+  memberships appear in `RolePrivileges.broad` as a finding. Tests
+  `tests/postgres/test_role_ddl.py::test_membership_in_any_predefined_role_refused`,
+  `::test_existing_predefined_membership_reported_broad`.
+- **K-2, escalation without attributes:** `TRIGGER` is not grantable; `EXECUTE` on a `SECURITY DEFINER` function
+  whose owner is not the grantee is refused (reason `security_definer`); `CREATE` on `public` or on a schema the
+  grantee does not own is refused (reason `schema_create`, CVE-2018-1058 class); `role_privileges` reports such
+  existing grants as `dangerous`. Tests `tests/postgres/test_role_ddl.py::test_trigger_privilege_not_grantable`,
+  `::test_execute_on_foreign_security_definer_refused`, `::test_create_on_public_or_foreign_schema_refused`,
+  `::test_role_privileges_reports_escalation_grants`. `alter_role` and `grant_privileges` refuse a target role that already has a dangerous
   attribute or reachable role (reasons `superuser`, `bypass_rls`, `createrole`, `replication`, `reachable_*`): a
   change to such a role is not a change Tabrion makes. No `WITH ADMIN OPTION`, no `WITH GRANT OPTION`.
 - **Checks before every change** run in the same transaction, right before the change; the returned
@@ -394,8 +453,8 @@ def revoke_privileges(connection: psycopg.Connection, role: str, *, privileges: 
   verifier; never in an error, `repr`, log or frame local. An empty password is refused.
 - T-NOTX: these functions need a transaction of their own (as `grant_runtime_role`) and raise
   `UsageError("...nested_transaction")` inside a caller's transaction.
-- **Tests:** the matrix of ADR 0015 Verification (direct, INHERIT and NOINHERIT membership, SET option on 16 and
-  later, chains, predefined roles), password canaries, catalog snapshots before and after, refusals leave the catalog
+- **Tests:** the matrix of ADR 0015 Verification (direct, INHERIT and NOINHERIT membership, SET and ADMIN option,
+  chains, every predefined role, the K-2 grants), password canaries, catalog snapshots before and after, refusals leave the catalog
   unchanged.
 
 ## A.8 `tabrion.postgres`: `create_database` and `drop_database` (TAB-XW-9)

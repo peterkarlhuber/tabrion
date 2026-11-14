@@ -1,6 +1,8 @@
 # ADR 0015: Tabrion 0.3 write and DDL primitives: SQLAlchemy and Alembic, revision text only, plan binding and guards
 
-- **Status:** Accepted (2026-11-14, TABRION TAB-XW-1). The content was decided by the owner on change request CR-DBX
+- **Status:** Accepted (2026-11-14, TABRION TAB-XW-1), with the conditions K-1..K-3, the decisions D-1..D-4 and the
+  notes N-1..N-5 of the security review of #76 (planning folder `reviews/pr76-tabxw1-review.md`, ACCEPTED WITH
+  CONDITIONS) written in as requirements (section 9). The content was decided by the owner on change request CR-DBX
   (2026-11-13 23:35Z: E-X3..E-X13 as recommended, with the binding refinements of E-X4, E-X5, E-X6 and E-X9 in
   planning document 15 section 3.1). The development start is the conditional approval G-CX of 2026-11-14 11:01Z;
   its start conditions S-1..S-4 are proven in the planning file `cr-dbx-startbedingungen.md` (overall status met,
@@ -58,7 +60,9 @@ the plan (section 2.1); this record carries the resolution into the repository.
   consumer's job (Studio STU-XSD-3).
 - The rendered text is inert data from Tabrion's point of view: every identifier and the message are written as
   Python string literals (`repr`), never as code, so a table name or a message cannot inject statements into the
-  revision file.
+  revision file. This includes the module docstring, `revision` and `down_revision` (K-3, section 9).
+- The file name or slug of the revision is the consumer's (STU-XSD-3: no path parts, no `..`); Tabrion returns text
+  only.
 - `tabrion.migrations` keeps `status` and `require_current` (ADR 0007); nothing in 0.3 makes it a runner.
 
 ### 3. Direct execution only without migration management, declared DEV or TEST (E-X4)
@@ -70,22 +74,30 @@ the plan (section 2.1); this record carries the resolution into the repository.
   `migration_managed`): an `alembic_version` table, the Nodestro and Axentra bookkeeping tables
   (`nodestro_schema_migrations`, `axentra_schema_migrations`) or a SQLite `user_version` above 0
   (`tabrion.sqlite.migrate`). `tabrion.plan.migration_markers` reports the same markers for a preview.
-- The caller must declare the environment (`environment="dev"` or `"test"`); anything else is refused (reason
-  `environment`). Tabrion cannot know a database's environment: this is a second lock behind the consumer's own
-  PROD lock (E-X7: PROD stays technically locked in Studio), not a replacement for it.
+- The caller must declare the environment: `environment` is a **required keyword parameter without a default**,
+  typed `Literal["dev", "test"]`; any other value is refused at run time too (reason `environment`). Tabrion cannot
+  know a database's environment: this is a guard rail, **not a boundary**, a second lock behind the consumer's own
+  PROD lock (E-X7: PROD stays technically locked in Studio). Studio passes the value from the user-local stored
+  profile, never from the request (Studio #109 K-1). Decided in the review of #76 (D-3).
 
 ### 4. Plan binding, drift check, dry run (E-X4, R-X3)
 
 - A `MigrationPlan` carries the fingerprint of the snapshot it was computed from (`source_fingerprint`), the target
   fingerprint and a `plan_hash`: SHA-256 over the canonical JSON of dialect, both fingerprints and every step with its
   exact SQL text. `MigrationPlan.from_json` recomputes the hash and refuses a plan whose content does not match it.
+  This proves **integrity, not authenticity**: a plan whose hash matches its own content can come from anywhere. A
+  consumer never takes a plan from an untrusted source (a project file, a URL, an import); Studio keeps plans
+  server-side (Studio #109 TX-08; N-2).
 - `execute_plan` takes the hash the user saw in the preview (`plan_hash=`) and the fingerprint the preview was made
   against (`expected_fingerprint=`). It runs exactly that plan or nothing:
   1. the plan's own hash must equal `plan_hash` (`PlanMismatch`), and `source_fingerprint` must equal
      `expected_fingerprint` (`PlanMismatch`);
   2. **right before the first step**, inside the execution transaction where the engine allows it, a fresh snapshot
      of the database must have the fingerprint `expected_fingerprint`; any difference aborts before a statement runs
-     (`SchemaDrift`, with both fingerprints and the named differences, never data);
+     (`SchemaDrift`, with both fingerprints and the named differences, never data). On PostgreSQL the executor first
+     takes the locks on the plan's target tables (`LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE`, or the stronger mode
+     the step needs, under `lock_timeout`) and only then computes the fingerprint, so concurrent DDL cannot land
+     between the check and the first step (N-1). On SQLite the check runs under `BEGIN IMMEDIATE`;
   3. every step's risk class must be in the caller's `allow` set (the classes the user confirmed); otherwise refused
      before anything runs (reason `risk_not_allowed`).
 - **Dry run:** PostgreSQL runs every transactional step in one transaction and rolls it back; SQLite runs the plan on
@@ -94,7 +106,8 @@ the plan (section 2.1); this record carries the resolution into the repository.
   untested.
 - **Execution:** PostgreSQL in one transaction with `SET LOCAL lock_timeout` (default 5 s, planning document 03
   section 5.3); non-transactional steps one at a time, after the transaction, each marked. SQLite rebuilds (new table,
-  copy, drop, rename, indexes and triggers recreated from `sqlite_schema`) with `PRAGMA foreign_keys=OFF` outside the
+  copy, drop, rename, indexes, triggers and views recreated from `sqlite_schema` under the rules of K-1 in section 9)
+  with `PRAGMA foreign_keys=OFF` outside the
   transaction, `foreign_key_check` before the commit (a violation rolls back) and the pragma restored afterwards
   (R-CR-5). A failure reports the step and whether the database was rolled back or is partly changed (only possible
   after a non-transactional step). Write statements are never retried (R-NORETRY).
@@ -103,15 +116,27 @@ the plan (section 2.1); this record carries the resolution into the repository.
 
 ### 5. Role DDL never grants dangerous attributes, also not indirectly (E-X6, TB-035, TB-036)
 
+- Role DDL runs only on **PostgreSQL 16 and later**; on 15 and earlier every role DDL function refuses with
+  `UsageError("postgres.role_ddl_requires_16")`, because CREATEROLE before 16 can grant membership in almost any
+  non-superuser role and is effectively superuser-equivalent. `role_privileges` stays read-only on every version and
+  reports CREATEROLE before 16 as `dangerous` (`createrole_pre16`), so Studio shows an over-privilege finding (D-1).
 - `tabrion.postgres` role DDL (TAB-XW-8) has **no parameter** for SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION:
   they cannot be requested. `RoleOptions` covers `LOGIN`, `INHERIT`, `CREATEDB`, `CONNECTION LIMIT` and
   `VALID UNTIL` only.
 - Before every change the function computes the affected role's privileges (`role_privileges`): attributes, direct
-  memberships, every role reachable through membership (with INHERIT and, from PostgreSQL 16, the SET option),
-  object ownership and default privileges. It refuses (`RoleUnsafe`, nothing executed) a change after which the
-  role, or any role that can reach it, could reach a role with SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, or
-  one of the superuser-equivalent predefined roles `pg_execute_server_program`, `pg_read_server_files`,
-  `pg_write_server_files` (TB-036). `WITH ADMIN OPTION` and `WITH GRANT OPTION` are not offered.
+  memberships, every role reachable through membership (with INHERIT, the SET option and the **ADMIN option**, since
+  with ADMIN a role can grant that membership to itself; N-3), object ownership and default privileges. It refuses
+  (`RoleUnsafe`, nothing executed) a change after which the role, or any role that can reach it, could reach a role
+  with SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION.
+- **No membership in any predefined role** (allowlist, D-2): `grant_membership` refuses every role named `pg_*` or
+  with an oid below `FirstNormalObjectId`, including `pg_read_all_data`, `pg_write_all_data`, `pg_monitor`,
+  `pg_signal_backend`, `pg_create_subscription` and the server-file roles of TB-036. Studio grants object privileges
+  explicitly instead. Existing memberships in such roles are reported by `role_privileges` as `broad:<role>`, a
+  finding, not a block.
+- **Escalation without attributes (K-2):** `TRIGGER` is not grantable; `EXECUTE` on a `SECURITY DEFINER` function
+  whose owner is not the grantee is refused; `CREATE` on `public` or on any schema the grantee does not own is
+  refused (CVE-2018-1058 class). `role_privileges` reports such existing grants as `dangerous`.
+- `WITH ADMIN OPTION` and `WITH GRANT OPTION` are not offered.
 - The check runs in the same transaction as the change, right before it (role DDL is transactional in
   PostgreSQL); a refused check leaves nothing changed.
 - A password is hashed on the client (`scram-sha-256` through libpq's `PQencryptPassword`) and sent only as the
@@ -158,6 +183,28 @@ the plan (section 2.1); this record carries the resolution into the repository.
 | TAB-XW-8 | Role DDL with the attribute ban, also indirect (TB-035, TB-036) | - | [A.7](../api/contract-0.3-addendum.md#a7-tabrionpostgres-role-ddl-tab-xw-8) |
 | TAB-XW-9 | PostgreSQL `create_database`/`drop_database` | - | [A.8](../api/contract-0.3-addendum.md#a8-tabrionpostgres-create_database-and-drop_database-tab-xw-9) |
 | TAB-XW-10 | G-T2 for 0.3 with an independent API review (as TAB-042) | TAB-XW-1..9 | the whole addendum |
+
+### 9. Conditions, decisions and notes of the security review of #76 (binding requirements)
+
+The review of #76 (planning folder `reviews/pr76-tabxw1-review.md`, 2026-11-14, ACCEPTED WITH CONDITIONS) adds the
+following requirements. Each names the work package that implements it and the test that proves it; the test names
+are binding for that work package (file paths are the planned ones). The [contract addendum 0.3](../api/contract-0.3-addendum.md)
+repeats each requirement at its function.
+
+| ID | Requirement | WP | Named tests |
+|---|---|---|---|
+| **K-1** | The SQLite rebuild re-runs index, trigger and view SQL read from `sqlite_schema`, which in a hostile file is attacker data (`writable_schema`). Each text runs as **exactly one statement** through `execute`, never `executescript`; it must pass `sqlite3.complete_statement` with no remainder after the first statement; its head must match the row's `type` and name (`CREATE [TEMP] TRIGGER`, `CREATE [TEMP] VIEW`, `CREATE [UNIQUE] INDEX` followed by the row's name, quoted or not); it runs on the caller's connection under the caller's authorizer, with `trusted_schema = OFF` and defensive mode (`SQLITE_DBCONFIG_DEFENSIVE`; Studio TX-16). Any violation refuses the plan (`PlanRefused`, reason `unsafe_schema_sql`) before a statement runs: at `plan` time and again at execution | TAB-XW-4, TAB-XW-5 | `tests/unit/test_plan_sqlite_rebuild.py::test_rebuild_refuses_second_statement_in_schema_sql`, `::test_rebuild_refuses_type_or_name_mismatch`, `::test_rebuild_never_uses_executescript`, `::test_rebuild_runs_under_authorizer_and_defensive` |
+| **K-2** | Escalation without role attributes: `TRIGGER` is not in the grantable privileges; `EXECUTE` on a `SECURITY DEFINER` function whose owner is not the grantee is refused (`RoleUnsafe`, reason `security_definer`); `CREATE` on `public` or on a schema the grantee does not own is refused (reason `schema_create`, CVE-2018-1058 class); `role_privileges` reports existing grants of these kinds as `dangerous` (`trigger:<table>`, `security_definer:<function>`, `schema_create:<schema>`). Same matrix as the attribute tests | TAB-XW-8 | `tests/postgres/test_role_ddl.py::test_trigger_privilege_not_grantable`, `::test_execute_on_foreign_security_definer_refused`, `::test_create_on_public_or_foreign_schema_refused`, `::test_role_privileges_reports_escalation_grants` |
+| **K-3** | Revision text: the module docstring is a fixed text with no caller text in it; the message appears only as a Python string literal (`repr`), so `"""`, a backslash, a line break or NUL cannot break out. `revision` and `down_revision` are validated against `[0-9a-zA-Z_]{1,64}` (`down_revision` may be `None`), else `UsageError("plan.invalid_revision")`. Every revision-text test checks the output with `ast.parse`: only literals appear at those places | TAB-XW-4 | `tests/unit/test_plan_revision_text.py::test_message_cannot_break_docstring` (parametrized `"""`, `\`, `\r\n`, `\x00`), `::test_revision_ids_validated` (a `down_revision` of `"; import os`), `::test_revision_text_ast_has_only_literals` |
+| **D-1** | Role DDL only on PostgreSQL 16 and later: `UsageError("postgres.role_ddl_requires_16")` below; `role_privileges` reports CREATEROLE before 16 as `dangerous` (`createrole_pre16`) | TAB-XW-8 | `tests/postgres/test_role_ddl.py::test_role_ddl_refused_before_16`, `::test_createrole_pre16_reported_dangerous` |
+| **D-2** | No membership in any predefined role (`pg_*` or oid below `FirstNormalObjectId`), an allowlist; includes `pg_read_all_data` and `pg_write_all_data`; existing memberships reported as `broad:<role>` | TAB-XW-8 | `tests/postgres/test_role_ddl.py::test_membership_in_any_predefined_role_refused`, `::test_existing_predefined_membership_reported_broad` |
+| **D-3** | `environment` is a required keyword without a default, typed `Literal["dev", "test"]`; a guard rail, not a boundary; Studio fills it from the user-local profile | TAB-XW-5 | `tests/unit/test_plan_execute.py::test_environment_is_required_keyword_without_default` (signature check), `::test_environment_other_values_refused` |
+| **D-4** | v2 fingerprints stay opt-in in 0.3: `snapshot(level=1)` stays the default, `v1:` fingerprints stay byte-identical | TAB-XW-2 | `tests/unit/test_schema_v2.py::test_default_level_is_1`, `::test_v1_fingerprint_unchanged_against_02_golden` |
+| **N-1** | PostgreSQL drift check: lock the plan's target tables first (under `lock_timeout`), then compute the fingerprint | TAB-XW-5 | `tests/postgres/test_plan_execute_postgres.py::test_locks_taken_before_drift_fingerprint`, `::test_concurrent_ddl_after_check_blocked` |
+| **N-2** | `from_json` proves integrity, not authenticity; consumers never take plans from untrusted sources (documented in the guide and the docstring) | TAB-XW-4 | `tests/unit/test_plan.py::test_from_json_docstring_states_integrity_only` |
+| **N-3** | Reachability counts the ADMIN option on a dangerous role | TAB-XW-8 | `tests/postgres/test_role_ddl.py::test_admin_option_on_dangerous_role_counts_as_reachable` |
+| **N-4** | `delete_database_file` works through a directory file descriptor with `O_NOFOLLOW` and compares device and inode of the checked file before the unlink; side files that are links are only unlinked, never followed | TAB-XW-7 | `tests/unit/test_sqlite_delete.py::test_swap_between_check_and_unlink_refused`, `::test_side_file_symlink_unlinked_not_followed` |
+| **N-5** | `IS NOT DISTINCT FROM` on floating-point, JSON or collation-dependent columns may give false conflicts (safe side: no write); documented in the guide | TAB-XW-6 | `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict` |
 
 ## Rationale
 
@@ -206,8 +253,12 @@ the plan (section 2.1); this record carries the resolution into the repository.
   directory.
 - The executor refuses a database with migration management and an undeclared or non-DEV/TEST environment, and runs
   exactly the plan whose hash and source fingerprint it was given, after a drift check; otherwise nothing runs.
-- No role DDL grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, directly or through membership, nor the
-  superuser-equivalent predefined roles.
+- No role DDL grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, directly or through membership (INHERIT, SET
+  or ADMIN option), nor membership in any predefined `pg_*` role, nor `TRIGGER`, `EXECUTE` on a foreign
+  `SECURITY DEFINER` function or `CREATE` on `public` or a foreign schema; role DDL runs only on PostgreSQL 16 and
+  later.
+- SQL text read from a SQLite file's `sqlite_schema` runs only as one checked statement under the caller's
+  authorizer and defensive mode (K-1); revision text holds caller text only as literals (K-3).
 - No secret in plans, revision text, errors, `repr`, logs or frame locals (redaction of `tabrion.errors`, canary
   `SECRET-4711` tests); a role password reaches the server only as a SCRAM verifier.
 - Tabrion has no switch that enables a write or admin function.
@@ -229,9 +280,10 @@ Acceptance criteria of planning document 15 section 9.4 for the Tabrion work pac
   kept, R-X2) with `foreign_key_check`.
 - **TAB-XW-7:** SQLite `restore` round trip: backup, restore, `integrity_check` `ok` and fingerprint equal.
 - **TAB-XW-8:** the attribute ban, also indirect: a member of a SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION role
-  (INHERIT and NOINHERIT, with and without the SET option on PostgreSQL 16 and later), chains of two and more roles,
-  the predefined roles; `role_privileges` shows existing privileges, memberships and indirect privileges; password
-  canaries.
+  (INHERIT and NOINHERIT, with and without the SET option, with the ADMIN option), chains of two and more roles,
+  every predefined role; the escalation grants of K-2; refusal on PostgreSQL 15 and earlier; `role_privileges` shows
+  existing privileges, memberships and indirect privileges; password canaries.
+- The named tests of section 9 for K-1..K-3, D-1..D-3 and N-1..N-5.
 - Mutation probes for each guard (a removed check turns a test red) and the independent API review (TAB-XW-10).
 
 ## Revision triggers
@@ -239,7 +291,8 @@ Acceptance criteria of planning document 15 section 9.4 for the Tabrion work pac
 - A consumer needs Tabrion to apply Alembic revisions or to run a migration with a version table (a new decision on
   ADR 0007 and E-X4).
 - The owner changes E-X4, E-X5, E-X6, E-X7 or E-X9, or allows writing on PROD.
-- PostgreSQL adds a role attribute or predefined role with superuser-equivalent power (extend the ban list).
+- PostgreSQL adds a role attribute with superuser-equivalent power (extend the ban list). New predefined roles need
+  no change: every `pg_*` role is refused (D-2).
 - A consumer other than Studio asks for a gate or switch in Tabrion.
 
 ## Changes from the plan

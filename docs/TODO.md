@@ -604,15 +604,32 @@ required (owner decision of 2026-11-08 11:26Z).
   clarification of specification sections 1.3 and 8.
 - **Open (follow-up work packages):** TAB-XW-2 `tabrion.schema` v2; TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
   (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-6 `Transaction.execute_checked`
-  and `tabrion.rowedit`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (refuses the predefined roles
-  of TB-036; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
+  and `tabrion.rowedit`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
+  predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
   TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
   its names to `surface.json` (`since` 0.3, `X`).
-- **Questions for the review of TAB-XW-1 / TAB-XW-10:** (a) role DDL needs CREATEROLE on the admin role (E-X8), which
-  before PostgreSQL 16 is close to superuser power (TB-036): restrict TAB-XW-8 to PostgreSQL 16 and later, or report
-  CREATEROLE on 14/15 as an over-privileged admin profile? (b) `snapshot(level=)` keeps level 1 as the default so
-  stored `v1:` fingerprints stay valid; decide whether the default moves to 2 in 0.3. (c) Whether
-  `pg_read_all_data`/`pg_write_all_data` join the refused predefined roles (they do not bypass RLS, TB-036).
+- **Security review of #76 (planning folder `reviews/pr76-tabxw1-review.md`): ACCEPTED WITH CONDITIONS.** The
+  conditions, decisions and notes are requirements in [ADR 0015 section 9](adr/0015-crdbx-write-and-ddl-primitives.md#9-conditions-decisions-and-notes-of-the-security-review-of-76-binding-requirements)
+  and at each function of the addendum, each with a named test of the implementing package:
+  - **K-1** (TAB-XW-4/5): SQLite rebuild SQL from `sqlite_schema` runs as exactly one statement, never
+    `executescript`, head matching the row's type and name, under the caller's authorizer, `trusted_schema = OFF` and
+    defensive mode (`test_plan_sqlite_rebuild.py::test_rebuild_refuses_second_statement_in_schema_sql` and three more).
+  - **K-2** (TAB-XW-8): no `TRIGGER` grant; `EXECUTE` on a foreign `SECURITY DEFINER` function and `CREATE` on
+    `public` or a foreign schema refused, existing ones reported as `dangerous` (`test_role_ddl.py::test_trigger_privilege_not_grantable`
+    and three more).
+  - **K-3** (TAB-XW-4): fixed module docstring, `revision`/`down_revision` validated `[0-9a-zA-Z_]{1,64}`, `ast.parse`
+    tests (`test_plan_revision_text.py::test_message_cannot_break_docstring` and two more).
+  - Notes N-1 (locks before the drift fingerprint), N-2 (plan JSON is integrity, not authenticity), N-3 (ADMIN option
+    counts in reachability), N-4 (`delete_database_file` through a directory descriptor, inode check), N-5 (false
+    conflicts of `IS NOT DISTINCT FROM`), each with a named test.
+- **Decided (review of #76, formerly the open questions):**
+  - **D-1:** role DDL only on PostgreSQL 16 and later (`UsageError("postgres.role_ddl_requires_16")` below);
+    `role_privileges` reports CREATEROLE before 16 as `dangerous` (`createrole_pre16`).
+  - **D-2:** no membership in any predefined `pg_*` role (an allowlist), including `pg_read_all_data` and
+    `pg_write_all_data`; existing memberships reported as `broad:<role>`.
+  - **D-3:** the caller-declared environment is acceptable: a required keyword without a default, typed
+    `Literal["dev", "test"]`, a guard rail and not a boundary; Studio fills it from the user-local profile.
+  - **D-4:** v2 fingerprints stay opt-in in 0.3 (`snapshot(level=1)` stays the default).
 - **Next step:** review and merge TAB-XW-1; then TAB-XW-2 (and in parallel TAB-XW-6..9, which depend on nothing).
 
 ## Tests and quality assurance
