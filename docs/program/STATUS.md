@@ -78,7 +78,7 @@ the owning thread reports it.
 | G-S2 | Owner security decision that enables the Studio 1.1 write foundation and Data Editor (STU-026, STU-XW, STU-XDE; CR-DBX) | Open. Until then every write path stays technically locked (STU-ADR-0003 and its CR-DBX amendment in tabrion-studio) |
 | G-S3 | Studio 1.2 security review and acceptance of the Schema Designer (STU-CR-8; defined by STU-CR-1) | Open (added with CR-DB; Studio 1.2 by CR-DBX E-X10). Until then the Schema Designer stays technically locked |
 | G-S4 | Studio 1.3 security review and acceptance of the Database Manager (STU-XDM-7; defined by STU-XDM-1) | Open (added with CR-DBX, E-X9). Until then the Database Manager stays technically locked |
-| G-CX | Inclusion of CR-DBX and the development-start approval (planning document 15, E-X1) | Planning accepted 2026-11-13 (E-X1, E-X2 at 23:28Z; E-X3..E-X13 at 23:35Z with refinements). The development start is **not** approved: it needs Studio 1.0 (G-R), the repository migration and a separate owner approval. G-CX never enables a write or admin function; each stays locked until G-S2, G-S3 or G-S4, and an independent human security review is mandatory before any public release |
+| G-CX | Inclusion of CR-DBX and the development-start approval (planning document 15, E-X1) | Planning accepted 2026-11-13 (E-X1, E-X2 at 23:28Z; E-X3..E-X13 at 23:35Z with refinements). Development start **approved conditionally** 2026-11-14 11:01Z: it starts without a new approval once S-1 (Studio 1.0 functionally complete, QA-S1 accepted), S-2 (relevant security findings fixed, required reviews complete), S-3 (Tabrion migration incl. W6 and pin cascades) and S-4 (mandatory CI green) are proven with evidence and SHA; all four open. H-2 and G-R are not preconditions for internal development. G-CX never enables a write or admin function; each stays locked until G-S2, G-S3 or G-S4, and an independent human security review is mandatory before any public release |
 | G-CR | Inclusion of CR-DB and decisions E-CR-1..E-CR-8 | Inclusion approved 2026-11-08. E-CR-8 (M9, M10, TAB-CR-1/2 in 0.2) is in force. E-CR-2 (Studio schema designer with G-S3, narrower non-goals) is decided by the CR-DBX acceptance of 2026-11-13 in changed form: Studio 1.2 instead of 1.1 (E-X10), role management beyond the runtime role only in Studio 1.3 under G-S4 (E-X6). The Nodestro decisions E-CR-1, E-CR-3..E-CR-7 are still to be confirmed (O-6, TODO TB-004; W-1) |
 | G-R | Owner approval per public release (PyPI, npm, GitHub release, announcement); no standing approval (E-PyPI) | Open for every release; stays locked (CR-DBX changes nothing) |
 | G-EM | Merge of the migration runners | Decided **no** (2026-11-07 23:26Z); MIG-AXE-7, S6, S7 dropped |
@@ -323,8 +323,10 @@ and re-planned to 4 + 1.5, STU-CR-6 on STU-XW-4), and STU-CR-5 writes an Alembic
 Added 2026-11-13: the owner accepted CR-DBX as a change request of its own (E-X1, E-X2 at 23:28Z; E-X3..E-X13 at
 23:35Z as recommended, with binding refinements of E-X4, E-X5, E-X6 and E-X9). This confirms the **planning, not the
 start of implementation**: work starts only after Studio 1.0 (G-R), the repository migration and a separate
-development-start approval (G-CX). The work packages are defined in planning document 15 section 9 and are not
-repeated here; their rows are added when the development start is approved.
+development-start approval (G-CX). **Superseded 2026-11-14 11:01Z:** the owner approved the development start
+conditionally; it begins once the start conditions S-1..S-4 are proven (see the G-CX row); new write or admin code
+stays behind default-off kill switches until G-S2, G-S3 or G-S4. The work packages are defined in planning document 15
+section 9 and are not repeated here; their rows are added when the development start takes effect.
 
 | Area | Work packages | Milestone | Gate | Effort (impl + review) | Status |
 |---|---|---|---|---|---|
@@ -733,7 +735,7 @@ technically or legally required.
 | O-4 | G-T1 review of [contract.md](../api/contract.md), including its open points | TAB-002, G-T1 | Done 2026-11-08: passed with conditions (C-1..C-8) |
 | O-5 | Enable private vulnerability reporting in the repository settings (SECURITY.md points to it) | TAB-006 | Optional (owner decision of 2026-11-08 11:26Z) |
 | O-6 | Confirm the CR-DB decisions E-CR-1..E-CR-7 (planning document 14 section 9.1); E-CR-2 is decided in changed form by the CR-DBX acceptance of 2026-11-13 (W-1), so E-CR-1 and E-CR-3..E-CR-7 (Nodestro, M9) remain | G-CR, ARC-CR-1, NOD-CR-1 | Open (narrowed 2026-11-13) |
-| O-10 | Development-start approval for CR-DBX (G-CX), after Studio 1.0 (G-R) and the repository migration; later the gate decisions G-S2, G-S3 and G-S4 and the independent human security review before any public release | TAB-XW-1, STU-XW-5, M7b, M10, M11 | Open (not before Studio 1.0) |
+| O-10 | Development start for CR-DBX (G-CX, approved conditionally 2026-11-14; takes effect once S-1..S-4 are proven); later the gate decisions G-S2, G-S3 and G-S4 and the independent human security review before any public release | TAB-XW-1, STU-XW-5, M7b, M10, M11 | Open (start conditions S-1..S-4 not yet proven) |
 | O-7 | The same branch protection as O-1 for `peterkarlhuber/tabrion-studio` | GOV-3 | Optional (owner decision of 2026-11-08 11:26Z) |
 | O-8 | Record the planning errata of F-17 (doc 05 section 2.3 lazy-import comment, doc 02 section 9 `tabrion.check(target)`) in the planning documents | G-T1 | Open |
 | O-9 | Upload `assets/branding/social-preview.png` as the social preview in the repository settings (no API for it) | TAB-006 | Optional, not a blocker (owner decision of 2026-11-08 11:26Z) |
