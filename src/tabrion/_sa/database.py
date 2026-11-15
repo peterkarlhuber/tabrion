@@ -1126,7 +1126,7 @@ class Database(_DatabaseV02):
             except Exception as exc:
                 if not _is_database_error(exc):
                     raise
-                error = _translate(exc, statement)
+                error = _translate(exc, statement=statement)
             finally:
                 with contextlib.suppress(Exception):
                     connection.invalidate()
