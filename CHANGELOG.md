@@ -21,7 +21,11 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   without regular expressions in linear time (review of #85, F1); SQLite unique constraints and foreign keys come
   from the pragmas, without touching the warning filters (F3, F5); SQLite CHECK constraints come from a linear
   tokenizer over the `CREATE TABLE` text, because SQLAlchemy 2.0.30 (the floor) merges two checks into one; PostgreSQL
-  `INCLUDE` columns come from `pg_index`, which SQLAlchemy 2.0.30 does not report for a unique constraint. Its fingerprint is
+  `INCLUDE` columns come from `pg_index`, which SQLAlchemy 2.0.30 does not report for a unique constraint.
+- Docs: ADR 0015 section 10 records the owner decision D-5 of 2026-11-15 on the drift blind spots of the `v2:`
+  fingerprint (review of #85, F2): triggers and RLS policies with their directly referenced functions, domain checks
+  and partitioning, an allowlist for unknown PostgreSQL features, a drift check after locking, and a notice in the
+  Data Editor. Implemented in TAB-XW-3..TAB-XW-5; G-S3 stays locked until then. TODO TB-149 and contract I-111 d. Its fingerprint is
   `v2:sha256:<hex>` over the canonical JSON format 2, in which the order of constraints and indexes does not count.
   `compare` names the new kinds `column_default`, `foreign_key_missing`/`_added`, `unique_missing`/`_added`,
   `check_missing`/`_added` and `index_missing`/`_added` (only `index_added` is not breaking), with the constraint or

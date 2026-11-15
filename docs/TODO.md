@@ -652,11 +652,17 @@ required (owner decision of 2026-11-08 11:26Z).
   collations, `NOT VALID`, `MATCH`, exclusion constraints (`ExclusionShape`), the remaining blind spots in I-111 d;
   F3 no `catch_warnings` (SQLite uniques from the pragmas, unnamed); F4 `IndexShape.expressions`; F5 SQLite foreign
   keys from the pragma; F6 `from_json` needs an integer `format`.
-- **Decision before G-S3 (review of #85, F2):** the `v2:` fingerprint does not see triggers, row-level security and
-  policies, domain `CHECK` constraints, partitioning, `UNLOGGED`, identity and generated column detail, storage
-  parameters, `NO INHERIT` and `REPLICA IDENTITY` (I-111 d). Either add them to the level-2 shape (name and a hash of
-  the definition would do for triggers and policies), or Studio marks such tables as not fully modeled and refuses
-  bound writes and Designer plans there. Owner: Tabrion with Studio (STU-CR-4, STU-XW-3); due before G-S3.
+- **Decided (owner, 2026-11-15 06:37Z, confirmed 06:38Z): drift blind spots, D-5 in
+  [ADR 0015 section 10](adr/0015-crdbx-write-and-ddl-primitives.md#10-d-5-drift-blind-spots-of-the-level-2-fingerprint-owner-decision-of-2026-11-15)**
+  (review of #85, F2; I-111 d). (1) Triggers and RLS policies go into the level-2 fingerprint with the functions they
+  reference directly (function body); nested calls are not followed (residual risk); a table whose trigger or policy
+  function is in C or an unknown language is refused; while not reliably checkable, schema changes on such tables are
+  refused. (2) Domain checks and partitioning are detected; schema changes on affected tables are blocked with a
+  clear explanation. (3) Unknown PostgreSQL features fail closed through an allowlist of known relation kinds and
+  features (inheritance, rules, foreign tables, event triggers refused). (4) The drift check is repeated right before
+  execution in the same transaction after locking the affected tables under `lock_timeout`; functions cannot be
+  locked (residual risk). (5) Data Editor (G-S2): tables with triggers get a notice, not a block. Implemented in
+  TAB-XW-3..TAB-XW-5, not in #85; **G-S3 stays locked** until it is implemented, independently reviewed and tested.
 - **Open (follow-up work packages):** TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
   (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
