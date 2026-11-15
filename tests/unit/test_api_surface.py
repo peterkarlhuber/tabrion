@@ -1,5 +1,5 @@
 """TAB-023 (G-T1 condition C-6): ``scripts/api_surface.py`` freezes every signature and keeps 0.2 names out of 0.1
-(and 0.3 names out of 0.2, ADR 0015).
+(and the names of a later minor out of the package's, ADR 0015; 0.3 names out of 0.2 until the 0.3 switch).
 
 The positive control runs the check on the repository; the mutation probes change one thing in a copy of the package
 and expect the check to fail and name it.
@@ -92,22 +92,36 @@ MUTATIONS: dict[str, tuple[list[Edit], str]] = {
         [("_sa/_v02.py", "batch_size: int = 500", "batch_size: int = 100")],
         "tabrion.Transaction.stream: changed",
     ),
-    # ADR 0015 Consequences: a 0.3 name stays unimportable below 0.3 (tabrion._since); removing a gate turns it red.
-    "0.3 method on the public class before 0.3": (
-        [("_sa/database.py", 'if TYPE_CHECKING or not released("0.3"):', "if TYPE_CHECKING:")],
-        "tabrion.Transaction.execute_checked: since 0.3, but the 0.2 surface exports it",
+    # Since 0.3 (master 0.3.0.dev0) the 0.3 names of TAB-XW-6 are public; the gate mutations of 0.2 became these
+    # (ADR 0015 Consequences, as TAB-042 did for 0.2). The gate itself is probed by
+    # test_a_name_of_a_later_minor_must_not_be_importable.
+    "0.3 mixin dropped from the public class": (
+        [
+            (
+                "_sa/database.py",
+                "class Transaction(_TransactionV03, _TransactionV02):",
+                "class Transaction(_TransactionV02):",
+            )
+        ],
+        "tabrion.Transaction.execute_checked: in surface.json but no longer public",
     ),
-    "0.3 error bound before 0.3": (
-        [("errors.py", 'if _released("0.3"):', "if True:")],
-        "tabrion.errors.RowCountMismatch: since 0.3, but the 0.2 surface exports it",
+    "0.3 error no longer exported": (
+        [("errors.py", '    "RowCountMismatch",\n', "")],
+        "tabrion.errors.RowCountMismatch: in surface.json but no longer public",
     ),
-    "0.3 module importable before 0.3": (
-        [("rowedit.py", 'if not released("0.3"):', "if False:")],
-        "tabrion.rowedit.update_row: since 0.3, but it is importable from its public path",
+    "0.3 module name no longer exported": (
+        [
+            (
+                "rowedit.py",
+                '__all__ = ["delete_row", "insert_row", "update_row"]',
+                '__all__ = ["delete_row", "insert_row"]',
+            )
+        ],
+        "tabrion.rowedit.update_row: in surface.json but no longer public",
     ),
-    "0.3 staged signature changed": (
+    "0.3 mixin method signature changed": (
         [("_sa/_v03.py", "max_affected: int | None = None,", "max_affected: int | None = 1,")],
-        "tabrion.Transaction.execute_checked: staged signature changed",
+        "tabrion.Transaction.execute_checked: changed",
     ),
     "deprecation without surface.json and CHANGELOG (TAB-051)": (
         [
@@ -140,6 +154,55 @@ def test_mutation_turns_red(tmp_path: Path, case: str) -> None:
     result = _run(_mutated(tmp_path, edits))
     assert result.returncode == 1, result.stdout + result.stderr
     assert message in result.stderr, result.stderr
+
+
+def _minors() -> tuple[str, str]:
+    """The package's minor and the one after it (``"0.3"``, ``"0.4"`` for ``0.3.0.dev0``)."""
+    from tabrion._since import minor
+    from tabrion._version import __version__
+
+    major, current = minor(__version__)
+    return f"{major}.{current}", f"{major}.{current + 1}"
+
+
+@pytest.mark.parametrize(
+    ("path", "staged", "edits", "message"),
+    [
+        (
+            "tabrion.Transaction.execute_checked",
+            "tabrion._sa._v03:_TransactionV03.execute_checked",
+            [],
+            "tabrion.Transaction.execute_checked: since {later}, but the {current} surface exports it",
+        ),
+        (
+            "tabrion.rowedit.update_row",
+            "tabrion._sa._rowedit:update_row",
+            [],
+            "tabrion.rowedit.update_row: since {later}, but the {current} surface exports it",
+        ),
+        (
+            "tabrion.errors.RowCountMismatch",
+            "tabrion.errors:RowCountMismatch",
+            [("errors.py", '    "RowCountMismatch",\n', "")],
+            "tabrion.errors.RowCountMismatch: since {later}, but it is importable from its public path",
+        ),
+    ],
+)
+def test_a_name_of_a_later_minor_must_not_be_importable(
+    tmp_path: Path, path: str, staged: str, edits: list[Edit], message: str
+) -> None:
+    """ADR 0015 Consequences (the C-6 mechanism, kept after the 0.3 switch, ``tabrion._since``): a name whose ``since``
+    is a later minor than the package's must not be exported, nor importable from its public path outside
+    ``__all__``, even with a valid ``staged`` location. Below 0.3 the 0.3 names of TAB-XW-6 were these names."""
+    current, later = _minors()
+    data = json.loads(SURFACE.read_text(encoding="utf-8"))
+    data["names"][path] = {**data["names"][path], "since": later, "staged": staged}
+    surface = tmp_path / "surface.json"
+    surface.write_text(json.dumps(data), encoding="utf-8")
+    result = _run(_mutated(tmp_path, edits), "--surface", str(surface))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert message.format(later=later, current=current) in result.stderr, result.stderr
+    assert "staged" not in result.stderr.replace("staged for a later minor", ""), result.stderr  # the stub matches
 
 
 # --- TB-022: the release check ``--no-stubs`` -------------------------------------------------------------------------

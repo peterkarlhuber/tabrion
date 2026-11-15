@@ -79,10 +79,11 @@ PUBLIC_MODULES = (
 )
 """Contract section 0. Order matters only to break ties when choosing the canonical path of a re-exported name."""
 
-MODULE_SINCE = {"tabrion.rowedit": "0.3"}
+MODULE_SINCE: dict[str, str] = {}
 """Public modules of a later minor (ADR 0015 Consequences): before that version their import raises ``ImportError``
 (``tabrion._since``), so :func:`collect` leaves them out and their names count as staged; from that version on they
-are collected like every other module, and an import error fails the check."""
+are collected like every other module, and an import error fails the check. Empty since the 0.3 switch, which made
+``tabrion.rowedit`` (``"0.3"`` until then) public."""
 
 PUBLIC_DUNDERS = ("__init__", "__enter__", "__exit__", "__call__")
 SKIP = ("__version__",)

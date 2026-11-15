@@ -1,11 +1,14 @@
-"""The 0.3 gate of TAB-XW-6 (ADR 0015 Consequences, as G-T1 condition C-6 for 0.2; ``tabrion._since``).
+"""The 0.3 gate of TAB-XW-6 after the 0.3 switch (ADR 0015 Consequences, as TAB-042 for 0.2; ``tabrion._since``).
 
-``Transaction.execute_checked``, ``tabrion.errors.RowCountMismatch`` and ``tabrion.rowedit`` are unimportable while the
-package version is below 0.3 and public from 0.3 on, with no flag or setting in between. Both states are proven
-whatever the repository's own version is: in this process by setting ``tabrion._version.__version__`` (the module
-import gate and :func:`tabrion._since.released`), and in fresh interpreters on copies of the package whose
-``_version.py`` says 0.2 or 0.3 (the class and the error, which are decided at import time), including the API
-surface check of ``scripts/api_surface.py`` at 0.3.
+Until master built as 0.3, ``Transaction.execute_checked``, ``tabrion.errors.RowCountMismatch`` and
+``tabrion.rowedit`` were unimportable (the G-T1 C-6 mechanism, proven in both states here). Since ``0.3.0.dev0`` they
+are public without the gate: ``Transaction`` inherits the mixin of ``tabrion._sa._v03``, ``tabrion.errors`` binds the
+error and ``tabrion.rowedit`` imports, whatever ``tabrion._version.__version__`` says. These tests prove that state,
+end to end in a fresh interpreter, and that the version leaves the consumers' range ``tabrion>=0.2,<0.3``.
+
+The gate itself (:func:`tabrion._since.released`) stays for a name planned for a later minor than the package's; its
+check in ``scripts/api_surface.py`` is probed by ``tests/unit/test_api_surface.py``
+(``test_a_name_of_a_later_minor_must_not_be_importable``).
 """
 
 from __future__ import annotations
@@ -13,8 +16,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 import importlib
 import os
-from pathlib import Path
-import shutil
 import subprocess
 import sys
 
@@ -22,22 +23,23 @@ import pytest
 
 import tabrion._since
 import tabrion._version
-from tests.conftest import ROOT, SRC
+from tests.conftest import SRC
 
 pytest.importorskip("sqlalchemy")
-pytest.importorskip("alembic")  # the surface check imports every public module
-
-VERSION_LINE = f'__version__ = "{tabrion._version.__version__}"'
 
 
 @pytest.fixture
 def fresh_rowedit(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """``tabrion.rowedit`` is imported anew by the test and forgotten afterwards."""
+    """``tabrion.rowedit`` is imported anew by the test, and the earlier module is back afterwards."""
+    before = sys.modules.get("tabrion.rowedit")
     monkeypatch.delitem(sys.modules, "tabrion.rowedit", raising=False)
     yield
-    sys.modules.pop("tabrion.rowedit", None)
-    if hasattr(tabrion, "rowedit"):
-        delattr(tabrion, "rowedit")
+    if before is not None:
+        tabrion.rowedit = before
+    else:
+        sys.modules.pop("tabrion.rowedit", None)
+        if hasattr(tabrion, "rowedit"):
+            delattr(tabrion, "rowedit")
 
 
 @pytest.mark.parametrize(
@@ -54,18 +56,28 @@ def test_released_refuses_a_text_that_is_no_version() -> None:
         tabrion._since.released("next")
 
 
-@pytest.mark.usefixtures("fresh_rowedit")
-def test_rowedit_is_not_importable_below_0_3(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(tabrion._version, "__version__", "0.2.2.dev0")
-    with pytest.raises(ImportError, match=r"planned for Tabrion 0\.3") as caught:
-        importlib.import_module("tabrion.rowedit")
-    assert caught.value.name == "tabrion.rowedit"
-    assert "tabrion.rowedit" not in sys.modules
+def test_the_package_is_at_least_0_3() -> None:
+    assert tabrion._since.minor(tabrion._version.__version__) >= (0, 3)
+    assert tabrion._since.released("0.3")
+
+
+def test_the_version_is_outside_the_consumers_0_2_range() -> None:
+    """The consumers require ``tabrion>=0.2,<0.3``; a 0.3 development version must not satisfy it (PEP 440: ``<0.3``
+    excludes the pre-releases of 0.3, ``0.3.0.dev0`` among them), so no consumer resolves to this master by range."""
+    specifiers = pytest.importorskip("packaging.specifiers")
+    version = pytest.importorskip("packaging.version")
+    current = version.Version(tabrion._version.__version__)
+    consumers = specifiers.SpecifierSet(">=0.2,<0.3")
+    assert not consumers.contains(current, prereleases=True)
+    assert not consumers.contains(current)
+    assert consumers.contains("0.2.1") and consumers.contains("0.2.2")
 
 
 @pytest.mark.usefixtures("fresh_rowedit")
-def test_rowedit_is_importable_from_0_3(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(tabrion._version, "__version__", "0.3.0.dev0")
+@pytest.mark.parametrize("version", ["0.2.9", "0.3.0.dev0"])
+def test_the_0_3_names_need_no_gate_any_more(monkeypatch: pytest.MonkeyPatch, version: str) -> None:
+    """``tabrion.rowedit`` imports whatever the version says: the 0.3 switch removed its import gate."""
+    monkeypatch.setattr(tabrion._version, "__version__", version)
     module = importlib.import_module("tabrion.rowedit")
     staged = importlib.import_module("tabrion._sa._rowedit")
     assert module.__all__ == ["delete_row", "insert_row", "update_row"]
@@ -73,78 +85,43 @@ def test_rowedit_is_importable_from_0_3(monkeypatch: pytest.MonkeyPatch) -> None
         assert getattr(module, name) is getattr(staged, name)
 
 
-def _package(tmp_path: Path, version: str) -> Path:
-    src = tmp_path / "src"
-    shutil.copytree(SRC / "tabrion", src / "tabrion", ignore=shutil.ignore_patterns("__pycache__"))
-    path = src / "tabrion" / "_version.py"
-    text = path.read_text(encoding="utf-8")
-    assert VERSION_LINE in text
-    path.write_text(text.replace(VERSION_LINE, f'__version__ = "{version}"'), encoding="utf-8")
-    return src
+def test_row_count_mismatch_is_exported() -> None:
+    import tabrion.errors
 
-
-def _python(src: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-    env["PYTHONPATH"] = str(src)
-    return subprocess.run(
-        [sys.executable, *args], env=env, capture_output=True, text=True, timeout=120, check=False, cwd=src
-    )
+    assert "RowCountMismatch" in tabrion.errors.__all__
+    assert issubclass(tabrion.errors.RowCountMismatch, tabrion.errors.TabrionError)
+    assert tabrion.errors.RowCountMismatch.__qualname__ == "RowCountMismatch"
 
 
 PROBE = """
-import sys
-import tabrion, tabrion.errors, tabrion._sa._rowedit, tabrion._sa._v03
-print(tabrion.__version__)
-print(hasattr(tabrion.Transaction, "execute_checked"))
-print(hasattr(tabrion.errors, "RowCountMismatch"), "RowCountMismatch" in tabrion.errors.__all__)
-try:
-    import tabrion.rowedit as rowedit
-except ImportError:
-    print("rowedit: ImportError")
-else:
-    print("rowedit:", rowedit.update_row is tabrion._sa._rowedit.update_row)
-if hasattr(tabrion.Transaction, "execute_checked"):
-    import sqlalchemy
-    assert tabrion.errors.RowCountMismatch is tabrion.errors._RowCountMismatch
-    meta = sqlalchemy.MetaData()
-    t = sqlalchemy.Table("t", meta, sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-                         sqlalchemy.Column("v", sqlalchemy.String))
-    with tabrion.Database.from_url("sqlite://") as db:
+import tabrion, tabrion.errors, tabrion.rowedit as rowedit
+import sqlalchemy
+print(tabrion.__version__ == tabrion._version.__version__)
+print(hasattr(tabrion.Transaction, "execute_checked"), "RowCountMismatch" in tabrion.errors.__all__)
+meta = sqlalchemy.MetaData()
+t = sqlalchemy.Table("t", meta, sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
+                     sqlalchemy.Column("v", sqlalchemy.String))
+with tabrion.Database.from_url("sqlite://") as db:
+    with db.transaction() as tx:
+        meta.create_all(tx.connection)
+        tx.execute_checked(rowedit.insert_row(t, {"id": 1, "v": "a"}), expect_rowcount=1)
+    try:
         with db.transaction() as tx:
-            meta.create_all(tx.connection)
-            tx.execute_checked(rowedit.insert_row(t, {"id": 1, "v": "a"}), expect_rowcount=1)
-        try:
-            with db.transaction() as tx:
-                tx.execute_checked(rowedit.update_row(t, {"id": 1}, {"v": "b"}, {"v": "c"}), expect_rowcount=1)
-        except tabrion.errors.RowCountMismatch as exc:
-            print("conflict:", exc.code, dict(exc.details))
+            tx.execute_checked(rowedit.update_row(t, {"id": 1}, {"v": "b"}, {"v": "c"}), expect_rowcount=1)
+    except tabrion.errors.RowCountMismatch as exc:
+        print("conflict:", exc.code, dict(exc.details))
 """
 
 
-def test_below_0_3_nothing_is_public(tmp_path: Path) -> None:
-    result = _python(_package(tmp_path, "0.2.9"), "-c", PROBE)
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == ["0.2.9", "False", "False False", "rowedit: ImportError"]
-
-
-def test_from_0_3_everything_is_public(tmp_path: Path) -> None:
-    result = _python(_package(tmp_path, "0.3.0.dev0"), "-c", PROBE)
+def test_the_0_3_names_are_public_in_a_fresh_interpreter() -> None:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+    env["PYTHONPATH"] = str(SRC)
+    result = subprocess.run(
+        [sys.executable, "-c", PROBE], env=env, capture_output=True, text=True, timeout=120, check=False, cwd=SRC
+    )
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
-        "0.3.0.dev0",
         "True",
         "True True",
-        "rowedit: True",
         "conflict: transaction.rowcount_mismatch {'expected': 1, 'actual': 0}",
     ]
-
-
-@pytest.mark.parametrize("version", ["0.2.9", "0.3.0.dev0"])
-def test_surface_check_is_consistent_in_both_states(tmp_path: Path, version: str) -> None:
-    """``scripts/api_surface.py``: below 0.3 the names are staged and not importable; at 0.3 they are public with
-    exactly the frozen signatures (the 0.3 switch only drops ``staged``, as TAB-042 did for 0.2)."""
-    script = ROOT / "scripts" / "api_surface.py"
-    result = _python(_package(tmp_path, version), str(script), "--surface", str(ROOT / "docs" / "api" / "surface.json"))
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert f"package {version[:3]}: consistent" in result.stdout
-    assert ("(0 staged for a later minor)" in result.stdout) is version.startswith("0.3")

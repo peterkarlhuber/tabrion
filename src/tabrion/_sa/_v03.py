@@ -1,8 +1,8 @@
 """The 0.3 method of ``Transaction`` (TAB-XW-6, guided write transaction) as a mixin. Private: use ``tabrion``.
 
-``Transaction`` in ``tabrion._sa.database`` inherits from :class:`_TransactionV03` only when the package version is
-0.3 or later (``tabrion._since``); before that, ``execute_checked`` is staged here, off the public class, as the 0.2
-methods were before 0.2 (G-T1 condition C-6, ADR 0015 Consequences). Contract section 5.11, implementation note I-120.
+``Transaction`` in ``tabrion._sa.database`` inherits from :class:`_TransactionV03` since 0.3; before 0.3,
+``execute_checked`` was staged here, off the public class, as the 0.2 methods were before 0.2 (G-T1 condition C-6,
+ADR 0015 Consequences). Contract section 5.11, implementation note I-120.
 
 Like ``tabrion._sa._v02`` this module reads ``tabrion._sa.database`` as a module when a method runs, and imports it at
 its end, so ``database`` imports the mixin at its top without an import cycle that fails (TB-024).
@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 import sqlalchemy
 
 from tabrion._sa._types import Statement
-from tabrion.errors import Kind, ReadOnlyViolation, TabrionError, UsageError, _RowCountMismatch, classify
+from tabrion.errors import Kind, ReadOnlyViolation, RowCountMismatch, TabrionError, UsageError, classify
 
 if TYPE_CHECKING:
     from tabrion._sa.database import Transaction
@@ -80,16 +80,16 @@ def _read_only_error() -> ReadOnlyViolation:
 def _mismatch(count: int, expected: int | None, limit: int | None) -> TabrionError | None:
     """The ``RowCountMismatch`` for ``count`` against the limits, or ``None``; details are counts only (I-120 c)."""
     if count < 0:
-        return _RowCountMismatch("transaction.rowcount_mismatch", details={"expected": expected, "actual": count})
+        return RowCountMismatch("transaction.rowcount_mismatch", details={"expected": expected, "actual": count})
     if limit is not None and count > limit:
-        return _RowCountMismatch("transaction.too_many_rows", details={"limit": limit, "actual": count})
+        return RowCountMismatch("transaction.too_many_rows", details={"limit": limit, "actual": count})
     if expected is not None and count != expected:
-        return _RowCountMismatch("transaction.rowcount_mismatch", details={"expected": expected, "actual": count})
+        return RowCountMismatch("transaction.rowcount_mismatch", details={"expected": expected, "actual": count})
     return None
 
 
 class _TransactionV03:
-    """Mixed into ``Transaction`` from 0.3 on (``tabrion._since``), before the 0.2 mixin."""
+    """Mixed into ``Transaction`` since 0.3, before the 0.2 mixin."""
 
     def execute_checked(
         self,

@@ -1,8 +1,8 @@
 """The guided write transaction on PostgreSQL: ``Transaction.execute_checked`` and ``tabrion.rowedit`` (TAB-XW-6,
 contract section 5.11, I-120 and I-121; ADR 0015 section 9 N-5).
 
-Staged until 0.3 (``tabrion._since``): the tests use the private ``tabrion._sa._staged`` classes and the staged
-``tabrion._sa._rowedit``, as on SQLite (``tests/unit/test_execute_checked.py``, ``tests/unit/test_rowedit.py``).
+Public since 0.3: the tests use ``tabrion.Database`` and ``tabrion.rowedit``, as on SQLite
+(``tests/unit/test_execute_checked.py``, ``tests/unit/test_rowedit.py``); before 0.3 they used the staged classes.
 Every table lives in the ``schema`` fixture; a second writer is a plain psycopg connection.
 """
 
@@ -23,17 +23,16 @@ psycopg = pytest.importorskip("psycopg")
 from sqlalchemy import Table  # noqa: E402
 from sqlalchemy.dialects import postgresql  # noqa: E402
 
-from tabrion import Database  # noqa: E402
-from tabrion._sa._rowedit import delete_row, insert_row, update_row  # noqa: E402
-from tabrion._sa._staged import _StagedDatabase, _StagedTransaction  # noqa: E402
+from tabrion import Database, Transaction  # noqa: E402
 from tabrion.errors import (  # noqa: E402
     IntegrityViolation,
     ReadOnlyViolation,
+    RowCountMismatch,
     StatementError,
     StatementTimeout,
     UsageError,
-    _RowCountMismatch,
 )
+from tabrion.rowedit import delete_row, insert_row, update_row  # noqa: E402
 from tests.canary import assert_clean, new_canary  # noqa: E402
 from tests.postgres.test_database import sa_url  # noqa: E402
 
@@ -80,7 +79,7 @@ def table(schema: str, admin: Any) -> Any:
 
 @pytest.fixture
 def db(admin_url: str, table: Table) -> Iterator[Database]:
-    database = _StagedDatabase.from_url(sa_url(admin_url))
+    database = Database.from_url(sa_url(admin_url))
     with database.transaction() as tx:
         run(tx, insert_row(table, ROW))
         run(tx, insert_row(table, {"id": 2}))
@@ -90,7 +89,7 @@ def db(admin_url: str, table: Table) -> Iterator[Database]:
 
 
 def run(tx: Any, statement: Any, **limits: Any) -> int:
-    assert isinstance(tx, _StagedTransaction)
+    assert isinstance(tx, Transaction)
     return tx.execute_checked(statement, **(limits or {"expect_rowcount": 1}))
 
 
@@ -117,7 +116,7 @@ def test_concurrent_change_conflicts_and_leaves_the_row(db: Database, table: Tab
     seen = read(db, table)
     admin.execute(f"UPDATE {table.schema}.items SET label = 'theirs' WHERE id = 1")
     for statement in (update_row(table, {"id": 1}, seen, {"label": "mine"}), delete_row(table, {"id": 1}, seen)):
-        with pytest.raises(_RowCountMismatch) as caught, db.transaction() as tx:
+        with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
             run(tx, statement)
         assert caught.value.code == "transaction.rowcount_mismatch"
         assert dict(caught.value.details) == {"expected": 1, "actual": 0}
@@ -127,9 +126,9 @@ def test_concurrent_change_conflicts_and_leaves_the_row(db: Database, table: Tab
 def test_null_in_old_is_compared_not_distinct(db: Database, table: Table) -> None:
     with db.transaction() as tx:
         assert run(tx, update_row(table, {"id": 2}, {"label": None, "doc": None, "price": None}, {"label": "x"})) == 1
-    with pytest.raises(_RowCountMismatch), db.transaction() as tx:
+    with pytest.raises(RowCountMismatch), db.transaction() as tx:
         run(tx, update_row(table, {"id": 2}, {"label": None}, {"label": "y"}))
-    with pytest.raises(_RowCountMismatch), db.transaction() as tx:
+    with pytest.raises(RowCountMismatch), db.transaction() as tx:
         run(tx, update_row(table, {"id": 2}, {"mood": "ok"}, {"label": "y"}))
     assert read(db, table, 2)["label"] == "x"
 
@@ -138,7 +137,7 @@ def test_nondeterministic_collation_cannot_hide_a_change(db: Database, table: Ta
     seen = read(db, table)
     admin.execute(f"UPDATE {table.schema}.items SET code = 'ABC' WHERE id = 1")
     assert admin.execute(f"SELECT code = 'abc' FROM {table.schema}.items WHERE id = 1").fetchone()[0] is True
-    with pytest.raises(_RowCountMismatch), db.transaction() as tx:
+    with pytest.raises(RowCountMismatch), db.transaction() as tx:
         run(tx, update_row(table, {"id": 1}, seen, {"label": "mine"}))
     assert read(db, table)["code"] == "ABC"
 
@@ -152,7 +151,7 @@ def test_float_and_json_old_values_may_conflict(db: Database, table: Table) -> N
             {"doc": '{"a": [1,2],  "b": 1}'},
         )
     for old in ({"amount": 0.3}, {"doc": {"a": [1, 2], "b": 2}}):
-        with pytest.raises(_RowCountMismatch), db.transaction() as tx:
+        with pytest.raises(RowCountMismatch), db.transaction() as tx:
             run(tx, update_row(table, {"id": 1}, old, {"label": "mine"}))
     with db.transaction() as tx:
         run(tx, update_row(table, {"id": 1}, {"amount": 0.1 + 0.2, "doc": {"b": 1, "a": [1, 2]}}, {"label": "mine"}))
@@ -160,7 +159,7 @@ def test_float_and_json_old_values_may_conflict(db: Database, table: Table) -> N
 
 
 def test_max_affected_rolls_back_a_multi_row_statement(db: Database, table: Table) -> None:
-    with pytest.raises(_RowCountMismatch) as caught, db.transaction() as tx:
+    with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
         run(tx, sqlalchemy.update(table).values(label="all"), max_affected=2)
     assert caught.value.code == "transaction.too_many_rows"
     assert dict(caught.value.details) == {"limit": 2, "actual": 3}
@@ -168,9 +167,9 @@ def test_max_affected_rolls_back_a_multi_row_statement(db: Database, table: Tabl
 
 
 def test_caught_mismatch_still_rolls_back(db: Database, table: Table) -> None:
-    with pytest.raises(_RowCountMismatch), db.transaction() as tx:
+    with pytest.raises(RowCountMismatch), db.transaction() as tx:
         run(tx, update_row(table, {"id": 3}, {"label": "three"}, {"label": "changed"}))
-        with pytest.raises(_RowCountMismatch):
+        with pytest.raises(RowCountMismatch):
             run(tx, sqlalchemy.update(table).values(label="all"), expect_rowcount=1)
         with pytest.raises(UsageError) as later:
             tx.execute("SELECT 1")
@@ -205,7 +204,7 @@ def test_canary_values_never_reach_an_error(db: Database, table: Table) -> None:
     """Neither a conflict nor a driver error of a row statement shows a value (PostgreSQL puts the duplicate key value
     into the error's DETAIL)."""
     canary = new_canary("pg")
-    with pytest.raises(_RowCountMismatch) as conflict, db.transaction() as tx:
+    with pytest.raises(RowCountMismatch) as conflict, db.transaction() as tx:
         run(tx, update_row(table, {"id": 1}, {"label": canary}, {"label": canary}))
     assert_clean(conflict.value, canary)
     with db.transaction() as tx:

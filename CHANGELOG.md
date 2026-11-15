@@ -6,11 +6,28 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Changed
+
+- Master builds as `0.3.0.dev0` (the 0.3 switch, as TAB-042 did for 0.2; not a release: no tag, no publication):
+  `tabrion.Transaction` inherits the 0.3 mixin of `tabrion._sa._v03`, `tabrion.errors.RowCountMismatch` is an
+  ordinary exported class (no longer the private `_RowCountMismatch` bound by the version), `tabrion.rowedit` imports
+  without a version check, the private test-only module `tabrion._sa._staged` is removed, and `docs/api/surface.json`
+  has no `staged` entry any more (240 names, 0 staged). The experimental TAB-XW-6 names of `[0.2.2]` (guided write
+  transaction, contract section 5.11) are therefore public; until the switch `tabrion._since` kept them unimportable,
+  and `tests/unit/test_v03_gate.py` now checks the public state. `tabrion._since` stays, unused, for a name planned
+  for a later minor than the package's; `scripts/api_surface.py` keeps its later-minor check (`MODULE_SINCE` is
+  empty). The consumers' range `tabrion>=0.2,<0.3` excludes `0.3.0.dev0` (PEP 440: `<0.3` excludes the pre-releases
+  of 0.3), so no consumer resolves to this master by range.
+- **0.2.x base:** the last master commit before the 0.3 switch, `v0.2.2` final
+  `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` (#83), is the base commit for a later 0.2.x maintenance branch. The
+  TAB-XW-6 code is in the base, but not importable there. Whether a branch or tag is made is the owner's decision;
+  none exists yet.
+
 ## [0.2.2] - 2026-11-15
 
 TABRION TAB-042 follow-up: `v0.2.2` final, a patch release with the role and profile security fixes TB-150 (#77,
 #81), TB-036 (#81) and the profile host check (#82). The release commit is the merge commit of the pull request that
-sets this version; its full SHA is recorded by the follow-up pull request that moves master on (ADR 0009, amendment
+sets this version, `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` (#83; ADR 0009, amendment
 of 2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.2.2` on it is an optional
 label. No PyPI upload, no GitHub release and no announcement (G-R). It satisfies the range `tabrion>=0.2,<0.3`.
 **No new or removed public names**: the 235 public names are those of `0.2.1` (`scripts/api_surface.py --base

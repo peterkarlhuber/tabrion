@@ -19,7 +19,7 @@ that commit by its full SHA; a tag (`v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.2.2`) on i
 
 | Version | Release commit (full SHA) | Date |
 |---|---|---|
-| `0.2.2` | the merge commit of the version pull request that sets `0.2.2`; its SHA is recorded by the follow-up pull request | 2026-11-15 |
+| `0.2.2` | `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` | 2026-11-15 |
 | `0.2.1` | `af0458d54467571abfc1afdd44d76e1f4d727c06` | 2026-11-14 |
 | `0.2.0` | `52353daee6cd6e37a7efc45b74061a48beb2b280` | 2026-11-13 |
 | `0.1.0` | `d5821faa8742dea012abda3b663549c038d76543` | 2026-11-12 |
@@ -40,6 +40,11 @@ files refuse more `host` values. A consumer that maps `RoleUnsafe` reasons shoul
 Pin only a recorded release commit. pip does not check that: it accepts a pin on any master commit whose version is
 inside the range, for example `0.1.1.dev0`; only the architecture check AC-6 (planned, QA-15) refuses it. Always
 supply the pin: Tabrion is not on PyPI, so an install without it would ask the package index for the name `tabrion`.
+
+Since the 0.3 switch master builds as `0.3.0.dev0` (internal development of the experimental 0.3 names, not a
+release). That version is outside `>=0.2,<0.3` (PEP 440: `<0.3` excludes the pre-releases of 0.3), so pip refuses a
+pin on a master commit after the switch for a consumer on the 0.2 range. The last master commit of the 0.2 line, the
+0.2.x base, is recorded in TODO TB-013.
 
 A consumer's CI installs Tabrion from that pin (for a library, the requirements file
 `requirements/tabrion.txt`, installed with `-r`; ADR 0009), not from PyPI:

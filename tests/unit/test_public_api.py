@@ -61,6 +61,8 @@ EXPECTED: dict[str, set[str]] = {
         "RoleMissing",
         "RoleUnsafe",
         "UnsafePath",
+        # TAB-XW-6 (CR-DBX), since 0.3, experimental.
+        "RowCountMismatch",
     },
     "tabrion.sql": {"split_statements"},
     "tabrion.config": {"safe_url", "url_from_env"},
@@ -149,6 +151,8 @@ EXPECTED: dict[str, set[str]] = {
         "fingerprint",
         "snapshot",
     },
+    # TAB-XW-6 (CR-DBX), since 0.3, experimental.
+    "tabrion.rowedit": {"delete_row", "insert_row", "update_row"},
     "tabrion.testing": {
         "configure",
         "profiles",
@@ -230,6 +234,16 @@ def test_0_2_methods_are_mixed_in(cls: str, methods: list[str]) -> None:
     assert mixin in public.__mro__
     for method in methods:
         assert getattr(public, method) is getattr(mixin, method), f"{cls}.{method} is not the 0.2 method"
+
+
+def test_0_3_method_is_mixed_in() -> None:
+    """Since 0.3 (the 0.3 switch, as TAB-042 for 0.2) ``Transaction`` inherits ``execute_checked`` (TAB-XW-6)."""
+    from tabrion._sa import _v02, _v03, database
+
+    mro = database.Transaction.__mro__
+    assert _v03._TransactionV03 in mro
+    assert mro.index(_v03._TransactionV03) < mro.index(_v02._TransactionV02)
+    assert database.Transaction.execute_checked is _v03._TransactionV03.execute_checked
 
 
 def test_health_has_deep() -> None:
