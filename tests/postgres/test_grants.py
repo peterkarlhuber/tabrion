@@ -1040,3 +1040,105 @@ def test_tb150_a_membership_granted_during_the_transaction_rolls_it_back(
     assert info.value.details == {"reasons": "predefined_role"}
     assert conn.info.transaction_status == IDLE
     _nothing_granted(admin, fixture, target)
+
+
+# --- TB-150 item 3 (D-125): a protected table still writable after the REVOKE ----------------------------------------
+
+
+def _writable_refused(admin: Any, conn: Any, fixture: Fixture) -> None:
+    target = fixture.runtime.name
+    with pytest.raises(RoleUnsafe) as info:
+        grant_runtime_role(conn, target, protected_tables=NODESTRO_PROTECTED)
+    assert info.value.code == "postgres.role_unsafe"
+    assert info.value.details == {"reasons": "protected_writable"}
+    assert target not in str(info.value) and fixture.schema not in str(info.value)
+    assert conn.info.transaction_status == IDLE
+    _nothing_granted(admin, fixture, target)
+
+
+@pytest.mark.parametrize("privilege", ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "UPDATE (version)"])
+def test_tb150_a_protected_table_writable_by_public_is_refused(
+    admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture], privilege: str
+) -> None:
+    """A write privilege for PUBLIC on a protected table (a column grant too) survives the ``REVOKE`` from the
+    runtime role; the re-check in the grant transaction refuses it and rolls everything back."""
+    fixture = make_fixture()
+    table = sql.Identifier(fixture.schema, "nodestro_schema_migrations")
+    admin.execute(sql.SQL("GRANT " + privilege + " ON {} TO PUBLIC").format(table))
+    _writable_refused(admin, owner_connection(connect, fixture), fixture)
+
+
+@pytest.mark.parametrize("inherit", [True, False])
+def test_tb150_a_protected_table_writable_through_a_nologin_role_is_refused(
+    admin: Any,
+    connect: Callable[..., Any],
+    make_fixture: Callable[..., Fixture],
+    nologin_role: Callable[..., str],
+    inherit: bool,
+) -> None:
+    """A NOLOGIN role with ``INSERT`` on a protected table, which the runtime role inherits (or reaches with ``SET
+    ROLE`` as a NOINHERIT member, I-20), is refused."""
+    fixture = make_fixture()
+    writer = nologin_role()
+    table = sql.Identifier(fixture.schema, "axentra_schema_migrations")
+    admin.execute(
+        sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(sql.Identifier(fixture.schema), sql.Identifier(writer))
+    )
+    admin.execute(sql.SQL("GRANT INSERT ON {} TO {}").format(table, sql.Identifier(writer)))
+    if not inherit:
+        admin.execute(sql.SQL("ALTER ROLE {} NOINHERIT").format(sql.Identifier(fixture.runtime.name)))
+    admin.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(writer), sql.Identifier(fixture.runtime.name)))
+    _writable_refused(admin, owner_connection(connect, fixture), fixture)
+
+
+def test_tb150_a_write_path_granted_during_the_transaction_rolls_it_back(
+    admin: Any,
+    connect: Callable[..., Any],
+    make_fixture: Callable[..., Fixture],
+    nologin_role: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A membership in a role that writes a protected table, granted (and committed) concurrently while the grant
+    transaction runs, after the pre-check, is found by the re-check after the ``REVOKE``; nothing is granted."""
+    from tabrion.postgres import roles
+
+    fixture = make_fixture()
+    target = fixture.runtime.name
+    writer = nologin_role()
+    table = sql.Identifier(fixture.schema, "nodestro_schema_migrations")
+    admin.execute(sql.SQL("GRANT DELETE ON {} TO {}").format(table, sql.Identifier(writer)))
+    statements = roles._GRANTS
+
+    class GrantMidway:
+        def __iter__(self) -> Iterator[str]:
+            yield from statements
+            admin.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(writer), sql.Identifier(target)))
+
+    monkeypatch.setattr(roles, "_GRANTS", GrantMidway())
+    _writable_refused(admin, owner_connection(connect, fixture), fixture)
+
+
+def test_tb150_unprotected_tables_and_plain_reads_stay_allowed(
+    admin: Any,
+    connect: Callable[..., Any],
+    make_fixture: Callable[..., Fixture],
+    nologin_role: Callable[..., str],
+) -> None:
+    """Negative control: PUBLIC may write an unprotected table and read a protected one; a member of a role that only
+    reads the protected table is granted, and the protected table stays read-only for the runtime role."""
+    fixture = make_fixture()
+    reader = nologin_role()
+    schema = sql.Identifier(fixture.schema)
+    admin.execute(sql.SQL("GRANT INSERT ON {}.plain TO PUBLIC").format(schema))
+    admin.execute(sql.SQL("GRANT SELECT ON {}.nodestro_schema_migrations TO PUBLIC").format(schema))
+    admin.execute(sql.SQL("GRANT SELECT ON {}.axentra_schema_migrations TO {}").format(schema, sql.Identifier(reader)))
+    admin.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(reader), sql.Identifier(fixture.runtime.name)))
+    report = grant_runtime_role(
+        owner_connection(connect, fixture), fixture.runtime.name, protected_tables=NODESTRO_PROTECTED
+    )
+    assert report.restricted
+    writable = admin.execute(
+        "SELECT has_table_privilege(%s, %s::regclass, 'INSERT, UPDATE, DELETE, TRUNCATE')",
+        (fixture.runtime.name, f"{_quoted(fixture.schema)}.nodestro_schema_migrations"),
+    ).fetchone()
+    assert writable == (False,)

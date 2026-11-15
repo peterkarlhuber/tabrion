@@ -45,7 +45,7 @@ locked True SQLITE_BUSY
 |---|---|---|
 | `config.tls` | a remote host with `sslmode=disable`/`allow`/`prefer`, or conflicting `sslmode` values | use TLS; `Profile(tls=TLSMode.INSECURE)` only for local development |
 | `config.driver` | a URL for another driver (`postgresql+psycopg2://`, `mysql://`) | use `postgresql://` or `postgresql+psycopg://` with psycopg 3 |
-| `postgres.role_unsafe` | `check_role` or `grant_runtime_role`: superuser, `BYPASSRLS` or table owner (`details["reasons"]`); `grant_runtime_role` also refuses a member of a predefined `pg_*` role (`predefined_role`, see `inspect_role(...).broad`) | connect as the runtime role; run migrations as the owner; revoke the predefined role's membership from the runtime role (and from roles it can become) |
+| `postgres.role_unsafe` | `check_role` or `grant_runtime_role`: superuser, `BYPASSRLS` or table owner (`details["reasons"]`); `grant_runtime_role` also refuses a member of a predefined `pg_*` role (`predefined_role`, see `inspect_role(...).broad`) and a role that can still write a protected table after the revoke (`protected_writable`: a grant to `PUBLIC`, to a role it can become, or a column grant) | connect as the runtime role; run migrations as the owner; revoke the predefined role's membership from the runtime role (and from roles it can become); revoke the remaining write grant on the bookkeeping table |
 | `postgres.role_missing` | `inspect_role`/`grant_runtime_role` for a role that does not exist | create the role first |
 | `postgres.nested_transaction` | `grant_runtime_role` inside an open transaction | call it on an idle connection |
 | `postgres.lock_in_transaction` | `wait_advisory_lock` inside a transaction (it would hold a snapshot) | wait on an idle connection |

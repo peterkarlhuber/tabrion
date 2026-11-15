@@ -309,6 +309,28 @@ def _refuse_predefined(cursor: psycopg.Cursor[tuple[Any, ...]], role: str) -> No
         raise RoleUnsafe("postgres.role_unsafe", details={"reasons": "predefined_role"})
 
 
+# TB-150 item 3 (D-125): after the REVOKE, a write privilege on a protected table may still come from PUBLIC, from a
+# grant by another grantor, or from a role ``role`` is a member of ('MEMBER': INHERIT, NOINHERIT and SET-only alike,
+# as I-20; ``role`` itself and PUBLIC through every role are included). Column grants count (has_any_column_privilege).
+# Read inside the grant transaction, so a hit rolls everything back. A fixed statement; values are bound parameters.
+_PROTECTED_WRITABLE_SQL = (
+    "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles r, pg_catalog.pg_roles m,"
+    " pg_catalog.unnest(%s::pg_catalog.oid[]) AS t(oid)"
+    " WHERE r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
+    " AND pg_catalog.pg_has_role(r.oid, m.oid, 'MEMBER')"
+    " AND (pg_catalog.has_table_privilege(m.oid, t.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')"
+    "   OR pg_catalog.has_any_column_privilege(m.oid, t.oid, 'INSERT, UPDATE')))"
+)
+
+
+def _refuse_protected_writable(cursor: psycopg.Cursor[tuple[Any, ...]], role: str, tables: list[int]) -> None:
+    if not tables:
+        return
+    cursor.execute(_PROTECTED_WRITABLE_SQL, (tables, role))
+    if one_row(cursor)[0]:
+        raise RoleUnsafe("postgres.role_unsafe", details={"reasons": "protected_writable"})
+
+
 def grant_runtime_role(
     connection: psycopg.Connection[Any],
     role: str,
@@ -334,7 +356,10 @@ def grant_runtime_role(
     membership); ``predefined_role`` when ``role`` is a member of any predefined role (``broad`` of
     :func:`inspect_role`, also indirect or NOINHERIT; ADR 0015 D-2): ``pg_write_all_data`` could write
     ``protected_tables`` despite the ``REVOKE`` (TB-150); read again inside the grant transaction, before the first
-    and after the last statement, so a membership granted in between rolls everything back. ``RoleMissing`` for an
+    and after the last statement, so a membership granted in between rolls everything back. ``protected_writable``
+    when, after the ``REVOKE`` and in the same transaction, ``role`` or a role it is a member of (also NOINHERIT),
+    or ``PUBLIC``, may still ``INSERT``, ``UPDATE`` (also a column), ``DELETE`` or ``TRUNCATE`` one of
+    ``protected_tables`` (TB-150, D-125): the transaction rolls back and nothing is granted. ``RoleMissing`` for an
     unknown role,
     ``UsageError("postgres.schema_missing")`` for a schema that does not exist. Needs a transaction of its own:
     ``UsageError("postgres.nested_transaction")`` while the caller's transaction runs (contract T-NOTX, I-35).
@@ -396,22 +421,27 @@ def grant_runtime_role(
         _refuse_predefined(cursor, role)
         for statement in _GRANTS:
             cursor.execute(sql.SQL(statement).format(schema=namespace, role=target))
+        revoked: list[int] = []
         for table in tables:
             # Looked up by exact name in the schema (no search_path, no identifier parsing).
             cursor.execute(
-                "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n"
+                "SELECT c.oid FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n"
                 " ON n.oid OPERATOR(pg_catalog.=) c.relnamespace"
                 " WHERE n.nspname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
                 " AND c.relname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text",
                 (before.schema, table),
             )
-            if cursor.fetchone() is not None:
+            found = cursor.fetchone()
+            if found is not None:
                 cursor.execute(
                     sql.SQL("REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON {}.{} FROM {}").format(
                         namespace, sql.Identifier(table), target
                     )
                 )
+                revoked.append(int(found[0]))
         _refuse_predefined(cursor, role)
+        # TB-150 item 3: the REVOKE removes only the role's own grants; PUBLIC or another role may still write.
+        _refuse_protected_writable(cursor, role, revoked)
     if grant_connect and not before.connect:
         try:
             with connection.transaction(), psycopg.Cursor(connection, row_factory=tuple_row) as cursor:

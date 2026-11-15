@@ -148,8 +148,14 @@ row-level security.
 DML rights on a schema, now and for future objects, and revokes writes on bookkeeping tables. It refuses (and grants
 nothing) when the role is the owner, a superuser, has `BYPASSRLS`, owns tables, or is a member of any predefined
 `pg_*` role (`details["reasons"]` `predefined_role`; `pg_write_all_data`, for one, writes every table and so the
-bookkeeping tables despite the revoke). `inspect_role(...).broad` names those memberships as `"broad:<role>"`. It
-needs a transaction of its own, so it refuses to run inside yours.
+bookkeeping tables despite the revoke). `inspect_role(...).broad` names those memberships as `"broad:<role>"`. After
+the revoke it checks, in the same transaction, that nothing else still lets the role write a protected table (a
+grant to `PUBLIC`, to a role it inherits or can `SET ROLE` to, or a column grant); if something does, it rolls back
+and raises `RoleUnsafe` with `protected_writable`. It needs a transaction of its own, so it refuses to run inside
+yours.
+
+`role_info` and `check_role` do not look at predefined roles or `CREATEROLE`; `tabrion.check` does (TAB-PG-013 and
+TAB-PG-014, [Diagnosis](check.md)).
 
 ```pycon
 >>> report = postgres.grant_runtime_role(conn, os.environ["APP_ROLE"], protected_tables=["app_schema_migrations"])

@@ -393,13 +393,15 @@ by name, keyed on the module of the target's type (contract section 7, G-T1 cond
 | TAB-PG-010 | PostgreSQL | remote without `verify-full` | warning |
 | TAB-PG-011 | PostgreSQL | remote without TLS | error |
 | TAB-PG-012 | PostgreSQL | `transaction_timeout` wanted, server < 17 | info |
+| TAB-PG-013 | PostgreSQL | role can reach `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`, or has `CREATEROLE` on a server < 16 (superuser-equivalent; addendum D-126) | error |
+| TAB-PG-014 | PostgreSQL | role is a member of another predefined role (runtime; addendum D-126) | warning |
 | TAB-PG-020 | PostgreSQL | `archive_mode=off` (no PITR possible) | info |
 | TAB-PG-021 | PostgreSQL | server is a standby (`in_recovery`) with a write profile | warning |
 | TAB-PG-030 | PostgreSQL | extension installed, but its schema is not in the `search_path` | warning |
 | TAB-B-001 | layer B | pool without `pre_ping` | info |
 | TAB-B-002 | layer B | Alembic schema not current | error |
 
-`expect="owner"` suppresses TAB-PG-003 and TAB-PG-009. Privileges: every check only reads (catalog, `SHOW`). When a
+`expect="owner"` suppresses TAB-PG-003, TAB-PG-009 and TAB-PG-014. Privileges: every check only reads (catalog, `SHOW`). When a
 privilege is missing, an `info` finding "not checked" is reported, never an error. Tabrion Studio uses the same
 codes.
 

@@ -67,7 +67,10 @@ TAB-PG-011 (no TLS). Layer A enforces nothing on connections you open yourself.
 
 - Run the application as a **runtime role**: no superuser, no `BYPASSRLS`, owning no tables. Run migrations as the
   owner role. `check_role` at start-up refuses anything else ([PostgreSQL](postgresql.md#roles)).
-- `grant_runtime_role` gives the runtime role DML rights only and revokes writes on bookkeeping tables.
+- `grant_runtime_role` gives the runtime role DML rights only and revokes writes on bookkeeping tables; it refuses a
+  member of a predefined `pg_*` role and a role that could still write a bookkeeping table after the revoke.
+- `check_role` does not see predefined roles or `CREATEROLE`; run `tabrion.check` too: TAB-PG-013
+  (superuser-equivalent roles, `CREATEROLE` before PostgreSQL 16) and TAB-PG-014 (other predefined roles).
 - Tabrion needs no superuser rights itself; `tabrion.testing` needs `CREATEROLE`/`CREATEDB` for throwaway objects.
 - Tabrion sets no security context: no `SET ROLE`, no `row_security`, no `app.*` settings, no `RESET ALL`. Row-level
   security scopes (`set_config(..., true)`) stay your code and stay transaction-local.
