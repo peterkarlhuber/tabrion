@@ -54,8 +54,11 @@ Accepted residual risks (documented, not vulnerabilities):
     `/tmp`, where another user can create a `-journal` that then receives page data. Keep databases in a directory
     that only the owner can write: `diagnose` logs a warning for a directory the group or others can write (TM-03,
     sticky or not), and a `tabrion.check` finding for it is TODO TB-043. `delete_database_file` refuses such a
-    directory (`sqlite.unsafe_mode`), because its lock check opens the file through SQLite, which would roll a
-    `-journal` planted there back into the database; `connect` and `restore` do not refuse it (same residual as above);
+    directory (`sqlite.unsafe_mode`) and one that belongs to another user than the process's effective user and root
+    (`sqlite.unsafe_owner`), because its lock check opens the file through SQLite, which would roll a `-journal`
+    planted there back into the database; `connect` and `restore` do not refuse it (same residual as above). These
+    checks read the POSIX mode bits and the owner only: **ACLs are not evaluated**, so a directory whose ACL lets
+    another user write passes them;
   - a `read_only` connection to a WAL database may create `-wal` and `-shm` with the main file's mode, which an
     existing world-readable file passes on; `connect` never changes the mode of an existing file (MIG-NOD-9 does
     that for Nodestro);

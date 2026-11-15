@@ -269,8 +269,9 @@ FileExistsError: ...
 deleted. It refuses a link and a file that is not a SQLite database, and it takes SQLite's exclusive lock first: a
 database another connection holds (in WAL mode any open connection) raises `DatabaseInUse`. An idle connection in
 rollback mode holds no lock, so close your own connections first. On POSIX it also refuses a database whose directory
-the group or other users may write (`UnsafePath("sqlite.unsafe_mode")`, sticky bit or not): keep databases in a
-directory only you can write.
+the group or other users may write (`UnsafePath("sqlite.unsafe_mode")`, sticky bit or not) or that belongs to
+another user than you and root (`UnsafePath("sqlite.unsafe_owner")`): keep databases in a directory only you can
+write. Only the mode bits and the owner are checked, not ACLs.
 
 ```pycon
 >>> [path.name for path in sqlite.delete_database_file("shop-restored.db")]

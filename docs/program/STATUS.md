@@ -11,7 +11,8 @@ keeps this file current; every pull request that finishes a work package updates
 > experimental 0.3 (`RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`,
 > `grant_membership`, `revoke_membership`, `grant_privileges`, `revoke_privileges`; contract section 4.9 and
 > I-180..I-186, moved from addendum A.7) and the profile mode `admin` (addendum A.9, E-X8); the CR-DBX row,
-> deviation D-130.
+> deviation D-130. Note N-1 of the security review of #88 folded in: `delete_database_file` also refuses a directory
+> of another owner (`sqlite.unsafe_owner`).
 > Before: 2026-11-15, TABRION TAB-XW-3 (CR-DBX, TB-149): `tabrion.ddl`, experimental 0.3: DDL text from
 > the level-2 model for SQLite and PostgreSQL (create, drop, column, constraint and index statements; SQLAlchemy
 > Core and Alembic DDL constructs, generation only), round trips on both engines, unsafe schema text and unknown

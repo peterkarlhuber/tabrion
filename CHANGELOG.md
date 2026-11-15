@@ -117,6 +117,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   snapshots of different levels (`schema.level_mismatch`); `SchemaSnapshot.from_json` reads format 1 and 2 and
   refuses a `format` that is not an integer (`true`, `1.0`, `2.0`; before, `true` and `1.0` read as format 1).
   `tabrion.profilefile` accepts a `v2:sha256:<hex>` `schema_fingerprint` as well as `v1:` (I-109 e).
+- `tabrion.sqlite.delete_database_file` (experimental since 0.3, TAB-XW-7; note N-1 of the security review of #88):
+  on POSIX the database's directory must also belong to the effective user or to root, otherwise
+  `UnsafePath("sqlite.unsafe_owner")`; before, only its mode bits were checked. ACLs are not evaluated (SECURITY.md).
 - Master builds as `0.3.0.dev0` (the 0.3 switch, as TAB-042 did for 0.2; not a release: no tag, no publication):
   `tabrion.Transaction` inherits the 0.3 mixin of `tabrion._sa._v03`, `tabrion.errors.RowCountMismatch` is an
   ordinary exported class (no longer the private `_RowCountMismatch` bound by the version), `tabrion.rowedit` imports

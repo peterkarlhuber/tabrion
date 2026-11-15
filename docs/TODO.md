@@ -38,7 +38,8 @@
 > TAB-XW-7 done (SQLite `restore`, `delete_database_file`, contract section 3.10) and TAB-XW-9 done (PostgreSQL
 > `create_database`, `drop_database`, `database_sessions`, contract section 4.8); counts unchanged.
 > TAB-XW-8 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw8`): TB-149 stays in progress, TAB-XW-8 done (role
-> DDL with the attribute ban, also indirect, contract section 4.9; profile mode `admin`); counts unchanged.
+> DDL with the attribute ban, also indirect, contract section 4.9; profile mode `admin`); note N-1 of the security
+> review of #88 folded in (`delete_database_file` also checks the directory's owner); counts unchanged.
 
 ## Summary
 
@@ -692,6 +693,9 @@ required (owner decision of 2026-11-08 11:26Z).
   transaction of the change before and after the statement; passwords only as client-side SCRAM verifiers, never in
   errors or frames). Profile mode `admin` (addendum A.9, E-X8). Moved from addendum A.7 into contract section 4.9
   (I-180..I-186); deviation D-130. Tests `tests/postgres/test_role_ddl.py`, `tests/unit/test_role_ddl_unit.py`.
+  Note N-1 of the security review of #88 (Info) in the same pull request: `delete_database_file` also refuses a
+  directory owned by another user than the effective user and root (`sqlite.unsafe_owner`); ACLs are not evaluated
+  (SECURITY.md).
 - **Decided (owner, 2026-11-15 06:37Z, confirmed 06:38Z): drift blind spots, D-5 in
   [ADR 0015 section 10](adr/0015-crdbx-write-and-ddl-primitives.md#10-d-5-drift-blind-spots-of-the-level-2-fingerprint-owner-decision-of-2026-11-15)**
   (review of #85, F2; I-111 d). (1) Triggers and RLS policies go into the level-2 fingerprint with the functions they

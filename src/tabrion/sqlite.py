@@ -1527,6 +1527,9 @@ class _Entries:
         self._fd: int | None = None
         self.shared = False
         """Group or others may write the directory (POSIX)."""
+        self.foreign = False
+        """The directory belongs to a user other than this process's effective user and root (POSIX; note N-1 of
+        the security review of #88). Only the mode bits and the owner count: ACLs are not evaluated."""
         if _DIR_FD:
             try:
                 self._fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | _O_NOFOLLOW | _O_CLOEXEC)
@@ -1551,6 +1554,7 @@ class _Entries:
             if not _POSIX:
                 return
         self.shared = bool(info.st_mode & (stat.S_IWGRP | stat.S_IWOTH))
+        self.foreign = info.st_uid not in (os.geteuid(), 0)
 
     def _name(self, base: str) -> str:
         return base if self._fd is not None else os.path.join(self._directory, base)
@@ -1634,12 +1638,14 @@ def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = Fal
     The file must not be a symbolic link (``UnsafePath("sqlite.symlink")``), must be a regular file of this user that
     is not group- or world-writable (as :func:`connect` requires) and must start with the SQLite header
     (``UsageError("sqlite.not_a_database")``). On POSIX its directory must not be group- or world-writable either,
-    sticky bit or not (``UnsafePath("sqlite.unsafe_mode")``): another user could put a ``-journal`` there that SQLite
-    rolls back into the file when it opens it for the lock check. A directory that is missing is
-    ``FileNotFoundError`` (``()`` with ``missing_ok``), one that is no directory or that this user may not open
-    ``UnsafePath("sqlite.unsafe_path")``; no error names the path. Before anything is deleted, SQLite's exclusive
-    lock is taken and released: ``DatabaseInUse("sqlite.in_use")`` when another connection holds the file (a reader
-    or writer; in WAL mode any open connection; on Windows also a file another process keeps open). An idle
+    sticky bit or not (``UnsafePath("sqlite.unsafe_mode")``), and must belong to this process's effective user or to
+    root (``UnsafePath("sqlite.unsafe_owner")``): another user could put a ``-journal`` there that SQLite rolls back
+    into the file when it opens it for the lock check. Only mode bits and the owner count, not ACLs. A directory
+    that is missing is ``FileNotFoundError`` (``()`` with ``missing_ok``), one that is no directory or that this user
+    may not open ``UnsafePath("sqlite.unsafe_path")``; no error names the path. Before anything is deleted,
+    SQLite's exclusive lock is taken and released: ``DatabaseInUse("sqlite.in_use")`` when another connection holds
+    the file (a reader or writer; in WAL mode any open connection; on Windows also a file another process keeps
+    open). An idle
     connection in rollback mode holds no lock and is not seen, and a process that opens the file after the check is
     not prevented: stop your own connections first. A missing file is ``FileNotFoundError`` unless ``missing_ok``
     (then ``()``).
@@ -1681,6 +1687,10 @@ def _delete(entries: _Entries, name: str, base: str, *, missing_ok: bool) -> tup
         # -journal next to the file between the side-file check and the lock check, and SQLite would roll it back
         # into the database when it opens the file for that check; nothing is opened or deleted here.
         raise _unsafe("sqlite.unsafe_mode", os.path.dirname(name) or os.curdir)
+    if entries.foreign:
+        # Note N-1 of the security review of #88: the owner of the directory may write it whatever its mode bits say
+        # (and change them), so the same hot -journal could appear; root is trusted as for every file.
+        raise _unsafe("sqlite.unsafe_owner", os.path.dirname(name) or os.curdir)
     checked, header = entries.read_header(base)
     if header != _HEADER:
         raise UsageError("sqlite.not_a_database")

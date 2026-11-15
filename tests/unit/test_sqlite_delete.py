@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sqlite3
+from typing import Any
 
 import pytest
 
@@ -480,3 +481,66 @@ def test_directory_only_the_owner_may_write_is_accepted(tmp_path: Path, by_name:
     _rollback_database(shared / "app.db")
     shared.chmod(0o755)
     assert ts.delete_database_file(shared / "app.db") == (shared / "app.db",)
+
+
+def _directory_owned_by(monkeypatch: pytest.MonkeyPatch, directory: Path, uid: int) -> None:
+    """``os.fstat`` and ``os.stat`` report ``uid`` as the owner of ``directory`` (and nothing else changes)."""
+    target = directory.stat()
+    real_fstat, real_stat = os.fstat, os.stat
+
+    def owned(info: os.stat_result) -> os.stat_result:
+        if (info.st_dev, info.st_ino) != (target.st_dev, target.st_ino):
+            return info
+        fields = list(info[:10])
+        fields[4] = uid  # st_uid
+        return os.stat_result(fields)
+
+    def fake_fstat(fd: int) -> os.stat_result:
+        return owned(real_fstat(fd))
+
+    def fake_stat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        return owned(real_stat(path, *args, **kwargs))
+
+    monkeypatch.setattr(os, "fstat", fake_fstat)
+    monkeypatch.setattr(os, "stat", fake_stat)
+
+
+@posix_only
+@pytest.mark.security
+def test_directory_of_another_user_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, by_name: bool) -> None:
+    """Note N-1 of the security review of #88: the mode bits alone do not decide; a directory owned by another user
+    (not root) is refused with ``sqlite.unsafe_owner``, whatever its mode, before SQLite opens anything."""
+    directory = tmp_path / "foreign"
+    directory.mkdir()
+    _rollback_database(directory / "app.db")
+    directory.chmod(0o700)
+    before = digest(directory / "app.db")
+    other = os.geteuid() + 4242
+
+    def never(name: str, expected: tuple[int, int]) -> None:
+        raise AssertionError("SQLite must not open the file")
+
+    monkeypatch.setattr(ts, "_refuse_if_in_use", never)
+    _directory_owned_by(monkeypatch, directory, other)
+    with pytest.raises(UnsafePath) as caught:
+        ts.delete_database_file(directory / "app.db")
+    assert caught.value.code == "sqlite.unsafe_owner"
+    assert str(tmp_path) not in str(caught.value)
+    assert files(directory) == ["app.db"]
+    assert digest(directory / "app.db") == before
+    assert ts.delete_database_file(directory / "missing.db", missing_ok=True) == ()
+
+
+@posix_only
+def test_directory_of_root_or_this_user_is_accepted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, by_name: bool
+) -> None:
+    """Note N-1 of #88: the effective user and root may own the directory."""
+    for uid in sorted({0, os.geteuid()}):
+        directory = tmp_path / f"owned-{uid}"
+        directory.mkdir()
+        _rollback_database(directory / "app.db")
+        directory.chmod(0o755)
+        with monkeypatch.context() as patch:
+            _directory_owned_by(patch, directory, uid)
+            assert ts.delete_database_file(directory / "app.db") == (directory / "app.db",)
