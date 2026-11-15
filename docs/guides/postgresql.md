@@ -205,6 +205,38 @@ tabrion.errors.UsageError: postgres.autocommit_required
 Tabrion asks for no confirmation: the typed name and the backup before a drop are your application's. A `pg_dump`
 archive is not a complete backup: global roles, role memberships, tablespaces and other cluster objects are not in it.
 
+## Managing roles (0.3, experimental)
+
+`role_privileges(conn, role)` (since 0.3, experimental) reads what a role can do: its attributes, its direct
+memberships, every role it can reach through membership (with `INHERIT`, `SET` or the `ADMIN` option, which lets it
+grant the membership to itself), and two kinds of findings. `dangerous` names a reachable SUPERUSER, BYPASSRLS,
+CREATEROLE or REPLICATION role (`"superuser:<role>"` ...), CREATEROLE before PostgreSQL 16 and the escalation grants
+`TRIGGER` on a relation, `EXECUTE` on another role's `SECURITY DEFINER` function and `CREATE` on `public` or another
+role's schema; `broad` names reachable predefined `pg_*` roles. `safe` is `not dangerous`.
+
+```pycon
+>>> privileges = postgres.role_privileges(conn, os.environ["APP_ROLE"])
+>>> privileges.attributes, privileges.member_of, privileges.broad
+(('login', 'inherit'), (), ())
+>>> postgres.grant_privileges(conn, os.environ["APP_ROLE"], privileges=["TRIGGER"], on="table", objects=["app.parts"])
+Traceback (most recent call last):
+  ...
+tabrion.errors.UsageError: postgres.invalid_argument (parameter=privileges)
+```
+
+`create_role`, `alter_role` (with `RoleOptions`: login, inherit, create database, connection limit, expiry),
+`drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges` and `revoke_privileges` change roles on
+PostgreSQL 16 and later, each in a transaction of its own. Run them from a separate **admin profile** with
+`CREATEROLE` and nothing more (profile mode `admin`), never as a superuser. There is no parameter for SUPERUSER,
+BYPASSRLS, CREATEROLE, REPLICATION, `WITH ADMIN OPTION` or `WITH GRANT OPTION`, and `TRIGGER` is not grantable. Each
+function checks the target right before and again right after its statement and refuses with `RoleUnsafe`
+(`details["reasons"]`) a membership in a role that has or reaches one of the four attributes or a predefined role,
+`EXECUTE` on another role's `SECURITY DEFINER` function, `CREATE` on `public` or another role's schema, a change to a
+role that has or reaches one of the attributes, and any change to your own session's role. `drop_role` refuses a role
+that owns objects or has default privileges; it never reassigns or drops them for you. Table, sequence and function
+names are schema-qualified in SQL syntax (`app.parts`, `app."Mixed Case"`, `app.total(integer)`). A password is
+hashed on your side and sent only as a SCRAM-SHA-256 verifier, and it never appears in an error.
+
 ## Errors without values
 
 `classify` and `safe_message` from [`tabrion.errors`](errors.md) work on psycopg errors. The PostgreSQL `DETAIL`

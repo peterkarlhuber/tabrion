@@ -393,3 +393,17 @@ def test_schema_fingerprint_accepts_v2() -> None:
     (profile,) = pf.parse(text).profiles
     assert profile.schema_fingerprint == "v2:sha256:" + "b" * 64
     assert pf.parse(pf.dump([profile])).profiles == (profile,)
+
+
+def test_admin_mode_parses_and_round_trips() -> None:
+    """Addendum A.9 (E-X8, TAB-XW-8): ``mode = "admin"`` for the separate admin profile; no behavior is attached."""
+    text = 'version = 1\n[[profile]]\nname = "admin"\nengine = "postgresql"\nhost = "/run/postgresql"\ndatabase = "d"\n'
+    profile = pf.parse(text + 'mode = "admin"\n').profiles[0]
+    assert profile.mode == "admin"
+    assert pf.parse(pf.dump([profile])).profiles == (profile,)
+    for invalid in ("Admin", "superuser", "admin "):
+        with pytest.raises(pf.ProfileFileError) as caught:
+            pf.parse(text + f'mode = "{invalid}"\n')
+        assert [(issue.pointer, issue.code) for issue in caught.value.issues] == [
+            ("profile[0].mode", "profilefile.value")
+        ]

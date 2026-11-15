@@ -1320,7 +1320,10 @@ class RoleUnsafe(TabrionError):
     """Code ``postgres.role_unsafe``; details ``reasons``.
 
     A comma list of ``superuser``, ``bypass_rls`` and ``table_owner``; ``grant_runtime_role`` may add
-    ``predefined_role`` (TB-150).
+    ``predefined_role`` (TB-150) and ``createrole``. The role DDL of ``tabrion.postgres`` (since 0.3, experimental,
+    contract section 4.9) adds ``createrole``, ``replication``, ``reachable_superuser``, ``reachable_bypass_rls``,
+    ``reachable_createrole``, ``reachable_replication``, ``owns_objects``, ``current_user``, ``trigger``,
+    ``security_definer`` and ``schema_create``. Nothing was changed.
     """
 
 

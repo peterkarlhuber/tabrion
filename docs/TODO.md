@@ -37,6 +37,8 @@
 > TAB-XW-7 and TAB-XW-9 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw79`): TB-149 stays in progress,
 > TAB-XW-7 done (SQLite `restore`, `delete_database_file`, contract section 3.10) and TAB-XW-9 done (PostgreSQL
 > `create_database`, `drop_database`, `database_sessions`, contract section 4.8); counts unchanged.
+> TAB-XW-8 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw8`): TB-149 stays in progress, TAB-XW-8 done (role
+> DDL with the attribute ban, also indirect, contract section 4.9; profile mode `admin`); counts unchanged.
 
 ## Summary
 
@@ -616,7 +618,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-8 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -681,6 +683,15 @@ required (owner decision of 2026-11-08 11:26Z).
   first; `postgres`, templates and the own database protected; other sessions refused unless `force=True`, also when
   one connects after the check). Moved from addendum A.8 into contract section 4.8 (I-190..I-193); deviation D-129.
   Tests `tests/postgres/test_databases.py`.
+- **TAB-XW-8 done** (branch `claude/project-thread-rdo6g3-tabxw8`): `tabrion.postgres.RoleOptions`,
+  `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`, `grant_membership`,
+  `revoke_membership`, `grant_privileges`, `revoke_privileges` (E-X6: no parameter for SUPERUSER, BYPASSRLS,
+  CREATEROLE, REPLICATION, ADMIN or GRANT OPTION; reachability over every membership row, INHERIT, SET and ADMIN
+  option alike, N-3; every predefined role refused, D-2; TRIGGER not grantable, EXECUTE on a foreign SECURITY DEFINER
+  function and CREATE on `public` or a foreign schema refused, K-2; PostgreSQL 16 and later, D-1; checks in the
+  transaction of the change before and after the statement; passwords only as client-side SCRAM verifiers, never in
+  errors or frames). Profile mode `admin` (addendum A.9, E-X8). Moved from addendum A.7 into contract section 4.9
+  (I-180..I-186); deviation D-130. Tests `tests/postgres/test_role_ddl.py`, `tests/unit/test_role_ddl_unit.py`.
 - **Decided (owner, 2026-11-15 06:37Z, confirmed 06:38Z): drift blind spots, D-5 in
   [ADR 0015 section 10](adr/0015-crdbx-write-and-ddl-primitives.md#10-d-5-drift-blind-spots-of-the-level-2-fingerprint-owner-decision-of-2026-11-15)**
   (review of #85, F2; I-111 d). (1) Triggers and RLS policies go into the level-2 fingerprint with the functions they

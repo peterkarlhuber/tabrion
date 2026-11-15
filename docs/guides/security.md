@@ -91,6 +91,12 @@ TAB-PG-011 (no TLS). Layer A enforces nothing on connections you open yourself.
   Tabrion asks for no confirmation: the typed name, the backup before a drop and the decision to call are yours. A
   `pg_dump` archive is **not a complete backup**: global roles, role memberships, tablespaces and other cluster
   objects are not in it.
+- The role DDL (since 0.3, experimental) never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, also not
+  through membership in a role that has them (`INHERIT`, `SET` or `ADMIN` option), nor membership in a predefined
+  `pg_*` role, `TRIGGER`, `EXECUTE` on another role's `SECURITY DEFINER` function or `CREATE` on `public` or another
+  role's schema. Run it from a separate admin profile with `CREATEROLE` only, on PostgreSQL 16 or later. Show
+  `role_privileges` before a change; the functions check again in the transaction of the change. Passwords go to the
+  server only as SCRAM verifiers.
 - Tabrion sets no security context: no `SET ROLE`, no `row_security`, no `app.*` settings, no `RESET ALL`. Row-level
   security scopes (`set_config(..., true)`) stay your code and stay transaction-local.
 

@@ -159,6 +159,15 @@ Accepted residual risks (documented, not vulnerabilities):
   Check the returned report: `can_create=True` (`CREATE` on the schema, granted by someone else and kept) lets the
   role plant objects that shadow others on a `search_path`, although `restricted` holds; `connect=False` means the
   owner could not grant `CONNECT` (PostgreSQL only warns).
+- The role DDL of `tabrion.postgres` (since 0.3, experimental; contract section 4.9) never grants SUPERUSER,
+  BYPASSRLS, CREATEROLE or REPLICATION, neither directly nor through membership, nor membership in a predefined
+  role, TRIGGER, `WITH ADMIN OPTION` or `WITH GRANT OPTION`; it runs on PostgreSQL 16 and later only. Residual
+  risks: the checks run in the transaction of the change, before and after the statement, but under READ COMMITTED a
+  second session that changes memberships at the same moment can pass the other's check; run role administration
+  from one admin profile with CREATEROLE and nothing more (E-X6). The K-2 findings cover the current database; grants
+  of EXECUTE to PUBLIC are not reported (PostgreSQL's default for every function), so revoke EXECUTE from PUBLIC on
+  SECURITY DEFINER functions. A server that logs DDL (`log_statement = 'ddl'`) logs the SCRAM verifier of a new
+  password, never the password itself.
 - The `tabrion.testing` fixtures assume a shared test server: they end only sessions of their own roles (another
   role's session, a backup for example, is waited for), never change or drop a role or schema they did not create,
   never move an extension and never let a schema teardown cascade into one (contract I-36, I-60). Their roles are

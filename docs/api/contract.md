@@ -338,7 +338,8 @@ class MigrationError(TabrionError)          # tabrion.sqlite.migrate
     class MigrationFailed(MigrationError)        # "sqlite.migration_failed", details step
 class SchemaNotCurrent(TabrionError)        # layer B Alembic gate, details current/head
 class RoleMissing(TabrionError)             # "postgres.role_missing"
-class RoleUnsafe(TabrionError)              # "postgres.role_unsafe", details reasons (comma list)
+class RoleUnsafe(TabrionError)              # "postgres.role_unsafe", details reasons (comma list); 0.3 adds reasons
+                                            # of the role DDL (section 4.9)
 class UnsafePath(TabrionError)              # "sqlite.symlink" / "sqlite.unsafe_path" / "sqlite.unsafe_owner" / "sqlite.unsafe_mode"
 class RowCountMismatch(TabrionError)        # 0.3, X: "transaction.rowcount_mismatch" (details expected, actual)
                                             # and "transaction.too_many_rows" (details limit, actual); section 5.11
@@ -1119,6 +1120,107 @@ def database_sessions(connection: psycopg.Connection, name: str) -> int: ...  # 
 | I-192 | **`drop_database`.** (a) `force=True` on a server before PostgreSQL 13 is `UsageError("postgres.force_requires_13")`. (b) `postgres`, `template0` and `template1` by name, every database with `datistemplate`, and the connection's own database (`current_database()`) are `UsageError("postgres.database_protected")`, with or without `force`; a name that is not in `pg_database` is `UsageError("postgres.database_missing")`. (c) Without `force`, the other sessions on the database are counted (`pg_stat_activity`, every session but this connection's; every role sees `datname`): more than 0 is `DatabaseInUse("postgres.database_in_use")`, details `sessions`. A session that connects between that count and the statement makes the server refuse with SQLSTATE 55006 (`ObjectInUse`): that is raised as the same `DatabaseInUse` with the sessions counted again and the driver error as `original`, raised outside the `except` block (no `__cause__`, no `__context__`). (d) `force=True` sends `DROP DATABASE <Identifier> WITH (FORCE)`, which terminates the other sessions; the connecting role needs the right to signal them (the owner of the sessions, `pg_signal_backend` or superuser), otherwise the server's error propagates. Any other driver error (not the owner: `InsufficientPrivilege`) propagates unchanged. (e) Nothing is retried (R-NORETRY) |
 | I-193 | **`database_sessions`.** Read-only through the shared reading helper (contract section 4, I-16): any transaction state, a savepoint inside the caller's transaction, a rollback of its own implicit transaction. Counts the sessions on `name` other than this connection's from `pg_stat_activity`; `0` for a database without sessions and for one that does not exist. Same name check as I-190. For a preview only: the number can change before a later `drop_database` |
 
+### 4.9 Role DDL: `role_privileges`, `create_role`, `alter_role`, `drop_role`, memberships, privileges (since 0.3, experimental; TAB-XW-8)
+
+Change request CR-DBX (planning document 15, [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) section 5,
+moved here from section A.7 of the contract addendum 0.3, with the conditions K-2, D-1, D-2 and N-3 of the security
+review of #76): the building blocks of Studio's role administration. Owner decision **E-X6**: roles are managed only
+through a separate admin profile with minimal rights (a role with CREATEROLE, not a superuser; profile mode `admin`,
+section 5.9, E-X8), and Tabrion never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, neither directly nor
+through membership: no parameter can request them, nor `WITH ADMIN OPTION` or `WITH GRANT OPTION`. Tabrion grants
+itself nothing and creates no admin role. The consumer shows `role_privileges` in the preview (D-14) and decides; the
+functions check again in the transaction of the change.
+
+```python
+@dataclass(frozen=True, slots=True)
+class RoleOptions:  # 0.3, X
+    login: bool = False
+    inherit: bool = True
+    create_db: bool = False
+    connection_limit: int | None = None  # None: no limit (-1)
+    valid_until: datetime | None = None  # time zone aware; None: no expiry ('infinity')
+    # No field for SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, by design (ADR 0015).
+
+
+@dataclass(frozen=True, slots=True)
+class RolePrivileges:  # 0.3, X
+    role: str
+    attributes: tuple[str, ...]  # "login", "inherit", "createdb", "createrole", "replication", "superuser", ...
+    member_of: tuple[str, ...]  # direct memberships, sorted
+    reachable: tuple[str, ...]  # every role reachable through membership (INHERIT, SET or ADMIN option), sorted
+    dangerous: tuple[str, ...]  # "superuser:<role>", "bypass_rls:<role>", "createrole:<role>", "replication:<role>",
+    # "createrole_pre16", "trigger:<table>", "security_definer:<function>", "schema_create:<schema>"; sorted
+    broad: tuple[str, ...]  # "broad:<role>" for each reachable predefined pg_* role (a finding), sorted
+    owned_objects: int  # in every database of the cluster, default privileges not counted
+    default_privileges: int  # of the role or for it, in every database of the cluster
+
+    @property
+    def safe(self) -> bool: ...  # not dangerous
+    def as_dict(self) -> dict[str, object]: ...
+
+
+def role_privileges(connection: psycopg.Connection, role: str) -> RolePrivileges: ...  # 0.3, X; read-only
+def create_role(
+    connection: psycopg.Connection, role: str, *, options: RoleOptions = RoleOptions(), password: str | None = None
+) -> RolePrivileges: ...  # 0.3, X
+def alter_role(
+    connection: psycopg.Connection, role: str, *, options: RoleOptions | None = None, password: str | None = None
+) -> RolePrivileges: ...  # 0.3, X
+def drop_role(connection: psycopg.Connection, role: str) -> None: ...  # 0.3, X
+def grant_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...  # 0.3, X
+def revoke_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...  # 0.3, X
+def grant_privileges(
+    connection: psycopg.Connection,
+    role: str,
+    *,
+    privileges: Sequence[
+        Literal[
+            "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "USAGE", "CREATE", "CONNECT", "EXECUTE"
+        ]
+    ],  # no TRIGGER (K-2)
+    on: Literal["table", "sequence", "function", "schema", "database"],
+    objects: Sequence[str],
+) -> RolePrivileges: ...  # 0.3, X
+def revoke_privileges(
+    connection: psycopg.Connection,
+    role: str,
+    *,
+    privileges: Sequence[str],
+    on: Literal["table", "sequence", "function", "schema", "database"],
+    objects: Sequence[str],
+) -> RolePrivileges: ...  # 0.3, X
+```
+
+- **D-1:** every function except `role_privileges` raises `UsageError("postgres.role_ddl_requires_16")` on
+  PostgreSQL 15 and earlier; `role_privileges` reports CREATEROLE before 16 as `createrole_pre16`.
+- **Attribute ban, also indirect (E-X6, N-3):** `grant_membership` refuses (`RoleUnsafe`, reasons `reachable_*`) when
+  `role`, or any role reachable from it through INHERIT, the SET option or the ADMIN option, has one of the four
+  attributes. `alter_role` and `grant_privileges` refuse a target with such an attribute (`superuser`, `bypass_rls`,
+  `createrole`, `replication`) or a reachable one (`reachable_*`).
+- **D-2:** `grant_membership` refuses every predefined role (`predefined_role`), also one reachable from `role`;
+  existing memberships appear in `broad`.
+- **K-2:** TRIGGER is not grantable; EXECUTE on a SECURITY DEFINER function the grantee does not own is refused
+  (`security_definer`); CREATE on `public` or a schema the grantee does not own is refused (`schema_create`);
+  `role_privileges` reports such existing grants as `dangerous`.
+- `drop_role` refuses a role that owns objects or has default privileges (`owns_objects`; no `REASSIGN OWNED` or
+  `DROP OWNED`) and the session's own role (`current_user`).
+- Names are checked against the 63-byte limit and composed with `psycopg.sql.Identifier`; a password is hashed on the
+  client and sent as a SCRAM-SHA-256 verifier.
+- **Tests:** `tests/postgres/test_role_ddl.py` (the matrix of ADR 0015 Verification: the four attributes reached
+  directly, through INHERIT, NOINHERIT, SET-only and ADMIN-only memberships and chains of two, every predefined role,
+  the K-2 grants, password canaries on the wire, in errors and frames, catalog snapshots before and after every
+  refusal, names that need quoting) and `tests/unit/test_role_ddl_unit.py` (arguments, name parsing, findings logic).
+
+| # | Rule |
+|---|---|
+| I-180 | **Arguments and connection.** Checked before anything is sent, each as `UsageError("postgres.invalid_argument")` with only `details={"parameter": <name>}`, never the value: `role` and `member` a non-empty `str` of at most 63 bytes in UTF-8 without NUL (`member` also not `role`); `create_role` refuses a name starting with `pg_` (reserved for predefined roles); `options` a `RoleOptions` whose `login`, `inherit` and `create_db` are `bool`, `connection_limit` `None` or an `int` from 0 to 2 147 483 647, `valid_until` `None` or a time zone aware `datetime` (`parameter` `options.<field>`); `alter_role` needs `options` or `password` (`parameter` `options`); `password` `None` or a non-empty `str` without NUL that has a UTF-8 form; `on` one of the five kinds; `privileges` a non-empty sequence (not a `str`) of upper-case names that the kind takes (`table`: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES; `sequence`: USAGE, SELECT, UPDATE; `function`: EXECUTE; `schema`: USAGE, CREATE; `database`: CONNECT, CREATE; `revoke_privileges` also TRIGGER on a table); TRIGGER, ALL, TEMPORARY and MAINTAIN are never grantable (K-2); `objects` a non-empty sequence (not a `str`) of names, each at most 4 096 characters: for `table`, `sequence` and `function` a schema-qualified name in SQL syntax (`schema.name`, each part unquoted, folded to lower case for ASCII letters as PostgreSQL does, or double-quoted with `""` for a quote; each part at most 63 bytes; a function with its argument types in parentheses, `app.total(integer, text[])`), for `schema` and `database` the plain name. Then `TypeError` for a connection that is not a `psycopg.Connection`; in pipeline mode the caller's pipeline is synced first (I-34); `UsageError("postgres.role_ddl_requires_16")` before PostgreSQL 16 (D-1; not `role_privileges`); `UsageError("postgres.nested_transaction")` while a transaction of the caller's runs (INTRANS, INERROR): the changes run in a transaction of their own, opened and committed by Tabrion (`connection.transaction()`, also without autocommit, as `grant_runtime_role`, I-35); `autocommit` and the row factory are never changed (T-NOTX) |
+| I-181 | **`role_privileges`** reads through the shared reading helper (any transaction state, a savepoint inside the caller's transaction, I-16) and raises `RoleMissing("postgres.role_missing", details={"parameter": "role"})` for an unknown role. `reachable` follows every row of `pg_auth_members` (whatever its INHERIT, SET or ADMIN option, N-3: with ADMIN a role can grant the membership to itself) at any depth, plus the database owner's implicit membership in `pg_database_owner` for the current database; a superuser is not "member" of every role here (it is reported by its attribute). `dangerous` holds `<attribute>:<role>` for the role itself and every reachable role with SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION; `createrole_pre16` before PostgreSQL 16 when one of them has CREATEROLE (D-1); and the K-2 grants in the **current database** to the role or a role it can reach: `trigger:<schema.table>` (TRIGGER on any relation, also granted to PUBLIC), `security_definer:<schema.function(arguments)>` (EXECUTE on a SECURITY DEFINER function, not counting PUBLIC: PostgreSQL grants EXECUTE on every function to PUBLIC by default, and that default would hide the real findings; revoke it from SECURITY DEFINER functions as PostgreSQL's documentation advises), `schema_create:<schema>` (CREATE on a schema, also granted to PUBLIC); an object whose owner the role can reach is not counted, except CREATE on `public`, which is counted unless it is the owner's own entry. Names in findings are quoted where SQL needs it (`format('%I')`). `broad` holds `broad:<name>` for each reachable predefined role (named `pg_*` with an oid below 16 384, D-2). `owned_objects` and `default_privileges` count `pg_shdepend` over the whole cluster (owner dependencies; default-privilege entries of the role or for it). `safe` is `not dangerous`; `broad` is a finding of its own |
+| I-182 | **Checks around every change.** Each function reads the target's privileges in its transaction right before the statement and refuses (`RoleUnsafe("postgres.role_unsafe")`, `details["reasons"]` a comma list, nothing executed) as I-183..I-186 say; after the statement it reads them again in the same transaction and refuses, rolling everything back, when a finding is new (a banned attribute reached, a K-2 grant, a predefined role), so a change committed by another session in between cannot slip through. The returned `RolePrivileges` is that second reading. Roles Tabrion never changes: a predefined role (`predefined_role`) and the session's own role, `CURRENT_USER` or `SESSION_USER` (`current_user`), in every function except `create_role`; and, for a change that adds privileges (`alter_role`, `grant_privileges`, the member of `grant_membership`), a role with a banned attribute (`superuser`, `bypass_rls`, `createrole`, `replication`) or one that can reach such a role (`reachable_*`). A revoke or a drop is not refused for a banned attribute: it removes a finding. A driver error of any statement is raised as the `DatabaseError` subclass of its kind with the code `database.<kind>` and the safe message (section 1.4, as layer B, I-39), the driver error as `original` with its traceback cleared, raised outside the `except` block (no `__cause__`, no `__context__`); the transaction is rolled back. Nothing is retried (R-NORETRY). Residual: two sessions that change memberships at the same time under READ COMMITTED can each pass the other's check before either commits; the admin profile is meant to be one operator's |
+| I-183 | **`create_role` and `alter_role`.** `create_role` refuses an existing role (`UsageError("postgres.role_exists")`) and sends `CREATE ROLE <Identifier> WITH NOSUPERUSER NOCREATEROLE NOREPLICATION NOBYPASSRLS LOGIN\|NOLOGIN INHERIT\|NOINHERIT CREATEDB\|NOCREATEDB CONNECTION LIMIT <Literal> VALID UNTIL <Literal> [PASSWORD <Literal>]`. `alter_role` makes the role's attributes equal to `options` and sends only the clauses that differ (PostgreSQL 16 refuses even `NOCREATEDB` from a role without CREATEDB); with nothing to change and no password it sends nothing. `alter_role` refuses as I-182 (a role with or reaching a banned attribute, predefined, the session's own role). **Password:** hashed on the client with `PGconn.encrypt_password(password, role, "scram-sha-256")` and sent as the verifier, so the plain password never reaches the server or its log (a server that logs DDL logs the verifier). It is never part of an error, `repr`, `details` or log record, and no frame of a traceback holds it: the public function keeps it in an object whose `repr` hides it and clears it before returning or raising, the statement with the verifier runs in a helper that drops its locals and the driver's traceback on any error, and errors are raised again with a fresh traceback (I-76). A password cannot be removed (no `PASSWORD NULL`) |
+| I-184 | **`drop_role`.** Refused (`RoleUnsafe`): `owns_objects` when `owned_objects` or `default_privileges` is not 0 (in any database; no `REASSIGN OWNED`, no `DROP OWNED`), `current_user`, `predefined_role`. `RoleMissing` for an unknown role. Privileges granted to the role make PostgreSQL refuse the drop (SQLSTATE 2BP01), raised as I-182 says; revoke them first. Memberships of and in the role are removed by PostgreSQL |
+| I-185 | **`grant_membership` and `revoke_membership`.** `grant_membership` sends `GRANT <role> TO <member>` (no ADMIN option; PostgreSQL 16 takes INHERIT from the member's attribute and SET TRUE) and returns `member`'s privileges. Refused before it: `role` has or reaches a banned attribute (`reachable_*`, also its own attribute, as the addendum names it); `role` is or reaches a predefined role (`predefined_role`); `role` holds a K-2 grant `member` does not hold already (`trigger`, `security_definer`, `schema_create`; a new reason value, D-130); `role` or `member` is the session's own role (`current_user`); `member` is predefined or has or reaches a banned attribute (I-182). Unknown roles are `RoleMissing` with `details={"parameter": "role"}` or `{"parameter": "member"}`. `revoke_membership` sends `REVOKE <role> FROM <member>` and returns `member`'s privileges; refused only for a predefined or the session's own `member`. PostgreSQL 16 records the grantor: a membership granted by another role stays and PostgreSQL only warns, so check `member_of` in the result |
+| I-186 | **`grant_privileges` and `revoke_privileges`.** In their transaction `search_path` is set empty for that transaction only (`set_config(..., true)`), so argument types resolve in `pg_catalog` or by their schema, never in a schema the caller put first (I-16). Each object is resolved by an exact catalog lookup of its parsed parts (a relation of kind `r`, `p`, `v`, `m` or `f` for `table`, `S` for `sequence`; a function through `to_regprocedure`, which must be a plain function of that schema and name; a schema; a database), else `UsageError("postgres.object_missing", details={"parameter": "objects", "index": <position>})`. The statement is `GRANT\|REVOKE <privileges> ON TABLE\|SEQUENCE\|FUNCTION\|SCHEMA\|DATABASE <objects> TO\|FROM <Identifier>` with every object composed with `psycopg.sql.Identifier` from the catalog's own names (a function as `schema.name(type, ...)` from `proargtypes`, each type `schema.type`); no `WITH GRANT OPTION`. `grant_privileges` refuses as I-182 and, before the statement, `security_definer` (EXECUTE on a SECURITY DEFINER function whose owner is not `role`) and `schema_create` (CREATE on `public` or on a schema whose owner is not `role`). After `GRANT` each privilege must be in each object's ACL for `role`: PostgreSQL only warns when the connecting role holds a privilege without its grant option, which is raised as `PermissionDenied("postgres.grant_not_allowed")` (classification `PERMISSION`, SQLSTATE 42501) and rolls back; without the privilege at all PostgreSQL itself refuses (`database.permission`). `revoke_privileges` refuses only a predefined or the session's own role and removes the grants made by the connecting role (PostgreSQL's rule; grants of another grantor stay) |
+
 ## 5. Layer B (`tabrion`, extra `sqlalchemy`)
 
 ### 5.1 `Profile`, `TLSMode`
@@ -1412,7 +1514,7 @@ class ConnectionProfile:
     password: SecretRef | None = None  # a reference, never a password
     sslmode: str | None = None
     environment: Literal["dev", "test", "prod"] | None = None
-    mode: Literal["read_only", "read_write"] = "read_only"
+    mode: Literal["read_only", "read_write", "admin"] = "read_only"  # "admin" since 0.3 (E-X8)
     read_only_role: bool = False
     statement_timeout_ms: int | None = None
     application_name: str | None = None
@@ -1461,7 +1563,7 @@ included), a `?`, `#` or `%` in a SQLite `path`, and `/`, `?`,
 | b | `password` is `env:NAME` (`[A-Za-z_][A-Za-z0-9_]*`), `keyring:` (the consumer's default entry), `keyring:<service>/<user>`, `file:PATH` or `prompt`. Anything else is `profilefile.plain_password`, and the text is never repeated: not in the error, its `issues`, `repr`, chain or frame locals (I-76) |
 | c | `path` and `file:` targets that name another host, a device or a drive-relative path (`//host`, `\\host`, `\\?\`, `\\.\`, the NT prefix `\??\` or `/??/`, `C:x`, `file:...`, and `/net` or `/Network` after normalizing the text, so `/x/../net/host` too) are `profilefile.network_path` (text check, the same on every platform; Studio's `network_or_device`, reviews T-2 and R-3). A `%` in a SQLite `path` is refused (I-109 d), so a percent-encoded form (`%2F%2Fhost/share`, `%5C%5Chost`, `C%3Ax`, `%2Fnet/...`) cannot pass the text check and become a network path when SQLAlchemy 2.1 unquotes `url()` (G-T2 review of #65, B-1). A relative SQLite path is relative to the profile file's folder; the consumer resolves it and applies `tabrion.sqlite.check_path` |
 | d | `host` must not hold a URL or credentials (`@`, `/` unless it is a socket folder starting with `/`, `?`, `#`, `\`, blank, `://`; a TCP host also not `%`, `&` or `=`, review of #82). A comma is refused in every `host`, a socket folder included (TB-148, W-10). `database` must not hold `/`, `?`, `#`, `%` or `@`, and a SQLite `path` must not hold `?`, `#` or `%`: `url()` writes both unquoted, because SQLAlchemy 2.0 does not unquote the database part of a URL and 2.1 does (review of #64, L-2; G-T2 review of #65, B-1). `port` 1 to 65 535, default 5432 for a TCP host. `sslmode` is one of libpq's six modes; when left out it is `prefer` for a socket folder, `localhost` and a loopback address and `verify-full` for any other host (Studio review T-4) |
-| e | `mode` defaults to `read_only`; `allow` entries are `schema.table` or `schema.table.column` (SQLite schema `main`), duplicates are dropped; `schema_fingerprint` matches `v1:sha256:[0-9a-f]{64}` or (since 0.3, a level-2 snapshot, I-111) `v2:sha256:[0-9a-f]{64}`; `statement_timeout_ms` 1 to 2 147 483 647 |
+| e | `mode` defaults to `read_only`; `read_write` exists since 0.2 and `admin` since 0.3 (E-X8, TAB-XW-8: the separate admin profile with minimal rights that role DDL runs on, section 4.9); Tabrion attaches no behavior to any mode, which stays the consumer's (STU-XW-1); `allow` entries are `schema.table` or `schema.table.column` (SQLite schema `main`), duplicates are dropped; `schema_fingerprint` matches `v1:sha256:[0-9a-f]{64}` or (since 0.3, a level-2 snapshot, I-111) `v2:sha256:[0-9a-f]{64}`; `statement_timeout_ms` 1 to 2 147 483 647 |
 | f | A TOML syntax error keeps only its line number (`pointer = "line N"`), never the parser's message, which may quote the file. Errors are raised outside an `except` block (no `__context__`) |
 | g | `load` refuses a path that is a symbolic link (`profilefile.symlink`), a file that is not regular (`profilefile.not_regular_file`), a larger file (`profilefile.too_large`) and an unreadable one (`profilefile.unreadable`); the path is not in the error |
 | h | `dump` writes the canonical form (fixed key order, basic strings with every control character, U+2028 and U+2029 escaped), parses its own output and raises `ProfileFileError` unless it reads back to the same profiles, so its output always parses |
