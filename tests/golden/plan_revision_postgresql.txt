@@ -1,0 +1,46 @@
+"""Alembic revision written by Tabrion (tabrion.plan.revision_text, TAB-XW-4).
+
+It runs the statements of one reviewed schema change plan, in its order and as they were previewed. Read every
+statement before you run it with Alembic. The plan hash and the source fingerprint below bind it to the
+preview: run it only on a database whose schema still has that fingerprint. Tabrion wrote this text only; it
+never runs a revision. The message is the variable `message`.
+"""
+
+from alembic import op
+import sqlalchemy as sa
+
+revision = 'a1b2c3'
+down_revision = 'f0e1d2'
+branch_labels = None
+depends_on = None
+
+message = 'add qty'
+dialect = 'postgresql'
+plan_hash = 'sha256:cb7b1fee8b64288722c871bc7b8cd95538fd2029b70e63534f3ce476f66f515b'
+source_fingerprint = 'v2:sha256:16a28630821ff7e74f86aeca8cec44fdf957b98318b0792ad0fb9a0aedd27049'
+target_fingerprint = 'v2:sha256:50ececebf52e367cec25aed84d07ec3635eb4e7d868a717da89a4e072cf01ed3'
+
+
+def upgrade() -> None:
+    if op.get_context().dialect.name != dialect:
+        raise RuntimeError("this revision was planned for another database engine")
+    # step 0: drop_index (destructive, non_transactional)
+    # not transactional: autocommit_block() first commits every step before it
+    with op.get_context().autocommit_block():
+        op.execute(sa.text('DROP INDEX CONCURRENTLY public.moves_note'))
+    # step 1: add_column (additive, data_changing, locking)
+    op.execute(sa.text('ALTER TABLE public.moves ADD COLUMN qty INTEGER DEFAULT (0) NOT NULL'))
+    # step 2: alter_column (data_changing, locking)
+    op.execute(sa.text('ALTER TABLE public.parts ALTER COLUMN code TYPE VARCHAR(20)'))
+    # step 3: create_table (additive)
+    op.execute(sa.text('CREATE TABLE public.log (\n\tid INTEGER NOT NULL, \n\twhat TEXT, \n\tPRIMARY KEY (id)\n)'))
+    # step 4: add_constraint (additive, locking)
+    op.execute(sa.text('ALTER TABLE public.moves ADD CONSTRAINT moves_part FOREIGN KEY(part) REFERENCES public.parts (id)'))
+    # step 5: create_index (additive, non_transactional)
+    # not transactional: autocommit_block() first commits every step before it
+    with op.get_context().autocommit_block():
+        op.execute(sa.text('CREATE INDEX CONCURRENTLY moves_part_ix ON public.moves (part)'))
+
+
+def downgrade() -> None:
+    raise NotImplementedError("Tabrion writes no downgrade: plan the reverse change and review it")

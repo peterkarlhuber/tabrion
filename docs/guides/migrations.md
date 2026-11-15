@@ -9,6 +9,7 @@ Tabrion has **no PostgreSQL migration runner** and does not merge the existing o
 | a Python application on SQLite or PostgreSQL with Alembic | Alembic to migrate, `tabrion.migrations` to **check** the state at start-up |
 | statements that cannot run in a transaction | `tabrion.sql.split_statements` ([Splitting SQL scripts](sql.md)) |
 | one migrating process at a time on PostgreSQL | `wait_advisory_lock` or `SessionLock` ([PostgreSQL](postgresql.md#advisory-locks)) |
+| a reviewed DDL plan from the schema you have to the one you want, or its Alembic revision text (0.3, experimental) | `tabrion.plan` ([below](#schema-change-plans-03-experimental)) |
 
 This page covers the Alembic gate. It needs the extra `migrations` (`tabrion[migrations]`, which brings
 `tabrion[sqlalchemy]` and Alembic). Contract: [section 5.5](../api/contract.md#55-health-diagnosis-inspection-schema-gate)
@@ -220,6 +221,147 @@ tabrion.errors.SchemaNotCurrent: migrations.not_current (current=0002, head=0003
 ```
 
 It works under `Profile.readonly()` too, so a read-only tool can refuse a database of the wrong version.
+
+## Schema change plans (0.3, experimental)
+
+`tabrion.plan` (extra `sqlalchemy`; a plan with column steps also `migrations`; contract
+[section 5.13](../api/contract.md#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4))
+computes the change from the schema a database has to the schema you want, as a reviewed list of DDL statements.
+It never runs them: Tabrion's executor is planned for TAB-XW-5, and an Alembic project gets the plan as revision
+**text** that you add to the project and run with Alembic yourself
+([ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) section 2).
+
+The input is two level-2 snapshots of [`tabrion.schema`](profiles-and-schema.md): the database as it is and the
+target model, which you build with `dataclasses.replace` (or `SchemaSnapshot.from_json`):
+
+```pycon
+>>> import dataclasses
+>>> import sqlite3
+>>> from tabrion import Database
+>>> from tabrion import plan as tp
+>>> from tabrion import schema as ts
+>>> from tabrion.errors import PlanRefused
+>>> with Database.from_url("sqlite:///plan.db") as shop:
+...     _ = shop.execute("CREATE TABLE parts (id INTEGER PRIMARY KEY, code VARCHAR(10))")
+...     with shop.inspector() as inspector:
+...         current = ts.snapshot(inspector, level=2)
+...     markers = tp.migration_markers(shop)
+>>> markers
+()
+>>> parts = current.table("main.parts")
+>>> qty = ts.ColumnShape("qty", "INTEGER", True, default="0")
+>>> target = dataclasses.replace(current, tables=(dataclasses.replace(parts, columns=(*parts.columns, qty)),))
+>>> change = tp.plan(current, target, server_version=sqlite3.sqlite_version_info)
+>>> for step in change.steps:
+...     print(step.index, step.operation, step.target, [risk.value for risk in step.risks])
+0 add_column main.parts ['additive', 'data_changing']
+>>> print(change.steps[0].statements[0].sql)
+ALTER TABLE parts ADD COLUMN qty INTEGER DEFAULT (0)
+```
+
+`migration_markers` tells you whether the database is under migration management (an `alembic_version` table, the
+version tables of Nodestro and Axentra, or SQLite's `PRAGMA user_version`); a managed database gets a revision, never
+direct DDL (ADR 0015 section 3).
+
+Every step carries its **risk classes**: `additive`, `data_changing` (a type change, `NOT NULL` on existing rows, a
+backfilled default), `destructive` (a drop or a narrowing type), `rebuild` (a SQLite table rebuild), `locking`
+(PostgreSQL: the step blocks writes on an existing table) and `non_transactional` (`CREATE INDEX CONCURRENTLY`, with
+`plan(..., concurrent_indexes=True)`). Show them before anyone confirms a plan. A change SQLite cannot make in place
+becomes one `rebuild_table` step: the rows go to a holder table, the table is created again from the target and the
+rows come back, then its indexes and triggers, and every view is read once (`SELECT * FROM <view> LIMIT 0`), so a
+view the rebuild broke fails the transaction. It needs the foreign keys off, as
+[above](#why-the-foreign-keys-are-off-the-cascade): with them on, its `DROP TABLE` deletes the rows of child tables
+through `ON DELETE CASCADE`, and `PRAGMA foreign_keys` cannot change inside a transaction. Pass `server_version`
+(`sqlite3.sqlite_version_info` of the engine that runs the plan) so that a plain column drop runs in place, where
+SQLite checks views and triggers itself:
+
+```pycon
+>>> shorter = dataclasses.replace(parts, columns=(parts.columns[0], ts.ColumnShape("code", "VARCHAR(5)", True)))
+>>> rebuild = tp.plan(current, dataclasses.replace(current, tables=(shorter,)))
+>>> [(step.operation, [risk.value for risk in step.risks]) for step in rebuild.steps]
+[('rebuild_table', ['data_changing', 'destructive', 'rebuild'])]
+```
+
+The plan is bound to both fingerprints and to its exact SQL by `plan_hash`; `MigrationPlan.from_json` refuses a plan
+whose content no longer matches its hash. That proves **integrity, not authenticity**: anyone can compute the hash of
+a plan they wrote, so never take a plan from an untrusted source (a project file, a URL, an import); keep it where
+only your code writes it. Each step's risk classes must include those its operation implies (a drop is
+`destructive`), so an edited plan cannot pass a drop off as `additive`; but only planning again proves the
+statements: before a plan runs, plan again from a fresh snapshot and the target you hold, compare the new
+`plan_hash` with the one the user confirmed, and confirm the risk classes of the new plan.
+
+`revision_text` writes the plan as an Alembic revision. The docstring is fixed and every caller value is a string
+literal, so a message cannot become code; `upgrade()` refuses another engine and runs the previewed statements one
+by one; `downgrade()` raises `NotImplementedError` (plan and review the reverse change instead):
+
+```pycon
+>>> text = tp.revision_text(change, revision="0004", down_revision="0003", message="parts: add qty")
+>>> print(text[text.index("def upgrade") :])
+def upgrade() -> None:
+    if op.get_context().dialect.name != dialect:
+        raise RuntimeError("this revision was planned for another database engine")
+    # step 0: add_column (additive, data_changing)
+    op.execute(sa.text('ALTER TABLE parts ADD COLUMN qty INTEGER DEFAULT (0)'))
+<BLANKLINE>
+<BLANKLINE>
+def downgrade() -> None:
+    raise NotImplementedError("Tabrion writes no downgrade: plan the reverse change and review it")
+<BLANKLINE>
+```
+
+Write the text into `versions/` yourself and review it like any revision. Tabrion never reads the project, never
+runs `env.py`, an Alembic command or a revision. The revision of a SQLite plan with a rebuild or a table drop
+refuses to start while foreign keys are on and runs `PRAGMA foreign_key_check` before the commit; run it with the
+migration profile of [`env.py`](#an-alembic-project-on-tabriondatabase). The revision does not check the source
+fingerprint: apply it to the database it was planned for, soon after the preview. A `CONCURRENTLY` step commits
+every step before it, so the plan puts those steps first (drops) and last (creations).
+
+A plan never drops what other SQLite schema text still names: a column or table that a view or trigger names
+refuses the plan (`dependent_object`). On PostgreSQL the server refuses such a drop for views, policies and
+`UPDATE OF` triggers, but a PL/pgSQL function body that names the column breaks only when it runs: check the
+functions before you drop a column or table.
+
+```pycon
+>>> with Database.from_url("sqlite:///plan.db") as shop:
+...     _ = shop.execute("CREATE VIEW part_codes AS SELECT id, code FROM parts")
+...     with shop.inspector() as inspector:
+...         with_view = ts.snapshot(inspector, level=2)
+>>> parts_now = with_view.table("main.parts")
+>>> no_code = dataclasses.replace(parts_now, columns=parts_now.columns[:1])
+>>> try:
+...     tp.plan(with_view, dataclasses.replace(with_view, tables=(no_code,)), server_version=sqlite3.sqlite_version_info)
+... except PlanRefused as error:
+...     print(dict(error.details))
+{'reason': 'dependent_object', 'table': 'main.parts', 'object': 'main.part_codes'}
+```
+
+**What a plan refuses** (`PlanRefused`, reason `unsupported_feature`, ADR 0015 D-5): any change while the PostgreSQL
+database has an event trigger; changing or dropping a PostgreSQL table that is partitioned or a partition, inherits,
+has rules, is a foreign, unlogged or typed table, has storage parameters, a non-default replica identity, a domain
+column or a `NO INHERIT` check; a table whose trigger or policy function is not PL/pgSQL or SQL; creating or
+changing triggers, policies or row-level security (a plan keeps the existing ones of a table it changes); and a SQLite
+rebuild of a table whose `CREATE TABLE` holds what the shape does not (`STRICT`, `WITHOUT ROWID`, `AUTOINCREMENT`,
+`ON CONFLICT`, a column collation):
+
+```pycon
+>>> with Database.from_url("sqlite:///strict.db") as strict:
+...     _ = strict.execute("CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL) STRICT")
+...     with strict.inspector() as inspector:
+...         tags_now = ts.snapshot(inspector, level=2)
+>>> tags = tags_now.table("main.tags")
+>>> loose = dataclasses.replace(tags, columns=(tags.columns[0], ts.ColumnShape("name", "TEXT", True)))
+>>> try:
+...     tp.plan(tags_now, dataclasses.replace(tags_now, tables=(loose,)))
+... except PlanRefused as error:
+...     print(error.code, dict(error.details))
+plan.refused {'reason': 'unsupported_feature', 'table': 'main.tags', 'feature': 'strict'}
+```
+
+Residual risks (contract I-124 j): functions called by a trigger or policy function are not in the fingerprint; a
+function can change after a drift check because it cannot be locked; function and table owners, privileges,
+publications, statistics and PostgreSQL views are not in the fingerprint either; a SQLite rebuild gives a table
+without an `INTEGER PRIMARY KEY` new `rowid` values; a version table under another name than `alembic_version` is
+not found by `migration_markers`.
 
 ## Things to know
 

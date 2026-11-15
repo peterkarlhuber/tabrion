@@ -2,7 +2,7 @@
 
 !!! warning "Planned 0.3, not implemented"
     Everything on this page is **planned for Tabrion 0.3 and not implemented**, except the sections marked as moved
-    into the contract (A.1, TAB-XW-2; A.2, TAB-XW-3; A.5, TAB-XW-6; A.6, TAB-XW-7; A.7 and A.9, TAB-XW-8; A.8, TAB-XW-9). None of the other names exists in the code, in `__all__` or in
+    into the contract (A.1, TAB-XW-2; A.2, TAB-XW-3; A.3, TAB-XW-4; A.5, TAB-XW-6; A.6, TAB-XW-7; A.7 and A.9, TAB-XW-8; A.8, TAB-XW-9). None of the other names exists in the code, in `__all__` or in
     [`surface.json`](surface.json); none may be imported or relied on. Names, signatures and
     error codes may still change until the independent API review of TAB-XW-10. When a work package implements its
     part, it moves that section into [the contract](contract.md) with implementation notes, adds the names to
@@ -24,14 +24,14 @@ Every planned name is experimental (`X`) and arrives with 0.3. No stable name ch
 |---|---|---|---|
 | `tabrion.schema` | `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `IndexShape`; new fields of `ColumnShape`, `TableShape`, `SchemaSnapshot`; `snapshot(level=)`; new `SchemaDifference.kind` values (implemented, contract section 5.10, I-111) | TAB-XW-2 | `sqlalchemy` |
 | `tabrion.ddl` (new) | `DdlStatement`, `create_statements`, `table_statements` and the in-place statements (implemented, contract section 5.12, I-123) | TAB-XW-3 | `sqlalchemy`; column statements also `migrations` |
-| `tabrion.plan` (new) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers`, `ExecutionResult`, `execute_plan` | TAB-XW-4, TAB-XW-5 | `sqlalchemy`; `revision_text` also `migrations` |
+| `tabrion.plan` (new) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers` (implemented, contract section 5.13, I-124); `ExecutionResult`, `execute_plan` | TAB-XW-4, TAB-XW-5 | `sqlalchemy`; column steps also `migrations` |
 | `tabrion.rowedit` (new) | `insert_row`, `update_row`, `delete_row` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
 | `tabrion` (layer B) | `Transaction.execute_checked` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
 | `tabrion.sqlite` | `restore`, `RestoreResult`, `delete_database_file` (implemented, contract section 3.10) | TAB-XW-7 | none (standard library) |
 | `tabrion.postgres` | `RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges`, `revoke_privileges` (implemented, contract section 4.9) | TAB-XW-8 | `postgres` |
 | `tabrion.postgres` | `create_database`, `drop_database`, `database_sessions` (implemented, contract section 4.8) | TAB-XW-9 | `postgres` |
 | `tabrion.profilefile` | `ConnectionProfile.mode` value `"admin"` (implemented, contract section 5.9, I-109 e) | TAB-XW-8 (E-X8) | none |
-| `tabrion.errors` | `RowCountMismatch`, `PlanError`, `PlanMismatch`, `SchemaDrift`, `PlanRefused`, `PlanFailed`, `DatabaseInUse`; new `RoleUnsafe` reasons | TAB-XW-4..9 | none |
+| `tabrion.errors` | `RowCountMismatch`, `PlanError`, `PlanMismatch`, `PlanRefused`, `DatabaseInUse` (implemented, contract section 1.4); `SchemaDrift`, `PlanFailed`; new `RoleUnsafe` reasons | TAB-XW-4..9 | none |
 
 **Not planned** (non-goals stay, ADR 0014, ADR 0015): a `pg_dump`/`pg_restore` wrapper, an Alembic runner or
 `upgrade`, a migration version table, a feature flag, gate or "writes enabled" setting, upsert or merge helpers, role
@@ -43,14 +43,17 @@ attributes SUPERUSER, BYPASSRLS, CREATEROLE and REPLICATION, libpq multi-host pr
 class RowCountMismatch(TabrionError)   # implemented (TAB-XW-6, contract section 1.4 and 5.11):
                                         # "transaction.rowcount_mismatch" (details expected, actual)
                                         # "transaction.too_many_rows" (details limit, actual)
-class PlanError(TabrionError)          # base of the plan errors
-    class PlanMismatch(PlanError)          # "plan.hash_mismatch", "plan.fingerprint_mismatch", "plan.invalid"
+class PlanError(TabrionError)          # implemented (TAB-XW-4, contract sections 1.4 and 5.13): base of the plan errors
+    class PlanMismatch(PlanError)          # implemented with "plan.invalid" (details field); TAB-XW-5 adds
+                                           # "plan.hash_mismatch", "plan.fingerprint_mismatch"
     class SchemaDrift(PlanError)           # "plan.drift": details expected, actual (fingerprints), differences (count)
                                            # .differences: tuple[SchemaDifference, ...]
     class PlanRefused(PlanError)           # "plan.refused": details reason in
                                            # {"environment", "migration_managed", "risk_not_allowed",
-                                           #  "dialect_mismatch", "engine_unsupported", "unsafe_schema_sql"},
-                                           # markers (comma list)
+                                           #  "dialect_mismatch", "engine_unsupported", "unsafe_schema_sql",
+                                           #  "unsupported_feature"}, markers (comma list); implemented
+                                           # (TAB-XW-4) with the last four, "unsupported_feature" added for
+                                           # ADR 0015 D-5
     class PlanFailed(PlanError)            # "plan.failed": details step, completed, state in {"rolled_back", "partial"};
                                            # original set; never chained
 class DatabaseInUse(TabrionError)      # implemented (TAB-XW-7, TAB-XW-9, contract sections 1.4, 3.10, 4.8):
@@ -106,85 +109,30 @@ SQLite cannot make). The tests named in A.2 (golden DDL, round trip, quoting) ar
 
 ## A.3 `tabrion.plan`: diff, plan and revision text (TAB-XW-4)
 
-```python
-class RiskClass(StrEnum):
-    ADDITIVE = "additive"
-    DATA_CHANGING = "data_changing"  # type change, NOT NULL on existing rows, default backfill
-    DESTRUCTIVE = "destructive"  # drop table, column, constraint, narrowing type
-    REBUILD = "rebuild"  # SQLite table rebuild
-    LOCKING = "locking"  # PostgreSQL ACCESS EXCLUSIVE on an existing table
-    NON_TRANSACTIONAL = "non_transactional"
+**Implemented (TAB-XW-4) and moved into the contract:**
+[section 5.13](contract.md#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4) with
+the implementation note I-124; the D-5 parts of the schema model are I-111 i. `RiskClass`, `PlanStep`,
+`MigrationPlan`, `plan`, `revision_text`, `migration_markers`, `PlanError`, `PlanMismatch`, `PlanRefused`,
+`TriggerShape`, `PolicyShape` and `FunctionShape` are in `surface.json` with `"since": "0.3"` and stability `X`.
+Changes from the planned text, each the safe reading of ADR 0015:
 
-
-@dataclass(frozen=True, slots=True)
-class PlanStep:
-    index: int
-    operation: str  # "create_table", "drop_table", "add_column", "drop_column",
-    # "alter_column", "add_constraint", "drop_constraint",
-    # "create_index", "drop_index", "rebuild_table"
-    target: str
-    statements: tuple[DdlStatement, ...]
-    risks: tuple[RiskClass, ...]  # sorted, at least one
-    transactional: bool
-
-
-@dataclass(frozen=True, slots=True)
-class MigrationPlan:
-    dialect: str
-    source_fingerprint: str  # "v2:sha256:..." of the snapshot the plan starts from
-    target_fingerprint: str
-    steps: tuple[PlanStep, ...]
-    plan_hash: str  # "sha256:<64 hex>" over the canonical JSON of all fields above
-
-    @property
-    def risks(self) -> tuple[RiskClass, ...]: ...
-    def to_json(self) -> str: ...
-    @classmethod
-    def from_json(cls, text: str) -> MigrationPlan: ...  # recomputes plan_hash; PlanMismatch("plan.invalid")
-
-
-def plan(
-    current: SchemaSnapshot, target: SchemaSnapshot, *, server_version: tuple[int, ...] | None = None
-) -> MigrationPlan: ...
-def revision_text(
-    plan: MigrationPlan, *, revision: str, down_revision: str | None, message: str
-) -> str: ...  # extra migrations
-def migration_markers(database: Database) -> tuple[str, ...]: ...
-```
-
-- `plan` needs two level-2 snapshots of the same dialect (`PlanRefused`, reason `dialect_mismatch`;
-  `UsageError("plan.level_required")`). It orders steps so that dependencies hold (drop foreign keys before tables,
-  create referenced tables first). On SQLite an `ALTER` that SQLite cannot do in place becomes one `rebuild_table`
-  step (new table, copy, drop, rename, indexes, triggers and views recreated from `sqlite_schema`); `server_version`
-  decides whether `DROP COLUMN` (3.35 and later) is possible in place.
-- **K-1 (schema SQL from the file is attacker data):** every text taken from `sqlite_schema` for a rebuild becomes
-  exactly one `DdlStatement` and is run with `execute`, never `executescript`. It must pass
-  `sqlite3.complete_statement` with no remainder after the first statement, and its head must match the row's
-  `type` and name (`CREATE [TEMP] TRIGGER <name>`, `CREATE [TEMP] VIEW <name>`, `CREATE [UNIQUE] INDEX <name>`).
-  Otherwise `plan` refuses (`PlanRefused`, reason `unsafe_schema_sql`), and `execute_plan` checks again. Tests
-  `tests/unit/test_plan_sqlite_rebuild.py::test_rebuild_refuses_second_statement_in_schema_sql`,
-  `::test_rebuild_refuses_type_or_name_mismatch`, `::test_rebuild_never_uses_executescript`.
-- The plan is deterministic: the same two snapshots and server version give the same `plan_hash`.
-- **`revision_text`** renders an Alembic revision file (`upgrade()` with `op.*` calls, `downgrade()` raising
-  `NotImplementedError` unless every step is reversible) as a string. It imports Alembic's operation renderers and
-  nothing else: no `env.py`, no project module, no file access. `revision`, `down_revision`, `message` and every
-  identifier are written as Python string literals.
-- **K-3:** the module docstring is a fixed text with no caller text; the message appears only as a `repr` literal,
-  so `"""`, `\`, a line break or NUL cannot break out. `revision` must match `[0-9a-zA-Z_]{1,64}` and
-  `down_revision` the same or `None` (`UsageError("plan.invalid_revision")`). Tests
-  `tests/unit/test_plan_revision_text.py::test_message_cannot_break_docstring` (`"""`, `\`, `\r\n`, `\x00`),
-  `::test_revision_ids_validated` (a `down_revision` of `"; import os`), `::test_revision_text_ast_has_only_literals`
-  (each output through `ast.parse`). The file name or slug is Studio's (STU-XSD-3: no path parts, no `..`).
-- **N-2:** `from_json` proves integrity, not authenticity: a consumer never takes a plan from an untrusted source
-  (project file, URL, import); Studio keeps plans server-side (Studio #109 TX-08). Test
-  `tests/unit/test_plan.py::test_from_json_docstring_states_integrity_only`. SQLite rebuilds render as `op.batch_alter_table(..., recreate="always")`
-  with a comment that points to the migrations guide (foreign keys off around a batch rebuild).
-- **`migration_markers`** reads the catalog only and returns the markers of migration management it finds:
-  `"alembic_version"`, `"nodestro_schema_migrations"`, `"axentra_schema_migrations"`, `"sqlite_user_version"`. An
-  empty tuple means none was found.
-- **Tests:** every risk class, plan determinism, `from_json` refusing an edited plan, revision text golden files and
-  an injection case (a table named `x"); import os; ("`), and an import and file-access probe that `revision_text`
-  touches no project path.
+- `plan` has the new keyword `concurrent_indexes=False`; without it no step could be `non_transactional`.
+- `PlanRefused` has the new reason `unsupported_feature` (ADR 0015 D-5, `details` `table` and `feature`); new
+  `UsageError` codes `plan.unsupported_option`, `plan.unsupported_change` (a PostgreSQL primary key, column order or
+  unnamed constraint) and `plan.invalid_target` (a foreign key to a dropped table).
+- `locking` covers every lock that blocks writes on an existing PostgreSQL table, not only `ACCESS EXCLUSIVE`.
+- The SQLite rebuild never renames: it copies into a holder table, drops and recreates the table and copies back, so
+  views and the foreign keys of other tables stay valid and are not recreated; indexes are written from the target
+  shape, so triggers are the only `sqlite_schema` text a plan takes over (K-1 checks them; a `TEMP` head is refused).
+- `revision_text` writes every statement as `op.execute(sa.text(...))` (a rebuild included, not
+  `op.batch_alter_table`), so the revision runs exactly the previewed SQL; writing the text needs no Alembic. `plan`
+  needs the extra `migrations` for column steps, as the column statements of `tabrion.ddl` do. `downgrade()` always raises `NotImplementedError`.
+- The K-1 check at execution (authorizer, `trusted_schema = OFF`, defensive mode) and
+  `test_rebuild_runs_under_authorizer_and_defensive` stay in A.4 (TAB-XW-5).
+- Review of #89 (ACCEPTED with conditions) folded in: the SQLite foreign key guard and check in the revision
+  (P89-01), views in the level-2 snapshot (`ViewShape`) and the new reason `dependent_object` (P89-02), risk
+  classes checked against each step's operation and statements (P89-03), `CONCURRENTLY` steps first and last
+  (P89-06), exact `str` checks (P89-07); the remaining points are residual risks in contract I-124 j.
 
 ## A.4 `tabrion.plan.execute_plan` (TAB-XW-5)
 
@@ -243,6 +191,14 @@ Order of checks, each before any statement runs:
 - `database` is a layer-B `Database` the caller owns; the executor opens its own transactions (an open Tabrion
   transaction of the same thread raises `UsageError("database.nested_transaction")`). It never retries a write
   (R-NORETRY).
+- **Review of #89 (binding for TAB-XW-5):** (P89-01) a SQLite plan with a rebuild or table drop runs with
+  `foreign_keys` off, set before `BEGIN`, and the executor refuses to start on a connection where it is still on;
+  `foreign_key_check` and `integrity_check` run before the commit; test "foreign keys on: refused, no row lost".
+  (P89-02) The `SELECT * FROM <view> LIMIT 0` statements a plan carries run in the transaction like every other
+  statement. (P89-03) The executor never takes a plan from a client, a file or an import: it plans again from the
+  snapshot taken under the locks of D-5.4 and the target held server-side, compares the new `plan_hash` with the hash
+  the user confirmed in the preview (not one that came with the plan) and checks the risk classes of the new plan
+  against `allow`; the "swapped plan" test is written exactly so. See contract I-124 a, f, h.
 - **Tests:** each refusal above as a negative test, a swapped and an edited plan, drift injected between preview and
   execution, dry run leaves the fingerprint unchanged on both engines, a lock timeout, a failing non-transactional
   step reports `partial`, SQLite rebuild golden tests (R-X2).

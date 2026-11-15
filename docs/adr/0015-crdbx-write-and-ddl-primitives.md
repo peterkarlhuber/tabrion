@@ -227,6 +227,19 @@ Residual risks, to be repeated in the contract and the guides when TAB-XW-3..TAB
 from a trigger or policy function are not in the fingerprint, and a function can change after the drift check because
 it cannot be locked.
 
+**Split between TAB-XW-4 and TAB-XW-5 (recorded by TAB-XW-4).** TAB-XW-4 delivers everything D-5 needs at plan time:
+the fingerprint inputs of D-5.1 (triggers, policies, row-level security and the directly referenced functions in the
+level-2 shape, [contract I-111 i](../api/contract.md#510-schema-fingerprint-tabrionschema-since-02-experimental-extra-sqlalchemy-tab-cr-2)),
+the detection of D-5.2 and D-5.3 as feature markers (partitioning, domain columns, inheritance, rules, foreign
+tables, unknown relation kinds and properties, event triggers, and the SQLite `CREATE TABLE` clauses a rebuild would
+lose), and the refusal of a plan that would change an affected table (`PlanRefused`, reason `unsupported_feature`,
+[contract I-124 e](../api/contract.md#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4)).
+TAB-XW-5 delivers what needs a connection at execution: D-5.4 (lock the target tables, then repeat the drift check
+in the execution transaction, so the D-5 inputs are compared again right before the first step) and the K-1 check
+again under the caller's authorizer and defensive mode. A plan is safe to show from TAB-XW-4 on; it is safe to run
+only through the executor of TAB-XW-5, and G-S3 stays locked until both are in place and reviewed. The residual
+risks above are in contract I-124 j.
+
 ## Rationale
 
 - Revision text only keeps Tabrion and Studio away from running project code: an Alembic `env.py` is arbitrary

@@ -21,7 +21,8 @@ trusted. A consumer must show them in the preview and never take a model from an
 (``UsageError("ddl.unsupported_feature")``) instead of being generated without it: identity and generated columns,
 PostgreSQL exclusion constraints, ``NOT VALID`` constraints, invalid indexes, unknown index methods, and every shape
 field this module does not know (ADR 0015 D-5.3), so a field added to the model later is refused until it is
-generated.
+generated. Triggers, policies, the functions they call, row-level security and table features (TAB-XW-4) are refused
+where a table is created; an in-place statement leaves them as they are.
 
 **Names.** A table is ``schema.table`` with exactly one dot; a name with more (a dot in the schema or table name)
 does not say which object it names and is refused (``UsageError("ddl.invalid_shape")``, review of #87, M-1).
@@ -113,6 +114,10 @@ def create_statements(model: SchemaSnapshot, *, dialect: Literal["sqlite", "post
     if model.dialect != name:
         raise UsageError("ddl.dialect_mismatch")
     _known(model, "")
+    if model.features:
+        raise _unsupported("", "database_feature")
+    if model.views:
+        raise _unsupported("", "view")
     builder = _Builder(name)
     # Every table first, then the foreign keys, so a key can refer to a table that comes later in the model.
     tables = [builder.table(_table_shape(shape), foreign_keys=False) for shape in model.tables]
@@ -330,7 +335,8 @@ def _flag(concurrently: object, builder: _Builder, shape: TableShape) -> bool:
 
 
 _KNOWN_FIELDS: dict[type, frozenset[str]] = {
-    SchemaSnapshot: frozenset({"dialect", "tables", "level"}),
+    # features and views (TAB-XW-4) are known in order to be refused by create_statements
+    SchemaSnapshot: frozenset({"dialect", "tables", "level", "features", "views"}),
     TableShape: frozenset(
         {
             "name",
@@ -341,6 +347,14 @@ _KNOWN_FIELDS: dict[type, frozenset[str]] = {
             "check_constraints",
             "indexes",
             "exclusion_constraints",
+            # TAB-XW-4 (ADR 0015 D-5): refused where a table is created (_Builder.table); an in-place statement
+            # leaves them as they are, and whether a change may run on such a table is tabrion.plan's decision.
+            "triggers",
+            "policies",
+            "functions",
+            "row_security",
+            "force_row_security",
+            "features",
         }
     ),
     # identity, generated and generation_expression are known in order to be refused (_Builder.plain_column)
@@ -722,6 +736,17 @@ class _Builder:
             created.append_constraint(sqlalchemy.PrimaryKeyConstraint(*primary_key))
         if shape.exclusion_constraints:
             raise _unsupported(shape.name, "exclusion_constraint")
+        # Not generated (ADR 0015 D-5): a table with them cannot be created from the shape.
+        for field, feature in (
+            ("triggers", "trigger"),
+            ("policies", "policy"),
+            ("functions", "function"),
+            ("row_security", "row_security"),
+            ("force_row_security", "row_security"),
+            ("features", "table_feature"),
+        ):
+            if getattr(shape, field):
+                raise _unsupported(shape.name, feature)
         items: tuple[UniqueShape | CheckShape, ...] = (*shape.unique_constraints, *shape.check_constraints)
         for item in items:
             self.constraint(shape, created, item)

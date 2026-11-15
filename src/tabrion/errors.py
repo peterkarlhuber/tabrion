@@ -46,6 +46,9 @@ __all__ = [
     "MigrationMissing",
     "MultipleRowsError",
     "PermissionDenied",
+    "PlanError",
+    "PlanMismatch",
+    "PlanRefused",
     "ReadOnlyViolation",
     "RoleMissing",
     "RoleUnsafe",
@@ -1349,3 +1352,20 @@ class DatabaseInUse(TabrionError):
     ``tabrion.sqlite.restore`` and ``delete_database_file`` (since 0.3, experimental; contract sections 3.10 and
     4.8). Nothing was changed.
     """
+
+
+class PlanError(TabrionError):
+    """Base class of the errors of a schema change plan (``tabrion.plan``, since 0.3, experimental; contract section
+    5.13). Nothing was changed."""
+
+
+class PlanMismatch(PlanError):
+    """Code ``plan.invalid``: a plan whose content does not match its ``plan_hash``, or that is not a valid plan
+    (``MigrationPlan.from_json``, the ``MigrationPlan`` constructor). The executor (TAB-XW-5) adds
+    ``plan.hash_mismatch`` and ``plan.fingerprint_mismatch``."""
+
+
+class PlanRefused(PlanError):
+    """Code ``plan.refused``; details ``reason`` and, by reason, ``table`` and ``feature``. Reasons of ``plan``:
+    ``dialect_mismatch``, ``engine_unsupported``, ``unsafe_schema_sql`` (K-1) and ``unsupported_feature`` (ADR 0015
+    D-5); the executor (TAB-XW-5) adds ``environment``, ``migration_managed`` and ``risk_not_allowed``."""

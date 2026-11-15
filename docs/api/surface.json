@@ -653,6 +653,30 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.errors.PlanError": {
+      "kind": "exception",
+      "bases": [
+        "TabrionError"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.errors.PlanMismatch": {
+      "kind": "exception",
+      "bases": [
+        "PlanError"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.errors.PlanRefused": {
+      "kind": "exception",
+      "bases": [
+        "PlanError"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.errors.ReadOnlyViolation": {
       "kind": "exception",
       "bases": [
@@ -805,6 +829,97 @@
       "signature": "(database: Database, *, script_location: str | os.PathLike[str], version_table: str = 'alembic_version', version_table_schema: str | None = None) -> SchemaStatus",
       "since": "0.1",
       "stability": "S"
+    },
+    "tabrion.plan.MigrationPlan": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "dialect: str",
+        "source_fingerprint: str",
+        "target_fingerprint: str",
+        "steps: tuple[PlanStep, ...]",
+        "plan_hash: str"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.MigrationPlan.__init__": {
+      "kind": "method",
+      "signature": "(self, dialect: str, source_fingerprint: str, target_fingerprint: str, steps: tuple[PlanStep, ...], plan_hash: str) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.MigrationPlan.from_json": {
+      "kind": "classmethod",
+      "signature": "(cls, text: str) -> MigrationPlan",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.MigrationPlan.risks": {
+      "kind": "property",
+      "signature": "(self) -> tuple[RiskClass, ...]",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.MigrationPlan.to_json": {
+      "kind": "method",
+      "signature": "(self) -> str",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.PlanStep": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "index: int",
+        "operation: str",
+        "target: str",
+        "statements: tuple[DdlStatement, ...]",
+        "risks: tuple[RiskClass, ...]",
+        "transactional: bool"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.PlanStep.__init__": {
+      "kind": "method",
+      "signature": "(self, index: int, operation: str, target: str, statements: tuple[DdlStatement, ...], risks: tuple[RiskClass, ...], transactional: bool) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.RiskClass": {
+      "kind": "enum",
+      "bases": [
+        "StrEnum"
+      ],
+      "members": [
+        "ADDITIVE = 'additive'",
+        "DATA_CHANGING = 'data_changing'",
+        "DESTRUCTIVE = 'destructive'",
+        "REBUILD = 'rebuild'",
+        "LOCKING = 'locking'",
+        "NON_TRANSACTIONAL = 'non_transactional'"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.migration_markers": {
+      "kind": "function",
+      "signature": "(database: Database) -> tuple[str, ...]",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.plan": {
+      "kind": "function",
+      "signature": "(current: SchemaSnapshot, target: SchemaSnapshot, *, server_version: tuple[int, ...] | None = None, concurrent_indexes: bool = False) -> MigrationPlan",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.revision_text": {
+      "kind": "function",
+      "signature": "(plan: MigrationPlan, *, revision: str, down_revision: str | None, message: str) -> str",
+      "since": "0.3",
+      "stability": "X"
     },
     "tabrion.postgres.ExtensionStatus": {
       "kind": "dataclass",
@@ -1526,6 +1641,23 @@
       "since": "0.3",
       "stability": "X"
     },
+    "tabrion.schema.FunctionShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "signature: str",
+        "language: str",
+        "definition: str"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.FunctionShape.__init__": {
+      "kind": "method",
+      "signature": "(self, signature: str, language: str, definition: str) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.schema.IndexShape": {
       "kind": "dataclass",
       "frozen": true,
@@ -1549,6 +1681,26 @@
     "tabrion.schema.IndexShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str, columns: tuple[str, ...], unique: bool = False, ordering: tuple[str, ...] = (), where: str | None = None, include: tuple[str, ...] = (), nulls_not_distinct: bool = False, expressions: tuple[int, ...] = (), collations: tuple[str, ...] = (), opclasses: tuple[str, ...] = (), method: str | None = None, valid: bool = True) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.PolicyShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str",
+        "command: str",
+        "permissive: bool",
+        "roles: tuple[str, ...]",
+        "using: str | None = None",
+        "check: str | None = None"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.PolicyShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, command: str, permissive: bool, roles: tuple[str, ...], using: str | None = None, check: str | None = None) -> None",
       "since": "0.3",
       "stability": "X"
     },
@@ -1582,14 +1734,16 @@
       "fields": [
         "dialect: str",
         "tables: tuple[TableShape, ...]",
-        "level: Literal[1, 2] = 1"
+        "level: Literal[1, 2] = 1",
+        "features: tuple[str, ...] = ()",
+        "views: tuple[ViewShape, ...] = ()"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.SchemaSnapshot.__init__": {
       "kind": "method",
-      "signature": "(self, dialect: str, tables: tuple[TableShape, ...], level: Literal[1, 2] = 1) -> None",
+      "signature": "(self, dialect: str, tables: tuple[TableShape, ...], level: Literal[1, 2] = 1, features: tuple[str, ...] = (), views: tuple[ViewShape, ...] = ()) -> None",
       "since": "0.2",
       "stability": "X"
     },
@@ -1622,15 +1776,38 @@
         "unique_constraints: tuple[UniqueShape, ...] = ()",
         "check_constraints: tuple[CheckShape, ...] = ()",
         "indexes: tuple[IndexShape, ...] = ()",
-        "exclusion_constraints: tuple[ExclusionShape, ...] = ()"
+        "exclusion_constraints: tuple[ExclusionShape, ...] = ()",
+        "triggers: tuple[TriggerShape, ...] = ()",
+        "policies: tuple[PolicyShape, ...] = ()",
+        "functions: tuple[FunctionShape, ...] = ()",
+        "row_security: bool = False",
+        "force_row_security: bool = False",
+        "features: tuple[str, ...] = ()"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.TableShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str, columns: tuple[ColumnShape, ...], primary_key: tuple[str, ...], foreign_keys: tuple[ForeignKeyShape, ...] = (), unique_constraints: tuple[UniqueShape, ...] = (), check_constraints: tuple[CheckShape, ...] = (), indexes: tuple[IndexShape, ...] = (), exclusion_constraints: tuple[ExclusionShape, ...] = ()) -> None",
+      "signature": "(self, name: str, columns: tuple[ColumnShape, ...], primary_key: tuple[str, ...], foreign_keys: tuple[ForeignKeyShape, ...] = (), unique_constraints: tuple[UniqueShape, ...] = (), check_constraints: tuple[CheckShape, ...] = (), indexes: tuple[IndexShape, ...] = (), exclusion_constraints: tuple[ExclusionShape, ...] = (), triggers: tuple[TriggerShape, ...] = (), policies: tuple[PolicyShape, ...] = (), functions: tuple[FunctionShape, ...] = (), row_security: bool = False, force_row_security: bool = False, features: tuple[str, ...] = ()) -> None",
       "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.TriggerShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str",
+        "definition: str",
+        "enabled: str | None = None"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.TriggerShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, definition: str, enabled: str | None = None) -> None",
+      "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.UniqueShape": {
@@ -1651,6 +1828,22 @@
     "tabrion.schema.UniqueShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str | None, columns: tuple[str, ...], include: tuple[str, ...] = (), nulls_not_distinct: bool = False, deferrable: bool = False, initially_deferred: bool = False, collations: tuple[str, ...] = ()) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.ViewShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str",
+        "definition: str"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.ViewShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, definition: str) -> None",
       "since": "0.3",
       "stability": "X"
     },
