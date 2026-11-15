@@ -126,8 +126,8 @@ Each new difference names the constraint or index; only an added index is not br
 ...     released = schema.snapshot(inspector, level=2)
 >>> schema.fingerprint(released).startswith("v2:sha256:")
 True
->>> released.table("main.items").unique_constraints
-(UniqueShape(name=None, columns=('sku',)),)
+>>> [u.columns for u in released.table("main.items").unique_constraints]
+[('sku',)]
 >>> db.execute("CREATE INDEX items_price ON items (price)")
 0
 >>> with db.inspector() as inspector:
@@ -138,5 +138,5 @@ True
 ```
 
 A level-2 snapshot is also the target model of the Schema Designer: a consumer edits it with `dataclasses.replace`
-and stores it with `to_json`. Partial index predicates, index sort order and `DEFERRABLE` are not part of the shape
-(I-111 d).
+and stores it with `to_json`. Partial index predicates, the order of index elements, PostgreSQL `INCLUDE` and
+`NULLS NOT DISTINCT` and `DEFERRABLE` are part of the shape; index collation is not (I-111 d).

@@ -119,7 +119,9 @@ def test_level2_sqlite_shapes(db: Database) -> None:
     )
     assert invoices.indexes == (
         # an expression index keeps its expression texts (SQLAlchemy would leave it out with a warning)
-        ts.IndexShape("invoices(lower", ("lower(note)", "total_cents", "'a,)' || note"), unique=True),
+        ts.IndexShape(
+            "invoices(lower", ("lower(note)", "total_cents", "'a,)' || note"), unique=True, ordering=("DESC", "", "")
+        ),
         ts.IndexShape("invoices_note", ("note",)),
     )
     assert SECRET not in snap.to_json()  # shape only, never data
@@ -326,18 +328,131 @@ def test_level2_with_an_engine_inspector(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("sql", "elements"),
+    ("sql", "parts"),
     [
-        ("CREATE INDEX i ON t (a, b)", ["a", "b"]),
-        ('CREATE INDEX "i(" ON "t(" (lower("a)") DESC, b ASC)', ['lower("a)")', "b"]),
-        ("CREATE INDEX [i(] ON t (a /* (, */, -- x(\n b) WHERE a > 0", ["a /* (, */", "-- x(\n b"]),
+        ("CREATE INDEX i ON t (a, b)", (["a", "b"], "")),
+        ('CREATE INDEX "i(" ON "t(" (lower("a)") DESC, b ASC)', (['lower("a)") DESC', "b ASC"], "")),
+        ("CREATE INDEX [i(] ON t (a /* (, */, -- x(\n b) WHERE a > 0", (["a /* (, */", "-- x(\n b"], " WHERE a > 0")),
         (
             "CREATE INDEX i ON t (coalesce(a, 'it''s'), b collate nocase desc)",
-            ["coalesce(a, 'it''s')", "b collate nocase"],
+            (["coalesce(a, 'it''s')", "b collate nocase desc"], ""),
         ),
         ("CREATE INDEX i ON t", None),
         ("CREATE INDEX 'i ON t (a)", None),
     ],
 )
-def test_sqlite_index_elements(sql: str, elements: list[str] | None) -> None:
-    assert ts._sqlite_index_elements(sql) == elements
+def test_sqlite_index_parts(sql: str, parts: tuple[list[str], str] | None) -> None:
+    assert ts._sqlite_index_parts(sql) == parts
+
+
+# --- detail added after the review of the draft (coordinator, open question 1): a change only in one attribute
+# changes the v2 fingerprint and is named by compare; level 1 does not see it.
+
+
+def _detail_table(**index: Any) -> ts.TableShape:
+    return ts.TableShape(
+        "main.t",
+        (ts.ColumnShape("a", "INTEGER", True), ts.ColumnShape("b", "TEXT", True)),
+        (),
+        foreign_keys=(ts.ForeignKeyShape("fk", ("a",), "main.o", ("k",)),),
+        unique_constraints=(ts.UniqueShape("u", ("a", "b")),),
+        indexes=(ts.IndexShape("ix", ("a", "b"), **index),),
+    )
+
+
+@pytest.mark.parametrize(
+    ("part", "change", "kinds"),
+    [
+        ("index", {"ordering": ("DESC", "")}, ["index_missing", "index_added"]),
+        ("index", {"ordering": ("", "NULLS LAST")}, ["index_missing", "index_added"]),
+        ("index", {"where": "a > 0"}, ["index_missing", "index_added"]),
+        ("index", {"include": ("b",)}, ["index_missing", "index_added"]),
+        ("index", {"nulls_not_distinct": True}, ["index_missing", "index_added"]),
+        ("unique", {"include": ("b",)}, ["unique_missing", "unique_added"]),
+        ("unique", {"nulls_not_distinct": True}, ["unique_missing", "unique_added"]),
+        ("unique", {"deferrable": True}, ["unique_missing", "unique_added"]),
+        ("unique", {"deferrable": True, "initially_deferred": True}, ["unique_missing", "unique_added"]),
+        ("fk", {"deferrable": True}, ["foreign_key_missing", "foreign_key_added"]),
+        ("fk", {"deferrable": True, "initially_deferred": True}, ["foreign_key_missing", "foreign_key_added"]),
+    ],
+)
+def test_level2_detail_changes_the_v2_fingerprint(part: str, change: dict[str, Any], kinds: list[str]) -> None:
+    base = _detail_table()
+    if part == "index":
+        changed = dataclasses.replace(base, indexes=(dataclasses.replace(base.indexes[0], **change),))
+    elif part == "unique":
+        changed = dataclasses.replace(
+            base, unique_constraints=(dataclasses.replace(base.unique_constraints[0], **change),)
+        )
+    else:
+        changed = dataclasses.replace(base, foreign_keys=(dataclasses.replace(base.foreign_keys[0], **change),))
+    before, after = (ts.SchemaSnapshot("sqlite", (t,), level=2) for t in (base, changed))
+    assert ts.fingerprint(before) != ts.fingerprint(after)
+    assert [d.kind for d in ts.compare(before, after)] == kinds
+    assert ts.SchemaSnapshot.from_json(after.to_json()) == after
+
+
+def test_level2_default_ordering_is_canonical() -> None:
+    # ("", "") and () both mean "every element in the default order": same JSON, same fingerprint, no difference.
+    one = ts.SchemaSnapshot("sqlite", (_detail_table(ordering=("", "")),), level=2)
+    two = ts.SchemaSnapshot("sqlite", (_detail_table(),), level=2)
+    assert one.to_json() == two.to_json() and ts.compare(one, two) == ()
+
+
+SQLITE_DETAIL = (
+    "CREATE TABLE p (id INTEGER PRIMARY KEY)",
+    "CREATE TABLE t (a INTEGER, b TEXT, CONSTRAINT fk FOREIGN KEY (a) REFERENCES p (id))",
+    "CREATE INDEX ix ON t (a, b)",
+)
+
+
+@pytest.mark.parametrize(
+    ("statements", "expected"),
+    [
+        (
+            ("CREATE INDEX ix ON t (a DESC, b)",),
+            ts.IndexShape("ix", ("a", "b"), ordering=("DESC", "")),
+        ),
+        (
+            ("CREATE INDEX ix ON t (a, b) WHERE a > 0 AND b IS NOT NULL",),
+            ts.IndexShape("ix", ("a", "b"), where="a > 0 AND b IS NOT NULL"),
+        ),
+    ],
+)
+def test_sqlite_index_detail(tmp_path: Path, statements: tuple[str, ...], expected: ts.IndexShape) -> None:
+    before_db = make(tmp_path / "before.db", SQLITE_DETAIL)
+    after_db = make(tmp_path / "after.db", (*SQLITE_DETAIL[:2], *statements))
+    try:
+        before, after = take(before_db, level=2), take(after_db, level=2)
+        assert ts.fingerprint(take(before_db)) == ts.fingerprint(take(after_db))  # v1 unchanged
+    finally:
+        before_db.close()
+        after_db.close()
+    table = after.table("main.t")
+    assert table is not None and table.indexes == (expected,)
+    assert ts.fingerprint(before) != ts.fingerprint(after)
+    assert [str(d) for d in ts.compare(before, after)] == ["index_missing: main.t (ix)", "index_added: main.t (ix)"]
+
+
+@pytest.mark.parametrize(
+    ("clause", "deferrable", "initially_deferred"),
+    [(" DEFERRABLE", True, False), (" DEFERRABLE INITIALLY DEFERRED", True, True)],
+)
+def test_sqlite_foreign_key_deferrable(tmp_path: Path, clause: str, deferrable: bool, initially_deferred: bool) -> None:
+    # A table-level FOREIGN KEY clause; a column-level REFERENCES ... DEFERRABLE is a documented gap (I-111 d).
+    before_db = make(tmp_path / "before.db", SQLITE_DETAIL)
+    after_db = make(tmp_path / "after.db", (SQLITE_DETAIL[0], SQLITE_DETAIL[1].replace("(id))", f"(id){clause})")))
+    try:
+        before, after = take(before_db, level=2), take(after_db, level=2)
+        assert ts.fingerprint(take(before_db)) == ts.fingerprint(take(after_db))
+    finally:
+        before_db.close()
+        after_db.close()
+    table = after.table("main.t")
+    assert table is not None
+    assert table.foreign_keys == (
+        ts.ForeignKeyShape(
+            "fk", ("a",), "main.p", ("id",), deferrable=deferrable, initially_deferred=initially_deferred
+        ),
+    )
+    assert ts.fingerprint(before) != ts.fingerprint(after)

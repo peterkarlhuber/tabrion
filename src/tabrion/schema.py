@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 import contextlib
+import dataclasses
 from dataclasses import dataclass
 import hashlib
 import json
@@ -116,7 +117,8 @@ class ColumnShape:
 class ForeignKeyShape:
     """A foreign key (level 2, since 0.3). ``name`` is ``None`` for an unnamed SQLite constraint; ``referred_table``
     is ``schema.table``. ``on_delete`` and ``on_update`` are ``CASCADE``, ``SET NULL``, ``SET DEFAULT`` or
-    ``RESTRICT``; ``None`` is the engine default ``NO ACTION`` (written or not)."""
+    ``RESTRICT``; ``None`` is the engine default ``NO ACTION`` (written or not). ``deferrable`` and
+    ``initially_deferred`` are ``DEFERRABLE`` and ``INITIALLY DEFERRED``."""
 
     name: str | None
     columns: tuple[str, ...]
@@ -124,15 +126,22 @@ class ForeignKeyShape:
     referred_columns: tuple[str, ...]
     on_delete: str | None = None
     on_update: str | None = None
+    deferrable: bool = False
+    initially_deferred: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class UniqueShape:
     """A unique constraint (level 2, since 0.3); ``name`` is ``None`` for an unnamed SQLite constraint. A unique
-    index that is not a constraint is an :class:`IndexShape` with ``unique=True``."""
+    index that is not a constraint is an :class:`IndexShape` with ``unique=True``. ``include`` holds the
+    PostgreSQL ``INCLUDE`` columns; ``nulls_not_distinct`` is PostgreSQL's ``NULLS NOT DISTINCT``."""
 
     name: str | None
     columns: tuple[str, ...]
+    include: tuple[str, ...] = ()
+    nulls_not_distinct: bool = False
+    deferrable: bool = False
+    initially_deferred: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,11 +156,21 @@ class CheckShape:
 @dataclass(frozen=True, slots=True)
 class IndexShape:
     """An index that is not the index of a primary key or unique constraint (level 2, since 0.3). ``columns`` holds
-    a column name per key element, or the expression text for an expression element (``lower(note::text)``)."""
+    a column name per key element, or the expression text for an expression element (``lower(note::text)``).
+
+    ``ordering`` is empty when every element has the engine's default order; otherwise it has one entry per element:
+    ``""`` for the default, else ``DESC`` and an ``NULLS FIRST``/``NULLS LAST`` that differs from the engine's default
+    for that direction (``DESC NULLS LAST``). ``where`` is the predicate of a partial index (PostgreSQL as
+    ``pg_get_expr`` returns it, SQLite as written); ``include`` holds the PostgreSQL ``INCLUDE`` columns;
+    ``nulls_not_distinct`` is PostgreSQL's ``NULLS NOT DISTINCT``."""
 
     name: str
     columns: tuple[str, ...]
     unique: bool = False
+    ordering: tuple[str, ...] = ()
+    where: str | None = None
+    include: tuple[str, ...] = ()
+    nulls_not_distinct: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,6 +428,8 @@ def _level2_table(
                 referred_columns=referred_columns,
                 on_delete=on_delete,
                 on_update=on_update,
+                deferrable=bool(options.get("deferrable")),
+                initially_deferred=str(options.get("initially") or "").upper() == "DEFERRED",
             )
         )
     indexes, expression = (
@@ -421,10 +442,23 @@ def _level2_table(
             # it is used only for a SQLite table that has an expression index.
             stack.enter_context(warnings.catch_warnings())
             warnings.filterwarnings("ignore", _SQLITE_EXPRESSION_WARNING, sqlalchemy.exc.SAWarning)
-        unique = [
-            UniqueShape(name=_optional_name(u.get("name")), columns=tuple(str(c) for c in u["column_names"]))
-            for u in _reflect(inspector.get_unique_constraints, table, arg)
-        ]
+        reflected_unique = _reflect(inspector.get_unique_constraints, table, arg)
+    deferred = _postgres_deferrable(inspector, schema, table) if inspector.dialect.name == "postgresql" else {}
+    unique = []
+    for u in reflected_unique:
+        options = u.get("dialect_options") or {}
+        name = _optional_name(u.get("name"))
+        deferrable, initially_deferred = deferred.get(name or "", (False, False))
+        unique.append(
+            UniqueShape(
+                name=name,
+                columns=tuple(str(c) for c in u["column_names"]),
+                include=tuple(str(c) for c in options.get("postgresql_include") or ()),
+                nulls_not_distinct=bool(options.get("postgresql_nulls_not_distinct")),
+                deferrable=deferrable,
+                initially_deferred=initially_deferred,
+            )
+        )
     checks = [
         CheckShape(name=_optional_name(c.get("name")), sqltext=str(c["sqltext"]))
         for c in _reflect(inspector.get_check_constraints, table, arg)
@@ -455,6 +489,25 @@ def _optional_name(value: object) -> str | None:
     return None if value is None else str(value)
 
 
+def _postgres_deferrable(inspector: sqlalchemy.Inspector, schema: str, table: str) -> dict[str, tuple[bool, bool]]:
+    # SQLAlchemy does not reflect DEFERRABLE of a unique constraint; the catalog has it (names bound as parameters).
+    rows = _rows(
+        inspector,
+        "SELECT c.conname, c.condeferrable, c.condeferred FROM pg_catalog.pg_constraint c "
+        "JOIN pg_catalog.pg_class r ON r.oid = c.conrelid JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace "
+        "WHERE n.nspname = :s AND r.relname = :t AND c.contype = 'u'",
+        {"s": schema, "t": table},
+    )
+    return {str(name): (bool(deferrable), bool(deferred)) for name, deferrable, deferred in rows}
+
+
+_PG_SORTING = {"desc": "DESC", "nulls_first": "NULLS FIRST", "nulls_last": "NULLS LAST"}
+
+
+def _ordering(entries: list[str]) -> tuple[str, ...]:
+    return tuple(entries) if any(entries) else ()
+
+
 def _indexes(inspector: sqlalchemy.Inspector, table: str, schema: str | None) -> list[IndexShape]:
     out = []
     for index in _reflect(inspector.get_indexes, table, schema):
@@ -465,7 +518,24 @@ def _indexes(inspector: sqlalchemy.Inspector, table: str, schema: str | None) ->
         elements = [
             str(expressions[i]) if name is None and i < len(expressions) else str(name) for i, name in enumerate(names)
         ]
-        out.append(IndexShape(name=str(index["name"]), columns=tuple(elements), unique=bool(index.get("unique"))))
+        # column_sorting is keyed by the element text (the expression when SQLAlchemy reports expressions)
+        keys = [str(expressions[i]) if i < len(expressions) else element for i, element in enumerate(elements)]
+        sorting = index.get("column_sorting") or {}
+        options = index.get("dialect_options") or {}
+        where = options.get("postgresql_where")
+        out.append(
+            IndexShape(
+                name=str(index["name"]),
+                columns=tuple(elements),
+                unique=bool(index.get("unique")),
+                ordering=_ordering(
+                    [" ".join(_PG_SORTING.get(str(o), str(o)) for o in sorting.get(k, ())) for k in keys]
+                ),
+                where=None if where is None else str(where),
+                include=tuple(str(c) for c in options.get("postgresql_include") or ()),
+                nulls_not_distinct=bool(options.get("postgresql_nulls_not_distinct")),
+            )
+        )
     return out
 
 
@@ -519,47 +589,63 @@ def _take_actions(
 
 def _sqlite_indexes(inspector: sqlalchemy.Inspector, schema: str, table: str) -> tuple[list[IndexShape], bool]:
     # Read from the pragmas, because SQLAlchemy leaves out an expression index (with a warning). Only indexes made by
-    # CREATE INDEX (origin "c"); those of a primary key or unique constraint are not indexes of the shape.
+    # CREATE INDEX (origin "c"); those of a primary key or unique constraint are not indexes of the shape. The
+    # expression texts and the WHERE predicate are only in the CREATE INDEX statement. SQLite refuses NULLS FIRST/LAST
+    # in an index, so DESC (pragma_index_xinfo) is the whole order of an element.
     quoted = inspector.dialect.identifier_preparer.quote_identifier(schema)
     out = []
     any_expression = False
-    for name, unique, origin in _rows(
-        inspector, 'SELECT name, "unique", origin FROM pragma_index_list(:t, :s)', {"t": table, "s": schema}
+    for name, unique, origin, partial in _rows(
+        inspector, 'SELECT name, "unique", origin, partial FROM pragma_index_list(:t, :s)', {"t": table, "s": schema}
     ):
         if origin != "c":
             continue
         keys = _rows(
             inspector,
-            "SELECT cid, name FROM pragma_index_xinfo(:i, :s) WHERE key = 1 ORDER BY seqno",
+            'SELECT cid, name, "desc" FROM pragma_index_xinfo(:i, :s) WHERE key = 1 ORDER BY seqno',
             {"i": name, "s": schema},
         )
-        texts: list[str] = []
-        if any(cid == -2 for cid, _ in keys):
-            any_expression = True  # an expression: its text is only in the CREATE INDEX statement
-            # The schema name is quoted by the dialect's preparer; the index name is a bound parameter.
-            found = _rows(
-                inspector,
-                f"SELECT sql FROM {quoted}.sqlite_master WHERE type = 'index' AND name = :i",  # noqa: S608
-                {"i": name},
-            )
-            sql = str(found[0][0]) if found and found[0][0] is not None else ""
-            texts = _sqlite_index_elements(sql) or []
-            if len(texts) != len(keys):  # not parsed: the whole statement stands for each expression
-                texts = [sql] * len(keys)
+        # The schema name is quoted by the dialect's preparer; the index name is a bound parameter.
+        found = _rows(
+            inspector,
+            f"SELECT sql FROM {quoted}.sqlite_master WHERE type = 'index' AND name = :i",  # noqa: S608
+            {"i": name},
+        )
+        sql = str(found[0][0]) if found and found[0][0] is not None else ""
+        parsed = _sqlite_index_parts(sql)
+        if parsed is not None and len(parsed[0]) == len(keys):
+            texts = [_ORDER_SUFFIX.sub("", element) for element in parsed[0]]
+            match = re.match(r"\s*WHERE\s+(.*?)\s*$", parsed[1], re.IGNORECASE | re.DOTALL)
+            where = match.group(1) if match else None
+        else:  # not parsed: the whole statement stands for each expression and for the predicate
+            texts = [sql] * len(keys)
+            where = None
+        if partial and where is None:
+            where = sql
         elements = [
-            texts[position] if cid == -2 else "rowid" if cid == -1 else str(column)
-            for position, (cid, column) in enumerate(keys)
+            text if cid == -2 else "rowid" if cid == -1 else str(column)
+            for (cid, column, _), text in zip(keys, texts, strict=True)
         ]
-        out.append(IndexShape(name=str(name), columns=tuple(elements), unique=bool(unique)))
+        any_expression = any_expression or any(cid == -2 for cid, _, _ in keys)
+        ordering = ["DESC" if desc else "" for _, _, desc in keys]
+        out.append(
+            IndexShape(
+                name=str(name),
+                columns=tuple(elements),
+                unique=bool(unique),
+                ordering=_ordering(ordering),
+                where=where,
+            )
+        )
     return out, any_expression
 
 
 _ORDER_SUFFIX = re.compile(r"\s+(?:ASC|DESC)\s*$", re.IGNORECASE)
 
 
-def _sqlite_index_elements(sql: str) -> list[str] | None:
-    """The key elements of ``CREATE INDEX ... ON t (a, lower(b) DESC) WHERE ...`` as written, without ``ASC`` or
-    ``DESC``; ``None`` when the text has no element list. Quotes and comments are skipped."""
+def _sqlite_index_parts(sql: str) -> tuple[list[str], str] | None:
+    """The key elements of ``CREATE INDEX ... ON t (a, lower(b) DESC) WHERE ...`` as written and the text after the
+    element list; ``None`` when the text has no element list. Quotes and comments are skipped."""
     parts: list[str] = []
     depth, start, i = 0, -1, 0
     closing = {"'": "'", '"': '"', "`": "`", "[": "]"}
@@ -589,7 +675,7 @@ def _sqlite_index_elements(sql: str) -> list[str] | None:
             depth -= 1
             if depth == 0 and start != -1:
                 parts.append(sql[start:i])
-                return [_ORDER_SUFFIX.sub("", part.strip()) for part in parts]
+                return [part.strip() for part in parts], sql[i + 1 :]
         elif ch == "," and depth == 1 and start != -1:
             parts.append(sql[start:i])
             start = i + 1
@@ -616,12 +702,31 @@ def _canonical(table: TableShape) -> TableShape:
                     f.name or "",
                     f.on_delete or "",
                     f.on_update or "",
+                    f.deferrable,
+                    f.initially_deferred,
                 ),
             )
         ),
-        unique_constraints=tuple(sorted(table.unique_constraints, key=lambda u: (u.columns, u.name or ""))),
+        unique_constraints=tuple(
+            sorted(
+                table.unique_constraints,
+                key=lambda u: (
+                    u.columns,
+                    u.name or "",
+                    u.include,
+                    u.nulls_not_distinct,
+                    u.deferrable,
+                    u.initially_deferred,
+                ),
+            )
+        ),
         check_constraints=tuple(sorted(table.check_constraints, key=lambda c: (c.name or "", c.sqltext))),
-        indexes=tuple(sorted(table.indexes, key=lambda x: (x.name, x.columns, x.unique))),
+        indexes=tuple(
+            sorted(
+                (dataclasses.replace(x, ordering=_ordering(list(x.ordering))) for x in table.indexes),
+                key=lambda x: (x.name, x.columns, x.unique, x.ordering, x.where or "", x.include, x.nulls_not_distinct),
+            )
+        ),
     )
 
 
@@ -721,12 +826,35 @@ def _as_dict_v2(snapshot: SchemaSnapshot) -> dict[str, Any]:
                         "referred_columns": list(f.referred_columns),
                         "on_delete": f.on_delete,
                         "on_update": f.on_update,
+                        "deferrable": f.deferrable,
+                        "initially_deferred": f.initially_deferred,
                     }
                     for f in table.foreign_keys
                 ],
-                "unique_constraints": [{"name": u.name, "columns": list(u.columns)} for u in table.unique_constraints],
+                "unique_constraints": [
+                    {
+                        "name": u.name,
+                        "columns": list(u.columns),
+                        "include": list(u.include),
+                        "nulls_not_distinct": u.nulls_not_distinct,
+                        "deferrable": u.deferrable,
+                        "initially_deferred": u.initially_deferred,
+                    }
+                    for u in table.unique_constraints
+                ],
                 "check_constraints": [{"name": c.name, "sqltext": c.sqltext} for c in table.check_constraints],
-                "indexes": [{"name": x.name, "columns": list(x.columns), "unique": x.unique} for x in table.indexes],
+                "indexes": [
+                    {
+                        "name": x.name,
+                        "columns": list(x.columns),
+                        "unique": x.unique,
+                        "ordering": list(x.ordering),
+                        "where": x.where,
+                        "include": list(x.include),
+                        "nulls_not_distinct": x.nulls_not_distinct,
+                    }
+                    for x in table.indexes
+                ],
             }
         )
     return {"format": 2, "dialect": snapshot.dialect, "tables": tables}
@@ -769,6 +897,12 @@ def _strs(value: object) -> tuple[str, ...]:
     return tuple(_str(item) for item in value)
 
 
+def _bool(value: object) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError("not a boolean")
+    return value
+
+
 def _list(value: object) -> list[Any]:
     if not isinstance(value, list):
         raise TypeError("not a list")
@@ -791,21 +925,37 @@ def _from_dict_v2(data: Mapping[str, Any]) -> SchemaSnapshot:
                 referred_columns=_strs(f["referred_columns"]),
                 on_delete=_opt_str(f["on_delete"]),
                 on_update=_opt_str(f["on_update"]),
+                deferrable=_bool(f["deferrable"]),
+                initially_deferred=_bool(f["initially_deferred"]),
             )
             for f in _list(table["foreign_keys"])
         )
         unique = tuple(
-            UniqueShape(name=_opt_str(u["name"]), columns=_strs(u["columns"]))
+            UniqueShape(
+                name=_opt_str(u["name"]),
+                columns=_strs(u["columns"]),
+                include=_strs(u["include"]),
+                nulls_not_distinct=_bool(u["nulls_not_distinct"]),
+                deferrable=_bool(u["deferrable"]),
+                initially_deferred=_bool(u["initially_deferred"]),
+            )
             for u in _list(table["unique_constraints"])
         )
         checks = tuple(
             CheckShape(name=_opt_str(c["name"]), sqltext=_str(c["sqltext"])) for c in _list(table["check_constraints"])
         )
-        indexes = []
-        for x in _list(table["indexes"]):
-            if not isinstance(x["unique"], bool):
-                raise TypeError("unique")
-            indexes.append(IndexShape(name=_str(x["name"]), columns=_strs(x["columns"]), unique=x["unique"]))
+        indexes = tuple(
+            IndexShape(
+                name=_str(x["name"]),
+                columns=_strs(x["columns"]),
+                unique=_bool(x["unique"]),
+                ordering=_strs(x["ordering"]),
+                where=_opt_str(x["where"]),
+                include=_strs(x["include"]),
+                nulls_not_distinct=_bool(x["nulls_not_distinct"]),
+            )
+            for x in _list(table["indexes"])
+        )
         tables.append(
             _canonical(
                 TableShape(
@@ -815,7 +965,7 @@ def _from_dict_v2(data: Mapping[str, Any]) -> SchemaSnapshot:
                     foreign_keys=foreign_keys,
                     unique_constraints=unique,
                     check_constraints=checks,
-                    indexes=tuple(indexes),
+                    indexes=indexes,
                 )
             )
         )

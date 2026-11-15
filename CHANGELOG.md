@@ -11,7 +11,10 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 - **Experimental, 0.3** (TABRION TAB-XW-2, CR-DBX; contract section 5.10, I-111, moved from addendum A.1): the schema
   model v2. `tabrion.schema.snapshot(..., level=2)` also reads column defaults, foreign keys, unique and check
   constraints and indexes on SQLite and PostgreSQL, into the new frozen dataclasses `tabrion.schema.ForeignKeyShape`,
-  `tabrion.schema.UniqueShape`, `tabrion.schema.CheckShape` and `tabrion.schema.IndexShape`; its fingerprint is
+  `tabrion.schema.UniqueShape`, `tabrion.schema.CheckShape` and `tabrion.schema.IndexShape`, including
+  `DEFERRABLE`/`INITIALLY DEFERRED` of foreign and unique keys, PostgreSQL `INCLUDE` and `NULLS NOT DISTINCT`,
+  partial index predicates and the order of index elements (`ordering`); index collation is a documented gap
+  (I-111 d). Its fingerprint is
   `v2:sha256:<hex>` over the canonical JSON format 2, in which the order of constraints and indexes does not count.
   `compare` names the new kinds `column_default`, `foreign_key_missing`/`_added`, `unique_missing`/`_added`,
   `check_missing`/`_added` and `index_missing`/`_added` (only `index_added` is not breaking), with the constraint or

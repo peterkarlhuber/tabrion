@@ -75,8 +75,10 @@ the implementation note I-111. `tabrion.schema.ForeignKeyShape`, `UniqueShape`, 
 `ConnectionProfile.schema_fingerprint` accepts `v1:` and `v2:` (I-109 e). D-4 is
 `tests/unit/test_schema_v2.py::test_default_level_is_1` and `::test_v1_fingerprint_unchanged_against_02_golden`. Added
 in the implementation: `UsageError("schema.invalid_level")` for a level other than 1 or 2, and `schema.level_mismatch`
-also for a level-1 snapshot that holds level-2 detail (I-111 a); `NO ACTION` is `None` (I-111 b); what level 2 does
-not read, such as partial index predicates and index sort order, is listed in I-111 d.
+also for a level-1 snapshot that holds level-2 detail (I-111 a); `NO ACTION` is `None` (I-111 b); beyond the planned
+shape, level 2 also reads `DEFERRABLE`/`INITIALLY DEFERRED` (foreign and unique keys), PostgreSQL `INCLUDE` and
+`NULLS NOT DISTINCT`, partial index predicates and the order of index elements (new defaulted fields, I-111 b), so a
+change of only these changes a `v2:` fingerprint (drift checks of TAB-XW-5); the remaining gaps are listed in I-111 d.
 
 ## A.2 `tabrion.ddl` (TAB-XW-3)
 

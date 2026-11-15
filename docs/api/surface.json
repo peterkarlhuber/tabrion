@@ -1286,14 +1286,16 @@
         "referred_table: str",
         "referred_columns: tuple[str, ...]",
         "on_delete: str | None = None",
-        "on_update: str | None = None"
+        "on_update: str | None = None",
+        "deferrable: bool = False",
+        "initially_deferred: bool = False"
       ],
       "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.ForeignKeyShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str | None, columns: tuple[str, ...], referred_table: str, referred_columns: tuple[str, ...], on_delete: str | None = None, on_update: str | None = None) -> None",
+      "signature": "(self, name: str | None, columns: tuple[str, ...], referred_table: str, referred_columns: tuple[str, ...], on_delete: str | None = None, on_update: str | None = None, deferrable: bool = False, initially_deferred: bool = False) -> None",
       "since": "0.3",
       "stability": "X"
     },
@@ -1303,14 +1305,18 @@
       "fields": [
         "name: str",
         "columns: tuple[str, ...]",
-        "unique: bool = False"
+        "unique: bool = False",
+        "ordering: tuple[str, ...] = ()",
+        "where: str | None = None",
+        "include: tuple[str, ...] = ()",
+        "nulls_not_distinct: bool = False"
       ],
       "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.IndexShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str, columns: tuple[str, ...], unique: bool = False) -> None",
+      "signature": "(self, name: str, columns: tuple[str, ...], unique: bool = False, ordering: tuple[str, ...] = (), where: str | None = None, include: tuple[str, ...] = (), nulls_not_distinct: bool = False) -> None",
       "since": "0.3",
       "stability": "X"
     },
@@ -1399,14 +1405,18 @@
       "frozen": true,
       "fields": [
         "name: str | None",
-        "columns: tuple[str, ...]"
+        "columns: tuple[str, ...]",
+        "include: tuple[str, ...] = ()",
+        "nulls_not_distinct: bool = False",
+        "deferrable: bool = False",
+        "initially_deferred: bool = False"
       ],
       "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.UniqueShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str | None, columns: tuple[str, ...]) -> None",
+      "signature": "(self, name: str | None, columns: tuple[str, ...], include: tuple[str, ...] = (), nulls_not_distinct: bool = False, deferrable: bool = False, initially_deferred: bool = False) -> None",
       "since": "0.3",
       "stability": "X"
     },

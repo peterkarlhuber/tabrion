@@ -203,3 +203,108 @@ def test_xw2_postgres_foreign_key_to_the_default_schema(
             conn.execute(f"DROP TABLE public.{name}_ref CASCADE")
     assert refs is not None
     assert refs.foreign_keys == (ts.ForeignKeyShape("fk_ref", ("ref",), f"public.{name}_ref", ("id",)),)
+
+
+# Detail added after the review of the draft (open question 1): a change only in one attribute changes the v2
+# fingerprint and is named by compare; level 1 does not see it. {s} is the schema fixture's generated name.
+DETAIL_BASE = (
+    "CREATE TABLE {s}.p (id bigint PRIMARY KEY)",
+    "CREATE TABLE {s}.t (a bigint, b text, c int, CONSTRAINT fk FOREIGN KEY (a) REFERENCES {s}.p (id), "
+    "CONSTRAINT u UNIQUE (a, b))",
+    "CREATE INDEX ix ON {s}.t (a, b)",
+    "CREATE UNIQUE INDEX ux ON {s}.t (b, c)",
+)
+
+
+@pytest.mark.parametrize(
+    ("statements", "kinds", "check"),
+    [
+        (
+            ["DROP INDEX {s}.ix", "CREATE INDEX ix ON {s}.t (a DESC, b)"],
+            ["index_missing", "index_added"],
+            ("ix", "ordering", ("DESC", "")),
+        ),
+        (
+            ["DROP INDEX {s}.ix", "CREATE INDEX ix ON {s}.t (a DESC NULLS LAST, b NULLS FIRST)"],
+            ["index_missing", "index_added"],
+            ("ix", "ordering", ("DESC NULLS LAST", "NULLS FIRST")),
+        ),
+        (
+            ["DROP INDEX {s}.ix", "CREATE INDEX ix ON {s}.t (a, b) WHERE a > 0"],
+            ["index_missing", "index_added"],
+            ("ix", "where", "(a > 0)"),
+        ),
+        (
+            ["DROP INDEX {s}.ix", "CREATE INDEX ix ON {s}.t (a, b) INCLUDE (c)"],
+            ["index_missing", "index_added"],
+            ("ix", "include", ("c",)),
+        ),
+        (
+            ["DROP INDEX {s}.ux", "CREATE UNIQUE INDEX ux ON {s}.t (b, c) NULLS NOT DISTINCT"],
+            ["index_missing", "index_added"],
+            ("ux", "nulls_not_distinct", True),
+        ),
+        (
+            ["ALTER TABLE {s}.t DROP CONSTRAINT u", "ALTER TABLE {s}.t ADD CONSTRAINT u UNIQUE (a, b) INCLUDE (c)"],
+            ["unique_missing", "unique_added"],
+            ("u", "include", ("c",)),
+        ),
+        (
+            [
+                "ALTER TABLE {s}.t DROP CONSTRAINT u",
+                "ALTER TABLE {s}.t ADD CONSTRAINT u UNIQUE NULLS NOT DISTINCT (a, b)",
+            ],
+            ["unique_missing", "unique_added"],
+            ("u", "nulls_not_distinct", True),
+        ),
+        (
+            ["ALTER TABLE {s}.t DROP CONSTRAINT u", "ALTER TABLE {s}.t ADD CONSTRAINT u UNIQUE (a, b) DEFERRABLE"],
+            ["unique_missing", "unique_added"],
+            ("u", "deferrable", True),
+        ),
+        (
+            [
+                "ALTER TABLE {s}.t DROP CONSTRAINT u",
+                "ALTER TABLE {s}.t ADD CONSTRAINT u UNIQUE (a, b) DEFERRABLE INITIALLY DEFERRED",
+            ],
+            ["unique_missing", "unique_added"],
+            ("u", "initially_deferred", True),
+        ),
+        (
+            ["ALTER TABLE {s}.t ALTER CONSTRAINT fk DEFERRABLE"],
+            ["foreign_key_missing", "foreign_key_added"],
+            ("fk", "deferrable", True),
+        ),
+        (
+            ["ALTER TABLE {s}.t ALTER CONSTRAINT fk DEFERRABLE INITIALLY DEFERRED"],
+            ["foreign_key_missing", "foreign_key_added"],
+            ("fk", "initially_deferred", True),
+        ),
+    ],
+)
+def test_xw2_postgres_detail_changes_the_v2_fingerprint(
+    db: Database,
+    tabrion_postgres_url: str,
+    tabrion_postgres_schema: PostgresSchema,
+    statements: list[str],
+    kinds: list[str],
+    check: tuple[str, str, Any],
+) -> None:
+    name = tabrion_postgres_schema.name
+    with psycopg.connect(tabrion_postgres_url, autocommit=True) as conn:
+        for statement in DETAIL_BASE:
+            conn.execute(statement.format(s=name))
+    before1, before2 = take(db, schemas=[name]), take(db, schemas=[name], level=2)
+    with psycopg.connect(tabrion_postgres_url, autocommit=True) as conn:
+        for statement in statements:
+            conn.execute(statement.format(s=name))
+    after1, after2 = take(db, schemas=[name]), take(db, schemas=[name], level=2)
+    assert ts.fingerprint(after1) == ts.fingerprint(before1)  # level 1 does not see it
+    assert ts.fingerprint(after2) != ts.fingerprint(before2)
+    assert [d.kind for d in ts.compare(before2, after2)] == kinds
+    table = after2.table(f"{name}.t")
+    assert table is not None
+    shapes = {s.name: s for s in (*table.indexes, *table.unique_constraints, *table.foreign_keys)}
+    target, field, value = check
+    assert getattr(shapes[target], field) == value
+    assert ts.SchemaSnapshot.from_json(after2.to_json()) == after2

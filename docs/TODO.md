@@ -643,9 +643,10 @@ required (owner decision of 2026-11-08 11:26Z).
   canonical format-2 JSON, constraint order does not count; SQLite foreign key actions and indexes from the pragmas
   (SQLAlchemy misses column-level actions and expression indexes). Level 1 stays the default and byte-identical
   (D-4: `tests/unit/test_schema_v2.py::test_default_level_is_1`, `::test_v1_fingerprint_unchanged_against_02_golden`).
-  `tabrion.profilefile` accepts `v2:` fingerprints. Moved from addendum A.1 into contract section 5.10 (I-111). Not in
-  the shape (I-111 d): partial index predicates, index sort order and collation, `DEFERRABLE`; TAB-XW-3 decides whether
-  the DDL needs them.
+  `tabrion.profilefile` accepts `v2:` fingerprints. Moved from addendum A.1 into contract section 5.10 (I-111). After
+  the draft review, level 2 also reads `DEFERRABLE`/`INITIALLY DEFERRED`, PostgreSQL `INCLUDE` and `NULLS NOT
+  DISTINCT`, partial index predicates and index element order, so the drift check of TAB-XW-5 sees them. Documented
+  gaps (I-111 d): index collation and operator class, `DEFERRABLE` on a SQLite column-level `REFERENCES`.
 - **Open (follow-up work packages):** TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
   (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
