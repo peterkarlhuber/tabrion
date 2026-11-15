@@ -227,9 +227,10 @@ It works under `Profile.readonly()` too, so a read-only tool can refuse a databa
 `tabrion.plan` (extra `sqlalchemy`; a plan with column steps also `migrations`; contract
 [section 5.13](../api/contract.md#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4))
 computes the change from the schema a database has to the schema you want, as a reviewed list of DDL statements.
-It never runs them: Tabrion's executor is planned for TAB-XW-5, and an Alembic project gets the plan as revision
-**text** that you add to the project and run with Alembic yourself
-([ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) section 2).
+`plan` never runs them. On a DEV or TEST database without migration management, `execute_plan` runs the confirmed
+change ([below](#running-a-confirmed-change-execute_plan)); an Alembic project gets the plan as revision **text**
+that you add to the project and run with Alembic yourself
+([ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) sections 2 and 3).
 
 The input is two level-2 snapshots of [`tabrion.schema`](profiles-and-schema.md): the database as it is and the
 target model, which you build with `dataclasses.replace` (or `SchemaSnapshot.from_json`):
@@ -362,6 +363,81 @@ function can change after a drift check because it cannot be locked; function an
 publications, statistics and PostgreSQL views are not in the fingerprint either; a SQLite rebuild gives a table
 without an `INTEGER PRIMARY KEY` new `rowid` values; a version table under another name than `alembic_version` is
 not found by `migration_markers`.
+
+### Running a confirmed change: `execute_plan`
+
+`execute_plan` (TAB-XW-5, contract I-125) runs a change on a database that is **not** under migration management and
+that you declare as `"dev"` or `"test"`; the declaration has no default and comes from your own stored settings,
+never from a request: it is a guard rail behind your own production lock, not a boundary. The executor never takes a
+plan from you. It takes the **target** model and the confirmation of the preview: the `plan_hash` the user saw, the
+fingerprint of the snapshot the preview was made from and the risk classes the user accepted. Inside its own
+transaction it takes the snapshot again, checks the fingerprint (`SchemaDrift` when the schema changed since the
+preview), plans again and runs only a plan with the confirmed hash (`PlanMismatch("plan.hash_mismatch")` otherwise):
+
+```pycon
+>>> from tabrion.errors import PlanMismatch, SchemaDrift
+>>> with Database.from_url("sqlite:///plan.db") as shop:
+...     with shop.inspector() as inspector:
+...         preview_source = ts.snapshot(inspector, level=2)
+...     parts_now = preview_source.table("main.parts")
+...     wanted = dataclasses.replace(
+...         preview_source, tables=(dataclasses.replace(parts_now, columns=(*parts_now.columns, qty)),)
+...     )
+...     preview = tp.plan(preview_source, wanted)  # shown to the user, who confirms its hash and risks
+...     result = tp.execute_plan(
+...         shop,
+...         wanted,
+...         plan_hash=preview.plan_hash,
+...         expected_fingerprint=ts.fingerprint(preview_source),
+...         environment="dev",
+...         allow=preview.risks,
+...         source=preview_source,
+...     )
+>>> result.steps_run, result.fingerprint_after == ts.fingerprint(wanted)
+(1, True)
+```
+
+The same confirmation does not run twice: the schema has changed since the preview, so the fingerprint no longer
+matches, and nothing runs. With `source=` (the preview's snapshot) the error names the differences:
+
+```pycon
+>>> with Database.from_url("sqlite:///plan.db") as shop:
+...     try:
+...         tp.execute_plan(
+...             shop,
+...             wanted,
+...             plan_hash=preview.plan_hash,
+...             expected_fingerprint=ts.fingerprint(preview_source),
+...             environment="dev",
+...             allow=preview.risks,
+...             source=preview_source,
+...         )
+...     except SchemaDrift as error:
+...         print(error.code, [str(difference) for difference in error.differences])
+plan.drift ['column_added: main.parts.qty']
+```
+
+Before the first statement the executor also refuses a database with migration markers (`PlanRefused`, reason
+`migration_managed`), a risk class the user did not accept (`risk_not_allowed`) and an environment other than
+`"dev"` or `"test"` (`environment`). `dry_run=True` runs the transactional steps and rolls them back.
+
+- **SQLite:** foreign keys are turned off before `BEGIN IMMEDIATE` (the executor refuses to start, reason
+  `foreign_keys_on`, if they stay on), `trusted_schema` off and defensive mode on (Python 3.12 or later; without it a
+  plan that recreates a trigger is refused); each statement runs on its own on your connection, under your
+  authorizer. Before the commit `PRAGMA foreign_key_check` and `PRAGMA integrity_check` must find nothing, else
+  everything rolls back (`PlanFailed`, `check`, `violations`). The settings are restored afterwards.
+- **PostgreSQL:** one `READ COMMITTED` transaction with `SET LOCAL lock_timeout` (`lock_timeout=5.0` seconds by
+  default). The executor locks every existing table a step changes, then fingerprints and plans again under the
+  locks, so concurrent DDL cannot land between the check and the first step. A lock that is not granted in time
+  raises `TransientError` with `details["step"]`, after a rollback. `CREATE`/`DROP INDEX CONCURRENTLY` steps run
+  alone, outside the transaction and in plan order; a failure there leaves the database partly changed
+  (`PlanFailed`, state `partial`; a failed `CREATE INDEX CONCURRENTLY` leaves an invalid index to drop).
+- A failing step raises `PlanFailed` with `step`, `completed` and `state` (`rolled_back`, `partial`, or `unknown`
+  when the connection was lost during the `COMMIT`); the error's `original` is the step's own error, without values.
+  The executor never retries.
+
+A function cannot be locked: a trigger or policy function changed after the check, and functions those functions
+call, are residual risks (contract I-124 j).
 
 ## Things to know
 

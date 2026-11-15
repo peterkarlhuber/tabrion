@@ -8,6 +8,22 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- **Experimental, 0.3** (TABRION TAB-XW-5, CR-DBX; contract section 5.13, I-125, moved from addendum A.4): the
+  executor `tabrion.plan.execute_plan(database, target, *, plan_hash, expected_fingerprint, environment, ...)` and
+  its result `tabrion.plan.ExecutionResult`. It runs a confirmed schema change on a database the caller declares
+  `"dev"` or `"test"` (required keyword, no default; ADR 0015 D-3) that has no migration markers, and never takes a
+  plan: inside its own transaction it takes a level-2 snapshot, checks it against `expected_fingerprint`, plans again
+  from it and the target model and runs only a plan whose hash is the confirmed `plan_hash` and whose risk classes
+  are in `allow` (review of #89, P89-03). On PostgreSQL it locks the tables the steps change (`READ COMMITTED`,
+  `SET LOCAL lock_timeout`) and repeats the fingerprint and the plan under the locks (ADR 0015 D-5.4, N-1); a lock
+  timeout raises `TransientError` with `details["step"]`; `CREATE`/`DROP INDEX CONCURRENTLY` steps run alone in plan
+  order. On SQLite foreign keys are turned off before `BEGIN IMMEDIATE` (refused while they stay on, reason
+  `foreign_keys_on`), `trusted_schema` off and defensive mode on (Python 3.12 and later), each statement runs alone
+  under the caller's authorizer, and `foreign_key_check` and `integrity_check` run before the commit (P89-01, K-1).
+  `dry_run=True` rolls back. New errors `tabrion.errors.SchemaDrift` (`plan.drift`, with the differences from the
+  preview's snapshot `source`) and `tabrion.errors.PlanFailed` (`plan.failed`, details `step`, `completed`, `state`);
+  new `PlanMismatch` codes `plan.hash_mismatch` and `plan.fingerprint_mismatch`; new `PlanRefused` reasons
+  `environment`, `migration_managed`, `risk_not_allowed` and `foreign_keys_on`.
 - **Experimental, 0.3** (TABRION TAB-XW-4, CR-DBX; contract section 5.13, I-124, moved from addendum A.3): schema
   change plans in the new module `tabrion.plan` (extra `sqlalchemy`; column steps also `migrations`, as in
   `tabrion.ddl`). `tabrion.plan.plan(current, target)` diffs two

@@ -240,6 +240,15 @@ again under the caller's authorizer and defensive mode. A plan is safe to show f
 only through the executor of TAB-XW-5, and G-S3 stays locked until both are in place and reviewed. The residual
 risks above are in contract I-124 j.
 
+**Implemented by TAB-XW-5 (contract I-125).** `execute_plan` takes the snapshot, the fingerprint and the plan again
+inside its execution transaction; on PostgreSQL it first locks every existing table a transactional step changes and
+the tables connected to it by a foreign key (`LOCK TABLE ... IN ACCESS EXCLUSIVE MODE`, or `SHARE ROW EXCLUSIVE` for
+a table that only gets an index or is only a foreign-key neighbor) under `SET LOCAL lock_timeout`, in `READ
+COMMITTED`, and only then repeats the drift check (D-5.4, N-1). It plans again rather than taking a plan (review of
+#89, P89-03). The SQLite dry run rolls back the execution transaction instead of running on a backup copy (section
+4), so the K-1 texts run under the caller's authorizer in a dry run too (I-125 f). Functions remain unlockable; the
+residual risks above stand.
+
 ## Rationale
 
 - Revision text only keeps Tabrion and Studio away from running project code: an Alembic `env.py` is arbitrary

@@ -27,7 +27,10 @@ import sqlite3
 import sys
 import traceback
 from types import MappingProxyType, TracebackType
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from tabrion.schema import SchemaDifference
 
 __all__ = [
     "BackupFailed",
@@ -47,12 +50,14 @@ __all__ = [
     "MultipleRowsError",
     "PermissionDenied",
     "PlanError",
+    "PlanFailed",
     "PlanMismatch",
     "PlanRefused",
     "ReadOnlyViolation",
     "RoleMissing",
     "RoleUnsafe",
     "RowCountMismatch",
+    "SchemaDrift",
     "SchemaNotCurrent",
     "SchemaTooNew",
     "StatementError",
@@ -1351,16 +1356,63 @@ class DatabaseInUse(TabrionError):
 
 class PlanError(TabrionError):
     """Base class of the errors of a schema change plan (``tabrion.plan``, since 0.3, experimental; contract section
-    5.13). Nothing was changed."""
+    5.13). Nothing was changed, except where :class:`PlanFailed` says so."""
 
 
 class PlanMismatch(PlanError):
     """Code ``plan.invalid``: a plan whose content does not match its ``plan_hash``, or that is not a valid plan
     (``MigrationPlan.from_json``, the ``MigrationPlan`` constructor). The executor (TAB-XW-5) adds
-    ``plan.hash_mismatch`` and ``plan.fingerprint_mismatch``."""
+    ``plan.hash_mismatch`` (details ``expected``, ``actual``: the plan made again at execution is not the one the user
+    confirmed) and ``plan.fingerprint_mismatch`` (details ``field``: the preview's snapshot does not have the
+    expected fingerprint)."""
 
 
 class PlanRefused(PlanError):
-    """Code ``plan.refused``; details ``reason`` and, by reason, ``table`` and ``feature``. Reasons of ``plan``:
-    ``dialect_mismatch``, ``engine_unsupported``, ``unsafe_schema_sql`` (K-1) and ``unsupported_feature`` (ADR 0015
-    D-5); the executor (TAB-XW-5) adds ``environment``, ``migration_managed`` and ``risk_not_allowed``."""
+    """Code ``plan.refused``; details ``reason`` and, by reason, ``table``, ``feature``, ``object`` or ``markers``.
+    Reasons of ``plan``: ``dialect_mismatch``, ``engine_unsupported``, ``unsafe_schema_sql`` (K-1),
+    ``unsupported_feature`` (ADR 0015 D-5) and ``dependent_object``; the executor ``execute_plan`` (TAB-XW-5) adds
+    ``environment``, ``migration_managed``, ``risk_not_allowed`` and ``foreign_keys_on``."""
+
+
+class SchemaDrift(PlanError):
+    """Code ``plan.drift`` (``tabrion.plan.execute_plan``, since 0.3, experimental; contract I-125): the database's
+    schema no longer has the fingerprint the preview was made against. Details ``expected`` and ``actual`` (the two
+    fingerprints, not secrets) and ``differences`` (their number); :attr:`differences` names them (tables, columns,
+    constraint and index names, never data) when the caller passed the preview's snapshot, else it is empty. Nothing
+    was changed."""
+
+    differences: tuple[SchemaDifference, ...]
+
+    def __init__(
+        self,
+        code: str,
+        /,
+        *,
+        differences: tuple[SchemaDifference, ...] = (),
+        classification: Classification | None = None,
+        original: BaseException | None = None,
+        statement: str | None = None,
+        details: Mapping[str, str | int | None] | None = None,
+    ) -> None:
+        super().__init__(code, classification=classification, original=original, statement=statement, details=details)
+        self.differences = tuple(differences)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (_rebuild_drift, (self.code, self.differences, dict(self.details)))
+
+
+def _rebuild_drift(
+    code: str, differences: tuple[SchemaDifference, ...], details: dict[str, str | int | None]
+) -> SchemaDrift:
+    """Unpickle a :class:`SchemaDrift` (``__reduce__``)."""
+    return SchemaDrift(code, differences=differences, details=details)
+
+
+class PlanFailed(PlanError):
+    """Code ``plan.failed`` (``tabrion.plan.execute_plan``, since 0.3, experimental; contract I-125): a step failed
+    or a check before the commit found a problem. Details ``step`` (the plan index of the failing step), ``completed``
+    (the steps that ran and stay applied) and ``state``: ``rolled_back`` (nothing of the plan stays),
+    ``partial`` (a step outside the transaction ran or started: the database is partly changed) or ``unknown`` (the
+    connection was lost during the ``COMMIT``); a failed check adds ``check`` (``foreign_key_check``,
+    ``integrity_check``) and ``violations`` (a count). ``original`` holds the step's error (a ``TabrionError``),
+    never chained; ``classification`` is its classification."""

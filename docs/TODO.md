@@ -39,6 +39,9 @@
 > `create_database`, `drop_database`, `database_sessions`, contract section 4.8); counts unchanged.
 > TAB-XW-4 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw4`): TB-149 stays in progress, TAB-XW-4 done
 > (`tabrion.plan`, contract section 5.13 and I-124; D-5 parts of the schema model, I-111 i); counts unchanged.
+> TAB-XW-5 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw5`): TB-149 stays in progress, TAB-XW-5 done
+> (`tabrion.plan.execute_plan`, contract section 5.13 and I-125; D-5.4, the conditions of the review of #89 for the
+> executor); counts unchanged.
 
 ## Summary
 
@@ -618,7 +621,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -761,7 +764,26 @@ required (owner decision of 2026-11-08 11:26Z).
   (Low):** residual risks in I-124 j and SECURITY.md. **Open for G-S3 (Studio):** the preview shows the PostgreSQL
   PL/pgSQL residual of P89-02, the revision conditions of P89-06 and the fingerprint gaps of P89-04; plans stay
   server-side and are planned again before they run (P89-03).
-- **Open (follow-up work packages):** TAB-XW-5 `execute_plan`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
+- **TAB-XW-5 done** (branch `claude/project-thread-rdo6g3-tabxw5`): `tabrion.plan.execute_plan` and
+  `ExecutionResult`, new errors `SchemaDrift` and `PlanFailed`. The executor never takes a plan (P89-03): it gets the
+  target model and the confirmation (`plan_hash`, `expected_fingerprint`, `allow`), plans again inside its own
+  transaction and runs only a plan with the confirmed hash and allowed risk classes. Refused before any statement:
+  an environment other than `"dev"`/`"test"` (D-3, no default), migration markers (read in the execution
+  transaction), drift (`SchemaDrift` with the differences from the optional preview snapshot `source`), a hash
+  mismatch. PostgreSQL (D-5.4, N-1): `READ COMMITTED`, `SET LOCAL lock_timeout`, `LOCK TABLE` of the changed tables
+  and their foreign-key neighbors, then fingerprint and plan again under the locks; a lock timeout is
+  `TransientError` with the step; `CONCURRENTLY` steps alone, in plan order (failure: `PlanFailed`, state
+  `partial`). SQLite (P89-01, K-1): foreign keys off before `BEGIN IMMEDIATE` and refused while they stay on (reason
+  `foreign_keys_on`), `trusted_schema` off, defensive mode (Python 3.12+; without it a plan that recreates a trigger
+  is refused), one statement per call under the caller's authorizer, `foreign_key_check` and `integrity_check` before
+  the commit, settings restored. Dry run = rollback on both engines. Moved from addendum A.4 into contract section
+  5.13 (I-125). Open points for the review: no `plan` parameter (new keywords `source`, `schemas`, `server_version`,
+  `concurrent_indexes`); drift before the hash check; foreign keys off for every SQLite plan; new reason
+  `foreign_keys_on` and state `unknown`; leading `CONCURRENTLY` drops run before the transactional steps (plan
+  order); SQLite dry run without a backup copy; `plan.fingerprint_mismatch` only for `source` and a malformed
+  fingerprint; private layer-B hooks `Database._schema_transaction` and `_autocommit`; `fingerprint_after` is not
+  required to equal the plan's target fingerprint (server-normalized defaults).
+- **Open (follow-up work packages):** TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`;
   TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
   its names to `surface.json` (`since` 0.3, `X`).

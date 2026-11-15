@@ -115,8 +115,8 @@ tabrion/                     package; layer B in the package root (importable on
 ├── ddl.py                   extra [sqlalchemy] (column statements also [migrations]): DDL text from the level-2
 │                            schema model, generation only (since 0.3, experimental, TAB-XW-3)
 ├── plan.py                  extra [sqlalchemy] (column steps also [migrations]): diff into a MigrationPlan, risk
-│                            classes, SQLite rebuild, Alembic revision text, migration markers; nothing executes
-│                            (since 0.3, experimental, TAB-XW-4)
+│                            classes, SQLite rebuild, Alembic revision text, migration markers (since 0.3,
+│                            experimental, TAB-XW-4); execute_plan on declared DEV/TEST databases (TAB-XW-5)
 ├── migrations.py            layer B, extra [migrations]: status, require_current, SchemaStatus (without env.py)
 └── testing/                 extra [testing] (pytest); pytest plugin only on explicit request (pytest_plugins)
     ├── __init__.py          configure(), fixtures

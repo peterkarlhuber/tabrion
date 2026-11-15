@@ -3,8 +3,9 @@
 Contract I-124 f; ADR 0015 section 4 and K-1 (section 9): the rebuild recreates the table's triggers from the text
 ``sqlite_schema`` holds, which in a hostile file is attacker data. Each text is exactly one statement, one complete
 statement with nothing after it, whose head is ``CREATE TRIGGER`` and the row's own name; otherwise ``plan`` refuses
-(``PlanRefused``, reason ``unsafe_schema_sql``). ``test_rebuild_runs_under_authorizer_and_defensive`` is the
-executor's (TAB-XW-5).
+(``PlanRefused``, reason ``unsafe_schema_sql``). ``test_rebuild_runs_under_authorizer_and_defensive`` is the check at
+execution (TAB-XW-5, contract I-125): ``execute_plan`` runs each trigger text as one statement on the caller's
+connection, under the caller's authorizer, with ``trusted_schema = OFF`` and defensive mode.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ pytest.importorskip("alembic")
 from tabrion import Database
 from tabrion import plan as tp
 from tabrion import schema as ts
-from tabrion.errors import PlanRefused
+from tabrion.errors import PlanFailed, PlanRefused
 
 SECRET = "SECRET-4711"
 
@@ -496,3 +497,63 @@ def test_xw4_a_plan_never_changes_a_view(tmp_path: Path) -> None:
         with pytest.raises(PlanRefused) as caught:
             tp.plan(current, dataclasses.replace(without_b(current), views=views))
         assert caught.value.details == {"reason": "unsupported_feature", "table": "main.v", "feature": "view"}
+
+
+def test_rebuild_runs_under_authorizer_and_defensive(path: Path) -> None:
+    """K-1 at execution (TAB-XW-5): the caller's authorizer, installed on every connection of its engine, sees each
+    ``CREATE TRIGGER`` of the rebuild, and defensive mode and ``trusted_schema = OFF`` are in force while it runs; an
+    authorizer that denies the trigger makes the step fail and the transaction roll back. Without defensive mode
+    (Python 3.11 has no ``Connection.setconfig``) the plan is refused before anything runs."""
+    seen: list[tuple[str | None, bool | None]] = []
+    deny: list[bool] = [False]
+    flag = getattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE", None)
+
+    def watch(dbapi: Any, _record: object) -> None:
+        def authorize(action: int, arg1: str | None, *_: object) -> int:
+            if action == sqlite3.SQLITE_CREATE_TRIGGER:
+                seen.append((arg1, bool(dbapi.getconfig(flag)) if flag is not None else None))
+                if deny[0]:
+                    return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        dbapi.set_authorizer(authorize)
+
+    database = Database.from_url(f"sqlite:///{path}")
+    import sqlalchemy
+
+    sqlalchemy.event.listen(database.engine, "connect", watch)
+    try:
+        current = take(database)
+        target = narrowed(current)
+        preview = tp.plan(current, target)
+        arguments: dict[str, Any] = {
+            "plan_hash": preview.plan_hash,
+            "expected_fingerprint": ts.fingerprint(current),
+            "environment": "dev",
+            "allow": preview.risks,
+        }
+        if flag is None:
+            with pytest.raises(PlanRefused) as refused:
+                tp.execute_plan(database, target, **arguments)
+            assert refused.value.details == {"reason": "engine_unsupported", "feature": "sqlite_defensive"}
+            assert seen == []
+            return
+        deny[0] = True
+        with pytest.raises(PlanFailed) as caught:
+            tp.execute_plan(database, target, **arguments)
+        assert caught.value.details == {"step": 0, "completed": 0, "state": "rolled_back"}
+        assert ts.fingerprint(take(database)) == ts.fingerprint(current)
+        assert seen == [('parts "ins"', True)]  # the first trigger text was denied: nothing after it ran
+        seen.clear()
+        deny[0] = False
+        result = tp.execute_plan(database, target, **arguments)
+        assert result.steps_run == 1
+        assert sorted(str(name) for name, _ in seen) == ['parts "ins"', "parts_log"]
+        assert all(defensive is True for _, defensive in seen)
+        assert ts.compare(target, take(database)) == ()
+        with database.transaction() as transaction:  # defensive mode is off again on the pooled connection
+            raw: Any = transaction.connection.connection.dbapi_connection
+            assert raw.getconfig(flag) is False
+            assert transaction.fetch_scalar("PRAGMA trusted_schema") == 0
+    finally:
+        database.close()
