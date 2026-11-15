@@ -813,6 +813,18 @@ required (owner decision of 2026-11-08 11:26Z).
   order); SQLite dry run without a backup copy; `plan.fingerprint_mismatch` only for `source` and a malformed
   fingerprint; private layer-B hooks `Database._schema_transaction` and `_autocommit`; `fingerprint_after` is not
   required to equal the plan's target fingerprint (server-normalized defaults).
+  Review of #91 (planning folder `reviews/pr91-tabxw5-review.md`, ACCEPTED with conditions) folded in, in code:
+  P91-01 a plan of leading `DROP INDEX CONCURRENTLY` steps only ends with a complete result and `fingerprint_after`
+  (it raised `IndexError` after the drop); P91-02 the transaction after the leading drops reads the migration markers
+  again (`PlanFailed`, state `partial`, `check` `migration_managed`); documented in I-125: P91-03 a PostgreSQL dry
+  run consumes sequence values, P91-04 SQLite waits for `BEGIN IMMEDIATE` under `busy_timeout`, not `timeout`,
+  P91-05 `details.actual` is no confirmation, P91-06 foreign-key neighbors outside `schemas` are not locked.
+  **Open for Studio before G-S3 (STU-XW):** for a plan with `non_transactional` steps the confirmation shows that they
+  run outside the transaction and can stay partly applied (leading `CONCURRENTLY` drops run first); after
+  `PlanFailed` with state `partial` Studio forces a new preview; the run is bound to the `plan_hash` Studio stored and
+  showed, never to a value from an error's `details` (P91-05); the confirmation dialog names the residual risks of
+  I-125 i (functions cannot be locked, `CONCURRENTLY` steps without the executor's locks, the environment is a
+  declaration); a dry run on PostgreSQL may advance sequences (P91-03).
 - **Open (follow-up work packages):** TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
   its names to `surface.json` (`since` 0.3, `X`).
 - **Security review of #76 (planning folder `reviews/pr76-tabxw1-review.md`): ACCEPTED WITH CONDITIONS.** The

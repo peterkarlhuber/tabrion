@@ -23,7 +23,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `dry_run=True` rolls back. New errors `tabrion.errors.SchemaDrift` (`plan.drift`, with the differences from the
   preview's snapshot `source`) and `tabrion.errors.PlanFailed` (`plan.failed`, details `step`, `completed`, `state`);
   new `PlanMismatch` codes `plan.hash_mismatch` and `plan.fingerprint_mismatch`; new `PlanRefused` reasons
-  `environment`, `migration_managed`, `risk_not_allowed` and `foreign_keys_on`.
+  `environment`, `migration_managed`, `risk_not_allowed` and `foreign_keys_on`. Review of #91: a plan of
+  `DROP INDEX CONCURRENTLY` steps only returns a complete result (P91-01), and the transaction after leading drops
+  reads the migration markers again (P91-02, `PlanFailed` state `partial`, `check` `migration_managed`).
 - **Experimental, 0.3** (TABRION TAB-XW-4, CR-DBX; contract section 5.13, I-124, moved from addendum A.3): schema
   change plans in the new module `tabrion.plan` (extra `sqlalchemy`; column steps also `migrations`, as in
   `tabrion.ddl`). `tabrion.plan.plan(current, target)` diffs two

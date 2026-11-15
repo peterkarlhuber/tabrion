@@ -419,7 +419,9 @@ plan.drift ['column_added: main.parts.qty']
 
 Before the first statement the executor also refuses a database with migration markers (`PlanRefused`, reason
 `migration_managed`), a risk class the user did not accept (`risk_not_allowed`) and an environment other than
-`"dev"` or `"test"` (`environment`). `dry_run=True` runs the transactional steps and rolls them back.
+`"dev"` or `"test"` (`environment`). `dry_run=True` runs the transactional steps and rolls them back; on
+PostgreSQL a rollback does not return sequence values, so a dry-run step that calls `nextval` (a new column with a
+sequence default on a table with rows) advances the sequence.
 
 - **SQLite:** foreign keys are turned off before `BEGIN IMMEDIATE` (the executor refuses to start, reason
   `foreign_keys_on`, if they stay on), `trusted_schema` off and defensive mode on (Python 3.12 or later; without it a
@@ -430,8 +432,9 @@ Before the first statement the executor also refuses a database with migration m
   default). The executor locks every existing table a step changes, then fingerprints and plans again under the
   locks, so concurrent DDL cannot land between the check and the first step. A lock that is not granted in time
   raises `TransientError` with `details["step"]`, after a rollback. `CREATE`/`DROP INDEX CONCURRENTLY` steps run
-  alone, outside the transaction and in plan order; a failure there leaves the database partly changed
-  (`PlanFailed`, state `partial`; a failed `CREATE INDEX CONCURRENTLY` leaves an invalid index to drop).
+  alone, outside the transaction and in plan order; after leading drops a second transaction checks the markers and
+  the plan again before anything else runs. A failure there leaves the database partly changed (`PlanFailed`, state
+  `partial`; a failed `CREATE INDEX CONCURRENTLY` leaves an invalid index to drop): make a new preview.
 - A failing step raises `PlanFailed` with `step`, `completed` and `state` (`rolled_back`, `partial`, or `unknown`
   when the connection was lost during the `COMMIT`); the error's `original` is the step's own error, without values.
   The executor never retries.

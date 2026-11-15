@@ -1462,7 +1462,8 @@ class _Executor:
         else:
             for step in leading:
                 self.run_alone(step)
-            self.run_rest(change, middle)
+            if self.completed < len(change.steps):  # review of #91, P91-01: a plan of drops only ends here
+                self.run_rest(change, middle)
         for step in trailing:
             self.run_alone(step)
         if after is None:
@@ -1471,13 +1472,20 @@ class _Executor:
         return ExecutionResult(change.plan_hash, False, len(change.steps), (), after)
 
     def run_rest(self, change: MigrationPlan, middle: list[PlanStep]) -> None:
-        """After the leading ``DROP INDEX CONCURRENTLY`` steps: the transactional steps in a transaction of their own,
-        after the locks, a new snapshot and a new plan, which must be exactly the steps left of the confirmed plan
-        (else ``PlanFailed``, state ``partial``: the leading steps stay)."""
+        """After the leading ``DROP INDEX CONCURRENTLY`` steps, when steps are left: the migration markers again, then
+        the transactional steps (there may be none) in a transaction of their own, after the locks, a new snapshot and
+        a new plan, which must be exactly the steps left of the confirmed plan (else ``PlanFailed``, state
+        ``partial``: the leading steps stay; ``check`` ``migration_managed`` or ``drift``). The trailing steps run
+        only after this check."""
         first = change.steps[self.completed]
         finished = False
         try:
             with self.transaction() as transaction:
+                markers = _read_markers(transaction, self.dialect)
+                if markers:  # review of #91, P91-02: as in the first transaction
+                    raise self.failed(
+                        first, None, state="partial", check="migration_managed", markers=",".join(markers)
+                    )
                 self.set_lock_timeout(transaction)
                 current = self.snapshot(transaction)
                 self.lock(transaction, middle, current)
@@ -1615,6 +1623,7 @@ class _Executor:
         state: str,
         check: str | None = None,
         violations: int | None = None,
+        markers: str | None = None,
     ) -> PlanFailed:
         details: dict[str, str | int | None] = {
             "step": step.index if step is not None else None,
@@ -1625,6 +1634,8 @@ class _Executor:
             details["check"] = check
         if violations is not None:
             details["violations"] = violations
+        if markers is not None:
+            details["markers"] = markers
         return PlanFailed(
             "plan.failed",
             classification=error.classification if error is not None else None,

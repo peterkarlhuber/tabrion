@@ -13,7 +13,8 @@ keeps this file current; every pull request that finishes a work package updates
 > changed tables under `lock_timeout` and repeats the drift check under the locks (ADR 0015 D-5.4, N-1); SQLite
 > foreign keys off before `BEGIN` with refusal while on, `foreign_key_check` and `integrity_check` before the commit,
 > defensive mode and the caller's authorizer (P89-01, K-1); `SchemaDrift`, `PlanFailed`; contract section 5.13 and
-> I-125 (moved from addendum A.4); the CR-DBX row.
+> I-125 (moved from addendum A.4); the CR-DBX row. Review of #91 (ACCEPTED with conditions) folded in: P91-01, P91-02
+> in code, P91-03..P91-06 in I-125, Studio obligations before G-S3 under TB-149.
 > Before: 2026-11-15, TABRION TAB-XW-8 (CR-DBX, TB-149): role DDL with the attribute ban, also indirect,
 > experimental 0.3 (`RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`,
 > `grant_membership`, `revoke_membership`, `grant_privileges`, `revoke_privileges`; contract section 4.9 and

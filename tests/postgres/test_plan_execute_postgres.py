@@ -401,13 +401,48 @@ def test_concurrent_index_steps_run_alone_in_plan_order(db: Database, shop: str,
     assert [i.valid for i in table(after, f"{s}.parts").indexes] == [True]
 
 
-def test_only_concurrent_steps(db: Database, shop: str) -> None:
+def without_index(model: ts.SchemaSnapshot, s: str) -> ts.SchemaSnapshot:
+    """``parts_code`` dropped: with ``concurrent_indexes`` a plan of one ``DROP INDEX CONCURRENTLY``."""
+    return replace_table(model, f"{s}.parts", indexes=())
+
+
+def with_extra_index(model: ts.SchemaSnapshot, s: str) -> ts.SchemaSnapshot:
+    """An index on ``parts.qty``: with ``concurrent_indexes`` a plan of one ``CREATE INDEX CONCURRENTLY``."""
+    parts = table(model, f"{s}.parts")
+    return replace_table(model, f"{s}.parts", indexes=(*parts.indexes, ts.IndexShape("parts_qty", ("qty",))))
+
+
+@pytest.mark.parametrize(
+    ("change", "operations"),
+    [
+        # review of #91, P91-01: only leading drops, no transactional step and nothing after them
+        (without_index, ["drop_index"]),
+        (with_extra_index, ["create_index"]),
+        (with_changed_index, ["drop_index", "create_index"]),
+    ],
+    ids=["drops_only", "creates_only", "drops_and_creates"],
+)
+def test_only_concurrent_steps(
+    db: Database,
+    shop: str,
+    change: Callable[[ts.SchemaSnapshot, str], ts.SchemaSnapshot],
+    operations: list[str],
+) -> None:
+    """Plans without a transactional step: every step runs alone, the result is complete and names the fingerprint
+    after the run; a dry run runs none of them."""
     s = shop
     current = take(db, s)
-    target = with_changed_index(current, s)
+    target = change(current, s)
+    preview = tp.plan(current, target, concurrent_indexes=True)
+    assert [(step.operation, step.transactional) for step in preview.steps] == [(o, False) for o in operations]
+    every = tuple(range(len(operations)))
+    dry = run(db, s, current, target, concurrent_indexes=True, dry_run=True)
+    assert dry == tp.ExecutionResult(preview.plan_hash, True, 0, every, None)
+    assert ts.fingerprint(take(db, s)) == ts.fingerprint(current)
     result = run(db, s, current, target, concurrent_indexes=True)
-    assert result.steps_run == 2
-    assert ts.compare(target, take(db, s)) == ()
+    after = take(db, s)
+    assert result == tp.ExecutionResult(preview.plan_hash, False, len(operations), (), ts.fingerprint(after))
+    assert ts.compare(target, after) == ()
 
 
 def test_failing_non_transactional_step_reports_partial(db: Database, shop: str, tabrion_postgres_url: str) -> None:
@@ -451,6 +486,45 @@ def test_drift_after_leading_concurrent_steps_reports_partial(
     with pytest.raises(PlanFailed) as caught:
         run(db, s, current, target, concurrent_indexes=True)
     assert caught.value.details == {"step": 1, "completed": 1, "state": "partial", "check": "drift"}
+    after = table(take(db, s), f"{s}.parts")
+    assert after.indexes == ()
+    assert "note" not in {c.name for c in after.columns}
+
+
+@pytest.mark.parametrize(
+    "change",
+    [lambda m, s: with_changed_index(with_note(m, s, default=None), s), with_changed_index],
+    ids=["with_transactional_steps", "drops_and_creates"],
+)
+def test_marker_after_leading_concurrent_steps_reports_partial(
+    db: Database,
+    shop: str,
+    tabrion_postgres_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    change: Callable[[ts.SchemaSnapshot, str], ts.SchemaSnapshot],
+) -> None:
+    """Review of #91, P91-02: the transaction after the leading drops reads the migration markers again; a marker
+    table created in between stops the run before any further step (state ``partial``: the drop stays)."""
+    s = shop
+    current = take(db, s)
+    target = change(current, s)
+    original = tp._Executor.run_alone
+
+    def run_alone(self: Any, step: tp.PlanStep) -> None:
+        original(self, step)
+        if step.operation == "drop_index":
+            ddl(tabrion_postgres_url, f"CREATE TABLE {s}.alembic_version (version_num varchar(32))")
+
+    monkeypatch.setattr(tp._Executor, "run_alone", run_alone)
+    with pytest.raises(PlanFailed) as caught:
+        run(db, s, current, target, concurrent_indexes=True)
+    assert caught.value.details == {
+        "step": 1,
+        "completed": 1,
+        "state": "partial",
+        "check": "migration_managed",
+        "markers": "alembic_version",
+    }
     after = table(take(db, s), f"{s}.parts")
     assert after.indexes == ()
     assert "note" not in {c.name for c in after.columns}
