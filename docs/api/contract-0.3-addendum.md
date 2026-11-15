@@ -166,10 +166,10 @@ safe reading of ADR 0015 and of the review of #89:
 ## A.5 Guided write transaction (TAB-XW-6)
 
 **Implemented (TAB-XW-6) and moved into the contract:**
-[section 5.11](contract.md#511-guided-write-transaction-since-03-experimental-tab-xw-6) with the implementation notes
+[section 5.11](contract.md#511-guided-write-transaction-since-03-tab-xw-6) with the implementation notes
 I-120..I-122. `Transaction.execute_checked`, `tabrion.rowedit.insert_row`, `update_row`, `delete_row` and
-`tabrion.errors.RowCountMismatch` are in `surface.json` with `"since": "0.3"` and stability `X`; they were
-unimportable while the package version was below 0.3 and are public since master builds as `0.3.0.dev0`. N-5 is test
+`tabrion.errors.RowCountMismatch` are in `surface.json` with `"since": "0.3"`, `execute_checked` with stability `X`
+and the other four with `S` (G-S2 follow-up 7A; they were `X` until then); they were unimportable while the package version was below 0.3 and are public since master builds as `0.3.0.dev0`. N-5 is test
 `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict`.
 
 ## A.6 `tabrion.sqlite`: `restore` and `delete_database_file` (TAB-XW-7)

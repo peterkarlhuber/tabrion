@@ -136,7 +136,7 @@ def _unchanged(table: sqlalchemy.Table, old: object) -> list[ColumnElement[bool]
 
 
 def insert_row(table: sqlalchemy.Table, values: Mapping[str, Any]) -> sqlalchemy.Insert:
-    """Since 0.3, experimental. ``INSERT INTO <table> (<columns>) VALUES (<bound values>)``; an empty mapping inserts
+    """Since 0.3, stable. ``INSERT INTO <table> (<columns>) VALUES (<bound values>)``; an empty mapping inserts
     the defaults. Run it with ``expect_rowcount=1``."""
     table = _table(table)
     pairs = _columns(table, values, "values")
@@ -146,7 +146,7 @@ def insert_row(table: sqlalchemy.Table, values: Mapping[str, Any]) -> sqlalchemy
 def update_row(
     table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]
 ) -> sqlalchemy.Update:
-    """Since 0.3, experimental. ``UPDATE <table> SET <new> WHERE <pk> = :key AND <column> IS NOT DISTINCT FROM :old``
+    """Since 0.3, stable. ``UPDATE <table> SET <new> WHERE <pk> = :key AND <column> IS NOT DISTINCT FROM :old``
     (SQLite ``IS``) for every column of ``old``. ``key`` is exactly the primary key, else
     ``UsageError("rowedit.primary_key_required")``; ``old`` names at least one column, else
     ``UsageError("rowedit.old_required")`` (pass every column the user was shown); ``new`` names at least one column.
@@ -160,7 +160,7 @@ def update_row(
 
 
 def delete_row(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any]) -> sqlalchemy.Delete:
-    """Since 0.3, experimental. ``DELETE FROM <table> WHERE <pk> = :key AND <column> IS NOT DISTINCT FROM :old``
+    """Since 0.3, stable. ``DELETE FROM <table> WHERE <pk> = :key AND <column> IS NOT DISTINCT FROM :old``
     (SQLite ``IS``) for every column of ``old``; ``key`` and ``old`` as for :func:`update_row`. Run it with
     ``expect_rowcount=1``: 0 rows is an optimistic conflict."""
     table = _table(table)

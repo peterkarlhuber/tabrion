@@ -132,12 +132,13 @@ There is no upsert helper in Tabrion; the dialect `insert` of SQLAlchemy has `on
 >>> db.close()
 ```
 
-## Guided writes (0.3, experimental)
+## Guided writes (0.3)
 
-!!! note "Experimental since 0.3"
-    `Transaction.execute_checked` and `tabrion.rowedit` are public since Tabrion 0.3 (master builds as `0.3.0.dev0`)
-    and experimental (stability X): their signatures may still change within 0.3
-    ([contract section 5.11](../api/contract.md#511-guided-write-transaction-since-03-experimental-tab-xw-6)). A
+!!! note "New in 0.3: `tabrion.rowedit` stable, `execute_checked` experimental"
+    `Transaction.execute_checked` and `tabrion.rowedit` are public since Tabrion 0.3 (master builds as `0.3.0.dev0`).
+    `insert_row`, `update_row`, `delete_row` and `RowCountMismatch` are stable (stability S); `execute_checked` is
+    experimental (stability X): its signature may still change within 0.3
+    ([contract section 5.11](../api/contract.md#511-guided-write-transaction-since-03-tab-xw-6)). A
     consumer that requires `tabrion>=0.2,<0.3` does not have them.
 
 A data editor writes one row the user changed and must not overwrite a change someone else made since the row was

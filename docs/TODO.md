@@ -70,7 +70,8 @@ cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 foll
 `0.2.1` version pull request: TB-013 records the patch release; `0.2.2.dev0` follow-up pull request after the
 `0.2.1` release commit `af0458d`: TB-013 records its SHA and the G-T2 runs; TAB-XW-1 pull request: TB-149 in
 progress, counts unchanged; predefined-role pull request #77: TB-150 new, P2 from 10 to 11; TB-036/TB-150 follow-up pull request (owner order
-2026-11-14 23:56Z): TB-036 and TB-150 done, P2 from 11 to 9; psycopg floor pull request: TB-152 new, P3 from 43 to 44).
+2026-11-14 23:56Z): TB-036 and TB-150 done, P2 from 11 to 9; psycopg floor pull request: TB-152 new, P3 from 43 to 44;
+G-S2 follow-up 7A pull request: TB-149 records the stable `tabrion.rowedit` and `RowCountMismatch`, counts unchanged).
 
 | Priority | Count |
 |---|---|
@@ -629,7 +630,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; TAB-XW-8 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; TAB-XW-8 done; G-S2 follow-up 7A done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -651,7 +652,7 @@ required (owner decision of 2026-11-08 11:26Z).
   `surface.json` with `since` 0.3 and `X`; they were unimportable below 0.3 through `tabrion._since` (the C-6
   mechanism) and are public since the 0.3 switch (below). N-5 is
   `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict`, with the residual risk in I-121 (d) and
-  the guide [Transactions](guides/transactions.md#guided-writes-03-experimental). Review of #78 (planning folder
+  the guide [Transactions](guides/transactions.md#guided-writes-03). Review of #78 (planning folder
   `reviews/pr78-tabxw6-review.md`, ACCEPTED) folded in: L-1 an empty `old` is refused (`rowedit.old_required`),
   I-1 rules and triggers are not counted (documented, PostgreSQL rule probe as a test), I-2 `max_affected` bounds
   what is committed, `timeout` the work (I-120 g, h).
@@ -853,6 +854,22 @@ required (owner decision of 2026-11-08 11:26Z).
   - **D-3:** the caller-declared environment is acceptable: a required keyword without a default, typed
     `Literal["dev", "test"]`, a guard rail and not a boundary; Studio fills it from the user-local profile.
   - **D-4:** v2 fingerprints stay opt-in in 0.3 (`snapshot(level=1)` stays the default).
+- **G-S2 follow-up 7A done** (owner decision: before the Studio 1.1 release, tabrion 0.3 makes the names Studio uses
+  stable; branch `claude/project-thread-rdo6g3-gs2-7a`): Studio's `docs/api-consumers.md` (tabrion-studio `9d0e72c`,
+  `scripts/check_tabrion_api.py --export`) lists two experimental names in `src/tabrion_studio/write/data_editor.py`,
+  the module `tabrion.rowedit` (`insert_row`, `update_row`, `delete_row`) and `tabrion.errors.RowCountMismatch`.
+  These four are `S` in `surface.json`, contract section 0 and 5.11 (stability paragraph, I-122), the addendum A.5
+  and the guide [Transactions](guides/transactions.md#guided-writes-03); signatures, codes and details unchanged;
+  `tests/unit/test_api_surface.py::test_studio_data_editor_names_are_stable` pins them. **Open (decisions, not
+  changed here):** (1) `Transaction.execute_checked` stays `X`, but the Data Editor calls it on its `Transaction`
+  (`data_editor.py`, `execute_checked(statement, expect_rowcount=1)`); Studio's static check cannot see a method of
+  an instance, so S-2 is not met for it until it is promoted too. (2) `update_row(table, key, old, new)` and
+  `delete_row(table, key, old)` take the mappings positionally; keyword-only `old` and `new` would make a swap
+  impossible, but would break Studio's positional calls, so it is a decision before the stable freeze is relied on.
+  (3) An empty `new` raises a bare `ValueError`, an empty `old` `UsageError("rowedit.old_required")`; whether `new`
+  gets a code (`rowedit.new_required`) is open. (4) Studio also imports `tabrion.postgres.create_database` (`X`,
+  Schema Designer, not the Data Editor) and is outside 7A. (5) The error codes are not in `surface.json` (TB-091),
+  and an `S` to `X` downgrade still passes `--base` (TB-094); the new test covers these four names only.
 - **0.3 switch done** (branch `claude/project-thread-rdo6g3-tab03dev`, for Studio STU-026): master builds as
   `0.3.0.dev0` (not a release: no tag, no publication). `Transaction` inherits the 0.3 mixin, `RowCountMismatch` is
   exported, `tabrion.rowedit` imports, the `staged` keys and `tabrion._sa._staged` are gone, and the tests run on the

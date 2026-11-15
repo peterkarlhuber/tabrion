@@ -715,7 +715,7 @@
         "TabrionError"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.errors.SchemaDrift": {
       "kind": "exception",
@@ -1590,19 +1590,19 @@
       "kind": "function",
       "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any]) -> sqlalchemy.Delete",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.rowedit.insert_row": {
       "kind": "function",
       "signature": "(table: sqlalchemy.Table, values: Mapping[str, Any]) -> sqlalchemy.Insert",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.rowedit.update_row": {
       "kind": "function",
       "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]) -> sqlalchemy.Update",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.safe_url": {
       "kind": "function",
