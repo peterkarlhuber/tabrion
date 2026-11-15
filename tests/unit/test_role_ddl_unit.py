@@ -51,6 +51,7 @@ def _privileges(**changes: Any) -> RolePrivileges:
         "reachable": (),
         "dangerous": (),
         "broad": (),
+        "public_definers": (),
         "owned_objects": 0,
         "default_privileges": 0,
     }
@@ -79,6 +80,37 @@ def test_role_names_checked_first(name: object) -> None:
         "postgres.invalid_argument",
         {"parameter": "member"},
     )
+
+
+def test_password_of_1024_characters_accepted() -> None:
+    """P90-07: up to 1024 characters; one more is refused (the parametrized case above)."""
+    assert len(CANARY + "x" * 1014) == 1025
+    secret, problem = roleddl._secret("x" * 1024)
+    assert problem is None and secret is not None
+    secret.clear()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "app\u202etxt",  # RIGHT-TO-LEFT OVERRIDE (Cf)
+        "app\u2066x\u2069",  # isolates (Cf)
+        "app\u200bx",  # ZERO WIDTH SPACE (Cf)
+        "app\x1b[0m",  # ESC (Cc)
+        "app\nx",  # LINE FEED (Cc)
+        "app\u2028x",  # LINE SEPARATOR (Zl)
+        "app\u2029x",  # PARAGRAPH SEPARATOR (Zp)
+        "\ufeffapp",  # BYTE ORDER MARK (Cf)
+    ],
+)
+def test_new_role_name_without_hidden_characters(name: str) -> None:
+    """P90-05: a new role name never holds a control, format or line/paragraph separator character."""
+    assert _code(lambda: create_role(NOT_A_CONNECTION, name)) == ("postgres.invalid_argument", {"parameter": "role"})
+
+
+def test_new_role_name_with_visible_unicode_accepted() -> None:
+    for name in ("Müller", "app name", 'we"ird', "日本"):
+        assert roleddl._check_new_name(name) == name
 
 
 def test_name_of_63_bytes_accepted_and_reserved_prefix_refused() -> None:
@@ -140,7 +172,9 @@ def _frame_texts(tb: TracebackType | None) -> list[str]:
     return texts
 
 
-@pytest.mark.parametrize("password", ["", "a\x00" + CANARY, "\ud800" + CANARY, 4711, b"SECRET-4711"])
+@pytest.mark.parametrize(
+    "password", ["", "a\x00" + CANARY, "\ud800" + CANARY, 4711, b"SECRET-4711", CANARY + "x" * 1014]
+)
 def test_password_checked_and_never_in_frames(password: Any) -> None:
     calls: list[Callable[[], object]] = [
         lambda: create_role(NOT_A_CONNECTION, "app", password=password),
@@ -265,6 +299,7 @@ def test_role_privileges_result() -> None:
         "reachable": [],
         "dangerous": ["trigger:s.t"],
         "broad": [],
+        "public_definers": [],
         "owned_objects": 0,
         "default_privileges": 0,
         "safe": False,
@@ -292,3 +327,38 @@ def test_reasons_from_findings() -> None:
     # Only what is new after the change counts; a grant to PUBLIC that was there before does not.
     assert roleddl._new_findings(before, after) == ["reachable_replication", "security_definer", "predefined_role"]
     assert roleddl._new_findings(after, after) == []
+
+
+def test_server_access_counts_as_a_banned_attribute() -> None:
+    """P90-02: a reachable pg_execute_server_program, pg_read_server_files or pg_write_server_files is refused like a
+    banned attribute on a change that adds privileges; a removing change is not affected."""
+    reaching = _privileges(dangerous=("server_access:pg_execute_server_program",))
+    assert not reaching.safe
+    assert roleddl._attribute_reasons(reaching) == ["reachable_server_access"]
+    state = roleddl._State(privileges=reaching, oid=20000, predefined=False, current=False)
+    assert roleddl._target_reasons(state, increase=True) == ["reachable_server_access"]
+    assert roleddl._target_reasons(state, increase=False) == []
+    before = _privileges()
+    assert "reachable_server_access" in roleddl._new_findings(before, reaching)
+    assert set(roleddl._SERVER_ACCESS) == {
+        "pg_execute_server_program",
+        "pg_read_server_files",
+        "pg_write_server_files",
+    }
+
+
+def _resolved(oid: int, namespace: str | None) -> Any:
+    return roleddl._Resolved(target=None, oid=oid, owner=10, security_definer=False, public=False, namespace=namespace)  # type: ignore[arg-type]
+
+
+def test_system_objects() -> None:
+    """P90-01: an oid below 16384, information_schema or a pg_ schema."""
+    assert roleddl._system_object(_resolved(2200, "public"))  # the schema public
+    assert roleddl._system_object(_resolved(5, None))  # the database postgres
+    assert roleddl._system_object(_resolved(20000, "pg_catalog"))
+    assert roleddl._system_object(_resolved(20000, "pg_toast"))
+    assert roleddl._system_object(_resolved(20000, "pg_temp_3"))
+    assert roleddl._system_object(_resolved(20000, "information_schema"))
+    assert not roleddl._system_object(_resolved(20000, "app"))
+    assert not roleddl._system_object(_resolved(20000, None))
+    assert not roleddl._system_object(_resolved(20000, "Pg_x"))  # a quoted name: PostgreSQL reserves lower case only

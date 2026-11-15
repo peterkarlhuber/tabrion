@@ -138,7 +138,7 @@ for database errors, the `classification` and the driver error as `original`. Th
 | `MultipleRowsError` | `fetch_one`/`fetch_scalar` found more than one row | `database.multiple_rows` |
 | `MigrationError` and its subclasses | `tabrion.sqlite.migrate` | `sqlite.schema_too_new`, `sqlite.backup_required` |
 | `SchemaNotCurrent` | `tabrion.migrations.require_current` | `migrations.not_current` |
-| `RoleMissing`, `RoleUnsafe` | `tabrion.postgres` role checks | `postgres.role_missing`, `postgres.role_unsafe` |
+| `RoleMissing`, `RoleUnsafe` | `tabrion.postgres` role checks | `postgres.role_missing`, `postgres.role_unsafe`, `postgres.caller_unsafe` |
 | `UnsafePath` | SQLite path checks | `sqlite.symlink`, `sqlite.unsafe_mode` |
 
 The `DatabaseError` subclasses group the kinds: `ConnectionFailed` (connection, resource), `StatementTimeout`,

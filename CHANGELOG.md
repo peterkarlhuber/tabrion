@@ -71,7 +71,15 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   (new reasons such as `reachable_superuser`, `predefined_role`, `security_definer`, `schema_create`, `trigger`,
   `owns_objects`, `current_user`). A password is hashed on the client and sent only as a SCRAM-SHA-256 verifier; it
   is never in an error or a traceback frame. Driver errors are raised as the `DatabaseError` of their kind with the
-  safe message. `tabrion.profilefile` accepts the profile mode `admin` (addendum A.9, E-X8).
+  safe message. `tabrion.profilefile` accepts the profile mode `admin` (addendum A.9, E-X8). Security review of #90
+  folded in: every change refuses a session whose current or session user has SUPERUSER, BYPASSRLS or REPLICATION
+  (`RoleUnsafe("postgres.caller_unsafe")`); `grant_privileges` refuses objects of the system (`system_object`) and
+  objects whose owner has one of these attributes (`object_owner`); a role that is or reaches
+  `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files` counts as one with a banned
+  attribute (`server_access:<role>` in `dangerous`, reason `reachable_server_access`); new field
+  `RolePrivileges.public_definers` (SECURITY DEFINER functions PUBLIC may execute, a superuser owner highlighted);
+  `create_role` refuses names with control, format or separator characters; passwords are limited to 1 024
+  characters.
 - **Experimental, 0.3** (TABRION TAB-XW-9, CR-DBX; contract section 4.8, I-190..I-193, moved from addendum A.8):
   `tabrion.postgres.create_database` and `tabrion.postgres.drop_database` compose `CREATE DATABASE`/`DROP DATABASE`
   with `psycopg.sql.Identifier` and validated literals, need an idle autocommit connection (never switched), check

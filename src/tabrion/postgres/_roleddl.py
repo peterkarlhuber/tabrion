@@ -12,6 +12,12 @@ before the statement and again right after it, so a refusal or a finding that ap
 back. Every identifier is composed with ``psycopg.sql.Identifier`` and every value with ``psycopg.sql.Literal``, never
 with string formatting; catalog names are qualified with ``pg_catalog`` (contract I-16).
 
+The promise holds for the admin profile E-X6 describes, and Tabrion enforces that part (review P90-01 of #90): every
+change refuses a session whose ``CURRENT_USER`` or ``SESSION_USER`` has SUPERUSER, BYPASSRLS or REPLICATION
+(``RoleUnsafe("postgres.caller_unsafe")``), and ``grant_privileges`` refuses objects of the system and objects whose
+owner has one of these attributes. A target that is or reaches ``pg_execute_server_program``,
+``pg_read_server_files`` or ``pg_write_server_files`` counts as one with a banned attribute (P90-02).
+
 A password is hashed on the client (SCRAM-SHA-256, ``PGconn.encrypt_password``) and only the verifier is sent. It is
 never part of an error, a ``repr`` or a log record, and the frames of a traceback do not hold it (I-76): the public
 functions keep it in a :class:`_Secret` that is cleared before they return or raise, and the statement that carries the
@@ -28,6 +34,7 @@ from dataclasses import dataclass
 import datetime
 import re
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
+import unicodedata
 
 from tabrion.errors import (
     Classification,
@@ -70,10 +77,23 @@ _FIRST_NORMAL_OID = 16384
 """``FirstNormalObjectId``: a predefined role has a smaller oid and a name that starts with ``pg_`` (D-2)."""
 _MAX_CONNECTION_LIMIT = 2_147_483_647
 _MAX_OBJECT_CHARS = 4096
+_MAX_PASSWORD_CHARS = 1024
+"""A longer password is refused (P90-07): SASLprep and hashing a megabyte cost time for nothing."""
+_HIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+"""Control, format (bidirectional overrides among them) and separator characters: refused in a new role name
+(P90-05), they make a name look like another one in a preview or a list."""
 
 _ATTRIBUTES = ("login", "inherit", "createdb", "createrole", "replication", "superuser", "bypass_rls")
 """``RolePrivileges.attributes`` in this order; the last four are the banned ones (E-X6)."""
 _BANNED = ("superuser", "bypass_rls", "createrole", "replication")
+_CALLER_BANNED = ("superuser", "bypass_rls", "replication")
+"""Attributes of the connecting role (``CURRENT_USER`` or ``SESSION_USER``) that make every change refuse (P90-01);
+and of an object's owner that make ``grant_privileges`` refuse the object. CREATEROLE is the admin profile's own
+attribute (E-X6) and gives no access to data or files on PostgreSQL 16."""
+_SERVER_ACCESS = ("pg_execute_server_program", "pg_read_server_files", "pg_write_server_files")
+"""Predefined roles that are superuser-equivalent (programs and files of the server's operating system user): a role
+that is or reaches one is treated as one with a banned attribute (P90-02), finding ``server_access:<role>``."""
+_UNSAFE_KINDS = (*_BANNED, "server_access")
 
 # The privileges each object kind takes (PostgreSQL's GRANT). TRIGGER is never grantable (K-2); revoking it is allowed,
 # so an existing finding can be removed. No ALL, no TEMPORARY, no MAINTAIN.
@@ -130,9 +150,14 @@ class RolePrivileges:
     """Every role reachable through membership with INHERIT, the SET option or the ADMIN option, sorted."""
     dangerous: tuple[str, ...]
     """``superuser:<role>``, ``bypass_rls:<role>``, ``createrole:<role>``, ``replication:<role>``,
-    ``createrole_pre16``, ``trigger:<table>``, ``security_definer:<function>``, ``schema_create:<schema>``; sorted."""
+    ``server_access:<predefined role>``, ``createrole_pre16``, ``trigger:<table>``, ``security_definer:<function>``,
+    ``schema_create:<schema>``; sorted."""
     broad: tuple[str, ...]
     """``broad:<role>`` for each reachable predefined role, sorted (a finding, D-2)."""
+    public_definers: tuple[str, ...]
+    """SECURITY DEFINER functions of the current database that PUBLIC may execute (every role, a new one too) and
+    whose owner the role does not reach: ``superuser_owner:<function>`` when the owner has SUPERUSER, else
+    ``definer:<function>``; sorted. A finding of the database, not of the role: not in ``dangerous`` (P90-03)."""
     owned_objects: int
     """Objects the role owns in any database of the cluster (``pg_shdepend``), default privileges not counted."""
     default_privileges: int
@@ -151,6 +176,7 @@ class RolePrivileges:
             "reachable": list(self.reachable),
             "dangerous": list(self.dangerous),
             "broad": list(self.broad),
+            "public_definers": list(self.public_definers),
             "owned_objects": self.owned_objects,
             "default_privileges": self.default_privileges,
             "safe": self.safe,
@@ -209,6 +235,15 @@ def _check_name(value: object, parameter: str) -> str:
     return value
 
 
+def _check_new_name(value: object) -> str:
+    """A name for ``create_role``: as :func:`_check_name`, not ``pg_...`` (reserved for predefined roles) and without
+    a character of the categories Cc, Cf, Zl and Zp (P90-05)."""
+    name = _check_name(value, "role")
+    if name.startswith("pg_") or any(unicodedata.category(ch) in _HIDDEN_CATEGORIES for ch in name):
+        raise _invalid("role")
+    return name
+
+
 def _check_options(options: object) -> RoleOptions:
     if not isinstance(options, RoleOptions):
         raise _invalid("options")
@@ -228,7 +263,7 @@ def _secret(password: object) -> tuple[_Secret | None, UsageError | None]:
     """The password in a :class:`_Secret`, or the error to raise; this frame never raises, so no traceback holds it."""
     if password is None:
         return None, None
-    if not isinstance(password, str) or not password or "\x00" in password:
+    if not isinstance(password, str) or not password or "\x00" in password or len(password) > _MAX_PASSWORD_CHARS:
         return None, _invalid("password")
     try:
         password.encode("utf-8")
@@ -351,6 +386,25 @@ _ESCALATION_SQL = (
     "   OR NOT n.nspowner OPERATOR(pg_catalog.=) ANY (%(reach)s::pg_catalog.oid[]))"
 )
 
+# P90-03: SECURITY DEFINER functions of the current database that PUBLIC may execute (the default ACL when ``proacl``
+# is NULL grants EXECUTE to PUBLIC), owned by a role the role does not reach. Each row: name, the owner is superuser.
+_PUBLIC_DEFINER_SQL = (
+    "SELECT pg_catalog.format('%%I.%%I(%%s)', n.nspname, p.proname,"
+    "   pg_catalog.pg_get_function_identity_arguments(p.oid)), o.rolsuper"
+    " FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace"
+    " JOIN pg_catalog.pg_roles o ON o.oid OPERATOR(pg_catalog.=) p.proowner,"
+    " LATERAL pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) a"
+    " WHERE p.prosecdef AND a.privilege_type OPERATOR(pg_catalog.=) 'EXECUTE'"
+    " AND a.grantee OPERATOR(pg_catalog.=) 0::pg_catalog.oid"
+    " AND NOT p.proowner OPERATOR(pg_catalog.=) ANY (%(reach)s::pg_catalog.oid[])"
+)
+
+# P90-01: the banned attributes of the session's roles (CURRENT_USER and SESSION_USER).
+_CALLER_SQL = (
+    "SELECT r.rolsuper, r.rolbypassrls, r.rolreplication FROM pg_catalog.pg_roles r"
+    " WHERE r.rolname OPERATOR(pg_catalog.=) CURRENT_USER OR r.rolname OPERATOR(pg_catalog.=) SESSION_USER"
+)
+
 # Dependencies on the role in every database of the cluster (pg_shdepend): owned objects (deptype 'o') without the
 # default privileges, and the default privileges of the role or for it.
 _DEPENDENCIES_SQL = (
@@ -390,10 +444,17 @@ def _read_state(
             reachable.append(str(name))
             if predefined:
                 broad.append(f"broad:{name}")
+        if predefined and name in _SERVER_ACCESS:
+            dangerous.add(f"server_access:{name}")  # P90-02: superuser-equivalent
     if createrole and server_version < _ROLE_DDL_VERSION:
         dangerous.add("createrole_pre16")  # D-1: CREATEROLE before 16 is superuser-equivalent
-    cursor.execute(_ESCALATION_SQL, {"reach": [int(other) for other, *_ in reach]})
+    reach_oids = [int(other) for other, *_ in reach]
+    cursor.execute(_ESCALATION_SQL, {"reach": reach_oids})
     dangerous.update(f"{kind}:{name}" for kind, name in cursor.fetchall())
+    cursor.execute(_PUBLIC_DEFINER_SQL, {"reach": reach_oids})
+    public_definers = sorted(
+        f"{'superuser_owner' if superuser else 'definer'}:{name}" for name, superuser in cursor.fetchall()
+    )
     cursor.execute(_MEMBER_OF_SQL, (oid,))
     member_of = sorted(str(name) for (name,) in cursor.fetchall())
     cursor.execute(_DEPENDENCIES_SQL, (oid,))
@@ -405,6 +466,7 @@ def _read_state(
         reachable=tuple(sorted(reachable)),
         dangerous=tuple(sorted(dangerous)),
         broad=tuple(sorted(broad)),
+        public_definers=tuple(public_definers),
         owned_objects=int(owned),
         default_privileges=int(defaults),
     )
@@ -479,12 +541,27 @@ def _refuse(reasons: Sequence[str]) -> None:
         raise RoleUnsafe("postgres.role_unsafe", details={"reasons": ",".join(unique)})
 
 
+def _check_caller(cursor: psycopg.Cursor[tuple[Any, ...]]) -> None:
+    """P90-01: no change by a session whose ``CURRENT_USER`` or ``SESSION_USER`` has SUPERUSER, BYPASSRLS or
+    REPLICATION. Such a session can grant what the checks of a target cannot see (EXECUTE on a server file function,
+    SELECT on ``pg_authid``); the admin profile is a role with CREATEROLE only (E-X6). Raises
+    ``RoleUnsafe("postgres.caller_unsafe")``, ``details["reasons"]`` the attributes found."""
+    cursor.execute(_CALLER_SQL)
+    found: set[str] = set()
+    for row in cursor.fetchall():
+        found.update(kind for kind, flag in zip(_CALLER_BANNED, row, strict=True) if flag)
+    if found:
+        reasons = ",".join(kind for kind in _CALLER_BANNED if kind in found)
+        raise RoleUnsafe("postgres.caller_unsafe", details={"reasons": reasons})
+
+
 def _attribute_reasons(privileges: RolePrivileges, *, own: bool = True) -> list[str]:
-    """``superuser`` (the role's own attribute) or ``reachable_superuser`` (a role it can reach), and so on."""
+    """``superuser`` (the role's own attribute) or ``reachable_superuser`` (a role it can reach), and so on; also
+    ``server_access``/``reachable_server_access`` for the superuser-equivalent predefined roles (P90-02)."""
     reasons: list[str] = []
     for entry in privileges.dangerous:
         kind, _, name = entry.partition(":")
-        if kind not in _BANNED:
+        if kind not in _UNSAFE_KINDS:
             continue
         reasons.append(kind if own and name == privileges.role else f"reachable_{kind}")
     return reasons
@@ -501,7 +578,8 @@ def _escalation_reasons(entries: Sequence[str]) -> list[str]:
 
 def _target_reasons(state: _State, *, increase: bool) -> list[str]:
     """A role Tabrion does not change: a predefined role, the session's own role and, for a change that adds
-    privileges, a role with a banned attribute or one that can reach such a role."""
+    privileges (LOGIN, a password, a membership, an object privilege), a role with a banned attribute, one that can
+    reach such a role or a superuser-equivalent predefined role (P90-02)."""
     reasons: list[str] = []
     if state.predefined:
         reasons.append("predefined_role")
@@ -518,7 +596,7 @@ def _new_findings(before: RolePrivileges, after: RolePrivileges) -> list[str]:
     reasons: list[str] = []
     for entry in added:
         kind, _, name = entry.partition(":")
-        if kind in _BANNED:
+        if kind in _UNSAFE_KINDS:
             reasons.append(kind if name == after.role else f"reachable_{kind}")
     reasons.extend(_escalation_reasons(added))
     if any(entry not in before.broad for entry in after.broad):
@@ -605,8 +683,11 @@ def create_role(
     """``CREATE ROLE role WITH NOSUPERUSER NOCREATEROLE NOREPLICATION NOBYPASSRLS <options> [PASSWORD <verifier>]``.
 
     PostgreSQL 16 or later (``UsageError("postgres.role_ddl_requires_16")``), a transaction of its own
-    (``UsageError("postgres.nested_transaction")``). ``UsageError("postgres.role_exists")`` for an existing role. The
-    password is hashed on the client and sent as a SCRAM-SHA-256 verifier; it is never logged or part of an error.
+    (``UsageError("postgres.nested_transaction")``), a session without SUPERUSER, BYPASSRLS and REPLICATION
+    (``RoleUnsafe("postgres.caller_unsafe")``, as every change). ``UsageError("postgres.role_exists")`` for an existing
+    role; ``UsageError("postgres.invalid_argument")`` for a name that starts with ``pg_`` or holds a character of the
+    Unicode categories Cc, Cf, Zl or Zp, and for a password longer than 1024 characters. The password is hashed on the
+    client and sent as a SCRAM-SHA-256 verifier; it is never logged or part of an error.
     Returns the new role's :func:`role_privileges`, read in the same transaction. Contract section 4.9, I-180..I-183.
     """
     secret, problem = _secret(password)
@@ -614,9 +695,7 @@ def create_role(
     try:
         if problem is not None:
             raise problem
-        name = _check_name(role, "role")
-        if name.startswith("pg_"):
-            raise _invalid("role")  # reserved for predefined roles
+        name = _check_new_name(role)
         chosen = _check_options(options)
         _start(connection, "create_role")
     except BaseException:
@@ -628,6 +707,7 @@ def create_role(
 
     def body() -> RolePrivileges:
         with _transaction(connection) as cursor:
+            _check_caller(cursor)
             cursor.execute(
                 "SELECT 1 FROM pg_catalog.pg_roles r"
                 " WHERE r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text",
@@ -666,7 +746,9 @@ def alter_role(
     At least one of ``options`` and ``password`` (``UsageError("postgres.invalid_argument")``). Refused before the
     statement (``RoleUnsafe``): a predefined role (``predefined_role``), the session's own role (``current_user``), a
     role with SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION (``superuser``, ``bypass_rls``, ``createrole``,
-    ``replication``) or that can reach one (``reachable_*``). ``RoleMissing`` for an unknown role. Returns the role's
+    ``replication``) or that can reach one (``reachable_*``), a role that is or reaches ``pg_execute_server_program``,
+    ``pg_read_server_files`` or ``pg_write_server_files`` (``reachable_server_access``, P90-02). ``RoleMissing`` for
+    an unknown role. Returns the role's
     :func:`role_privileges` after the change. Contract section 4.9, I-180..I-183.
     """
     secret, problem = _secret(password)
@@ -688,6 +770,7 @@ def alter_role(
 
     def body() -> RolePrivileges:
         with _transaction(connection) as cursor:
+            _check_caller(cursor)
             before = _read_state(cursor, name, version)
             _refuse(_target_reasons(before, increase=True))
             clauses: list[sql.Composable] = []
@@ -727,6 +810,7 @@ def drop_role(connection: psycopg.Connection[Any], role: str) -> None:
 
     def body() -> None:
         with _transaction(connection) as cursor:
+            _check_caller(cursor)
             state = _read_state(cursor, name, version)
             reasons = _target_reasons(state, increase=False)
             if state.privileges.owned_objects or state.privileges.default_privileges:
@@ -757,6 +841,7 @@ def grant_membership(connection: psycopg.Connection[Any], role: str, *, member: 
 
     def body() -> RolePrivileges:
         with _transaction(connection) as cursor:
+            _check_caller(cursor)
             granted = _read_state(cursor, name, version)
             before = _read_state(cursor, grantee, version, "member")
             reasons = _attribute_reasons(granted.privileges, own=False)
@@ -796,6 +881,7 @@ def revoke_membership(connection: psycopg.Connection[Any], role: str, *, member:
 
     def body() -> RolePrivileges:
         with _transaction(connection) as cursor:
+            _check_caller(cursor)
             _read_state(cursor, name, version)
             before = _read_state(cursor, grantee, version, "member")
             _refuse(_target_reasons(before, increase=False))
@@ -812,6 +898,8 @@ class _Resolved:
     owner: int
     security_definer: bool
     public: bool
+    namespace: str | None
+    """The object's schema; for a schema its own name; ``None`` for a database."""
 
 
 def _denied(code: str) -> PermissionDenied:
@@ -861,7 +949,9 @@ def _resolve(
             row = cursor.fetchone()
             if row is None:
                 raise _missing(index)
-            resolved.append(_Resolved(sql.Identifier(parts[0], parts[1]), int(row[0]), int(row[1]), False, False))
+            resolved.append(
+                _Resolved(sql.Identifier(parts[0], parts[1]), int(row[0]), int(row[1]), False, False, parts[0])
+            )
         elif on == "function":
             try:
                 with connection.transaction():  # a savepoint: a text the server cannot parse raises (42601 and others)
@@ -889,7 +979,7 @@ def _resolve(
             )
             arguments = sql.SQL(", ").join(sql.Identifier(schema, name) for schema, name in cursor.fetchall())
             target = sql.SQL("{}({})").format(sql.Identifier(parts[0], parts[1]), arguments)
-            resolved.append(_Resolved(target, int(row[0]), int(row[3]), bool(row[4]), False))
+            resolved.append(_Resolved(target, int(row[0]), int(row[3]), bool(row[4]), False, parts[0]))
         elif on == "schema":
             cursor.execute(
                 "SELECT n.oid, n.nspowner FROM pg_catalog.pg_namespace n"
@@ -899,7 +989,9 @@ def _resolve(
             row = cursor.fetchone()
             if row is None:
                 raise _missing(index)
-            resolved.append(_Resolved(sql.Identifier(parts[0]), int(row[0]), int(row[1]), False, parts[0] == "public"))
+            resolved.append(
+                _Resolved(sql.Identifier(parts[0]), int(row[0]), int(row[1]), False, parts[0] == "public", parts[0])
+            )
         else:
             cursor.execute(
                 "SELECT d.oid, d.datdba FROM pg_catalog.pg_database d"
@@ -909,8 +1001,29 @@ def _resolve(
             row = cursor.fetchone()
             if row is None:
                 raise _missing(index)
-            resolved.append(_Resolved(sql.Identifier(parts[0]), int(row[0]), int(row[1]), False, False))
+            resolved.append(_Resolved(sql.Identifier(parts[0]), int(row[0]), int(row[1]), False, False, None))
     return resolved
+
+
+def _system_object(target: _Resolved) -> bool:
+    """An object of the system (P90-01): an oid below ``FirstNormalObjectId`` (made by ``initdb``: ``pg_catalog``,
+    ``public``, ``postgres``, the template databases) or in ``information_schema`` or a ``pg_`` schema
+    (``pg_catalog``, ``pg_toast``, ``pg_temp_*``; PostgreSQL reserves the prefix)."""
+    if target.oid < _FIRST_NORMAL_OID:
+        return True
+    namespace = target.namespace
+    return namespace is not None and (namespace.startswith("pg_") or namespace == "information_schema")
+
+
+def _unsafe_owners(cursor: psycopg.Cursor[tuple[Any, ...]], targets: list[_Resolved]) -> bool:
+    """Some object is owned by a role with SUPERUSER, BYPASSRLS or REPLICATION (P90-01): a view of it reads with the
+    owner's rights, a function of it may call what only a superuser may grant."""
+    cursor.execute(
+        "SELECT pg_catalog.bool_or(r.rolsuper OR r.rolbypassrls OR r.rolreplication) FROM pg_catalog.pg_roles r"
+        " WHERE r.oid OPERATOR(pg_catalog.=) ANY (%s::pg_catalog.oid[])",
+        ([target.owner for target in targets],),
+    )
+    return bool(one_row(cursor)[0])
 
 
 # The catalog and ACL column of each object kind (fixed names, composed with psycopg.sql.Identifier).
@@ -985,7 +1098,9 @@ def grant_privileges(
     ``UsageError("postgres.invalid_argument")``, ``UsageError("postgres.object_missing")`` (details ``index``).
     Refused (``RoleUnsafe``): the target reasons of :func:`alter_role`; ``security_definer`` for EXECUTE on a
     SECURITY DEFINER function ``role`` does not own; ``schema_create`` for CREATE on ``public`` or on a schema ``role``
-    does not own. Contract section 4.9, I-183, I-186.
+    does not own; ``system_object`` for an object of the system (an oid below 16384, ``information_schema`` or a
+    ``pg_`` schema); ``object_owner`` for an object whose owner has SUPERUSER, BYPASSRLS or REPLICATION. Contract
+    section 4.9, I-183, I-186.
     """
     name = _check_name(role, "role")
     chosen = _check_privileges(privileges, on, _GRANTABLE)
@@ -995,6 +1110,7 @@ def grant_privileges(
 
     def body() -> RolePrivileges:
         with _transaction(connection) as cursor:
+            _check_caller(cursor)
             _local_search_path(cursor)
             before = _read_state(cursor, name, version)
             reasons = _target_reasons(before, increase=True)
@@ -1003,6 +1119,10 @@ def grant_privileges(
                 reasons.append("security_definer")
             if on == "schema" and "CREATE" in chosen and any(t.public or t.owner != before.oid for t in targets):
                 reasons.append("schema_create")
+            if any(_system_object(t) for t in targets):
+                reasons.append("system_object")
+            if _unsafe_owners(cursor, targets):
+                reasons.append("object_owner")
             _refuse(reasons)
             cursor.execute(_privilege_statement("GRANT", chosen, on, targets, name))
             _require_granted(cursor, on, targets, chosen, before.oid)
@@ -1035,6 +1155,7 @@ def revoke_privileges(
 
     def body() -> RolePrivileges:
         with _transaction(connection) as cursor:
+            _check_caller(cursor)
             _local_search_path(cursor)
             before = _read_state(cursor, name, version)
             _refuse(_target_reasons(before, increase=False))

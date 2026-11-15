@@ -179,6 +179,19 @@ def refused(env: Env, call: Callable[[], object], *reasons: str) -> RoleUnsafe:
     return caught.value
 
 
+def caller_refused(env: Env, call: Callable[[], object], *reasons: str) -> RoleUnsafe:
+    """``call`` raises ``RoleUnsafe("postgres.caller_unsafe")`` naming each of ``reasons`` and nothing but the three
+    caller attributes, and nothing changed (a bootstrap superuser also has BYPASSRLS and REPLICATION)."""
+    before = snapshot(env)
+    with pytest.raises(RoleUnsafe) as caught:
+        call()
+    assert caught.value.code == "postgres.caller_unsafe"
+    named = str(caught.value.details["reasons"]).split(",")
+    assert set(reasons) <= set(named) <= {"superuser", "bypass_rls", "replication"}, named
+    assert snapshot(env) == before
+    return caught.value
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # D-1: PostgreSQL 16 and later
 # ---------------------------------------------------------------------------------------------------------------------
@@ -300,10 +313,11 @@ def test_no_parameter_requests_a_banned_attribute(env: Env) -> None:
         "connection_limit",
         "valid_until",
     }
-    # Even a superuser connection creates a role without them, and with no membership of any kind.
+    # A superuser connection creates nothing (P90-01); the admin creates a role without them, with no membership.
     name = env.name()
-    created = create_role(env.su, name, options=RoleOptions(login=True, create_db=True))
-    assert created.attributes == ("login", "inherit", "createdb") and created.safe
+    caller_refused(env, lambda: create_role(env.su, name, options=RoleOptions(login=True)), "superuser")
+    created = create_role(env.adm, name, options=RoleOptions(login=True))
+    assert created.attributes == ("login", "inherit") and created.safe and created.member_of == ()
     row = env.su.execute(
         "SELECT rolsuper, rolbypassrls, rolcreaterole, rolreplication FROM pg_roles WHERE rolname = %s", (name,)
     ).fetchone()
@@ -359,9 +373,11 @@ def test_existing_predefined_membership_reported_broad(env: Env) -> None:
     assert "broad:pg_read_all_data" in found.broad and "broad:pg_monitor" in found.broad
     assert found.safe  # broad is a finding of its own, not dangerous
     assert found.as_dict()["broad"] == list(found.broad)
-    # Revoking such a membership is the way to remove the finding (as the superuser, who granted it).
-    cleaned = revoke_membership(env.su, "pg_read_all_data", member=member)
-    assert "broad:pg_read_all_data" not in cleaned.broad
+    # Revoking such a membership is the way to remove the finding; the superuser granted it, and a superuser session
+    # changes nothing through Tabrion (P90-01), so the superuser revokes it in SQL.
+    caller_refused(env, lambda: revoke_membership(env.su, "pg_read_all_data", member=member), "superuser")
+    env.su_sql("REVOKE pg_read_all_data FROM {}", member)
+    assert "broad:pg_read_all_data" not in role_privileges(env.adm, member).broad
     # The database owner reaches pg_database_owner implicitly.
     owner = env.su.execute("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()")
     assert "broad:pg_database_owner" in role_privileges(env.adm, str(owner.fetchone()[0])).broad
@@ -400,7 +416,8 @@ def test_execute_on_foreign_security_definer_refused(env: Env) -> None:
     )
     assert plain.safe
     env.su_sql("ALTER FUNCTION {}.definer(integer) OWNER TO {}", env.schema, target)
-    own = grant_privileges(env.su, target, privileges=["EXECUTE"], on="function", objects=[definer])
+    env.su_sql("GRANT EXECUTE ON FUNCTION {}.definer(integer) TO {} WITH GRANT OPTION", env.schema, env.admin)
+    own = grant_privileges(env.adm, target, privileges=["EXECUTE"], on="function", objects=[definer])
     assert own.safe
 
 
@@ -410,15 +427,16 @@ def test_create_on_public_or_foreign_schema_refused(env: Env) -> None:
         refused(
             env,
             lambda schema=schema: grant_privileges(  # type: ignore[misc]
-                env.su, target, privileges=["CREATE"], on="schema", objects=[schema]
+                env.adm, target, privileges=["CREATE"], on="schema", objects=[schema]
             ),
             "schema_create",
         )
     assert grant_privileges(env.adm, target, privileges=["USAGE"], on="schema", objects=[env.schema]).safe
     own = env.name("_s")
     env.su_sql("CREATE SCHEMA {} AUTHORIZATION {}", own, target)
+    env.su_sql("GRANT CREATE ON SCHEMA {} TO {} WITH GRANT OPTION", own, env.admin)
     try:
-        assert grant_privileges(env.su, target, privileges=["CREATE"], on="schema", objects=[own]).safe
+        assert grant_privileges(env.adm, target, privileges=["CREATE"], on="schema", objects=[own]).safe
     finally:
         env.su_sql("DROP SCHEMA {}", own)
 
@@ -532,7 +550,7 @@ def test_drop_role_refusals(env: Env) -> None:
     )
     refused(env, lambda: drop_role(env.adm, grantee), "owns_objects")
     refused(env, lambda: drop_role(env.adm, env.admin), "current_user", "owns_objects")
-    refused(env, lambda: drop_role(env.su, "pg_monitor"), "predefined_role")
+    refused(env, lambda: drop_role(env.adm, "pg_monitor"), "predefined_role")
 
 
 def test_drop_role_round_trip_and_held_privilege(env: Env) -> None:
@@ -593,18 +611,24 @@ def test_grant_and_revoke_each_object_kind(env: Env) -> None:
         assert f"{target}={letters}/{env.admin}" in acl, (on, acl)
         revoke_privileges(env.adm, target, privileges=privileges, on=on, objects=[name])
         assert target not in _acl(env, "table" if on == "sequence" else on, name)
-    database = str(env.su.execute("SELECT current_database()").fetchone()[0])
-    grant_privileges(env.su, target, privileges=["CONNECT"], on="database", objects=[database])
-    assert f"{target}=c/" in _acl(env, "database", database)
-    revoke_privileges(env.su, target, privileges=["CONNECT"], on="database", objects=[database])
-    assert target not in _acl(env, "database", database)
+    # A database the admin owns (the superuser's own databases are refused, P90-01: object_owner).
+    database = env.name("_db")
+    env.su_sql("CREATE DATABASE {} OWNER {}", database, env.admin)
+    try:
+        grant_privileges(env.adm, target, privileges=["CONNECT"], on="database", objects=[database])
+        assert f"{target}=c/{env.admin}" in _acl(env, "database", database)
+        revoke_privileges(env.adm, target, privileges=["CONNECT"], on="database", objects=[database])
+        assert target not in _acl(env, "database", database)
+    finally:
+        env.su_sql("DROP DATABASE {}", database)
 
 
 def test_grant_without_the_right_to_grant_is_refused(env: Env) -> None:
     """PostgreSQL only warns ("no privileges were granted"); Tabrion raises PermissionDenied and rolls back."""
     target = env.role()
+    owner = env.role(by_superuser=True)
     env.su_sql("CREATE TABLE {}.foreign_t (id int)", env.schema)
-    env.su_sql("ALTER TABLE {}.foreign_t OWNER TO CURRENT_USER", env.schema)
+    env.su_sql("ALTER TABLE {}.foreign_t OWNER TO {}", env.schema, owner)
     before = snapshot(env)
     # Without any privilege PostgreSQL itself refuses (42501), raised as the DatabaseError of its kind.
     with pytest.raises(PermissionDenied) as denied:
@@ -798,3 +822,197 @@ def test_result_is_a_role_privileges(env: Env) -> None:
     assert isinstance(found.as_dict(), dict)
     with pytest.raises(TabrionError):
         role_privileges(env.adm, "")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Review of #90: P90-01 (the caller, objects of the system), P90-02 (server access), P90-03 (PUBLIC definers)
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def _every_change(env: Env, conn: Any) -> list[Callable[[], object]]:
+    target = env.role()
+    other = env.role()
+    table = f"{env.schema}.t"
+    return [
+        lambda: create_role(conn, env.name(), options=RoleOptions(login=True), password=CANARY),
+        lambda: alter_role(conn, target, options=RoleOptions(login=True), password=CANARY),
+        lambda: drop_role(conn, target),
+        lambda: grant_membership(conn, other, member=target),
+        lambda: revoke_membership(conn, other, member=target),
+        lambda: grant_privileges(conn, target, privileges=["SELECT"], on="table", objects=[table]),
+        lambda: revoke_privileges(conn, target, privileges=["SELECT"], on="table", objects=[table]),
+    ]
+
+
+def test_superuser_caller_refused_for_every_change(env: Env, admin_url: str) -> None:
+    """P90-01: a superuser session changes nothing, also after SET ROLE to the admin (SESSION_USER counts)."""
+    for call in _every_change(env, env.su):
+        _assert_no_secret(caller_refused(env, call, "superuser"))
+    with psycopg.connect(admin_url) as su_as_admin:
+        su_as_admin.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(env.admin)))
+        su_as_admin.commit()
+        assert su_as_admin.execute("SELECT current_user").fetchone() == (env.admin,)
+        su_as_admin.commit()
+        caller_refused(env, lambda: create_role(su_as_admin, env.name()), "superuser")
+        assert su_as_admin.info.transaction_status == IDLE
+    # role_privileges only reads: a superuser session may.
+    assert role_privileges(env.su, env.admin).role == env.admin
+
+
+CALLER_ATTRIBUTES = [
+    ("BYPASSRLS", ("bypass_rls",)),
+    ("REPLICATION", ("replication",)),
+    ("BYPASSRLS REPLICATION", ("bypass_rls", "replication")),
+]
+
+
+@pytest.mark.parametrize(("attributes", "reasons"), CALLER_ATTRIBUTES)
+def test_caller_with_bypass_rls_or_replication_refused(env: Env, attributes: str, reasons: tuple[str, ...]) -> None:
+    """P90-01: an admin profile with BYPASSRLS or REPLICATION besides CREATEROLE changes nothing either."""
+    caller = env.name()
+    password = secrets.token_hex(16)
+    env.su.execute(
+        sql.SQL("CREATE ROLE {} LOGIN CREATEROLE {} PASSWORD {}").format(
+            sql.Identifier(caller), sql.SQL(attributes), sql.Literal(password)
+        )
+    )
+    with psycopg.connect(with_params(env.url, user=caller, password=password)) as conn:
+        for call in _every_change(env, conn):
+            assert caller_refused(env, call, *reasons).details["reasons"] == ",".join(reasons)
+        assert conn.info.transaction_status == IDLE
+
+
+SYSTEM_OBJECTS: list[tuple[Any, list[Any], str]] = [
+    ("function", ["EXECUTE"], "pg_catalog.lo_export(oid, text)"),
+    ("function", ["EXECUTE"], "pg_catalog.pg_read_file(text)"),
+    ("function", ["EXECUTE"], "pg_catalog.pg_ls_dir(text)"),
+    ("table", ["SELECT"], "pg_catalog.pg_authid"),
+    ("table", ["SELECT", "UPDATE"], "pg_catalog.pg_authid"),
+    ("table", ["SELECT"], "pg_catalog.pg_statistic"),
+    ("table", ["SELECT"], "information_schema.tables"),
+    ("schema", ["USAGE"], "pg_catalog"),
+    ("schema", ["USAGE"], "public"),
+    ("schema", ["USAGE"], "information_schema"),
+    ("schema", ["USAGE"], "pg_toast"),
+    ("database", ["CONNECT"], "postgres"),
+    ("database", ["CONNECT"], "template1"),
+]
+
+
+def test_objects_of_the_system_refused(env: Env) -> None:
+    """P90-01: EXECUTE on the server's file functions, SELECT on pg_authid and other objects of the system are
+    refused before any statement, for any caller."""
+    target = env.role()
+    for on, privileges, name in SYSTEM_OBJECTS:
+        refused(
+            env,
+            lambda on=on, privileges=privileges, name=name: grant_privileges(  # type: ignore[misc]
+                env.adm, target, privileges=privileges, on=on, objects=[name]
+            ),
+            "system_object",
+        )
+    # One object of the system among others refuses the whole statement.
+    refused(
+        env,
+        lambda: grant_privileges(
+            env.adm, target, privileges=["SELECT"], on="table", objects=[f"{env.schema}.t", "pg_catalog.pg_authid"]
+        ),
+        "system_object",
+    )
+    found = role_privileges(env.adm, target)
+    assert found.safe and found.member_of == () and found.broad == ()
+
+
+def test_objects_of_a_superuser_owner_refused(env: Env) -> None:
+    """P90-01: a view or function a superuser owns reads with or calls what only a superuser may grant."""
+    target = env.role()
+    env.su_sql("CREATE VIEW {}.su_view AS SELECT rolname FROM pg_catalog.pg_authid", env.schema)
+    env.su_sql("CREATE FUNCTION {}.su_plain(integer) RETURNS int LANGUAGE sql AS 'SELECT 1'", env.schema)
+    env.su_sql("GRANT SELECT ON {}.su_view TO {} WITH GRANT OPTION", env.schema, env.admin)
+    env.su_sql("GRANT EXECUTE ON FUNCTION {}.su_plain(integer) TO {} WITH GRANT OPTION", env.schema, env.admin)
+    cases: list[tuple[Any, list[Any], str]] = [
+        ("table", ["SELECT"], f"{env.schema}.su_view"),
+        ("function", ["EXECUTE"], f"{env.schema}.su_plain(integer)"),
+    ]
+    for on, privileges, name in cases:
+        refused(
+            env,
+            lambda on=on, privileges=privileges, name=name: grant_privileges(  # type: ignore[misc]
+                env.adm, target, privileges=privileges, on=on, objects=[name]
+            ),
+            "object_owner",
+        )
+    # The owner's BYPASSRLS counts too; CREATEROLE (the admin's own attribute) does not.
+    bypass = env.role("BYPASSRLS", by_superuser=True)
+    env.su_sql("ALTER VIEW {}.su_view OWNER TO {}", env.schema, bypass)
+    env.su_sql("GRANT SELECT ON {}.su_view TO {} WITH GRANT OPTION", env.schema, env.admin)
+    refused(
+        env,
+        lambda: grant_privileges(env.adm, target, privileges=["SELECT"], on="table", objects=[f"{env.schema}.su_view"]),
+        "object_owner",
+    )
+    assert grant_privileges(env.adm, target, privileges=["SELECT"], on="table", objects=[f"{env.schema}.t"]).safe
+    revoke_privileges(env.adm, target, privileges=["SELECT"], on="table", objects=[f"{env.schema}.t"])
+
+
+@pytest.mark.parametrize("predefined", ["pg_execute_server_program", "pg_read_server_files", "pg_write_server_files"])
+@pytest.mark.parametrize("depth", [1, 2])
+def test_target_reaching_server_access_refused(env: Env, predefined: str, depth: int) -> None:
+    """P90-02: no LOGIN, password, membership or privilege for a role that is or reaches a superuser-equivalent
+    predefined role, directly or through a group (with any grant options)."""
+    target = env.role()
+    holder = target
+    if depth == 2:
+        holder = env.role()
+        env.su_sql("GRANT {} TO {} WITH INHERIT FALSE, SET FALSE, ADMIN TRUE", holder, target)
+    env.su_sql(f"GRANT {predefined} TO {{}}", holder)
+    found = role_privileges(env.adm, target)
+    assert f"server_access:{predefined}" in found.dangerous and not found.safe
+    assert f"broad:{predefined}" in found.broad
+    group = env.role()
+    calls: list[Callable[[], object]] = [
+        lambda: alter_role(env.adm, target, options=RoleOptions(login=True), password=CANARY),
+        lambda: alter_role(env.adm, target, password=CANARY),
+        lambda: grant_membership(env.adm, group, member=target),
+        lambda: grant_privileges(env.adm, target, privileges=["SELECT"], on="table", objects=[f"{env.schema}.t"]),
+    ]
+    for call in calls:
+        _assert_no_secret(refused(env, call, "reachable_server_access"))
+    # A group that reaches it is not granted to anyone.
+    member = env.role()
+    refused(env, lambda: grant_membership(env.adm, holder, member=member), "reachable_server_access")
+    # A removing change stays possible.
+    drop_role(env.adm, member)
+
+
+def test_public_security_definer_reported_not_refused(env: Env) -> None:
+    """P90-03: SECURITY DEFINER functions PUBLIC may execute are a finding of the database, reported separately and
+    with a superuser owner highlighted; they change neither ``safe`` nor a refusal."""
+    env.su_sql(
+        "CREATE FUNCTION {}.su_definer() RETURNS name LANGUAGE sql SECURITY DEFINER AS 'SELECT current_user'",
+        env.schema,
+    )
+    target = create_role(env.adm, env.name())
+    expected = {f"superuser_owner:{env.schema}.su_definer()", f"definer:{env.schema}.definer(integer)"}
+    assert expected <= set(target.public_definers)
+    assert target.safe and target.as_dict()["public_definers"] == list(target.public_definers)
+    assert all(not entry.startswith(("superuser_owner", "definer")) for entry in target.dangerous)
+    # The owner's own function is not reported for the owner (it can run it as itself anyway).
+    assert f"definer:{env.schema}.definer(integer)" not in role_privileges(env.adm, env.admin).public_definers
+    # A grant made only to some roles is not a PUBLIC one: after REVOKE ... FROM PUBLIC it is gone.
+    env.su_sql("REVOKE EXECUTE ON FUNCTION {}.su_definer() FROM PUBLIC", env.schema)
+    env.su_sql("REVOKE EXECUTE ON FUNCTION {}.definer(integer) FROM PUBLIC", env.schema)
+    after = role_privileges(env.adm, target.role)
+    assert not expected & set(after.public_definers)
+    # Granting to the new role still works (not a refusal).
+    assert grant_privileges(env.adm, target.role, privileges=["USAGE"], on="schema", objects=[env.schema]).safe
+
+
+def test_new_role_name_with_bidi_override_refused(env: Env) -> None:
+    """P90-05: a new name with a RIGHT-TO-LEFT OVERRIDE (or another Cc, Cf, Zl, Zp character) is refused."""
+    before = snapshot(env)
+    for suffix in ("\u202etxt", "\u200b", "\x1b"):
+        with pytest.raises(UsageError) as caught:
+            create_role(env.adm, new_name() + suffix)
+        assert dict(caught.value.details) == {"parameter": "role"}
+    assert snapshot(env) == before

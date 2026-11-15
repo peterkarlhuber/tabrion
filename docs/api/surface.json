@@ -929,6 +929,7 @@
         "reachable: tuple[str, ...]",
         "dangerous: tuple[str, ...]",
         "broad: tuple[str, ...]",
+        "public_definers: tuple[str, ...]",
         "owned_objects: int",
         "default_privileges: int"
       ],
@@ -937,7 +938,7 @@
     },
     "tabrion.postgres.RolePrivileges.__init__": {
       "kind": "method",
-      "signature": "(self, role: str, attributes: tuple[str, ...], member_of: tuple[str, ...], reachable: tuple[str, ...], dangerous: tuple[str, ...], broad: tuple[str, ...], owned_objects: int, default_privileges: int) -> None",
+      "signature": "(self, role: str, attributes: tuple[str, ...], member_of: tuple[str, ...], reachable: tuple[str, ...], dangerous: tuple[str, ...], broad: tuple[str, ...], public_definers: tuple[str, ...], owned_objects: int, default_privileges: int) -> None",
       "since": "0.3",
       "stability": "X"
     },

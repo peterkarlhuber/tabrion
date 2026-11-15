@@ -212,7 +212,11 @@ memberships, every role it can reach through membership (with `INHERIT`, `SET` o
 grant the membership to itself), and two kinds of findings. `dangerous` names a reachable SUPERUSER, BYPASSRLS,
 CREATEROLE or REPLICATION role (`"superuser:<role>"` ...), CREATEROLE before PostgreSQL 16 and the escalation grants
 `TRIGGER` on a relation, `EXECUTE` on another role's `SECURITY DEFINER` function and `CREATE` on `public` or another
-role's schema; `broad` names reachable predefined `pg_*` roles. `safe` is `not dangerous`.
+role's schema, and a reachable `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`
+(`"server_access:<role>"`: programs and files of the server's operating system user); `broad` names reachable
+predefined `pg_*` roles. `safe` is `not dangerous`. `public_definers` names the `SECURITY DEFINER` functions every
+role may execute (granted to PUBLIC, PostgreSQL's default), `"superuser_owner:<function>"` when a superuser owns it:
+a finding of the database, so revoke `EXECUTE` from PUBLIC on them.
 
 ```pycon
 >>> privileges = postgres.role_privileges(conn, os.environ["APP_ROLE"])
@@ -227,15 +231,21 @@ tabrion.errors.UsageError: postgres.invalid_argument (parameter=privileges)
 `create_role`, `alter_role` (with `RoleOptions`: login, inherit, create database, connection limit, expiry),
 `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges` and `revoke_privileges` change roles on
 PostgreSQL 16 and later, each in a transaction of its own. Run them from a separate **admin profile** with
-`CREATEROLE` and nothing more (profile mode `admin`), never as a superuser. There is no parameter for SUPERUSER,
+`CREATEROLE` and nothing more (profile mode `admin`), never as a superuser: a session whose user has SUPERUSER,
+BYPASSRLS or REPLICATION is refused (`RoleUnsafe` with the code `postgres.caller_unsafe`). The mode `admin` is only a
+label; give the profile `sslmode=verify-full` for a remote host and SCRAM authentication. There is no parameter for SUPERUSER,
 BYPASSRLS, CREATEROLE, REPLICATION, `WITH ADMIN OPTION` or `WITH GRANT OPTION`, and `TRIGGER` is not grantable. Each
 function checks the target right before and again right after its statement and refuses with `RoleUnsafe`
 (`details["reasons"]`) a membership in a role that has or reaches one of the four attributes or a predefined role,
 `EXECUTE` on another role's `SECURITY DEFINER` function, `CREATE` on `public` or another role's schema, a change to a
-role that has or reaches one of the attributes, and any change to your own session's role. `drop_role` refuses a role
+role that has or reaches one of the attributes or one of the three server-access roles, privileges on objects of the
+system (`pg_catalog`, `information_schema`, `public` and other objects made by `initdb`) or on objects a superuser
+owns, and any change to your own session's role. `drop_role` refuses a role
 that owns objects or has default privileges; it never reassigns or drops them for you. Table, sequence and function
 names are schema-qualified in SQL syntax (`app.parts`, `app."Mixed Case"`, `app.total(integer)`). A password is
-hashed on your side and sent only as a SCRAM-SHA-256 verifier, and it never appears in an error.
+hashed on your side and sent only as a SCRAM-SHA-256 verifier (at most 1 024 characters), and it never appears in an
+error. Read `role_privileges` again after a change: a membership another administrator commits at the same moment is
+not seen by the check.
 
 ## Errors without values
 

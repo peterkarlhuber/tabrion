@@ -39,7 +39,8 @@
 > `create_database`, `drop_database`, `database_sessions`, contract section 4.8); counts unchanged.
 > TAB-XW-8 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw8`): TB-149 stays in progress, TAB-XW-8 done (role
 > DDL with the attribute ban, also indirect, contract section 4.9; profile mode `admin`); note N-1 of the security
-> review of #88 folded in (`delete_database_file` also checks the directory's owner); counts unchanged.
+> review of #88 folded in (`delete_database_file` also checks the directory's owner); security review of #90 folded in
+> (P90-01..P90-07, Studio items before G-S4 listed under TB-149); counts unchanged.
 
 ## Summary
 
@@ -696,6 +697,20 @@ required (owner decision of 2026-11-08 11:26Z).
   Note N-1 of the security review of #88 (Info) in the same pull request: `delete_database_file` also refuses a
   directory owned by another user than the effective user and root (`sqlite.unsafe_owner`); ACLs are not evaluated
   (SECURITY.md).
+  Security review of #90 (ACCEPTED with conditions) folded in, in code: P90-01 every change refuses a session whose
+  current or session user has SUPERUSER, BYPASSRLS or REPLICATION (`postgres.caller_unsafe`), `grant_privileges`
+  refuses objects of the system (`system_object`) and of an owner with one of these attributes (`object_owner`);
+  P90-02 a role that is or reaches `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`
+  counts as one with a banned attribute (`reachable_server_access`); P90-03 `RolePrivileges.public_definers`;
+  P90-05 new role names without Cc, Cf, Zl, Zp characters; P90-07 passwords at most 1 024 characters; P90-04 and
+  P90-06 documented as residual risks (I-182).
+  **Open for Studio before G-S4 (STU-XW, D-14):** the preview warns about `public_definers` (a `superuser_owner`
+  entry first) and about CREATE on a database (trusted extensions); Studio reads `role_privileges` again after each
+  commit and shows any difference (P90-06); before a membership change it checks every database it can connect to or
+  shows that the K-2 check covers the current database only (P90-04); it escapes control and bidirectional
+  characters of existing role names in every display (P90-05); its rules for an `admin` profile are at least those of
+  a write profile (`verify-full` for a remote host, SCRAM; P90-07). A database-wide `tabrion.check` rule for PUBLIC
+  definers is not built (P90-03, follow-up).
 - **Decided (owner, 2026-11-15 06:37Z, confirmed 06:38Z): drift blind spots, D-5 in
   [ADR 0015 section 10](adr/0015-crdbx-write-and-ddl-primitives.md#10-d-5-drift-blind-spots-of-the-level-2-fingerprint-owner-decision-of-2026-11-15)**
   (review of #85, F2; I-111 d). (1) Triggers and RLS policies go into the level-2 fingerprint with the functions they
