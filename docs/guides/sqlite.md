@@ -246,8 +246,40 @@ MigrationResult(previous=2, current=3, backed_up=True)
 >>> backup_conn.close()
 ```
 
-There is no `restore()`: replacing an open database is product specific. Close every connection, move the backup
-file into place, and open again.
+## Restore and delete (0.3, experimental)
+
+`restore` (since 0.3, experimental) copies a backup file back with the same online backup API, in one step, so other
+connections of the target see the old or the new database and never a mix. It checks the source with
+`integrity_check` before it writes anything and the target after the copy; a new target is created `0600`, an
+existing one needs `overwrite=True` and must itself be a SQLite database. A target that another connection holds
+(a transaction, for longer than 5 s) raises `DatabaseInUse` and stays as it was. Back up the target first: Tabrion
+does not.
+
+```pycon
+>>> restored = sqlite.restore("shop-backup.db", "shop-restored.db")
+>>> restored.integrity_check, restored.path.name
+('ok', 'shop-restored.db')
+>>> sqlite.restore("shop-backup.db", "shop-restored.db")
+Traceback (most recent call last):
+  ...
+FileExistsError: ...
+```
+
+`delete_database_file` deletes a database file with its `-wal`, `-shm` and `-journal` files and returns what it
+deleted. It refuses a link and a file that is not a SQLite database, and it takes SQLite's exclusive lock first: a
+database another connection holds (in WAL mode any open connection) raises `DatabaseInUse`. An idle connection in
+rollback mode holds no lock, so close your own connections first. On POSIX it also refuses a database whose directory
+the group or other users may write (`UnsafePath("sqlite.unsafe_mode")`, sticky bit or not): keep databases in a
+directory only you can write.
+
+```pycon
+>>> [path.name for path in sqlite.delete_database_file("shop-restored.db")]
+['shop-restored.db']
+>>> sqlite.delete_database_file("shop.db")
+Traceback (most recent call last):
+  ...
+tabrion.errors.DatabaseInUse: sqlite.in_use
+```
 
 ## Integrity checks and diagnosis
 

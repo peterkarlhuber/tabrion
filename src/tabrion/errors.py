@@ -37,6 +37,7 @@ __all__ = [
     "ConfigurationError",
     "ConnectionFailed",
     "DatabaseError",
+    "DatabaseInUse",
     "DbErrorRedactionFilter",
     "IntegrityViolation",
     "Kind",
@@ -1334,4 +1335,12 @@ class RowCountMismatch(TabrionError):
     """Codes ``transaction.rowcount_mismatch`` (details ``expected``, ``actual``) and ``transaction.too_many_rows``
     (details ``limit``, ``actual``), raised by ``Transaction.execute_checked`` (since 0.3, experimental; contract
     section 5.11). An optimistic conflict of ``tabrion.rowedit`` is this error with ``actual`` 0.
+    """
+
+
+class DatabaseInUse(TabrionError):
+    """Codes ``postgres.database_in_use`` (details ``sessions``, the number of other sessions on the database) and
+    ``sqlite.in_use`` (another connection holds the database file), raised by ``tabrion.postgres.drop_database`` and
+    ``tabrion.sqlite.restore`` and ``delete_database_file`` (since 0.3, experimental; contract sections 3.10 and
+    4.8). Nothing was changed.
     """

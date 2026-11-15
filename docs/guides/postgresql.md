@@ -177,6 +177,34 @@ psycopg.errors.InsufficientPrivilege: permission denied for table app_schema_mig
 
 The function is idempotent; run it after every migration. `inspect_role` reads the same report without granting.
 
+## Creating and dropping databases (0.3, experimental)
+
+`create_database(conn, name, owner=..., template=..., encoding=..., locale=...)` and `drop_database(conn, name,
+force=...)` (since 0.3, experimental) run `CREATE DATABASE` and `DROP DATABASE` with every name quoted by
+`psycopg.sql.Identifier`. Both statements cannot run inside a transaction, so both functions need a connection in
+autocommit mode that is idle; Tabrion never switches it for you. `create_database` checks `CREATEDB` (and that you may
+become `owner`) first and raises `PermissionDenied`. `drop_database` refuses `postgres`, `template0`, `template1`, any
+template and the database you are connected to, and a database with other sessions (`DatabaseInUse`, with the number
+of sessions) unless you pass `force=True` (`WITH (FORCE)`, which ends them). `database_sessions` counts the other
+sessions for a preview.
+
+```pycon
+>>> postgres.database_sessions(conn, "no_such_database")
+0
+>>> postgres.drop_database(conn, "postgres")
+Traceback (most recent call last):
+  ...
+tabrion.errors.UsageError: postgres.database_protected
+>>> with psycopg.connect(os.environ["DATABASE_URL"]) as in_transaction_mode:
+...     postgres.drop_database(in_transaction_mode, "no_such_database")
+Traceback (most recent call last):
+  ...
+tabrion.errors.UsageError: postgres.autocommit_required
+```
+
+Tabrion asks for no confirmation: the typed name and the backup before a drop are your application's. A `pg_dump`
+archive is not a complete backup: global roles, role memberships, tablespaces and other cluster objects are not in it.
+
 ## Errors without values
 
 `classify` and `safe_message` from [`tabrion.errors`](errors.md) work on psycopg errors. The PostgreSQL `DETAIL`

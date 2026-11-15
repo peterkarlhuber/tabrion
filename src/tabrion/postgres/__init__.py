@@ -2,7 +2,8 @@
 
 Contract: ``docs/api/contract.md`` section 4. ``configure``, ``session_configurator``, ``ping``, ``diagnose`` and
 ``extension_status`` are implemented (TAB-015), the reading role functions too (TAB-016, ``tabrion.postgres.roles``);
-``grant_runtime_role`` (TAB-031) and the locks (TAB-030) are still stubs.
+``grant_runtime_role`` (TAB-031) and the locks (TAB-030) are still stubs. Since 0.3 (experimental, TAB-XW-9) also
+``create_database``, ``drop_database`` and ``database_sessions`` (section 4.8; private module ``_databases``).
 
 psycopg is imported inside the functions only: ``tabrion.Profile`` (layer B, extra ``sqlalchemy``) holds a
 ``SessionSettings``, and a SQLite-only application installs SQLAlchemy without psycopg. A call without psycopg
@@ -36,6 +37,7 @@ from tabrion.postgres._common import (
     require_psycopg,
     settle,
 )
+from tabrion.postgres._databases import create_database, database_sessions, drop_database
 from tabrion.postgres.locks import (
     SessionLock,
     advisory_unlock,
@@ -67,7 +69,10 @@ __all__ = [
     "advisory_unlock",
     "check_role",
     "configure",
+    "create_database",
+    "database_sessions",
     "diagnose",
+    "drop_database",
     "extension_status",
     "grant_runtime_role",
     "inspect_role",
