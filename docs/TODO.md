@@ -39,6 +39,10 @@
 > `create_database`, `drop_database`, `database_sessions`, contract section 4.8); counts unchanged.
 > TAB-XW-4 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw4`): TB-149 stays in progress, TAB-XW-4 done
 > (`tabrion.plan`, contract section 5.13 and I-124; D-5 parts of the schema model, I-111 i); counts unchanged.
+> TAB-XW-8 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw8`): TB-149 stays in progress, TAB-XW-8 done (role
+> DDL with the attribute ban, also indirect, contract section 4.9; profile mode `admin`); note N-1 of the security
+> review of #88 folded in (`delete_database_file` also checks the directory's owner); security review of #90 folded in
+> (P90-01..P90-07, Studio items before G-S4 listed under TB-149); counts unchanged.
 > TAB-XW-5 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw5`): TB-149 stays in progress, TAB-XW-5 done
 > (`tabrion.plan.execute_plan`, contract section 5.13 and I-125; D-5.4, the conditions of the review of #89 for the
 > executor); counts unchanged.
@@ -621,7 +625,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; TAB-XW-8 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -686,6 +690,32 @@ required (owner decision of 2026-11-08 11:26Z).
   first; `postgres`, templates and the own database protected; other sessions refused unless `force=True`, also when
   one connects after the check). Moved from addendum A.8 into contract section 4.8 (I-190..I-193); deviation D-129.
   Tests `tests/postgres/test_databases.py`.
+- **TAB-XW-8 done** (branch `claude/project-thread-rdo6g3-tabxw8`): `tabrion.postgres.RoleOptions`,
+  `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`, `grant_membership`,
+  `revoke_membership`, `grant_privileges`, `revoke_privileges` (E-X6: no parameter for SUPERUSER, BYPASSRLS,
+  CREATEROLE, REPLICATION, ADMIN or GRANT OPTION; reachability over every membership row, INHERIT, SET and ADMIN
+  option alike, N-3; every predefined role refused, D-2; TRIGGER not grantable, EXECUTE on a foreign SECURITY DEFINER
+  function and CREATE on `public` or a foreign schema refused, K-2; PostgreSQL 16 and later, D-1; checks in the
+  transaction of the change before and after the statement; passwords only as client-side SCRAM verifiers, never in
+  errors or frames). Profile mode `admin` (addendum A.9, E-X8). Moved from addendum A.7 into contract section 4.9
+  (I-180..I-186); deviation D-130. Tests `tests/postgres/test_role_ddl.py`, `tests/unit/test_role_ddl_unit.py`.
+  Note N-1 of the security review of #88 (Info) in the same pull request: `delete_database_file` also refuses a
+  directory owned by another user than the effective user and root (`sqlite.unsafe_owner`); ACLs are not evaluated
+  (SECURITY.md).
+  Security review of #90 (ACCEPTED with conditions) folded in, in code: P90-01 every change refuses a session whose
+  current or session user has SUPERUSER, BYPASSRLS or REPLICATION (`postgres.caller_unsafe`), `grant_privileges`
+  refuses objects of the system (`system_object`) and of an owner with one of these attributes (`object_owner`);
+  P90-02 a role that is or reaches `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`
+  counts as one with a banned attribute (`reachable_server_access`); P90-03 `RolePrivileges.public_definers`;
+  P90-05 new role names without Cc, Cf, Zl, Zp characters; P90-07 passwords at most 1 024 characters; P90-04 and
+  P90-06 documented as residual risks (I-182).
+  **Open for Studio before G-S4 (STU-XW, D-14):** the preview warns about `public_definers` (a `superuser_owner`
+  entry first) and about CREATE on a database (trusted extensions); Studio reads `role_privileges` again after each
+  commit and shows any difference (P90-06); before a membership change it checks every database it can connect to or
+  shows that the K-2 check covers the current database only (P90-04); it escapes control and bidirectional
+  characters of existing role names in every display (P90-05); its rules for an `admin` profile are at least those of
+  a write profile (`verify-full` for a remote host, SCRAM; P90-07). A database-wide `tabrion.check` rule for PUBLIC
+  definers is not built (P90-03, follow-up).
 - **Decided (owner, 2026-11-15 06:37Z, confirmed 06:38Z): drift blind spots, D-5 in
   [ADR 0015 section 10](adr/0015-crdbx-write-and-ddl-primitives.md#10-d-5-drift-blind-spots-of-the-level-2-fingerprint-owner-decision-of-2026-11-15)**
   (review of #85, F2; I-111 d). (1) Triggers and RLS policies go into the level-2 fingerprint with the functions they
@@ -783,9 +813,7 @@ required (owner decision of 2026-11-08 11:26Z).
   order); SQLite dry run without a backup copy; `plan.fingerprint_mismatch` only for `source` and a malformed
   fingerprint; private layer-B hooks `Database._schema_transaction` and `_autocommit`; `fingerprint_after` is not
   required to equal the plan's target fingerprint (server-normalized defaults).
-- **Open (follow-up work packages):** TAB-XW-8 role DDL (PostgreSQL 16 and later, no
-  predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`;
-  TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
+- **Open (follow-up work packages):** TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
   its names to `surface.json` (`since` 0.3, `X`).
 - **Security review of #76 (planning folder `reviews/pr76-tabxw1-review.md`): ACCEPTED WITH CONDITIONS.** The
   conditions, decisions and notes are requirements in [ADR 0015 section 9](adr/0015-crdbx-write-and-ddl-primitives.md#9-conditions-decisions-and-notes-of-the-security-review-of-76-binding-requirements)

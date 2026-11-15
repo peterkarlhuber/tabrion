@@ -54,8 +54,11 @@ Accepted residual risks (documented, not vulnerabilities):
     `/tmp`, where another user can create a `-journal` that then receives page data. Keep databases in a directory
     that only the owner can write: `diagnose` logs a warning for a directory the group or others can write (TM-03,
     sticky or not), and a `tabrion.check` finding for it is TODO TB-043. `delete_database_file` refuses such a
-    directory (`sqlite.unsafe_mode`), because its lock check opens the file through SQLite, which would roll a
-    `-journal` planted there back into the database; `connect` and `restore` do not refuse it (same residual as above);
+    directory (`sqlite.unsafe_mode`) and one that belongs to another user than the process's effective user and root
+    (`sqlite.unsafe_owner`), because its lock check opens the file through SQLite, which would roll a `-journal`
+    planted there back into the database; `connect` and `restore` do not refuse it (same residual as above). These
+    checks read the POSIX mode bits and the owner only: **ACLs are not evaluated**, so a directory whose ACL lets
+    another user write passes them;
   - a `read_only` connection to a WAL database may create `-wal` and `-shm` with the main file's mode, which an
     existing world-readable file passes on; `connect` never changes the mode of an existing file (MIG-NOD-9 does
     that for Nodestro);
@@ -176,6 +179,24 @@ Accepted residual risks (documented, not vulnerabilities):
   Check the returned report: `can_create=True` (`CREATE` on the schema, granted by someone else and kept) lets the
   role plant objects that shadow others on a `search_path`, although `restricted` holds; `connect=False` means the
   owner could not grant `CONNECT` (PostgreSQL only warns).
+- The role DDL of `tabrion.postgres` (since 0.3, experimental; contract section 4.9) never grants SUPERUSER,
+  BYPASSRLS, CREATEROLE or REPLICATION, neither directly nor through membership, nor membership in a predefined
+  role, TRIGGER, `WITH ADMIN OPTION` or `WITH GRANT OPTION`; it runs on PostgreSQL 16 and later only. **This holds
+  only for a caller without SUPERUSER, BYPASSRLS and REPLICATION**, and Tabrion enforces that: every change refuses a
+  session whose current or session user has one of these attributes (`postgres.caller_unsafe`), because such a
+  session could grant privileges on objects of the system that are superuser-equivalent. `grant_privileges` also
+  refuses objects of the system (`pg_catalog`, `information_schema`, `pg_*` schemas, oids below 16 384) and objects
+  whose owner has one of these attributes, and every change that adds privileges refuses a role that is or reaches
+  `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`. Run role administration from one
+  admin profile with CREATEROLE and nothing more (E-X6); the profile mode `admin` is only a label, so give it the
+  same TLS and authentication rules as a write profile (`verify-full` for remote hosts, SCRAM). Residual risks: the
+  checks run in the transaction of the change, before and after the statement, but under READ COMMITTED a membership
+  that another actor with the ADMIN option or a superuser commits in between is not seen (Tabrion's own changes cannot
+  open that window); read `role_privileges` again after the change. The K-2 findings and `pg_database_owner` cover the
+  current database only. SECURITY DEFINER functions that PUBLIC may execute are reported in `public_definers`, not
+  refused; revoke EXECUTE from PUBLIC on them. Granting CREATE on a database lets the grantee install trusted
+  extensions. Passwords are limited to 1 024 characters; a server that logs DDL (`log_statement = 'ddl'`) logs the
+  SCRAM verifier of a new password, never the password itself.
 - The `tabrion.testing` fixtures assume a shared test server: they end only sessions of their own roles (another
   role's session, a backup for example, is waited for), never change or drop a role or schema they did not create,
   never move an extension and never let a schema teardown cascade into one (contract I-36, I-60). Their roles are

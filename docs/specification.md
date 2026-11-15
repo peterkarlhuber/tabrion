@@ -77,7 +77,7 @@ uses them only after its own area gate (G-S2, G-S3, G-S4), and Tabrion itself en
 - SQLite `restore()` and `delete_database_file` (TAB-XW-7, implemented: [contract section 3.10](api/contract.md#310-restore-delete_database_file-since-03-experimental-tab-xw-7)),
   PostgreSQL `create_database`/`drop_database` (TAB-XW-9, implemented: [contract section 4.8](api/contract.md#48-create_database-drop_database-database_sessions-since-03-experimental-tab-xw-9))
   and database role DDL that never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, also not through
-  membership (TAB-XW-8). Database role DDL is not a tenant or user model; that row stays (E-X6). Restoring a SQLite
+  membership (TAB-XW-8, implemented: [contract section 4.9](api/contract.md#49-role-ddl-role_privileges-create_role-alter_role-drop_role-memberships-privileges-since-03-experimental-tab-xw-8)). Database role DDL is not a tenant or user model; that row stays (E-X6). Restoring a SQLite
   file is not PostgreSQL backup orchestration, and creating or dropping a database is no migration runner.
 - Unchanged non-goals: `pg_dump`/`pg_restore` wrappers and PostgreSQL backup orchestration. Studio runs the verified
   system tools; a `pg_dump` archive holds no global roles, role memberships, tablespaces or other cluster objects

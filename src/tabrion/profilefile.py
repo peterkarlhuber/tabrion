@@ -44,7 +44,7 @@ FORMAT_VERSION = 1
 """The only version this module reads and writes."""
 
 Engine = Literal["sqlite", "postgresql"]
-Mode = Literal["read_only", "read_write"]
+Mode = Literal["read_only", "read_write", "admin"]
 Environment = Literal["dev", "test", "prod"]
 SecretKind = Literal["env", "keyring", "file", "prompt"]
 Severity = Literal["error", "warning"]
@@ -56,7 +56,7 @@ _MAX_TEXT = 1_024
 _MAX_ALLOW = 10_000
 _MAX_TIMEOUT_MS = 2_147_483_647
 _ENGINES = ("sqlite", "postgresql")
-_MODES = ("read_only", "read_write")
+_MODES = ("read_only", "read_write", "admin")
 _ENVIRONMENTS = ("dev", "test", "prod")
 _SSLMODES = ("disable", "allow", "prefer", "require", "verify-ca", "verify-full")
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,254}")
@@ -174,6 +174,8 @@ class ConnectionProfile:
     else ``verify-full``."""
     environment: Environment | None = None
     mode: Mode = "read_only"
+    """``read_write`` since 0.2, ``admin`` since 0.3 (E-X8: separate write and admin profiles). Tabrion attaches no
+    behavior to any mode; what a mode allows is the consumer's."""
     read_only_role: bool = False
     """The profile's role is meant to have no write rights (a promise for the reviewer, not a check)."""
     statement_timeout_ms: int | None = None

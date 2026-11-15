@@ -2,7 +2,7 @@
 
 !!! warning "Planned 0.3, not implemented"
     Everything on this page is **planned for Tabrion 0.3 and not implemented**, except the sections marked as moved
-    into the contract (A.1, TAB-XW-2; A.2, TAB-XW-3; A.3, TAB-XW-4; A.4, TAB-XW-5; A.5, TAB-XW-6; A.6, TAB-XW-7; A.8, TAB-XW-9). None of the other names exists in the code, in `__all__` or in
+    into the contract (A.1, TAB-XW-2; A.2, TAB-XW-3; A.3, TAB-XW-4; A.4, TAB-XW-5; A.5, TAB-XW-6; A.6, TAB-XW-7; A.7 and A.9, TAB-XW-8; A.8, TAB-XW-9). None of the other names exists in the code, in `__all__` or in
     [`surface.json`](surface.json); none may be imported or relied on. Names, signatures and
     error codes may still change until the independent API review of TAB-XW-10. When a work package implements its
     part, it moves that section into [the contract](contract.md) with implementation notes, adds the names to
@@ -28,9 +28,9 @@ Every planned name is experimental (`X`) and arrives with 0.3. No stable name ch
 | `tabrion.rowedit` (new) | `insert_row`, `update_row`, `delete_row` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
 | `tabrion` (layer B) | `Transaction.execute_checked` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
 | `tabrion.sqlite` | `restore`, `RestoreResult`, `delete_database_file` (implemented, contract section 3.10) | TAB-XW-7 | none (standard library) |
-| `tabrion.postgres` | `RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges`, `revoke_privileges` | TAB-XW-8 | `postgres` |
+| `tabrion.postgres` | `RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges`, `revoke_privileges` (implemented, contract section 4.9) | TAB-XW-8 | `postgres` |
 | `tabrion.postgres` | `create_database`, `drop_database`, `database_sessions` (implemented, contract section 4.8) | TAB-XW-9 | `postgres` |
-| `tabrion.profilefile` | `ConnectionProfile.mode` value `"admin"` | TAB-XW-8 (E-X8) | none |
+| `tabrion.profilefile` | `ConnectionProfile.mode` value `"admin"` (implemented, contract section 5.9, I-109 e) | TAB-XW-8 (E-X8) | none |
 | `tabrion.errors` | `RowCountMismatch`, `PlanError`, `PlanMismatch`, `PlanRefused`, `DatabaseInUse`, `SchemaDrift`, `PlanFailed` (implemented, contract section 1.4); new `RoleUnsafe` reasons | TAB-XW-4..9 | none |
 
 **Not planned** (non-goals stay, ADR 0014, ADR 0015): a `pg_dump`/`pg_restore` wrapper, an Alembic runner or
@@ -65,8 +65,10 @@ class DatabaseInUse(TabrionError)      # implemented (TAB-XW-7, TAB-XW-9, contra
 
 - `RoleUnsafe` (exists, `postgres.role_unsafe`) gets new values in `details["reasons"]`: `createrole`,
   `replication`, `reachable_superuser`, `reachable_bypass_rls`, `reachable_createrole`, `reachable_replication`,
-  `predefined_role`, `owns_objects`, `current_user`, `security_definer`, `schema_create`. New `UsageError` codes:
-  `postgres.role_ddl_requires_16` (D-1), `plan.invalid_revision` (K-3). New reason values and new error classes are additive (API
+  `predefined_role`, `owns_objects`, `current_user`, `security_definer`, `schema_create` (implemented with TAB-XW-8,
+  contract section 4.9, which also adds `trigger`). New `UsageError` codes:
+  `postgres.role_ddl_requires_16` (D-1; implemented with TAB-XW-8, with `postgres.role_exists` and
+  `postgres.object_missing`), `plan.invalid_revision` (K-3). New reason values and new error classes are additive (API
   stability policy S-4).
 - The rules of contract section 1.4 apply: `str` is the safe message, no `__cause__`, `details` never hold data
   values, passwords, revision text or SQL with literals. A fingerprint and a plan hash are not secrets.
@@ -182,103 +184,16 @@ notes I-170 and I-171. `restore`, `RestoreResult`, `delete_database_file` and `t
 
 ## A.7 `tabrion.postgres`: role DDL (TAB-XW-8)
 
-```python
-@dataclass(frozen=True, slots=True)
-class RoleOptions:
-    login: bool = False
-    inherit: bool = True
-    create_db: bool = False
-    connection_limit: int | None = None
-    valid_until: datetime | None = None
-    # No field for SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, by design (ADR 0015).
-
-
-@dataclass(frozen=True, slots=True)
-class RolePrivileges:
-    role: str
-    attributes: tuple[str, ...]  # "login", "inherit", "createdb", "superuser", "bypass_rls", ...
-    member_of: tuple[str, ...]  # direct memberships
-    reachable: tuple[str, ...]  # every role reachable through membership (inherit or SET ROLE)
-    dangerous: tuple[str, ...]  # "superuser:<role>", "bypass_rls:<role>", "createrole:<role>",
-    # "replication:<role>", "createrole_pre16", "trigger:<table>",
-    # "security_definer:<function>", "schema_create:<schema>"
-    broad: tuple[str, ...]  # "broad:<role>" for memberships in predefined pg_* roles (finding)
-    owned_objects: int
-    default_privileges: int
-
-    @property
-    def safe(self) -> bool: ...  # not dangerous
-    def as_dict(self) -> dict[str, object]: ...
-
-
-def role_privileges(connection: psycopg.Connection, role: str) -> RolePrivileges: ...  # read-only; RoleMissing
-def create_role(
-    connection: psycopg.Connection, role: str, *, options: RoleOptions = RoleOptions(), password: str | None = None
-) -> RolePrivileges: ...
-def alter_role(
-    connection: psycopg.Connection, role: str, *, options: RoleOptions | None = None, password: str | None = None
-) -> RolePrivileges: ...
-def drop_role(connection: psycopg.Connection, role: str) -> None: ...
-def grant_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...
-def revoke_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...
-def grant_privileges(
-    connection: psycopg.Connection,
-    role: str,
-    *,
-    privileges: Sequence[
-        Literal[
-            "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "USAGE", "CREATE", "CONNECT", "EXECUTE"
-        ]
-    ],  # no TRIGGER (K-2)
-    on: Literal["table", "sequence", "function", "schema", "database"],
-    objects: Sequence[str],
-) -> RolePrivileges: ...
-def revoke_privileges(
-    connection: psycopg.Connection,
-    role: str,
-    *,
-    privileges: Sequence[str],
-    on: Literal["table", "sequence", "function", "schema", "database"],
-    objects: Sequence[str],
-) -> RolePrivileges: ...
-```
-
-- **D-1, PostgreSQL 16 and later only:** every function except `role_privileges` raises
-  `UsageError("postgres.role_ddl_requires_16")` on 15 and earlier; `role_privileges` reports CREATEROLE before 16 as
-  `dangerous` (`createrole_pre16`). Tests `tests/postgres/test_role_ddl.py::test_role_ddl_refused_before_16`,
-  `::test_createrole_pre16_reported_dangerous`.
-- **Attribute ban (E-X6):** no parameter requests SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION.
-  `grant_membership` refuses (`RoleUnsafe`, reasons `reachable_*`) when `role`, or any role reachable from it, has
-  one of these attributes. **N-3:** reachability counts INHERIT, the SET option and the ADMIN option. Test
-  `tests/postgres/test_role_ddl.py::test_admin_option_on_dangerous_role_counts_as_reachable`.
-- **D-2, no predefined roles (allowlist):** a role is predefined when its name starts with `pg_` and its oid is below
-  16384 (`FirstNormalObjectId`); the bootstrap superuser is not `broad`, it is covered by the superuser check.
-  `grant_membership` refuses every predefined role (reason `predefined_role`), including `pg_read_all_data` and
-  `pg_write_all_data`; existing memberships appear in `RolePrivileges.broad` as a finding. Tests
-  `tests/postgres/test_role_ddl.py::test_membership_in_any_predefined_role_refused`,
-  `::test_existing_predefined_membership_reported_broad`.
-- **K-2, escalation without attributes:** `TRIGGER` is not grantable; `EXECUTE` on a `SECURITY DEFINER` function
-  whose owner is not the grantee is refused (reason `security_definer`); `CREATE` on `public` or on a schema the
-  grantee does not own is refused (reason `schema_create`, CVE-2018-1058 class); `role_privileges` reports such
-  existing grants as `dangerous`. Tests `tests/postgres/test_role_ddl.py::test_trigger_privilege_not_grantable`,
-  `::test_execute_on_foreign_security_definer_refused`, `::test_create_on_public_or_foreign_schema_refused`,
-  `::test_role_privileges_reports_escalation_grants`. `alter_role` and `grant_privileges` refuse a target role that already has a dangerous
-  attribute or reachable role (reasons `superuser`, `bypass_rls`, `createrole`, `replication`, `reachable_*`): a
-  change to such a role is not a change Tabrion makes. No `WITH ADMIN OPTION`, no `WITH GRANT OPTION`.
-- **Checks before every change** run in the same transaction, right before the change; the returned
-  `RolePrivileges` is read after it. The consumer shows `role_privileges` in the preview (D-14).
-- `drop_role` refuses a role that owns objects or has default privileges (`RoleUnsafe`, reason `owns_objects`; no
-  `REASSIGN OWNED`/`DROP OWNED`) and the session user (reason `current_user`).
-- Role and object names are checked against the 63-byte limit and composed with `psycopg.sql.Identifier`; `objects`
-  of `table`, `sequence` and `function` are schema-qualified and resolved with `to_regclass`/`to_regprocedure`
-  (`UsageError("postgres.object_missing")` when absent; a missing `role` raises `RoleMissing`).
-- **Password:** hashed on the client with `PGconn.encrypt_password(..., algorithm="scram-sha-256")` and sent as the
-  verifier; never in an error, `repr`, log or frame local. An empty password is refused.
-- T-NOTX: these functions need a transaction of their own (as `grant_runtime_role`) and raise
-  `UsageError("...nested_transaction")` inside a caller's transaction.
-- **Tests:** the matrix of ADR 0015 Verification (direct, INHERIT and NOINHERIT membership, SET and ADMIN option,
-  chains, every predefined role, the K-2 grants), password canaries, catalog snapshots before and after, refusals leave the catalog
-  unchanged.
+**Implemented (TAB-XW-8) and moved into the contract:**
+[section 4.9](contract.md#49-role-ddl-role_privileges-create_role-alter_role-drop_role-memberships-privileges-since-03-experimental-tab-xw-8)
+with the implementation notes I-180..I-186. `RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`,
+`alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges` and `revoke_privileges` are in
+`surface.json` with `"since": "0.3"` and stability `X`. The named tests are in `tests/postgres/test_role_ddl.py`: D-1
+`::test_role_ddl_refused_before_16`, `::test_createrole_pre16_reported_dangerous`; N-3
+`::test_admin_option_on_dangerous_role_counts_as_reachable`; D-2 `::test_membership_in_any_predefined_role_refused`,
+`::test_existing_predefined_membership_reported_broad`; K-2 `::test_trigger_privilege_not_grantable`,
+`::test_execute_on_foreign_security_definer_refused`, `::test_create_on_public_or_foreign_schema_refused`,
+`::test_role_privileges_reports_escalation_grants`.
 
 ## A.8 `tabrion.postgres`: `create_database` and `drop_database` (TAB-XW-9)
 
@@ -289,6 +204,6 @@ the implementation notes I-190..I-193. `create_database`, `drop_database` and `d
 
 ## A.9 `tabrion.profilefile`: mode `admin` (E-X8)
 
-`ConnectionProfile.mode` becomes `Literal["read_only", "read_write", "admin"]` (`read_write` exists since 0.2).
-`parse` accepts `admin`; Tabrion attaches no behavior to any mode, which stays the consumer's (write and admin
-profiles, STU-XW-1). Multi-host `host` values stay refused (W-10).
+**Implemented (TAB-XW-8) and moved into the contract:** section 5.9, rule I-109 (e). `ConnectionProfile.mode` is
+`Literal["read_only", "read_write", "admin"]`; `parse` accepts `admin`, and Tabrion attaches no behavior to any mode.
+Multi-host `host` values stay refused (W-10). Test `tests/unit/test_profilefile.py::test_admin_mode_parses_and_round_trips`.

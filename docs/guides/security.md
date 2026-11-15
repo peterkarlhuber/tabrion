@@ -20,7 +20,9 @@ What Tabrion protects against, what it does not, and what is left to you. The bi
   database another connection holds (SQLite's exclusive lock). It works through a directory descriptor opened with
   `O_NOFOLLOW` and compares device and inode right before the unlink, so a file swapped in after the check is not
   deleted; side files that are links are removed as links, never followed. An idle connection in rollback mode holds
-  no lock and is not seen, and a process may open the file after the check: stop your own connections first.
+  no lock and is not seen, and a process may open the file after the check: stop your own connections first. On
+  POSIX it also refuses a database whose directory the group or others may write (`sqlite.unsafe_mode`) or that
+  belongs to another user than you and root (`sqlite.unsafe_owner`); ACLs are not evaluated.
 - Extension loading is off, and on only inside `loading_extensions()`.
 - `trusted_schema=OFF`: views and triggers in a database file cannot call functions with side effects.
 
@@ -91,6 +93,15 @@ TAB-PG-011 (no TLS). Layer A enforces nothing on connections you open yourself.
   Tabrion asks for no confirmation: the typed name, the backup before a drop and the decision to call are yours. A
   `pg_dump` archive is **not a complete backup**: global roles, role memberships, tablespaces and other cluster
   objects are not in it.
+- The role DDL (since 0.3, experimental) never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, also not
+  through membership in a role that has them (`INHERIT`, `SET` or `ADMIN` option), nor membership in a predefined
+  `pg_*` role, `TRIGGER`, `EXECUTE` on another role's `SECURITY DEFINER` function or `CREATE` on `public` or another
+  role's schema. Run it from a separate admin profile with `CREATEROLE` only, on PostgreSQL 16 or later: a session
+  whose user has SUPERUSER, BYPASSRLS or REPLICATION is refused (`postgres.caller_unsafe`), and so are grants on
+  objects of the system or of a superuser's objects and new privileges for a role that reaches
+  `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`. Show `role_privileges` before a
+  change (with `public_definers`, the SECURITY DEFINER functions every role may run) and again after it; the functions
+  check again in the transaction of the change. Passwords go to the server only as SCRAM verifiers.
 - Tabrion sets no security context: no `SET ROLE`, no `row_security`, no `app.*` settings, no `RESET ALL`. Row-level
   security scopes (`set_config(..., true)`) stay your code and stay transaction-local.
 

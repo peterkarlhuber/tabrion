@@ -1062,6 +1062,60 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.postgres.RoleOptions": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "login: bool = False",
+        "inherit: bool = True",
+        "create_db: bool = False",
+        "connection_limit: int | None = None",
+        "valid_until: datetime.datetime | None = None"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.postgres.RoleOptions.__init__": {
+      "kind": "method",
+      "signature": "(self, login: bool = False, inherit: bool = True, create_db: bool = False, connection_limit: int | None = None, valid_until: datetime.datetime | None = None) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.postgres.RolePrivileges": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "role: str",
+        "attributes: tuple[str, ...]",
+        "member_of: tuple[str, ...]",
+        "reachable: tuple[str, ...]",
+        "dangerous: tuple[str, ...]",
+        "broad: tuple[str, ...]",
+        "public_definers: tuple[str, ...]",
+        "owned_objects: int",
+        "default_privileges: int"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.postgres.RolePrivileges.__init__": {
+      "kind": "method",
+      "signature": "(self, role: str, attributes: tuple[str, ...], member_of: tuple[str, ...], reachable: tuple[str, ...], dangerous: tuple[str, ...], broad: tuple[str, ...], public_definers: tuple[str, ...], owned_objects: int, default_privileges: int) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.postgres.RolePrivileges.as_dict": {
+      "kind": "method",
+      "signature": "(self) -> dict[str, object]",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.postgres.RolePrivileges.safe": {
+      "kind": "property",
+      "signature": "(self) -> bool",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.postgres.RoleReport": {
       "kind": "dataclass",
       "frozen": true,
@@ -1191,6 +1245,12 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.postgres.alter_role": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], role: str, *, options: RoleOptions | None = None, password: str | None = None) -> RolePrivileges",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.postgres.check_role": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], *, allow_superuser: bool = False, allow_table_owner: bool = False, owner_scope: Literal['schema', 'rls'] = 'schema') -> RoleInfo",
@@ -1206,6 +1266,12 @@
     "tabrion.postgres.create_database": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], name: str, *, owner: str | None = None, template: Literal['template0', 'template1'] = 'template1', encoding: str = 'UTF8', locale: str | None = None) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.postgres.create_role": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], role: str, *, options: RoleOptions = RoleOptions(login=False, inherit=True, create_db=False, connection_limit=None, valid_until=None), password: str | None = None) -> RolePrivileges",
       "since": "0.3",
       "stability": "X"
     },
@@ -1227,11 +1293,29 @@
       "since": "0.3",
       "stability": "X"
     },
+    "tabrion.postgres.drop_role": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], role: str) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.postgres.extension_status": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], name: str, *, probe_type: str | None = None) -> ExtensionStatus",
       "since": "0.1",
       "stability": "S"
+    },
+    "tabrion.postgres.grant_membership": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], role: str, *, member: str) -> RolePrivileges",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.postgres.grant_privileges": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], role: str, *, privileges: Sequence[Literal['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'USAGE', 'CREATE', 'CONNECT', 'EXECUTE']], on: Literal['table', 'sequence', 'function', 'schema', 'database'], objects: Sequence[str]) -> RolePrivileges",
+      "since": "0.3",
+      "stability": "X"
     },
     "tabrion.postgres.grant_runtime_role": {
       "kind": "function",
@@ -1287,11 +1371,29 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.postgres.revoke_membership": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], role: str, *, member: str) -> RolePrivileges",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.postgres.revoke_privileges": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], role: str, *, privileges: Sequence[str], on: Literal['table', 'sequence', 'function', 'schema', 'database'], objects: Sequence[str]) -> RolePrivileges",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.postgres.role_info": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], *, owner_scope: Literal['schema', 'rls'] = 'schema') -> RoleInfo",
       "since": "0.1",
       "stability": "S"
+    },
+    "tabrion.postgres.role_privileges": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], role: str) -> RolePrivileges",
+      "since": "0.3",
+      "stability": "X"
     },
     "tabrion.postgres.roles.RoleInfo": {
       "kind": "reexport",
