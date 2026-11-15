@@ -43,7 +43,7 @@ SOURCE = (
     "CREATE TABLE parent (id INTEGER PRIMARY KEY, a TEXT, b TEXT)",
     "CREATE TABLE child (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES parent (id) ON DELETE CASCADE)",
     "CREATE TABLE log (id INTEGER PRIMARY KEY, what TEXT)",
-    "CREATE TRIGGER parent_log AFTER UPDATE ON parent BEGIN INSERT INTO log (what) VALUES ('u'); END",
+    "CREATE TRIGGER child_log AFTER UPDATE ON child BEGIN INSERT INTO log (what) VALUES ('u'); END",
     f"INSERT INTO parent VALUES (1, '{SECRET}', 'x'), (2, NULL, 'y')",  # noqa: S608 - a fixed test value
     "INSERT INTO child VALUES (1, 1), (2, 2)",
 )
@@ -86,6 +86,13 @@ def retyped(model: ts.SchemaSnapshot) -> ts.SchemaSnapshot:
     parent = table(model, "main.parent")
     columns = tuple(dataclasses.replace(c, type="INTEGER") if c.name == "a" else c for c in parent.columns)
     return replace_table(model, "main.parent", columns=columns)
+
+
+def required(model: ts.SchemaSnapshot) -> ts.SchemaSnapshot:
+    """``child.pid`` ``NOT NULL``: a rebuild of ``child`` that recreates its trigger from ``sqlite_schema``."""
+    child = table(model, "main.child")
+    columns = tuple(dataclasses.replace(c, nullable=False) if c.name == "pid" else c for c in child.columns)
+    return replace_table(model, "main.child", columns=columns)
 
 
 def added(model: ts.SchemaSnapshot) -> ts.SchemaSnapshot:
@@ -275,11 +282,11 @@ def test_risk_classes_come_from_the_new_plan(db: Database) -> None:
     "change",
     [
         ["ALTER TABLE log ADD COLUMN extra TEXT"],
-        ["DROP TRIGGER parent_log"],
+        ["DROP TRIGGER child_log"],
         # the trigger body changes, its name and table stay
         [
-            "DROP TRIGGER parent_log",
-            "CREATE TRIGGER parent_log AFTER UPDATE ON parent BEGIN DELETE FROM log; END",
+            "DROP TRIGGER child_log",
+            "CREATE TRIGGER child_log AFTER UPDATE ON child BEGIN DELETE FROM log; END",
         ],
         ["CREATE INDEX log_what ON log (what)"],
         ["CREATE VIEW v AS SELECT id FROM log"],
@@ -319,7 +326,7 @@ def test_drift_without_source_names_no_differences(path: Path, db: Database) -> 
     target = added(current)
     preview = tp.plan(current, target)
     with contextlib.closing(sqlite3.connect(path, isolation_level=None)) as connection:
-        connection.execute("DROP TRIGGER parent_log")
+        connection.execute("DROP TRIGGER child_log")
     with pytest.raises(SchemaDrift) as caught:
         execute(db, target, current, plan_hash=preview.plan_hash)
     assert caught.value.differences == ()
@@ -340,7 +347,7 @@ def test_source_must_have_the_expected_fingerprint(db: Database) -> None:
 def test_schema_drift_pickles_with_its_differences(path: Path, db: Database) -> None:
     current = take(db)
     with contextlib.closing(sqlite3.connect(path, isolation_level=None)) as connection:
-        connection.execute("DROP TRIGGER parent_log")
+        connection.execute("DROP TRIGGER child_log")
     with pytest.raises(SchemaDrift) as caught:
         execute(db, added(current), current, source=current)
     copy = pickle.loads(pickle.dumps(caught.value))  # noqa: S301 - our own bytes
@@ -407,7 +414,7 @@ def test_rebuild_with_foreign_keys_on_keeps_child_rows(db: Database) -> None:
     assert db.fetch_scalar("SELECT count(*) FROM child") == 2
     assert db.fetch_scalar("PRAGMA foreign_keys") == 1
     assert db.fetch_scalar("PRAGMA trusted_schema") == 0
-    db.execute("UPDATE parent SET b = 'z' WHERE id = 1")  # the trigger was recreated
+    db.execute("UPDATE child SET pid = pid WHERE id = 1")  # the trigger on child is untouched and still fires
     assert db.fetch_scalar("SELECT count(*) FROM log") == 1
 
 
@@ -519,17 +526,41 @@ def test_an_empty_plan_runs(db: Database) -> None:
 # --- K-1 at execution: defensive mode ----------------------------------------------------------------------------
 
 
+HAS_DEFENSIVE = getattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE", None) is not None  # Python >= 3.12
+
+
 def test_without_defensive_mode_a_trigger_text_is_refused(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     """Python 3.11 has no ``Connection.setconfig``: a plan that recreates a trigger from ``sqlite_schema`` (K-1) is
-    refused there; a plan without one runs."""
+    refused there; plans without one (an added column, a rebuild of a table without triggers) run."""
     monkeypatch.delattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE", raising=False)
     current = take(db)
     data = rows(db)
     with pytest.raises(PlanRefused) as caught:
-        execute(db, retyped(current), current)
+        execute(db, required(current), current)
     assert caught.value.details == {"reason": "engine_unsupported", "feature": "sqlite_defensive"}
     unchanged(db, current, data)
+    assert execute(db, retyped(current), current).steps_run == 1
+    current = take(db)
     assert execute(db, added(current), current).steps_run == 1
+
+
+def test_rebuild_with_a_trigger_by_python_version(db: Database) -> None:
+    """The version split, explicitly: with defensive mode (Python >= 3.12) the rebuild of ``child`` runs and recreates
+    its trigger; without it (Python 3.11) the same plan is refused before ``BEGIN`` and nothing changes."""
+    current = take(db)
+    data = rows(db)
+    target = required(current)
+    if not HAS_DEFENSIVE:
+        with pytest.raises(PlanRefused) as caught:
+            execute(db, target, current)
+        assert caught.value.details == {"reason": "engine_unsupported", "feature": "sqlite_defensive"}
+        unchanged(db, current, data)
+        return
+    assert execute(db, target, current).steps_run == 1
+    assert ts.compare(target, take(db)) == ()
+    assert rows(db) == data
+    db.execute("UPDATE child SET pid = pid WHERE id = 1")  # the trigger was recreated
+    assert db.fetch_scalar("SELECT count(*) FROM log") == 1
 
 
 def test_connection_settings_restored(db: Database) -> None:
