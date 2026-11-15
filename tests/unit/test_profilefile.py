@@ -132,6 +132,8 @@ def test_cr1_plain_password_is_refused_and_never_repeated(password: str) -> None
         ('engine = "postgresql"\nhost = "postgresql://h"\ndatabase = "d"', [("profile[0].host", "profilefile.value")]),
         ('engine = "postgresql"\nhost = "/socket,h"\ndatabase = "d"', [("profile[0].host", "profilefile.value")]),
         ('engine = "postgresql"\nhost = "h1,h2"\ndatabase = "d"', [("profile[0].host", "profilefile.value")]),
+        ('engine = "postgresql"\nhost = "h%2Ch2"\ndatabase = "d"', [("profile[0].host", "profilefile.value")]),
+        ('engine = "postgresql"\nhost = "h&x=y"\ndatabase = "d"', [("profile[0].host", "profilefile.value")]),
         (
             'engine = "postgresql"\nhost = "h"\ndatabase = "d"\nsslmode = "off"',
             [("profile[0].sslmode", "profilefile.value")],

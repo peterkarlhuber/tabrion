@@ -492,8 +492,10 @@ class _Reader:
             return None
         if value.startswith("/"):
             return value
-        if any(char in value for char in "@/?#\\ ") or "://" in value:
-            self._issue(key, "profilefile.value")  # a URL or credentials in the host field
+        if any(char in value for char in "@/?#\\ %&=") or "://" in value:
+            # a URL or credentials in the host field; "%", "&" and "=" are refused so that a later URL library that
+            # unquotes the host cannot turn "h%2Ch2" into a host list (review of #82, F1)
+            self._issue(key, "profilefile.value")
             return None
         return value
 
