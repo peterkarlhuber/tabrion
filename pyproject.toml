@@ -214,6 +214,15 @@ type = "forbidden"
 source_modules = ["tabrion._sa", "tabrion.schema", "tabrion.rowedit"]
 forbidden_modules = ["pytest", "alembic", "psycopg_pool", "tabrion.testing", "tabrion.migrations"]
 
+# ADR 0015 section 1 (TAB-XW-3): tabrion.ddl builds on SQLAlchemy and, for column statements, Alembic's DDL constructs;
+# it never imports pytest, the pool, a driver or the migration helpers, and runs nothing.
+[[tool.importlinter.contracts]]
+id = "ddl-sqlalchemy-alembic-only"
+name = "DDL generation needs only SQLAlchemy and Alembic"
+type = "forbidden"
+source_modules = ["tabrion.ddl"]
+forbidden_modules = ["pytest", "psycopg", "psycopg_pool", "tabrion.testing", "tabrion.migrations", "tabrion._sa"]
+
 # Doc 02 section 2: the migration helpers never import pytest (G-T1 condition C-5).
 [[tool.importlinter.contracts]]
 id = "migrations-no-pytest"
@@ -228,8 +237,9 @@ name = "Layer B builds on layer A, never the reverse"
 type = "layers"
 layers = [
     "tabrion.testing",
-    # tabrion.rowedit (since 0.3, ADR 0015) builds on the layer-B implementation it re-exports.
-    "tabrion.migrations | tabrion.rowedit",
+    # tabrion.rowedit (since 0.3, ADR 0015) builds on the layer-B implementation it re-exports; tabrion.ddl (since
+    # 0.3, TAB-XW-3) on the schema model of tabrion.schema.
+    "tabrion.migrations | tabrion.rowedit | tabrion.ddl",
     "tabrion._sa | tabrion.schema",
     "tabrion.postgres",
     "tabrion.sqlite | tabrion.check | tabrion.profilefile",

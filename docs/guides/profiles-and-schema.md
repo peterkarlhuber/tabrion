@@ -139,6 +139,32 @@ True
 
 A level-2 snapshot is also the target model of the Schema Designer: a consumer edits it with `dataclasses.replace`
 and stores it with `to_json`. Partial index predicates, the order and collation of index elements, PostgreSQL
-`INCLUDE`, `NULLS NOT DISTINCT`, operator classes and exclusion constraints, `DEFERRABLE` and `NOT VALID` are part of
-the shape. Triggers, policies, domain checks, partitioning and identity or generated column detail are not (I-111 d):
-a change of only these leaves a `v2:` fingerprint as it was.
+`INCLUDE`, `NULLS NOT DISTINCT`, operator classes and exclusion constraints, `DEFERRABLE`, `NOT VALID`, identity and
+generated columns are part of the shape. Triggers, policies, domain checks and partitioning are not (I-111 d): a
+change of only these leaves a `v2:` fingerprint as it was. At level 2 a schema or table name with a dot is refused
+(`schema.unsupported_name`), as `schema.table` would not say which table it is.
+
+### DDL from the model (0.3, experimental)
+
+`tabrion.ddl` (contract section 5.12, I-123) turns a level-2 model into DDL text for SQLite or PostgreSQL: a
+`CREATE TABLE` per table (referred tables first) and its indexes, or one statement per change (`add_column_statement`,
+`alter_column_statements`, `create_index_statement` and so on; the column statements need the extra `migrations`).
+SQLAlchemy compiles the text and quotes the identifiers; nothing runs. Each `DdlStatement` is one statement, the text
+a preview shows and a plan (TAB-XW-4) runs.
+
+```pycon
+>>> from tabrion import ddl
+>>> for statement in ddl.create_statements(released, dialect="sqlite"):
+...     print(" ".join(statement.sql.split()))
+CREATE TABLE items ( id INTEGER, sku TEXT NOT NULL, price INTEGER DEFAULT (0), PRIMARY KEY (id), UNIQUE (sku) )
+>>> item = released.table("main.items")
+>>> ddl.create_index_statement(item, schema.IndexShape("items_sku_price", ("sku", "price")), dialect="sqlite").sql
+'CREATE INDEX items_sku_price ON items (sku, price)'
+```
+
+Defaults, check expressions, index expressions and predicates are schema text from reflection and are written as
+they are; a text that could leave its place in the statement (a `;`, a comment, unbalanced parentheses) is refused
+(`ddl.unsafe_sql_text`), so take models only from your own databases and show the text in a preview. A feature the
+module cannot generate (an identity or generated column, a PostgreSQL exclusion constraint, `NOT VALID`, an unknown
+index method, a shape field it does not know) is refused with `ddl.unsupported_feature` instead of being left out, and a change SQLite cannot make in
+place raises `ddl.rebuild_required`.

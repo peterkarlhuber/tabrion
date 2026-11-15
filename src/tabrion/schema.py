@@ -67,6 +67,8 @@ DifferenceKind = Literal[
     "column_order",
     "primary_key",
     "column_default",
+    "column_identity",
+    "column_generated",
     "foreign_key_missing",
     "foreign_key_added",
     "unique_missing",
@@ -86,6 +88,8 @@ _BREAKING = frozenset(
         "column_nullable",
         "primary_key",
         "column_default",
+        "column_identity",
+        "column_generated",
         "foreign_key_missing",
         "foreign_key_added",
         "unique_missing",
@@ -108,12 +112,21 @@ class ColumnShape:
     """One column: its name, its type as the dialect writes it (``INTEGER``, ``VARCHAR(20)``) and nullability.
 
     ``default`` (level 2, since 0.3) is the server default as the dialect reflects it (``0``, ``'x'::character
-    varying``, ``nextval('s'::regclass)``, ``CURRENT_TIMESTAMP``), or ``None``; it is schema text, not data."""
+    varying``, ``nextval('s'::regclass)``, ``CURRENT_TIMESTAMP``), or ``None``; it is schema text, not data.
+
+    ``identity`` (level 2) is ``ALWAYS`` or ``BY DEFAULT`` for a PostgreSQL identity column (``attidentity``; its
+    sequence options are not in the shape), else ``None``. ``generated`` (level 2) is ``STORED`` or ``VIRTUAL`` for a
+    generated column (PostgreSQL ``attgenerated``, SQLite ``pragma_table_xinfo`` ``hidden`` 3 or 2), else ``None``;
+    ``generation_expression`` is then its expression (PostgreSQL as ``pg_get_expr`` returns it, SQLite as written, or
+    the whole ``CREATE TABLE`` text when it cannot be read alone)."""
 
     name: str
     type: str
     nullable: bool
     default: str | None = None
+    identity: str | None = None
+    generated: str | None = None
+    generation_expression: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,7 +237,10 @@ class SchemaSnapshot:
     """The shape of the tables of one database, sorted by name. Holds no data and no connection details.
 
     ``level`` (since 0.3) is 1 or 2 (``UsageError("schema.invalid_level")`` otherwise); a level-1 snapshot must not
-    hold level-2 detail (a default, a constraint or an index: ``UsageError("schema.level_mismatch")``)."""
+    hold level-2 detail (a default, an identity or generated column, a constraint or an index:
+    ``UsageError("schema.level_mismatch")``). In a level-2 snapshot a table name or the referred table of a foreign
+    key with more than one dot is refused (``UsageError("schema.unsupported_name")``): ``s.x.y`` could be table
+    ``x.y`` of schema ``s`` or table ``y`` of schema ``s.x`` (review of #87, M-1)."""
 
     dialect: str
     tables: tuple[TableShape, ...]
@@ -234,6 +250,11 @@ class SchemaSnapshot:
         _check_level(self.level)
         if self.level == 1 and any(_has_level2_detail(table) for table in self.tables):
             raise UsageError("schema.level_mismatch")
+        if self.level == 2:
+            for table in self.tables:
+                names = [table.name, *(getattr(f, "referred_table", None) for f in table.foreign_keys)]
+                if any(isinstance(name, str) and name.count(".") > 1 for name in names):
+                    raise UsageError("schema.unsupported_name", details={"table": str(table.name)})
 
     def to_json(self) -> str:
         """Canonical JSON (sorted keys, no blanks); :meth:`from_json` reads it back. Level 1 is format 1, unchanged
@@ -301,8 +322,10 @@ def snapshot(
 
     A table of ``tables`` that does not exist or is a view is left out, so :func:`compare` reports it as
     ``table_missing``. Views are not included. Raises ``UsageError("schema.too_many_tables")`` above 10 000 tables.
-    ``level=2`` (since 0.3, experimental) also reads defaults, foreign keys, unique, check and exclusion constraints
-    and indexes (contract I-111); ``level=1`` stays the default (ADR 0015 D-4)."""
+    ``level=2`` (since 0.3, experimental) also reads defaults, identity and generated columns, foreign keys, unique,
+    check and exclusion constraints and indexes (contract I-111); ``level=1`` stays the default (ADR 0015 D-4). At
+    level 2 a schema or table name with a dot raises ``UsageError("schema.unsupported_name")``, as ``schema.table``
+    would not name it unambiguously; level 1 keeps the behavior of 0.2 (I-111 g)."""
     _check_level(level)
     default = inspector.default_schema_name or "main"
     wanted: list[tuple[str, str]] = []
@@ -318,6 +341,10 @@ def snapshot(
     dialect = inspector.dialect
     shapes: dict[str, TableShape] = {}
     views: dict[str, frozenset[str]] = {}
+    if level == 2:
+        for schema, table in wanted:
+            if "." in schema or "." in table:
+                raise UsageError("schema.unsupported_name", details={"schema": schema, "table": table})
     for schema, table in wanted:
         if not inspector.has_table(table, schema=_arg(schema, default)):
             continue
@@ -391,6 +418,13 @@ def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDif
                 out.append(SchemaDifference("column_nullable", name, column.name))
             if level2 and found.default != column.default:
                 out.append(SchemaDifference("column_default", name, column.name))
+            if level2 and found.identity != column.identity:
+                out.append(SchemaDifference("column_identity", name, column.name))
+            if level2 and (found.generated, found.generation_expression) != (
+                column.generated,
+                column.generation_expression,
+            ):
+                out.append(SchemaDifference("column_generated", name, column.name))
         out.extend(
             SchemaDifference("column_added", name, column.name)
             for column in new.columns
@@ -425,7 +459,13 @@ def _has_level2_detail(table: TableShape) -> bool:
         or table.check_constraints
         or table.indexes
         or table.exclusion_constraints
-        or any(column.default is not None for column in table.columns)
+        or any(
+            column.default is not None
+            or column.identity is not None
+            or column.generated is not None
+            or column.generation_expression is not None
+            for column in table.columns
+        )
     )
 
 
@@ -468,12 +508,22 @@ class _PgIndex:
 
 
 @dataclass(frozen=True, slots=True)
+class _Column:
+    identity: str | None
+    generated: str | None
+    expression: str | None
+    collation: str | None
+    """The column's collation as SQLAlchemy 2.1 writes it after ``COLLATE`` when it is not the default of the type."""
+
+
+@dataclass(frozen=True, slots=True)
 class _Catalog:
     """What PostgreSQL's catalog adds to SQLAlchemy's reflection; empty for another dialect."""
 
     constraints: Mapping[str, _PgConstraint]
     indexes: Mapping[str, _PgIndex]
     exclusions: tuple[ExclusionShape, ...]
+    columns: Mapping[str, _Column] = dataclasses.field(default_factory=dict)
 
 
 _EMPTY = _Catalog({}, {}, ())
@@ -481,11 +531,15 @@ _MATCH = {"f": "FULL", "p": "PARTIAL"}
 
 
 def _level2_table(
-    inspector: sqlalchemy.Inspector, shape: TableShape, schema: str, table: str, default: str
+    inspector: sqlalchemy.Inspector,
+    shape: TableShape,
+    schema: str,
+    table: str,
+    default: str,
 ) -> TableShape:
     arg = _arg(schema, default)
     if inspector.dialect.name == "sqlite":
-        catalog = _EMPTY
+        catalog = _Catalog({}, {}, (), _sqlite_columns(inspector, schema, table))
         foreign_keys = _sqlite_foreign_keys(inspector, schema, table, arg)
         indexes, unique = _sqlite_indexes(inspector, schema, table)
     else:
@@ -503,10 +557,30 @@ def _level2_table(
         name = _optional_name(c.get("name"))
         found = catalog.constraints.get(name or "")
         checks.append(CheckShape(name=name, sqltext=str(c["sqltext"]), validated=found is None or found.validated))
+    columns = []
+    for column in shape.columns:
+        extra = catalog.columns.get(column.name)
+        if extra is None:
+            columns.append(column)
+            continue
+        type_text = column.type
+        if extra.collation is not None and " COLLATE " not in type_text:
+            # SQLAlchemy 2.0.30 (the floor) reflects no PostgreSQL column collation; 2.1 writes it into the type text
+            # as below, so the shape is the same on both (review of #87, L-1).
+            type_text = f"{type_text} COLLATE {extra.collation}"
+        columns.append(
+            dataclasses.replace(
+                column,
+                type=type_text,
+                identity=extra.identity,
+                generated=extra.generated,
+                generation_expression=extra.expression,
+            )
+        )
     return _canonical(
         TableShape(
             name=shape.name,
-            columns=shape.columns,
+            columns=tuple(columns),
             primary_key=shape.primary_key,
             foreign_keys=tuple(foreign_keys),
             unique_constraints=tuple(unique),
@@ -564,6 +638,32 @@ _PG_INDEXES = (
     "WHERE n.nspname = :s AND r.relname = :t"
 )
 
+# One row per column: identity, generated and its expression, and the collation when it is not the default of the
+# column's type, with its schema when the collation is not visible on the search path (as SQLAlchemy 2.1 reflects it).
+_PG_COLUMNS = (
+    "SELECT a.attname, a.attidentity, a.attgenerated, "
+    "CASE WHEN a.attgenerated <> '' THEN pg_catalog.pg_get_expr(d.adbin, d.adrelid) END, "
+    "CASE WHEN a.attcollation <> 0 AND a.attcollation <> t.typcollation THEN co.collname END, "
+    "CASE WHEN a.attcollation <> 0 AND a.attcollation <> t.typcollation "
+    "AND NOT pg_catalog.pg_collation_is_visible(co.oid) THEN cn.nspname END "
+    "FROM pg_catalog.pg_attribute a "
+    "JOIN pg_catalog.pg_class r ON r.oid = a.attrelid "
+    "JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace "
+    "JOIN pg_catalog.pg_type t ON t.oid = a.atttypid "
+    "LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum "
+    "LEFT JOIN pg_catalog.pg_collation co ON co.oid = a.attcollation "
+    "LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid = co.collnamespace "
+    "WHERE n.nspname = :s AND r.relname = :t AND a.attnum > 0 AND NOT a.attisdropped"
+)
+_IDENTITY = {"a": "ALWAYS", "d": "BY DEFAULT"}
+_GENERATED = {"s": "STORED", "v": "VIRTUAL"}
+
+
+def _collation_text(preparer: Any, name: str, schema: str | None) -> str:
+    """The collation as SQLAlchemy 2.1's ``format_collation`` writes it (2.0.30 has no schema argument)."""
+    text = preparer.quote(name) if getattr(preparer, "quote_case_sensitive_collations", True) else name
+    return text if schema is None else f"{preparer.quote_schema(schema)}.{text}"
+
 
 def _postgres_catalog(inspector: sqlalchemy.Inspector, schema: str, table: str) -> _Catalog:
     # SQLAlchemy reflects neither DEFERRABLE of a unique constraint, NOT VALID, MATCH, exclusion constraints, nor the
@@ -589,7 +689,17 @@ def _postgres_catalog(inspector: sqlalchemy.Inspector, schema: str, table: str) 
         )
         for name, method, valid, collations, opclasses, include in _rows(inspector, _PG_INDEXES, params)
     }
-    return _Catalog(constraints, indexes, tuple(exclusions))
+    preparer = inspector.dialect.identifier_preparer
+    columns = {
+        str(name): _Column(
+            identity=_IDENTITY.get(str(identity or "")),
+            generated=_GENERATED.get(str(generated or "")),
+            expression=_optional_name(expression),
+            collation=None if collation is None else _collation_text(preparer, str(collation), _optional_name(where)),
+        )
+        for name, identity, generated, expression, collation, where in _rows(inspector, _PG_COLUMNS, params)
+    }
+    return _Catalog(constraints, indexes, tuple(exclusions), columns)
 
 
 _PG_SORTING = {"desc": "DESC", "nulls_first": "NULLS FIRST", "nulls_last": "NULLS LAST"}
@@ -813,21 +923,100 @@ def _sqlite_indexes(
 
 
 _MAX_TABLE_SQL = 1_000_000
-"""Longest SQLite ``CREATE TABLE`` text whose CHECK constraints are read one by one; a longer one stands whole."""
+"""Longest SQLite ``CREATE TABLE`` text whose CHECK constraints and generated columns are read one by one; a longer
+one stands whole."""
 
 
-def _sqlite_checks(inspector: sqlalchemy.Inspector, schema: str, table: str) -> list[dict[str, Any]]:
-    # SQLAlchemy reads SQLite CHECK constraints with a regular expression over the CREATE TABLE text, and up to at
-    # least 2.0.30 (the floor of the extra) it is greedy: two checks became one text that ran to the last ")". This
-    # reads them with a linear tokenizer instead, the same on every SQLAlchemy version. The schema name is quoted by
-    # the dialect's preparer; the table name is a bound parameter.
+def _sqlite_table_sql(inspector: sqlalchemy.Inspector, schema: str, table: str) -> str:
+    # The schema name is quoted by the dialect's preparer; the table name is a bound parameter.
     quoted = inspector.dialect.identifier_preparer.quote_identifier(schema)
     found = _rows(
         inspector,
         f"SELECT sql FROM {quoted}.sqlite_master WHERE type = 'table' AND name = :t",  # noqa: S608
         {"t": table},
     )
-    sql = str(found[0][0]) if found and found[0][0] is not None else ""
+    return str(found[0][0]) if found and found[0][0] is not None else ""
+
+
+def _sqlite_columns(inspector: sqlalchemy.Inspector, schema: str, table: str) -> dict[str, _Column]:
+    # Generated columns from pragma_table_xinfo (hidden 2 is VIRTUAL, 3 STORED) and their expressions from the CREATE
+    # TABLE text with the tokenizer: SQLAlchemy's regular expression reads them wrongly when a table has two of them.
+    rows = _rows(inspector, "SELECT name, hidden FROM pragma_table_xinfo(:t, :s)", {"t": table, "s": schema})
+    generated = {str(name): "STORED" if hidden == 3 else "VIRTUAL" for name, hidden in rows if hidden in (2, 3)}
+    if not generated:
+        return {}
+    sql = _sqlite_table_sql(inspector, schema, table)
+    expressions = _sqlite_generated_expressions(sql) or {}
+    folded = {name.casefold(): text for name, text in expressions.items()}
+    return {
+        name: _Column(
+            identity=None,
+            generated=kind,
+            # not read alone: the whole statement stands for the expression (as for a CHECK, I-111 c)
+            expression=expressions.get(name, folded.get(name.casefold(), sql)),
+            collation=None,
+        )
+        for name, kind in generated.items()
+    }
+
+
+def _sqlite_generated_expressions(sql: str) -> dict[str, str] | None:
+    """Column name to the expression of each ``AS (...)`` of a column definition of a ``CREATE TABLE`` text, as
+    written between its parentheses; ``None`` when the text is too long or cannot be tokenized. Linear in the
+    length."""
+    if len(sql) > _MAX_TABLE_SQL:
+        return None
+    tokens = _sql_tokens(sql)
+    if tokens is None:
+        return None
+    out: dict[str, str] = {}
+    depth, first, i = 0, True, 0
+    name: str | None = None
+    while i < len(tokens):
+        kind, text = tokens[i][0], tokens[i][1]
+        if kind == "(":
+            depth += 1
+            if depth == 1:
+                first = True
+        elif kind == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+        elif kind == "," and depth == 1:
+            first = True
+        elif depth == 1 and first:
+            name, first = (_unquote(text) if kind in ("word", "ident") else None), False
+        elif (
+            depth == 1
+            and kind == "word"
+            and text.upper() == "AS"
+            and name is not None
+            and i + 1 < len(tokens)
+            and tokens[i + 1][0] == "("
+        ):
+            level, j = 0, i + 1
+            while j < len(tokens):
+                if tokens[j][0] == "(":
+                    level += 1
+                elif tokens[j][0] == ")":
+                    level -= 1
+                    if level == 0:
+                        break
+                j += 1
+            if j == len(tokens):
+                return None
+            out.setdefault(name, sql[tokens[i + 1][3] : tokens[j][2]].strip())
+            i = j + 1
+            continue
+        i += 1
+    return out if depth == 0 else None
+
+
+def _sqlite_checks(inspector: sqlalchemy.Inspector, schema: str, table: str) -> list[dict[str, Any]]:
+    # SQLAlchemy reads SQLite CHECK constraints with a regular expression over the CREATE TABLE text, and up to at
+    # least 2.0.30 (the floor of the extra) it is greedy: two checks became one text that ran to the last ")". This
+    # reads them with a linear tokenizer instead, the same on every SQLAlchemy version.
+    sql = _sqlite_table_sql(inspector, schema, table)
     checks = _sqlite_check_constraints(sql)
     if checks is None:  # too long or not tokenized: the whole statement stands for its checks
         return [{"name": None, "sqltext": sql}] if "check" in sql.lower() else []
@@ -1113,7 +1302,10 @@ def _as_dict_v2(snapshot: SchemaSnapshot) -> dict[str, Any]:
         tables.append(
             {
                 "name": table.name,
-                "columns": [[c.name, c.type, c.nullable, c.default] for c in table.columns],
+                "columns": [
+                    [c.name, c.type, c.nullable, c.default, c.identity, c.generated, c.generation_expression]
+                    for c in table.columns
+                ],
                 "primary_key": list(table.primary_key),
                 "foreign_keys": [dataclasses.asdict(f) for f in table.foreign_keys],
                 "unique_constraints": [dataclasses.asdict(u) for u in table.unique_constraints],
@@ -1196,10 +1388,20 @@ def _from_dict_v2(data: Mapping[str, Any]) -> SchemaSnapshot:
     tables: list[TableShape] = []
     for table in _list(data["tables"]):
         columns = []
-        for name, type_name, nullable, default in _list(table["columns"]):
+        for name, type_name, nullable, default, identity, generated, expression in _list(table["columns"]):
             if not isinstance(nullable, bool):
                 raise TypeError("nullable")
-            columns.append(ColumnShape(_str(name), _str(type_name), nullable, _opt_str(default)))
+            columns.append(
+                ColumnShape(
+                    _str(name),
+                    _str(type_name),
+                    nullable,
+                    _opt_str(default),
+                    _opt_str(identity),
+                    _opt_str(generated),
+                    _opt_str(expression),
+                )
+            )
         indexes = tuple(_shape(IndexShape, x) for x in _list(table["indexes"]))
         if any(i >= len(x.columns) for x in indexes for i in x.expressions):
             raise ValueError("expression position")

@@ -395,6 +395,83 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.ddl.DdlStatement": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "sql: str",
+        "target: str",
+        "transactional: bool = True"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.DdlStatement.__init__": {
+      "kind": "method",
+      "signature": "(self, sql: str, target: str, transactional: bool = True) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.add_column_statement": {
+      "kind": "function",
+      "signature": "(table: TableShape, column: ColumnShape, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.add_constraint_statement": {
+      "kind": "function",
+      "signature": "(table: TableShape, constraint: ForeignKeyShape | UniqueShape | CheckShape, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.alter_column_statements": {
+      "kind": "function",
+      "signature": "(table: TableShape, old: ColumnShape, new: ColumnShape, *, dialect: Literal['sqlite', 'postgresql']) -> tuple[DdlStatement, ...]",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.create_index_statement": {
+      "kind": "function",
+      "signature": "(table: TableShape, index: IndexShape, *, dialect: Literal['sqlite', 'postgresql'], concurrently: bool = False) -> DdlStatement",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.create_statements": {
+      "kind": "function",
+      "signature": "(model: SchemaSnapshot, *, dialect: Literal['sqlite', 'postgresql']) -> tuple[DdlStatement, ...]",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.drop_column_statement": {
+      "kind": "function",
+      "signature": "(table: TableShape, column: str, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.drop_constraint_statement": {
+      "kind": "function",
+      "signature": "(table: TableShape, name: str, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.drop_index_statement": {
+      "kind": "function",
+      "signature": "(table: TableShape, name: str, *, dialect: Literal['sqlite', 'postgresql'], concurrently: bool = False) -> DdlStatement",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.drop_table_statement": {
+      "kind": "function",
+      "signature": "(table: TableShape, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.ddl.table_statements": {
+      "kind": "function",
+      "signature": "(table: TableShape, *, dialect: Literal['sqlite', 'postgresql']) -> tuple[DdlStatement, ...]",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.errors.BackupFailed": {
       "kind": "exception",
       "bases": [
@@ -1293,14 +1370,17 @@
         "name: str",
         "type: str",
         "nullable: bool",
-        "default: str | None = None"
+        "default: str | None = None",
+        "identity: str | None = None",
+        "generated: str | None = None",
+        "generation_expression: str | None = None"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.ColumnShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str, type: str, nullable: bool, default: str | None = None) -> None",
+      "signature": "(self, name: str, type: str, nullable: bool, default: str | None = None, identity: str | None = None, generated: str | None = None, generation_expression: str | None = None) -> None",
       "since": "0.2",
       "stability": "X"
     },

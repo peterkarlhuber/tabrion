@@ -32,6 +32,8 @@
 > in progress, TB-013 records the base; counts unchanged.
 > TAB-XW-2 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw2`): TB-149 stays in progress, TAB-XW-2 done
 > (`tabrion.schema` v2, contract section 5.10 and I-111); TB-015 notes the extension; counts unchanged.
+> TAB-XW-3 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw3`): TB-149 stays in progress, TAB-XW-3 done
+> (`tabrion.ddl`, contract section 5.12 and I-123); counts unchanged.
 > TAB-XW-7 and TAB-XW-9 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw79`): TB-149 stays in progress,
 > TAB-XW-7 done (SQLite `restore`, `delete_database_file`, contract section 3.10) and TAB-XW-9 done (PostgreSQL
 > `create_database`, `drop_database`, `database_sessions`, contract section 4.8); counts unchanged.
@@ -614,7 +616,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done; TAB-XW-7 and TAB-XW-9 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -690,7 +692,38 @@ required (owner decision of 2026-11-08 11:26Z).
   execution in the same transaction after locking the affected tables under `lock_timeout`; functions cannot be
   locked (residual risk). (5) Data Editor (G-S2): tables with triggers get a notice, not a block. Implemented in
   TAB-XW-3..TAB-XW-5, not in #85; **G-S3 stays locked** until it is implemented, independently reviewed and tested.
-- **Open (follow-up work packages):** TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
+- **TAB-XW-3 done** (branch `claude/project-thread-rdo6g3-tabxw3`): `tabrion.ddl`, DDL text from the level-2 model
+  for SQLite and PostgreSQL, generation only (no connection, no diff, no executor). `create_statements`,
+  `table_statements` and one function per change (drop table, add, drop and alter column, add and drop constraint,
+  create and drop index, `CONCURRENTLY` marked not transactional), compiled by SQLAlchemy Core and, for column
+  statements, Alembic's DDL constructs (extra `migrations`); identifiers quoted by the dialect. Round trips (model,
+  DDL, empty database, reflection, equal model and `v2:` fingerprint) on SQLite and PostgreSQL 16 with SQLAlchemy
+  2.0.30 and 2.1. Default, check, expression and predicate texts are trusted schema text but cannot leave their place
+  in the statement (`ddl.unsafe_sql_text`). D-5.3 on the generation side: an allowlist of the shape fields and
+  features the module generates; anything else (exclusion constraints, `NOT VALID`, invalid indexes, unknown access
+  methods, a unique option SQLAlchemy 2.0.30 drops, any new shape field) raises `ddl.unsupported_feature`. Moved from
+  addendum A.2 into contract section 5.12 (I-123).
+- **Review of #87 (planning folder `reviews/pr87-tabxw3-review.md`): ACCEPTED WITH CONDITIONS**, fixed on the same
+  branch. **M-1:** `schema.table` is unquoted, so `s."x.y"` and `"s.x".y` were both `s.x.y` (one hid the other in the
+  snapshot; `drop_table_statement` wrote `DROP TABLE "s.x".y`, possibly the other table). Level 2 now refuses a
+  schema or table name with a dot (`schema.unsupported_name`), a level-2 `SchemaSnapshot` a name with more than one
+  dot, and `tabrion.ddl` such a table or referred table (`ddl.invalid_shape`); level 1 keeps the 0.2 behavior and
+  the collision as a documented `v1:` blind spot (D-4; I-111 g). **M-2:** identity and generated columns are in the
+  level-2 shape (`ColumnShape.identity`, `generated`, `generation_expression`; PostgreSQL `attidentity`,
+  `attgenerated`, `pg_get_expr`; SQLite `pragma_table_xinfo` hidden 2/3), change the `v2:` fingerprint
+  (`column_identity`, `column_generated`) and are refused by `tabrion.ddl` (`identity_column`, `generated_column`)
+  until they are generated. **L-1:** the PostgreSQL column collation is read from `pg_attribute.attcollation`, so the
+  floor SQLAlchemy 2.0.30 gives the same type text and fingerprint as 2.1, and the collated unique constraint that
+  was refused on the floor now round-trips there. Still not in the shape: identity sequence options, a SQLite column
+  collation (I-111 d).
+- **Requirements for G-S3 (Studio Schema Designer preview; review of #87, I-1):** (1) The schema texts of a model
+  (defaults, check expressions, index expressions, partial-index predicates, generation expressions) are trusted
+  input: `tabrion.ddl` only keeps them from leaving their place in the statement (`ddl.unsafe_sql_text`). Studio
+  takes a model only from the user's own database or from its own edits, never from an untrusted source, and shows
+  every such text in the preview before anything runs. (2) A PostgreSQL column type change has no `USING`: a type
+  that cannot be cast by assignment fails loudly when the statement runs, never silently; the preview says so, and
+  the plan (TAB-XW-4) reports the failure.
+- **Open (follow-up work packages):** TAB-XW-4 `tabrion.plan`
   (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
   TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
