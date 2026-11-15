@@ -924,7 +924,7 @@ def grant_runtime_role(connection: psycopg.Connection, role: str, *, schema: str
     3. `GRANT USAGE, SELECT ON ALL SEQUENCES`
     4. `GRANT EXECUTE ON ALL FUNCTIONS`
     5. `ALTER DEFAULT PRIVILEGES` for tables, sequences and functions
-    6. For every existing table in `protected_tables` (schema-qualified through `to_regclass`) and each of its
+    6. For every existing table in `protected_tables` (looked up by exact schema and table name) and each of its
        partitions and inheritance children (`pg_inherits`, any depth; review F-2 of #81):
        `REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER` (`TRIGGER`: review F-4 of #81).
   - A protected table that does not exist yet is skipped; when a later migration creates it, the default privileges

@@ -95,8 +95,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   check. A hit rolls the transaction back (nothing granted) and raises `RoleUnsafe` with the new reason
   `protected_writable` (TB-150 item 3, contract I-35, decision D-125). On a server before PostgreSQL 16 it also
   refuses a role that has, or can become a role with, `CREATEROLE` (new reason `createrole`, D-127), read before the
-  grants and again in the grant transaction. Not covered: a protected table created after the grant gets the default
-  privileges; run the function again after such a migration (contract I-35). **Behavior change:** a deploy that
+  grants and again in the grant transaction. Not covered: a protected table, partition or child created or attached after the grant gets the
+  default privileges; run the function again after such a migration (contract I-35). **Behavior change:** a deploy that
   relied on such a grant (or, before 16, on a runtime role with `CREATEROLE`) is now refused; consumers that map
   `reasons` values should handle `protected_writable` and `createrole`. Axentra's `_writable_protected_tables` and
   Nodestro's own re-check stay valid.

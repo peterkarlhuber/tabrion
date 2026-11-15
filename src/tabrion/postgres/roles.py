@@ -395,8 +395,9 @@ def grant_runtime_role(
     ``protected_tables`` despite the ``REVOKE`` (TB-150); read again inside the grant transaction, before the first
     and after the last statement, so a membership granted in between rolls everything back. ``protected_writable``
     when, after the ``REVOKE`` and in the same transaction, ``role`` or a role it is a member of (also NOINHERIT),
-    or ``PUBLIC``, may still ``INSERT``, ``UPDATE`` (also a column), ``DELETE`` or ``TRUNCATE`` one of
-    ``protected_tables`` (TB-150, D-125): the transaction rolls back and nothing is granted. ``createrole`` on a
+    or ``PUBLIC``, may still ``INSERT``, ``UPDATE`` (also a column), ``DELETE``, ``TRUNCATE`` or ``TRIGGER`` one of
+    ``protected_tables`` or their partitions and inheritance children (TB-150, D-125): the transaction rolls back
+    and nothing is granted. ``createrole`` on a
     server before PostgreSQL 16 when ``role`` is or can become a ``CREATEROLE`` role (it could grant itself any
     non-superuser role; D-127), also read in the grant transaction. ``RoleMissing`` for an
     unknown role,

@@ -154,7 +154,8 @@ protected table. After the revoke it checks, in the same transaction, that the r
 (or a column `INSERT`/`UPDATE`) on them through another path (a grant to `PUBLIC`, to a role it inherits or can
 `SET ROLE` to); if it does, it rolls back and raises `RoleUnsafe` with `protected_writable`. On a server before
 PostgreSQL 16 it also refuses a role that has, or can become a role with, `CREATEROLE` (`createrole`). A protected
-table that does not exist yet is skipped, and a later migration that creates it gives the runtime role write access
+table that does not exist yet is skipped, and a later migration that creates it (or creates or attaches a partition
+or child of a protected table) gives the runtime role write access
 through the default privileges: run `grant_runtime_role` again after such a migration. It needs a transaction of
 its own, so it refuses to run inside yours.
 

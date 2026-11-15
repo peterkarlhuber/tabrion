@@ -71,8 +71,8 @@ TAB-PG-011 (no TLS). Layer A enforces nothing on connections you open yourself.
   tables that exist, their partitions and inheritance children. It refuses a member of a predefined `pg_*` role, a
   role that still holds `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE` or `TRIGGER` (or a column `INSERT`/`UPDATE`) on one
   of them after the revoke, directly, through `PUBLIC` or through a role it is a member of, and, before PostgreSQL 16,
-  a role that has or can reach `CREATEROLE`. It does not see a bookkeeping table created later: run it again after
-  a migration that creates one.
+  a role that has or can reach `CREATEROLE`. It does not see a bookkeeping table, partition or child created or
+  attached later: run it again after a migration that creates or attaches one.
 - `check_role` does not see predefined roles or `CREATEROLE`; run `tabrion.check` too: TAB-PG-013
   (superuser-equivalent roles, `CREATEROLE` before PostgreSQL 16) and TAB-PG-014 (other predefined roles).
 - Tabrion needs no superuser rights itself; `tabrion.testing` needs `CREATEROLE`/`CREATEDB` for throwaway objects.

@@ -1176,6 +1176,17 @@ required (owner decision of 2026-11-08 11:26Z).
   and `has_table_privilege` re-checks once they pin a Tabrion with this fix, and should map `protected_writable` and
   `createrole`.
 
+### TB-151 · Follow-ups from the re-review of #81 (grant_runtime_role)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TB-150, D-125, D-127, re-review of #81 (N-1, N-3, N-4)
+- **What:** (N-1) a child table in a schema the owner cannot use makes the grant fail with a raw psycopg
+  `InsufficientPrivilege` instead of `RoleUnsafe` (it still rolls back; only a superuser or a member of the owner role
+  can set this up). (N-3) the reason `createrole` does not yet follow the 0.3 addendum's split into `createrole` and
+  `reachable_createrole`. (N-4) two mutants survive: dropping the start-of-transaction `createrole` re-read, and
+  dropping `TRIGGER` from the `REVOKE`. No PostgreSQL 15 job runs the `createrole` path against a real server.
+- **Next step:** map N-1 to `RoleUnsafe`; settle the reason names with the 0.3 addendum (TAB-XW); add tests that
+  kill both mutants; a PG 15 job when CI time allows.
+
 ### TB-037 · Review follow-ups L-1 and I-3 of TAB-015/TAB-016
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION TAB-015, contract I-14, I-16, I-17, review L-1, I-3
