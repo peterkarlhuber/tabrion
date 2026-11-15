@@ -304,7 +304,8 @@ def test_xw2_postgres_detail_changes_the_v2_fingerprint(
     assert [d.kind for d in ts.compare(before2, after2)] == kinds
     table = after2.table(f"{name}.t")
     assert table is not None
-    shapes = {s.name: s for s in (*table.indexes, *table.unique_constraints, *table.foreign_keys)}
+    elements: tuple[Any, ...] = (*table.indexes, *table.unique_constraints, *table.foreign_keys)
+    shapes = {s.name: s for s in elements}
     target, field, value = check
     assert getattr(shapes[target], field) == value
     assert ts.SchemaSnapshot.from_json(after2.to_json()) == after2
@@ -393,16 +394,14 @@ def test_xw2_postgres_review_detail_changes_the_v2_fingerprint(
     assert table is not None
     assert ts.fingerprint(after2) != ts.fingerprint(before2)
     assert [d.kind for d in ts.compare(before2, after2)] == kinds
-    shapes = {
-        s.name: s
-        for s in (
-            *table.indexes,
-            *table.unique_constraints,
-            *table.foreign_keys,
-            *table.check_constraints,
-            *table.exclusion_constraints,
-        )
-    }
+    elements: tuple[Any, ...] = (
+        *table.indexes,
+        *table.unique_constraints,
+        *table.foreign_keys,
+        *table.check_constraints,
+        *table.exclusion_constraints,
+    )
+    shapes = {s.name: s for s in elements}
     target, field, value = check
     assert getattr(shapes[target], field) == value
     assert ts.SchemaSnapshot.from_json(after2.to_json()) == after2
