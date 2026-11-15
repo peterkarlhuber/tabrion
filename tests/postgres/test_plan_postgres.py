@@ -320,7 +320,8 @@ def test_xw4_revision_runs_on_postgres_with_concurrent_indexes(
     assert "autocommit_block" in text
     namespace: dict[str, Any] = {}
     exec(compile(text, "revision.py", "exec"), namespace)  # noqa: S102 - the text is the test's own output
-    engine = sqlalchemy.create_engine(sa_url(tabrion_postgres_url))
+    # psycopg 3 by name: SQLAlchemy 2.0 (the floor) takes psycopg2 for a bare postgresql:// URL
+    engine = sqlalchemy.create_engine(sa_url(tabrion_postgres_url).set(drivername="postgresql+psycopg"))
     try:
         with engine.connect() as connection:
             context = MigrationContext.configure(connection)
