@@ -21,6 +21,7 @@ consumer's `docs/api-consumers.md` lists the exact Tabrion names it imports (QA-
 | W5 (S3) | Role tools | axentra #87, nodestro-runtime #169 | PIN-W5: studio #190 `2058ee3` |
 | W6 (S4) | SQLite on `tabrion.sqlite`, file permissions | nodestro-runtime #171, #176, orkexa #97, nodestro-api #136, #138 | PIN-W6: studio #192 `9cae375`, desktop #76 `0493679` |
 | 0.2.1 | Every consumer moves to `tabrion>=0.2,<0.3` | orkexa #99, nodestro-runtime #178, nodestro-api #139, axentra #94 | studio #193 `25095d2`, desktop #77 `66feb6c` |
+| 0.2.2 | Pin files and portable lock move to `5bc690e`; new refusal reasons | axentra #99, #100, orkexa #104, nodestro-runtime #187, nodestro-api #148, nodestro-sdk #128 | studio #202 `19ae915` |
 
 ## Before and after per repository
 
@@ -107,6 +108,7 @@ nodestro-api has no `docs/api-consumers.md` of its own: it imports only `tabrion
 | Tabrion during W1 to W6 | `0.1.0`, release commit `d5821fa` (every studio lock from #177 to #192) |
 | Tabrion `0.2.0` | release commit `52353da` (tabrion #65); never locked by the studio |
 | Tabrion after the switch | `0.2.1`, release commit `af0458d` (tabrion #71), G-T2 passed 2026-11-14 |
+| Tabrion now | `0.2.2`, release commit `5bc690e` (tabrion #83), G-T2 passed 2026-11-15 (#84) |
 | Consumer requirement | `tabrion>=0.2,<0.3` in axentra, orkexa, nodestro-runtime and nodestro-api (with extras as above); no URL pins in manifests (RC-1) |
 | Standalone pin files | axentra and orkexa `requirements/tabrion.txt` pin `af0458d` by full SHA |
 | Studio lock | nodestro-studio `25095d2`: tabrion `af0458d`, orkexa `3d2aef5`, nodestro-runtime `8ee7eca`, nodestro-api `6ef484d`, axentra `3b80af1` |
@@ -201,8 +203,12 @@ Deferred or open after W6 (owner acceptance of the migration report, 2026-11-14 
 - **QA-7 and QA-16 rest: done.** See the test evidence above.
 - **`pg_write_all_data`: fixed (TB-150, D-124).** `grant_runtime_role` refuses a member of any predefined role before
   granting and re-checks inside the transaction (#77, `bf6b88c`). axentra words the new reason `predefined_role` (#98,
-  `e64ed63`). Open: TB-036 (`check_role`/`diagnose` do not report predefined roles) and the write re-check after the
-  REVOKE (TB-150 item 3).
-- **Lock drift.** The studio lock holds axentra `3b80af1` (master `b64edbb`, docs only) and nodestro-integrations
-  `62138e2`.
-- **CR-DBX** (planning document 15): implementation not started. Migration including W6 is its start condition S-3.
+  `e64ed63`). TB-036 and TB-150 item 3 are done in #81 (`78603bf`): `tabrion.check` reports predefined roles
+  (TAB-PG-013, TAB-PG-014), CREATEROLE is refused before PostgreSQL 16, and the re-check covers partitions, child
+  tables and TRIGGER. Version `0.2.2` (`5bc690e`) carries these fixes. nodestro-runtime #187 (`f5f602c`) and axentra
+  #99 (`0e2979a`) know the new reasons `protected_writable` and `createrole`. The axentra `roles.json` golden changes
+  only in the `owner_member` text (axentra #100). Small follow-ups are in TB-151.
+- **Lock drift: fixed.** studio #202 (`19ae915`) locks the current master of every component: tabrion `5bc690e`,
+  axentra `e519405`, orkexa `7ee9977`, nodestro-runtime `f5f602c`, nodestro-api `50dadbd`, nodestro-sdk `4176c9f`,
+  nodestro-integrations `2db82e7`, nodestro-examples `39c8afa`.
+- **CR-DBX** (planning document 15): started 2026-11-14 once its start conditions S-1 to S-4 were met (S-3 is the migration including W6).
