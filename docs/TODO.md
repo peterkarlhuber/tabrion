@@ -576,8 +576,9 @@ required (owner decision of 2026-11-08 11:26Z).
   CR-DBX profile import and export (STU-XDM-5) and the profile modes `read_write`/`admin` (E-X8, TAB-XW-1 addendum)
   build on the same format, so the decision is due before TAB-XW-1 at the latest. **Decided for 0.3 by TAB-XW-1**
   (W-10 resolution of planning document 15 section 2.1, [contract addendum 0.3](api/contract-0.3-addendum.md) A.9):
-  multi-host stays refused and Studio refuses to export such a profile; extending the format is not planned. (2)-(4)
-  stay open.
+  multi-host stays refused and Studio refuses to export such a profile; extending the format is not planned. A
+  socket path with a comma (`host = "/socket,remote"`) slipped past the check and is refused since 2026-11-15
+  (0.2.2 batch). (2)-(4) stay open.
 
 ### TB-016 · PyPI path (TABRION TAB-043), not planned
 
