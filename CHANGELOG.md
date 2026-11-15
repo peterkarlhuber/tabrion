@@ -8,6 +8,40 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- **Experimental, 0.3** (TABRION TAB-XW-4, CR-DBX; contract section 5.13, I-124, moved from addendum A.3): schema
+  change plans in the new module `tabrion.plan` (extra `sqlalchemy`; column steps also `migrations`, as in
+  `tabrion.ddl`). `tabrion.plan.plan(current, target)` diffs two
+  level-2 snapshots into a `tabrion.plan.MigrationPlan` of numbered `tabrion.plan.PlanStep`s (the DDL of
+  `tabrion.ddl`, sorted `tabrion.plan.RiskClass`es: `additive`, `data_changing`, `destructive`, `rebuild`, `locking`,
+  `non_transactional`; whether the step is transactional), ordered so dependencies hold and bound to both
+  fingerprints by `plan_hash`, SHA-256 over the canonical JSON; `MigrationPlan.from_json` recomputes it and refuses an
+  edited plan (`PlanMismatch("plan.invalid")`; integrity, not authenticity, ADR 0015 N-2). On SQLite a change it
+  cannot make in place becomes one `rebuild_table` step without `RENAME` (holder table, drop, create from the target,
+  copy back, indexes, triggers), so views and referencing tables stay valid; trigger texts from `sqlite_schema` must
+  be one complete `CREATE TRIGGER <own name>` statement (K-1, `PlanRefused` reason `unsafe_schema_sql`);
+  `server_version` allows `DROP COLUMN` in place from 3.35 and `concurrent_indexes=True` writes PostgreSQL index steps
+  `CONCURRENTLY`. `tabrion.plan.revision_text` writes the plan as Alembic revision text (fixed docstring, every caller
+  value an `ascii()` literal, revision ids `[0-9a-zA-Z_]{1,64}` or `plan.invalid_revision`, `op.execute(sa.text(...))`
+  with `:` escaped, `autocommit_block` for `CONCURRENTLY`, an engine check, a `downgrade` that raises; K-3); Tabrion
+  never writes the file or runs `env.py`. `tabrion.plan.migration_markers` reads the catalog for `alembic_version`, the
+  Nodestro and Axentra version tables and SQLite `user_version`. New errors `tabrion.errors.PlanError`,
+  `tabrion.errors.PlanMismatch` and `tabrion.errors.PlanRefused` (reasons `dialect_mismatch`, `engine_unsupported`,
+  `unsupported_feature`, `unsafe_schema_sql`). Nothing executes a plan yet (TAB-XW-5).
+- **Experimental, 0.3** (TAB-XW-4, ADR 0015 D-5; contract I-111 i): the level-2 schema model reads the D-5 inputs.
+  New frozen dataclasses `tabrion.schema.TriggerShape`, `tabrion.schema.PolicyShape` and
+  `tabrion.schema.FunctionShape`; new `TableShape` fields `triggers`, `policies`, `functions` (the trigger and policy
+  functions with their whole definition), `row_security`, `force_row_security` and `features`, and
+  `SchemaSnapshot.features` (PostgreSQL event triggers); feature markers for what the shape does not describe
+  (PostgreSQL partitioning, inheritance, foreign tables, rules, domain columns, `UNLOGGED`, typed tables, storage
+  parameters, replica identity, access methods, `NO INHERIT`, unknown relation kinds; SQLite `STRICT`,
+  `WITHOUT ROWID`, `AUTOINCREMENT`, `ON CONFLICT`, column collations, column-level `DEFERRABLE`, virtual tables). A
+  change of any of them changes the `v2:` fingerprint and is named by `compare` (new kinds `trigger_missing`,
+  `trigger_added`, `policy_missing`, `policy_added`, `function_missing`, `function_added`, `row_security`,
+  `feature_missing`, `feature_added`); a table without them keeps its `v2:` fingerprint. `tabrion.plan` refuses to
+  change a table with a PostgreSQL marker or a trigger or policy function in a language other than PL/pgSQL or SQL,
+  any change under an event trigger, and a SQLite rebuild that would lose a marked clause (`PlanRefused`, reason
+  `unsupported_feature`); `tabrion.ddl` refuses the new fields (I-123 e). The split of D-5 between TAB-XW-4 (inputs
+  and plan refusal) and TAB-XW-5 (locks and the repeated drift check) is recorded in ADR 0015 section 10.
 - **Experimental, 0.3** (TABRION TAB-XW-3, CR-DBX; contract section 5.12, I-123, moved from addendum A.2): DDL
   generation from the level-2 schema model in the new module `tabrion.ddl` (extra `sqlalchemy`; column statements
   also need `migrations`). `tabrion.ddl.create_statements` writes `CREATE TABLE` for every table of a model (referred

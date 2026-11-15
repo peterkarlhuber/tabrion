@@ -223,6 +223,16 @@ type = "forbidden"
 source_modules = ["tabrion.ddl"]
 forbidden_modules = ["pytest", "psycopg", "psycopg_pool", "tabrion.testing", "tabrion.migrations", "tabrion._sa"]
 
+# ADR 0015 sections 2 and 4 (TAB-XW-4): tabrion.plan builds on tabrion.schema and tabrion.ddl; it never imports pytest,
+# the pool, a driver, the migration helpers (no Alembic runner, no env.py) or the layer-B implementation (it reads a
+# Database through its public methods only).
+[[tool.importlinter.contracts]]
+id = "plan-sqlalchemy-only"
+name = "Schema change plans need only the schema model and the DDL module"
+type = "forbidden"
+source_modules = ["tabrion.plan"]
+forbidden_modules = ["pytest", "psycopg", "psycopg_pool", "tabrion.testing", "tabrion.migrations", "tabrion._sa"]
+
 # Doc 02 section 2: the migration helpers never import pytest (G-T1 condition C-5).
 [[tool.importlinter.contracts]]
 id = "migrations-no-pytest"
@@ -237,6 +247,8 @@ name = "Layer B builds on layer A, never the reverse"
 type = "layers"
 layers = [
     "tabrion.testing",
+    # tabrion.plan (since 0.3, TAB-XW-4) builds on tabrion.ddl and tabrion.schema.
+    "tabrion.plan",
     # tabrion.rowedit (since 0.3, ADR 0015) builds on the layer-B implementation it re-exports; tabrion.ddl (since
     # 0.3, TAB-XW-3) on the schema model of tabrion.schema.
     "tabrion.migrations | tabrion.rowedit | tabrion.ddl",

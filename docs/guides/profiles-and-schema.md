@@ -140,8 +140,12 @@ True
 A level-2 snapshot is also the target model of the Schema Designer: a consumer edits it with `dataclasses.replace`
 and stores it with `to_json`. Partial index predicates, the order and collation of index elements, PostgreSQL
 `INCLUDE`, `NULLS NOT DISTINCT`, operator classes and exclusion constraints, `DEFERRABLE`, `NOT VALID`, identity and
-generated columns are part of the shape. Triggers, policies, domain checks and partitioning are not (I-111 d): a
-change of only these leaves a `v2:` fingerprint as it was. At level 2 a schema or table name with a dot is refused
+generated columns are part of the shape. Since TAB-XW-4 so are triggers, row-level security policies and the
+functions they call directly (with their body), and `features` marks what the shape does not describe (PostgreSQL
+partitioning, inheritance, rules, foreign tables, domain columns, `UNLOGGED` ...; SQLite `STRICT`, `AUTOINCREMENT`
+...; I-111 i): a change of any of them changes the `v2:` fingerprint, and
+[`tabrion.plan`](migrations.md#schema-change-plans-03-experimental) refuses to change a marked table. Still not in
+the shape (I-111 d): index storage parameters, sequences, comments and views. At level 2 a schema or table name with a dot is refused
 (`schema.unsupported_name`), as `schema.table` would not say which table it is.
 
 ### DDL from the model (0.3, experimental)

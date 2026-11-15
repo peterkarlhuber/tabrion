@@ -10,7 +10,9 @@ differs between an expected and an actual snapshot. Use it with ``Database.inspe
 Level 1 (the default, since 0.2) holds columns with type and nullability and the primary key; its fingerprint starts
 with ``v1:``. Level 2 (since 0.3, experimental, TAB-XW-2; ``snapshot(..., level=2)``) adds column defaults, foreign
 keys, unique and check constraints and indexes; its fingerprint starts with ``v2:``. A level-1 fingerprint is
-byte-identical to the one 0.2 computed (ADR 0015 D-4).
+byte-identical to the one 0.2 computed (ADR 0015 D-4). Since TAB-XW-4 level 2 also holds triggers, row-level
+security policies and the functions they call directly, and marks table features the shape does not describe
+(partitioning, inheritance, rules, domain columns, ...; ADR 0015 D-5), so a ``v2:`` fingerprint sees them.
 
 A consumer (Nodestro's ``database`` node, NOD-CR-5) stores the fingerprint (and the snapshot as JSON, for clear
 messages) with a release and compares at start-up; drift is reported, never migrated. A level-2 snapshot is also the
@@ -43,10 +45,13 @@ __all__ = [
     "ColumnShape",
     "ExclusionShape",
     "ForeignKeyShape",
+    "FunctionShape",
     "IndexShape",
+    "PolicyShape",
     "SchemaDifference",
     "SchemaSnapshot",
     "TableShape",
+    "TriggerShape",
     "UniqueShape",
     "compare",
     "fingerprint",
@@ -79,6 +84,15 @@ DifferenceKind = Literal[
     "exclusion_added",
     "index_missing",
     "index_added",
+    "trigger_missing",
+    "trigger_added",
+    "policy_missing",
+    "policy_added",
+    "function_missing",
+    "function_added",
+    "row_security",
+    "feature_missing",
+    "feature_added",
 ]
 _BREAKING = frozenset(
     {
@@ -99,10 +113,20 @@ _BREAKING = frozenset(
         "exclusion_missing",
         "exclusion_added",
         "index_missing",
+        "trigger_missing",
+        "trigger_added",
+        "policy_missing",
+        "policy_added",
+        "function_missing",
+        "function_added",
+        "row_security",
+        "feature_missing",
+        "feature_added",
     }
 )
 # column_order is not breaking: an application that names its columns does not notice it. Neither is an added table,
-# column or index. An added constraint is breaking: it can refuse a write that worked before.
+# column or index. An added constraint is breaking: it can refuse a write that worked before; so is every change of a
+# trigger, policy, function, row-level security or table feature (it changes what a write does or who sees a row).
 
 _T = TypeVar("_T")
 
@@ -218,9 +242,56 @@ class IndexShape:
 
 
 @dataclass(frozen=True, slots=True)
+class TriggerShape:
+    """A trigger of the table (level 2, since 0.3; ADR 0015 D-5.1). ``definition`` is PostgreSQL's
+    ``pg_get_triggerdef`` or the ``CREATE TRIGGER`` text SQLite keeps in ``sqlite_schema``. ``enabled`` is ``None``
+    for a trigger that fires as usual (PostgreSQL ``O``; always on SQLite), else ``DISABLED``, ``REPLICA`` or
+    ``ALWAYS``. The internal triggers PostgreSQL makes for foreign keys are not listed."""
+
+    name: str
+    definition: str
+    enabled: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyShape:
+    """A PostgreSQL row-level security policy (level 2, since 0.3; ADR 0015 D-5.1). ``command`` is ``ALL``,
+    ``SELECT``, ``INSERT``, ``UPDATE`` or ``DELETE``; ``permissive`` is ``False`` for ``AS RESTRICTIVE``; ``roles``
+    holds the role names, sorted (``PUBLIC`` for every role); ``using`` and ``check`` are the ``USING`` and ``WITH
+    CHECK`` expressions as ``pg_get_expr`` writes them, or ``None``."""
+
+    name: str
+    command: str
+    permissive: bool
+    roles: tuple[str, ...]
+    using: str | None = None
+    check: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FunctionShape:
+    """A PostgreSQL function that a trigger or policy of the table calls directly (level 2, since 0.3; ADR 0015
+    D-5.1): the trigger function and every function a ``WHEN`` condition or a policy expression depends on
+    (``pg_depend``; built-in functions are not recorded there). ``signature`` is ``schema.name(argument types)``,
+    ``language`` the language name (``plpgsql``, ``sql``, ``c``, ``internal`` ...), ``definition`` the whole
+    ``pg_get_functiondef`` text with the body, ``""`` when PostgreSQL cannot write one (an aggregate). Functions
+    that these functions call in turn are not followed (a documented residual risk)."""
+
+    signature: str
+    language: str
+    definition: str
+
+
+@dataclass(frozen=True, slots=True)
 class TableShape:
     """One table: ``schema.table`` (SQLite: ``main.table``), its columns in table order and its primary key; at level
-    2 (since 0.3) also its foreign keys, unique, check and exclusion constraints and indexes (empty at level 1)."""
+    2 (since 0.3) also its foreign keys, unique, check and exclusion constraints and indexes (empty at level 1).
+
+    Since TAB-XW-4 (ADR 0015 D-5), level 2 also holds the table's ``triggers``, its PostgreSQL row-level security
+    ``policies`` and whether row-level security is enabled (``row_security``) and forced (``force_row_security``),
+    the ``functions`` the triggers and policies call directly, and ``features``: sorted markers of what the shape
+    does not describe and a schema change plan therefore refuses (``partitioned``, ``partition``, ``inheritance``,
+    ``foreign_table``, ``rule:<name>``, ``domain:<column>`` ...; contract I-111 i)."""
 
     name: str
     columns: tuple[ColumnShape, ...]
@@ -230,6 +301,12 @@ class TableShape:
     check_constraints: tuple[CheckShape, ...] = ()
     indexes: tuple[IndexShape, ...] = ()
     exclusion_constraints: tuple[ExclusionShape, ...] = ()
+    triggers: tuple[TriggerShape, ...] = ()
+    policies: tuple[PolicyShape, ...] = ()
+    functions: tuple[FunctionShape, ...] = ()
+    row_security: bool = False
+    force_row_security: bool = False
+    features: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,15 +317,19 @@ class SchemaSnapshot:
     hold level-2 detail (a default, an identity or generated column, a constraint or an index:
     ``UsageError("schema.level_mismatch")``). In a level-2 snapshot a table name or the referred table of a foreign
     key with more than one dot is refused (``UsageError("schema.unsupported_name")``): ``s.x.y`` could be table
-    ``x.y`` of schema ``s`` or table ``y`` of schema ``s.x`` (review of #87, M-1)."""
+    ``x.y`` of schema ``s`` or table ``y`` of schema ``s.x`` (review of #87, M-1).
+
+    ``features`` (level 2, since 0.3, TAB-XW-4) holds the database-wide markers a schema change plan refuses: on
+    PostgreSQL ``event_trigger:<name>`` for every event trigger (ADR 0015 D-5.3)."""
 
     dialect: str
     tables: tuple[TableShape, ...]
     level: Literal[1, 2] = 1
+    features: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _check_level(self.level)
-        if self.level == 1 and any(_has_level2_detail(table) for table in self.tables):
+        if self.level == 1 and (self.features or any(_has_level2_detail(table) for table in self.tables)):
             raise UsageError("schema.level_mismatch")
         if self.level == 2:
             for table in self.tables:
@@ -323,7 +404,8 @@ def snapshot(
     A table of ``tables`` that does not exist or is a view is left out, so :func:`compare` reports it as
     ``table_missing``. Views are not included. Raises ``UsageError("schema.too_many_tables")`` above 10 000 tables.
     ``level=2`` (since 0.3, experimental) also reads defaults, identity and generated columns, foreign keys, unique,
-    check and exclusion constraints and indexes (contract I-111); ``level=1`` stays the default (ADR 0015 D-4). At
+    check and exclusion constraints, indexes, triggers, policies, the functions they call and the table features
+    of contract I-111 i; ``level=1`` stays the default (ADR 0015 D-4). At
     level 2 a schema or table name with a dot raises ``UsageError("schema.unsupported_name")``, as ``schema.table``
     would not name it unambiguously; level 1 keeps the behavior of 0.2 (I-111 g)."""
     _check_level(level)
@@ -368,7 +450,17 @@ def snapshot(
         if level == 2:
             shape = _level2_table(inspector, shape, schema, table, default)
         shapes[shape.name] = shape
-    return SchemaSnapshot(dialect=str(dialect.name), tables=tuple(shapes[name] for name in sorted(shapes)), level=level)
+    features: tuple[str, ...] = ()
+    if level == 2 and dialect.name == "postgresql":
+        # Every event trigger, enabled or not: it runs on any DDL statement (ADR 0015 D-5.3).
+        rows = _rows(inspector, "SELECT evtname FROM pg_catalog.pg_event_trigger", {})
+        features = tuple(sorted({f"event_trigger:{name}" for (name,) in rows}))
+    return SchemaSnapshot(
+        dialect=str(dialect.name),
+        tables=tuple(shapes[name] for name in sorted(shapes)),
+        level=level,
+        features=features,
+    )
 
 
 def fingerprint(snapshot: SchemaSnapshot) -> str:
@@ -395,6 +487,15 @@ def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDif
         raise UsageError("schema.level_mismatch")
     level2 = expected.level == 2
     out: list[SchemaDifference] = []
+    if level2:  # the database-wide features (ADR 0015 D-5.3) first, with an empty table name
+        out.extend(
+            SchemaDifference("feature_missing", "", None, f)
+            for f in sorted(set(expected.features) - set(actual.features))
+        )
+        out.extend(
+            SchemaDifference("feature_added", "", None, f)
+            for f in sorted(set(actual.features) - set(expected.features))
+        )
     have = {table.name: table for table in actual.tables}
     want = {table.name: table for table in expected.tables}
     for name in sorted(set(want) | set(have)):
@@ -459,6 +560,12 @@ def _has_level2_detail(table: TableShape) -> bool:
         or table.check_constraints
         or table.indexes
         or table.exclusion_constraints
+        or table.triggers
+        or table.policies
+        or table.functions
+        or table.row_security
+        or table.force_row_security
+        or table.features
         or any(
             column.default is not None
             or column.identity is not None
@@ -524,6 +631,12 @@ class _Catalog:
     indexes: Mapping[str, _PgIndex]
     exclusions: tuple[ExclusionShape, ...]
     columns: Mapping[str, _Column] = dataclasses.field(default_factory=dict)
+    triggers: tuple[TriggerShape, ...] = ()
+    policies: tuple[PolicyShape, ...] = ()
+    functions: tuple[FunctionShape, ...] = ()
+    row_security: bool = False
+    force_row_security: bool = False
+    features: tuple[str, ...] = ()
 
 
 _EMPTY = _Catalog({}, {}, ())
@@ -539,9 +652,18 @@ def _level2_table(
 ) -> TableShape:
     arg = _arg(schema, default)
     if inspector.dialect.name == "sqlite":
-        catalog = _Catalog({}, {}, (), _sqlite_columns(inspector, schema, table))
+        sql = _sqlite_table_sql(inspector, schema, table)
+        catalog = _Catalog(
+            {},
+            {},
+            (),
+            _sqlite_columns(inspector, schema, table),
+            triggers=_sqlite_triggers(inspector, schema, table),
+        )
         foreign_keys = _sqlite_foreign_keys(inspector, schema, table, arg)
         indexes, unique = _sqlite_indexes(inspector, schema, table)
+        features = _sqlite_features(sql, sum(1 for f in foreign_keys if f.deferrable))
+        catalog = dataclasses.replace(catalog, features=features)
     else:
         catalog = _postgres_catalog(inspector, schema, table) if inspector.dialect.name == "postgresql" else _EMPTY
         foreign_keys = _foreign_keys(inspector, table, arg, default, catalog)
@@ -587,6 +709,12 @@ def _level2_table(
             check_constraints=tuple(checks),
             indexes=tuple(indexes),
             exclusion_constraints=catalog.exclusions,
+            triggers=catalog.triggers,
+            policies=catalog.policies,
+            functions=catalog.functions,
+            row_security=catalog.row_security,
+            force_row_security=catalog.force_row_security,
+            features=catalog.features,
         )
     )
 
@@ -658,6 +786,94 @@ _PG_COLUMNS = (
 _IDENTITY = {"a": "ALWAYS", "d": "BY DEFAULT"}
 _GENERATED = {"s": "STORED", "v": "VIRTUAL"}
 
+# ADR 0015 D-5 (TAB-XW-4): triggers, policies, the functions they call directly, and the table features the shape does
+# not describe. Names are bound as parameters; every catalog name is qualified.
+_PG_TRIGGERS = (
+    "WITH rel AS (SELECT r.oid FROM pg_catalog.pg_class r "
+    "JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace WHERE n.nspname = :s AND r.relname = :t) "
+    "SELECT g.tgname, pg_catalog.pg_get_triggerdef(g.oid, true), g.tgenabled FROM pg_catalog.pg_trigger g "
+    "WHERE g.tgrelid IN (SELECT oid FROM rel) AND NOT g.tgisinternal"
+)
+_PG_POLICIES = (
+    "WITH rel AS (SELECT r.oid FROM pg_catalog.pg_class r "
+    "JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace WHERE n.nspname = :s AND r.relname = :t) "
+    "SELECT p.polname, p.polcmd, p.polpermissive, "
+    "ARRAY(SELECT CASE WHEN o = 0 THEN 'PUBLIC' ELSE COALESCE("
+    "(SELECT a.rolname FROM pg_catalog.pg_roles a WHERE a.oid = o), o::text) END "
+    "FROM pg_catalog.unnest(p.polroles) o ORDER BY 1), "
+    "pg_catalog.pg_get_expr(p.polqual, p.polrelid), pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) "
+    "FROM pg_catalog.pg_policy p WHERE p.polrelid IN (SELECT oid FROM rel)"
+)
+# The trigger functions (by tgfoid, so a built-in one is found too) and every function a trigger's WHEN condition or a
+# policy expression depends on (pg_depend; PostgreSQL records no dependency on a built-in, pinned function).
+_PG_FUNCTIONS = (
+    "WITH rel AS (SELECT r.oid FROM pg_catalog.pg_class r "
+    "JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace WHERE n.nspname = :s AND r.relname = :t), "
+    "trg AS (SELECT g.oid, g.tgfoid FROM pg_catalog.pg_trigger g "
+    "WHERE g.tgrelid IN (SELECT oid FROM rel) AND NOT g.tgisinternal), "
+    "pol AS (SELECT p.oid FROM pg_catalog.pg_policy p WHERE p.polrelid IN (SELECT oid FROM rel)) "
+    "SELECT pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(f.proname) || '(' "
+    "|| pg_catalog.pg_get_function_identity_arguments(f.oid) || ')', l.lanname, "
+    "CASE WHEN f.prokind IN ('f', 'p') THEN pg_catalog.pg_get_functiondef(f.oid) END "
+    "FROM pg_catalog.pg_proc f "
+    "JOIN pg_catalog.pg_namespace n ON n.oid = f.pronamespace "
+    "JOIN pg_catalog.pg_language l ON l.oid = f.prolang "
+    "WHERE f.oid IN (SELECT tgfoid FROM trg UNION SELECT d.refobjid FROM pg_catalog.pg_depend d "
+    "WHERE d.refclassid = 'pg_catalog.pg_proc'::pg_catalog.regclass AND ("
+    "(d.classid = 'pg_catalog.pg_trigger'::pg_catalog.regclass AND d.objid IN (SELECT oid FROM trg)) "
+    "OR (d.classid = 'pg_catalog.pg_policy'::pg_catalog.regclass AND d.objid IN (SELECT oid FROM pol))))"
+)
+_PG_TABLE = (
+    "SELECT r.relkind, r.relpersistence, r.relispartition, r.reloftype <> 0, r.reloptions IS NOT NULL, "
+    "r.relreplident, r.relrowsecurity, r.relforcerowsecurity, am.amname, "
+    "EXISTS (SELECT 1 FROM pg_catalog.pg_inherits i WHERE i.inhrelid = r.oid OR i.inhparent = r.oid), "
+    "ARRAY(SELECT w.rulename FROM pg_catalog.pg_rewrite w WHERE w.ev_class = r.oid ORDER BY 1), "
+    "ARRAY(SELECT a.attname FROM pg_catalog.pg_attribute a "
+    "JOIN pg_catalog.pg_type y ON y.oid = a.atttypid "
+    "LEFT JOIN pg_catalog.pg_type e ON e.oid = y.typelem AND y.typcategory = 'A' "
+    "WHERE a.attrelid = r.oid AND a.attnum > 0 AND NOT a.attisdropped "
+    "AND (y.typtype = 'd' OR e.typtype = 'd') ORDER BY a.attnum), "
+    "ARRAY(SELECT c.conname FROM pg_catalog.pg_constraint c WHERE c.conrelid = r.oid AND c.contype = 'c' "
+    "AND c.connoinherit ORDER BY 1) "
+    "FROM pg_catalog.pg_class r "
+    "JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace "
+    "LEFT JOIN pg_catalog.pg_am am ON am.oid = r.relam "
+    "WHERE n.nspname = :s AND r.relname = :t"
+)
+_ENABLED = {"D": "DISABLED", "R": "REPLICA", "A": "ALWAYS"}
+_COMMAND = {"*": "ALL", "r": "SELECT", "a": "INSERT", "w": "UPDATE", "d": "DELETE"}
+_RELKIND = {"r": None, "p": "partitioned", "f": "foreign_table"}
+_PERSISTENCE = {"p": None, "u": "unlogged", "t": "temporary"}
+
+
+def _postgres_features(row: Sequence[Any]) -> tuple[bool, bool, tuple[str, ...]]:
+    """``(row_security, force_row_security, features)`` from a row of ``_PG_TABLE``: an allowlist of the relation
+    kind and the table properties the shape describes; anything else becomes a marker (ADR 0015 D-5.2, D-5.3)."""
+    kind, persistence, partition, typed, options, replica, rls, force, method, inherits, rules, domains, noinherit = row
+    out: set[str] = set()
+    kind_marker = _RELKIND.get(str(kind), f"relkind:{kind}")
+    if kind_marker:
+        out.add(kind_marker)
+    persistence_marker = _PERSISTENCE.get(str(persistence), f"persistence:{persistence}")
+    if persistence_marker:
+        out.add(persistence_marker)
+    if partition:
+        out.add("partition")
+    if inherits and not partition and str(kind) != "p":
+        out.add("inheritance")
+    if typed:
+        out.add("typed_table")
+    if options:
+        out.add("storage_parameters")
+    if str(replica) != "d":
+        out.add(f"replica_identity:{replica}")
+    if method is not None and str(method) != "heap":
+        out.add(f"access_method:{method}")
+    out.update(f"rule:{name}" for name in rules)
+    out.update(f"domain:{name}" for name in domains)
+    out.update(f"no_inherit:{name}" for name in noinherit)
+    return bool(rls), bool(force), tuple(sorted(out))
+
 
 def _collation_text(preparer: Any, name: str, schema: str | None) -> str:
     """The collation as SQLAlchemy 2.1's ``format_collation`` writes it (2.0.30 has no schema argument)."""
@@ -699,7 +915,39 @@ def _postgres_catalog(inspector: sqlalchemy.Inspector, schema: str, table: str) 
         )
         for name, identity, generated, expression, collation, where in _rows(inspector, _PG_COLUMNS, params)
     }
-    return _Catalog(constraints, indexes, tuple(exclusions), columns)
+    triggers = tuple(
+        TriggerShape(name=str(name), definition=str(definition), enabled=_ENABLED.get(str(enabled)))
+        for name, definition, enabled in _rows(inspector, _PG_TRIGGERS, params)
+    )
+    policies = tuple(
+        PolicyShape(
+            name=str(name),
+            command=_COMMAND.get(str(command), str(command)),
+            permissive=bool(permissive),
+            roles=tuple(sorted(str(role) for role in roles)),
+            using=_optional_name(using),
+            check=_optional_name(check),
+        )
+        for name, command, permissive, roles, using, check in _rows(inspector, _PG_POLICIES, params)
+    )
+    functions = tuple(
+        FunctionShape(signature=str(signature), language=str(language), definition=str(definition or ""))
+        for signature, language, definition in _rows(inspector, _PG_FUNCTIONS, params)
+    )
+    table_rows = _rows(inspector, _PG_TABLE, params)
+    rls, force, features = _postgres_features(table_rows[0]) if table_rows else (False, False, ())
+    return _Catalog(
+        constraints,
+        indexes,
+        tuple(exclusions),
+        columns,
+        triggers=triggers,
+        policies=policies,
+        functions=functions,
+        row_security=rls,
+        force_row_security=force,
+        features=features,
+    )
 
 
 _PG_SORTING = {"desc": "DESC", "nulls_first": "NULLS FIRST", "nulls_last": "NULLS LAST"}
@@ -960,6 +1208,68 @@ def _sqlite_columns(inspector: sqlalchemy.Inspector, schema: str, table: str) ->
     }
 
 
+def _sqlite_triggers(inspector: sqlalchemy.Inspector, schema: str, table: str) -> tuple[TriggerShape, ...]:
+    # The CREATE TRIGGER text as sqlite_schema keeps it (ADR 0015 D-5.1); a rebuild recreates the trigger from it under
+    # the checks of K-1 (tabrion.plan). The schema name is quoted by the dialect's preparer; the table name is bound.
+    quoted = inspector.dialect.identifier_preparer.quote_identifier(schema)
+    rows = _rows(
+        inspector,
+        f"SELECT name, sql FROM {quoted}.sqlite_master "  # noqa: S608
+        "WHERE type = 'trigger' AND tbl_name = :t COLLATE NOCASE",
+        {"t": table},
+    )
+    return tuple(TriggerShape(name=str(name), definition=str(sql or "")) for name, sql in rows)
+
+
+def _sqlite_features(sql: str, deferrable_keys: int) -> tuple[str, ...]:
+    """Markers of what a SQLite ``CREATE TABLE`` text holds beyond the shape, which a table rebuild from the shape
+    would lose (ADR 0015 D-5.3, contract I-111 i): ``virtual_table``, ``strict``, ``without_rowid``,
+    ``autoincrement``, ``on_conflict``, ``collation`` (a ``COLLATE`` in a column definition or a table-level
+    ``PRIMARY KEY``),
+    ``deferrable_reference`` (more ``DEFERRABLE`` clauses than deferrable foreign keys in the shape: a column-level
+    ``REFERENCES ... DEFERRABLE``) and ``unparsed_table_sql`` (a text that is too long or cannot be tokenized).
+    Linear in the length."""
+    if not sql or len(sql) > _MAX_TABLE_SQL:
+        return ("unparsed_table_sql",)
+    tokens = _sql_tokens(sql)
+    if tokens is None:
+        return ("unparsed_table_sql",)
+    out: set[str] = set()
+    words = [text.upper() if kind == "word" else "" for kind, text, _, _ in tokens]
+    if words[1:3] == ["VIRTUAL", "TABLE"] or words[2:4] == ["VIRTUAL", "TABLE"]:
+        out.add("virtual_table")
+    depth, closed, deferrable, opener = 0, -1, 0, ""
+    for i, (kind, _, _, _) in enumerate(tokens):
+        word = words[i]
+        if kind == "(":
+            depth += 1
+            if depth == 2:
+                opener = words[i - 1]  # KEY of PRIMARY KEY (...), UNIQUE, CHECK, a type name ...
+        elif kind == ")":
+            depth -= 1
+            if depth == 0 and closed == -1:
+                closed = i
+        elif word == "AUTOINCREMENT":
+            out.add("autoincrement")
+        elif word == "CONFLICT" and i > 0 and words[i - 1] == "ON":
+            out.add("on_conflict")
+        elif word == "COLLATE" and (depth == 1 or (depth == 2 and opener == "KEY")):
+            # a column collation or one in a table-level PRIMARY KEY; UNIQUE and CHECK keep theirs in the shape
+            out.add("collation")
+        elif word == "DEFERRABLE" and not (i > 0 and words[i - 1] == "NOT"):
+            deferrable += 1
+    if depth != 0 or closed == -1:
+        return ("unparsed_table_sql",)
+    tail = words[closed + 1 :]
+    if "STRICT" in tail:
+        out.add("strict")
+    if any(word == "WITHOUT" and tail[j + 1 : j + 2] == ["ROWID"] for j, word in enumerate(tail)):
+        out.add("without_rowid")
+    if deferrable > deferrable_keys:
+        out.add("deferrable_reference")
+    return tuple(sorted(out))
+
+
 def _sqlite_generated_expressions(sql: str) -> dict[str, str] | None:
     """Column name to the expression of each ``AS (...)`` of a column definition of a ``CREATE TABLE`` text, as
     written between its parentheses; ``None`` when the text is too long or cannot be tokenized. Linear in the
@@ -1212,6 +1522,17 @@ def _canonical(table: TableShape) -> TableShape:
         check_constraints=tuple(sorted(table.check_constraints, key=lambda c: (c.name or "", c.sqltext, repr(c)))),
         indexes=tuple(sorted((_canonical_index(x) for x in table.indexes), key=lambda x: (x.name, repr(x)))),
         exclusion_constraints=tuple(sorted(table.exclusion_constraints, key=lambda x: (x.name, x.definition))),
+        triggers=tuple(sorted(table.triggers, key=lambda t: (t.name, t.definition, repr(t)))),
+        policies=tuple(
+            sorted(
+                (dataclasses.replace(p, roles=tuple(sorted(p.roles))) for p in table.policies),
+                key=lambda p: (p.name, repr(p)),
+            )
+        ),
+        functions=tuple(sorted(table.functions, key=lambda f: (f.signature, f.language, f.definition))),
+        row_security=table.row_security,
+        force_row_security=table.force_row_security,
+        features=tuple(sorted(set(table.features))),
     )
 
 
@@ -1248,13 +1569,28 @@ def _constraint_differences(
             SchemaDifference(added, table, column(x), x.name) for x in _unmatched(actual, expected)
         ]
 
-    return [
+    def named(
+        missing: DifferenceKind, added: DifferenceKind, expected: Sequence[Any], actual: Sequence[Any], key: str
+    ) -> list[SchemaDifference]:
+        return [SchemaDifference(missing, table, None, getattr(x, key)) for x in _unmatched(expected, actual)] + [
+            SchemaDifference(added, table, None, getattr(x, key)) for x in _unmatched(actual, expected)
+        ]
+
+    out = [
         *pair("foreign_key_missing", "foreign_key_added", old.foreign_keys, new.foreign_keys),
         *pair("unique_missing", "unique_added", old.unique_constraints, new.unique_constraints),
         *pair("check_missing", "check_added", old.check_constraints, new.check_constraints),
         *pair("exclusion_missing", "exclusion_added", old.exclusion_constraints, new.exclusion_constraints),
         *pair("index_missing", "index_added", old.indexes, new.indexes),
+        *named("trigger_missing", "trigger_added", old.triggers, new.triggers, "name"),
+        *named("policy_missing", "policy_added", old.policies, new.policies, "name"),
+        *named("function_missing", "function_added", old.functions, new.functions, "signature"),
     ]
+    if (old.row_security, old.force_row_security) != (new.row_security, new.force_row_security):
+        out.append(SchemaDifference("row_security", table))
+    out.extend(SchemaDifference("feature_missing", table, None, f) for f in old.features if f not in new.features)
+    out.extend(SchemaDifference("feature_added", table, None, f) for f in new.features if f not in old.features)
+    return out
 
 
 # --- level 1 helpers and JSON -----------------------------------------------------------------------------------------
@@ -1299,22 +1635,36 @@ def _as_dict_v2(snapshot: SchemaSnapshot) -> dict[str, Any]:
     tables = []
     for table in snapshot.tables:
         table = _canonical(table)
-        tables.append(
-            {
-                "name": table.name,
-                "columns": [
-                    [c.name, c.type, c.nullable, c.default, c.identity, c.generated, c.generation_expression]
-                    for c in table.columns
-                ],
-                "primary_key": list(table.primary_key),
-                "foreign_keys": [dataclasses.asdict(f) for f in table.foreign_keys],
-                "unique_constraints": [dataclasses.asdict(u) for u in table.unique_constraints],
-                "check_constraints": [dataclasses.asdict(c) for c in table.check_constraints],
-                "exclusion_constraints": [dataclasses.asdict(x) for x in table.exclusion_constraints],
-                "indexes": [dataclasses.asdict(x) for x in table.indexes],
-            }
-        )
-    return {"format": 2, "dialect": snapshot.dialect, "tables": tables}
+        entry: dict[str, Any] = {
+            "name": table.name,
+            "columns": [
+                [c.name, c.type, c.nullable, c.default, c.identity, c.generated, c.generation_expression]
+                for c in table.columns
+            ],
+            "primary_key": list(table.primary_key),
+            "foreign_keys": [dataclasses.asdict(f) for f in table.foreign_keys],
+            "unique_constraints": [dataclasses.asdict(u) for u in table.unique_constraints],
+            "check_constraints": [dataclasses.asdict(c) for c in table.check_constraints],
+            "exclusion_constraints": [dataclasses.asdict(x) for x in table.exclusion_constraints],
+            "indexes": [dataclasses.asdict(x) for x in table.indexes],
+        }
+        # The D-5 parts (TAB-XW-4) are written only when they are not empty, so a table without them keeps the v2
+        # fingerprint it had before they were added.
+        if table.triggers:
+            entry["triggers"] = [dataclasses.asdict(t) for t in table.triggers]
+        if table.policies:
+            entry["policies"] = [dataclasses.asdict(p) for p in table.policies]
+        if table.functions:
+            entry["functions"] = [dataclasses.asdict(f) for f in table.functions]
+        if table.row_security or table.force_row_security:
+            entry["row_security"] = [table.row_security, table.force_row_security]
+        if table.features:
+            entry["features"] = list(table.features)
+        tables.append(entry)
+    out: dict[str, Any] = {"format": 2, "dialect": snapshot.dialect, "tables": tables}
+    if snapshot.features:
+        out["features"] = sorted(set(snapshot.features))
+    return out
 
 
 def _from_dict(data: Mapping[str, Any]) -> SchemaSnapshot | None:
@@ -1405,6 +1755,9 @@ def _from_dict_v2(data: Mapping[str, Any]) -> SchemaSnapshot:
         indexes = tuple(_shape(IndexShape, x) for x in _list(table["indexes"]))
         if any(i >= len(x.columns) for x in indexes for i in x.expressions):
             raise ValueError("expression position")
+        row_security = _list(table.get("row_security", [False, False]))
+        if len(row_security) != 2 or not all(isinstance(flag, bool) for flag in row_security):
+            raise TypeError("row_security")
         tables.append(
             _canonical(
                 TableShape(
@@ -1418,7 +1771,18 @@ def _from_dict_v2(data: Mapping[str, Any]) -> SchemaSnapshot:
                     exclusion_constraints=tuple(
                         _shape(ExclusionShape, x) for x in _list(table["exclusion_constraints"])
                     ),
+                    triggers=tuple(_shape(TriggerShape, t) for t in _list(table.get("triggers", []))),
+                    policies=tuple(_shape(PolicyShape, p) for p in _list(table.get("policies", []))),
+                    functions=tuple(_shape(FunctionShape, f) for f in _list(table.get("functions", []))),
+                    row_security=row_security[0],
+                    force_row_security=row_security[1],
+                    features=_strs(table.get("features", [])),
                 )
             )
         )
-    return SchemaSnapshot(dialect=_str(data["dialect"]), tables=tuple(sorted(tables, key=lambda t: t.name)), level=2)
+    return SchemaSnapshot(
+        dialect=_str(data["dialect"]),
+        tables=tuple(sorted(tables, key=lambda t: t.name)),
+        level=2,
+        features=_strs(data.get("features", [])),
+    )

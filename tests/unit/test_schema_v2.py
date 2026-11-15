@@ -780,3 +780,208 @@ def test_level2_identity_and_generated_change_the_v2_fingerprint(change: dict[st
     assert ts.fingerprint(before) != ts.fingerprint(after)
     assert [(d.kind, d.column, d.breaking) for d in ts.compare(before, after)] == [(kind, "id", True)]
     assert ts.SchemaSnapshot.from_json(after.to_json()) == after
+
+
+# --- TAB-XW-4, ADR 0015 D-5: triggers, policies, functions, features (contract I-111 i) -------------------------------
+
+
+def test_level2_base_fingerprint_unchanged_by_the_d5_fields() -> None:
+    # The D-5 keys are written only when not empty: a table without them keeps the v2 fingerprint it had before
+    # TAB-XW-4 (values computed with the schema module of master 948fc80).
+    assert ts.fingerprint(ts.SchemaSnapshot("sqlite", (_base(),), level=2)) == (
+        "v2:sha256:c08a2fb4b81e5457b66a8aaf67d916f821e0fae6f8ff48c39606908e5f56df73"
+    )
+    assert ts.fingerprint(ts.SchemaSnapshot("postgresql", (_base(),), level=2)) == (
+        "v2:sha256:5eb8ba77f73606ffa9b6cc840f64ebf51e5e24a09ebb7dfd4c79f148938a46ca"
+    )
+    text = ts.SchemaSnapshot("sqlite", (_base(),), level=2).to_json()
+    for key in ("triggers", "policies", "functions", "row_security", "features"):
+        assert f'"{key}"' not in text
+
+
+def test_sqlite_triggers_reflected(tmp_path: Path) -> None:
+    trigger = "CREATE TRIGGER t_log AFTER INSERT ON t BEGIN UPDATE t SET v = v WHERE id = new.id; END"
+    database = make(tmp_path / "trg.db", ("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)", trigger))
+    try:
+        snapshot = take(database, level=2)
+        assert snapshot.tables[0].triggers == (ts.TriggerShape("t_log", trigger),)
+        assert snapshot.tables[0].features == ()
+        assert take(database).tables[0].triggers == ()  # level 1 never reads them
+        database.execute("DROP TRIGGER t_log")
+        after = take(database, level=2)
+        assert [(d.kind, d.name) for d in ts.compare(snapshot, after)] == [("trigger_missing", "t_log")]
+        assert ts.fingerprint(snapshot) != ts.fingerprint(after)
+    finally:
+        database.close()
+
+
+@pytest.mark.parametrize(
+    ("sql", "features"),
+    [
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)", ()),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) STRICT", ("strict",)),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) WITHOUT ROWID", ("without_rowid",)),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, v TEXT)", ("autoincrement",)),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL ON CONFLICT REPLACE)", ("on_conflict",)),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT COLLATE NOCASE)", ("collation",)),
+        ("CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (v COLLATE NOCASE))", ("collation",)),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT, UNIQUE (v COLLATE NOCASE))", ()),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT CHECK (v COLLATE NOCASE <> 'x'))", ()),
+        (
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, v INTEGER REFERENCES t (id) DEFERRABLE INITIALLY DEFERRED)",
+            ("deferrable_reference",),
+        ),
+        (
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, v INTEGER, "
+            "FOREIGN KEY (v) REFERENCES t (id) DEFERRABLE INITIALLY DEFERRED)",
+            (),
+        ),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY, v INTEGER REFERENCES t (id) NOT DEFERRABLE)", ()),
+    ],
+)
+def test_sqlite_table_features_reflected(tmp_path: Path, sql: str, features: tuple[str, ...]) -> None:
+    database = make(tmp_path / "f.db", (sql,))
+    try:
+        assert take(database, level=2).tables[0].features == features
+        assert take(database).tables[0].features == ()
+    finally:
+        database.close()
+
+
+def test_sqlite_virtual_table_feature(tmp_path: Path) -> None:
+    database = make(tmp_path / "v.db", ())
+    try:
+        try:
+            database.execute("CREATE VIRTUAL TABLE vt USING fts5(body)")
+        except Exception:  # not every SQLite build has FTS5; fall back to the R*Tree module
+            database.execute("CREATE VIRTUAL TABLE vt USING rtree(id, x0, x1)")
+        tables = {t.name: t for t in take(database, level=2).tables}
+        assert "virtual_table" in tables["main.vt"].features
+    finally:
+        database.close()
+
+
+@pytest.mark.parametrize("sql", ["", "CREATE TABLE t (id INTEGER", "x" * 70_000])
+def test_sqlite_unparsed_table_sql(sql: str) -> None:
+    assert ts._sqlite_features(sql, 0) == ("unparsed_table_sql",)
+
+
+def _d5_table(**change: Any) -> ts.TableShape:
+    return dataclasses.replace(_base(), **change)
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ({"triggers": (ts.TriggerShape("tr", "CREATE TRIGGER tr ..."),)}, [("trigger_added", "tr")]),
+        ({"policies": (ts.PolicyShape("p", "ALL", True, ("PUBLIC",)),)}, [("policy_added", "p")]),
+        (
+            {"functions": (ts.FunctionShape("public.f()", "plpgsql", "CREATE FUNCTION ..."),)},
+            [("function_added", "public.f()")],
+        ),
+        ({"row_security": True}, [("row_security", None)]),
+        ({"force_row_security": True}, [("row_security", None)]),
+        ({"features": ("partitioned",)}, [("feature_added", "partitioned")]),
+    ],
+)
+def test_level2_d5_difference_kinds(change: dict[str, Any], expected: list[tuple[str, str | None]]) -> None:
+    before = ts.SchemaSnapshot("postgresql", (_base(),), level=2)
+    after = ts.SchemaSnapshot("postgresql", (_d5_table(**change),), level=2)
+    differences = ts.compare(before, after)
+    assert [(d.kind, d.name) for d in differences] == expected
+    assert all(d.breaking and d.table == "main.t" for d in differences)
+    assert [(d.kind.replace("_added", "_missing"), d.name) for d in ts.compare(after, before)] == [
+        (k.replace("_added", "_missing"), n) for k, n in expected
+    ]
+    assert ts.fingerprint(before) != ts.fingerprint(after)
+    assert ts.SchemaSnapshot.from_json(after.to_json()) == after
+
+
+def test_level2_changed_trigger_or_function_body_is_a_difference() -> None:
+    one = _d5_table(
+        triggers=(ts.TriggerShape("tr", "CREATE TRIGGER tr A"),),
+        functions=(ts.FunctionShape("public.f()", "plpgsql", "BODY 1"),),
+    )
+    two = _d5_table(
+        triggers=(ts.TriggerShape("tr", "CREATE TRIGGER tr A", enabled="DISABLED"),),
+        functions=(ts.FunctionShape("public.f()", "plpgsql", "BODY 2"),),
+    )
+    a, b = (ts.SchemaSnapshot("postgresql", (t,), level=2) for t in (one, two))
+    assert [(d.kind, d.name) for d in ts.compare(a, b)] == [
+        ("trigger_missing", "tr"),
+        ("trigger_added", "tr"),
+        ("function_missing", "public.f()"),
+        ("function_added", "public.f()"),
+    ]
+    assert ts.fingerprint(a) != ts.fingerprint(b)
+
+
+def test_level2_database_features() -> None:
+    plain = ts.SchemaSnapshot("postgresql", (_base(),), level=2)
+    hooked = ts.SchemaSnapshot("postgresql", (_base(),), level=2, features=("event_trigger:audit",))
+    assert [(d.kind, d.table, d.name) for d in ts.compare(plain, hooked)] == [
+        ("feature_added", "", "event_trigger:audit")
+    ]
+    assert [(d.kind, d.table, d.name) for d in ts.compare(hooked, plain)] == [
+        ("feature_missing", "", "event_trigger:audit")
+    ]
+    assert ts.fingerprint(plain) != ts.fingerprint(hooked)
+    assert ts.SchemaSnapshot.from_json(hooked.to_json()) == hooked
+
+
+def test_level2_d5_parts_round_trip_through_json() -> None:
+    table = _d5_table(
+        triggers=(ts.TriggerShape("tr", "CREATE TRIGGER tr ...", enabled="ALWAYS"),),
+        policies=(ts.PolicyShape("p", "SELECT", False, ("alice", "bob"), using="(owner = CURRENT_USER)", check=None),),
+        functions=(ts.FunctionShape("public.f(integer)", "sql", "CREATE FUNCTION public.f(integer) ..."),),
+        row_security=True,
+        force_row_security=True,
+        features=("rule:r", "unlogged"),
+    )
+    snapshot = ts.SchemaSnapshot("postgresql", (table,), level=2, features=("event_trigger:e",))
+    assert ts.SchemaSnapshot.from_json(snapshot.to_json()) == snapshot
+    assert ts.SchemaSnapshot.from_json(snapshot.to_json()).to_json() == snapshot.to_json()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"triggers": (ts.TriggerShape("tr", "x"),)},
+        {"policies": (ts.PolicyShape("p", "ALL", True, ()),)},
+        {"functions": (ts.FunctionShape("f()", "sql", ""),)},
+        {"row_security": True},
+        {"force_row_security": True},
+        {"features": ("strict",)},
+    ],
+)
+def test_level1_refuses_the_d5_parts(change: dict[str, Any]) -> None:
+    table = ts.TableShape("main.t", (ts.ColumnShape("id", "INTEGER", False),), ("id",), **change)
+    with pytest.raises(UsageError) as caught:
+        ts.SchemaSnapshot("sqlite", (table,))
+    assert caught.value.code == "schema.level_mismatch"
+
+
+def test_level1_refuses_database_features() -> None:
+    with pytest.raises(UsageError) as caught:
+        ts.SchemaSnapshot("postgresql", (), features=("event_trigger:e",))
+    assert caught.value.code == "schema.level_mismatch"
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"row_security": [True]},
+        {"row_security": ["yes", False]},
+        {"triggers": [{"name": 1, "definition": "x"}]},
+        {"features": "strict"},
+        {"features": [1]},
+        {"policies": [{"name": "p", "command": "ALL", "permissive": "yes", "roles": []}]},
+        {"functions": [{"signature": "f()", "language": None, "definition": ""}]},
+    ],
+)
+def test_from_json_refuses_loose_d5_parts(patch: dict[str, Any]) -> None:
+    data = json.loads(ts.SchemaSnapshot("sqlite", (_base(),), level=2).to_json())
+    data["tables"][0].update(patch)
+    with pytest.raises(UsageError) as info:
+        ts.SchemaSnapshot.from_json(json.dumps(data))
+    assert info.value.code == "schema.invalid_snapshot"

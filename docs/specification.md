@@ -114,6 +114,9 @@ tabrion/                     package; layer B in the package root (importable on
 ├── schema.py                layer B, extra [sqlalchemy]: snapshot, fingerprint, compare (since 0.2, TAB-CR-2)
 ├── ddl.py                   extra [sqlalchemy] (column statements also [migrations]): DDL text from the level-2
 │                            schema model, generation only (since 0.3, experimental, TAB-XW-3)
+├── plan.py                  extra [sqlalchemy] (column steps also [migrations]): diff into a MigrationPlan, risk
+│                            classes, SQLite rebuild, Alembic revision text, migration markers; nothing executes
+│                            (since 0.3, experimental, TAB-XW-4)
 ├── migrations.py            layer B, extra [migrations]: status, require_current, SchemaStatus (without env.py)
 └── testing/                 extra [testing] (pytest); pytest plugin only on explicit request (pytest_plugins)
     ├── __init__.py          configure(), fixtures
@@ -131,6 +134,7 @@ tabrion/                     package; layer B in the package root (importable on
 | `_sa.*` | layer A, sqlalchemy | pytest, alembic |
 | `migrations` | `_sa`, alembic | pytest |
 | `ddl` (since 0.3) | `schema`, layer A, sqlalchemy, alembic | pytest, psycopg, psycopg_pool, `_sa`, `migrations` |
+| `plan` (since 0.3) | `ddl`, `schema`, layer A, sqlalchemy | pytest, psycopg, psycopg_pool, `_sa`, `migrations`, `testing` |
 | `testing.*` | everything above, pytest | — |
 | everything | — | orkexa, axentra, axentra_studio, nodestro_*, tabrion_studio (P6, K-33) |
 
