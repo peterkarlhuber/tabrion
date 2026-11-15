@@ -2,7 +2,9 @@
 
 Contract: ``docs/api/contract.md`` sections 5.2, 5.3 and 5.5, implementation notes I-37..I-44 and I-56 (TAB-018).
 The 0.2 methods (TAB-033) live in the mixins of ``tabrion._sa._v02``, which these classes inherit since 0.2
-(TAB-042; before 0.2 they were staged, G-T1 condition C-6).
+(TAB-042; before 0.2 they were staged, G-T1 condition C-6). The 0.3 method ``execute_checked`` (TAB-XW-6) lives in the
+mixin of ``tabrion._sa._v03``, which ``Transaction`` inherits since 0.3 (before 0.3 it was staged, ADR 0015
+Consequences).
 
 ``Statement``, ``Params`` and ``Isolation`` are documentation-only aliases (``tabrion._sa._types``): they name the types
 in the signatures and are not exported from ``tabrion`` (G-T1 F-11, TODO TB-020).
@@ -40,7 +42,6 @@ from tabrion._sa._types import Isolation, Params, Statement
 from tabrion._sa._v02 import _DatabaseV02, _TransactionV02
 from tabrion._sa._v03 import _TransactionV03
 from tabrion._sa.profile import Profile, TLSMode
-from tabrion._since import released
 from tabrion.errors import (
     Classification,
     ConfigurationError,
@@ -209,18 +210,7 @@ def _is_database_error(exc: BaseException) -> bool:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-# Since 0.3 (ADR 0015 Consequences): ``execute_checked`` joins the public class only when the package version is 0.3 or
-# later; before that it stays staged in ``tabrion._sa._v03`` (``tabrion._since``, as G-T1 condition C-6 did for 0.2).
-# Type checkers see the 0.2 class.
-if TYPE_CHECKING or not released("0.3"):
-    _TransactionBase = _TransactionV02
-else:
-
-    class _TransactionBase(_TransactionV03, _TransactionV02):
-        """The 0.2 and 0.3 mixins of ``Transaction``."""
-
-
-class Transaction(_TransactionBase):
+class Transaction(_TransactionV03, _TransactionV02):
     """One Tabrion transaction; bound to the opening thread (only ``cancel`` may come from another thread)."""
 
     _connection: sqlalchemy.Connection

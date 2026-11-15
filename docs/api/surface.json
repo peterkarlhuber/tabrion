@@ -301,8 +301,7 @@
       "kind": "method",
       "signature": "(self, statement: Statement, params: Mapping[str, Any] | None = None, *, expect_rowcount: int | None = None, max_affected: int | None = None, timeout: float | None = None) -> int",
       "since": "0.3",
-      "stability": "X",
-      "staged": "tabrion._sa._v03:_TransactionV03.execute_checked"
+      "stability": "X"
     },
     "tabrion.Transaction.fetch_all": {
       "kind": "method",
@@ -599,8 +598,7 @@
         "TabrionError"
       ],
       "since": "0.3",
-      "stability": "X",
-      "staged": "tabrion.errors:_RowCountMismatch"
+      "stability": "X"
     },
     "tabrion.errors.SchemaNotCurrent": {
       "kind": "exception",
@@ -1225,22 +1223,19 @@
       "kind": "function",
       "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any]) -> sqlalchemy.Delete",
       "since": "0.3",
-      "stability": "X",
-      "staged": "tabrion._sa._rowedit:delete_row"
+      "stability": "X"
     },
     "tabrion.rowedit.insert_row": {
       "kind": "function",
       "signature": "(table: sqlalchemy.Table, values: Mapping[str, Any]) -> sqlalchemy.Insert",
       "since": "0.3",
-      "stability": "X",
-      "staged": "tabrion._sa._rowedit:insert_row"
+      "stability": "X"
     },
     "tabrion.rowedit.update_row": {
       "kind": "function",
       "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]) -> sqlalchemy.Update",
       "since": "0.3",
-      "stability": "X",
-      "staged": "tabrion._sa._rowedit:update_row"
+      "stability": "X"
     },
     "tabrion.safe_url": {
       "kind": "function",

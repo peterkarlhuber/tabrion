@@ -1,8 +1,7 @@
 """``Transaction.execute_checked`` on SQLite (TAB-XW-6, contract section 5.11, I-120; ADR 0015 section 9).
 
-Planned for 0.3 and staged until then (``tabrion._since``): ``tabrion.Transaction`` has the method only from 0.3 on,
-so these tests use the private ``tabrion._sa._staged`` classes, which add the 0.3 mixin exactly as 0.3 does
-(``tests/unit/test_v03_gate.py`` proves both states). The PostgreSQL side is
+Public since 0.3 (``tabrion.Transaction`` inherits the mixin of ``tabrion._sa._v03``; before 0.3 these tests used the
+private staged classes, ``tests/unit/test_v03_gate.py``). The PostgreSQL side is
 ``tests/postgres/test_rowedit_postgres.py``.
 """
 
@@ -19,14 +18,13 @@ import pytest
 
 sqlalchemy = pytest.importorskip("sqlalchemy")
 
-from tabrion import Database, Profile  # noqa: E402
-from tabrion._sa._staged import _StagedDatabase, _StagedTransaction  # noqa: E402
+from tabrion import Database, Profile, Transaction  # noqa: E402
 from tabrion.errors import (  # noqa: E402
     ReadOnlyViolation,
+    RowCountMismatch,
     StatementTimeout,
     TabrionError,
     UsageError,
-    _RowCountMismatch,
 )
 from tests.canary import assert_clean, assert_logs_clean, capture_all_logs, new_canary, phase_records  # noqa: E402
 
@@ -38,7 +36,7 @@ def open_db(tmp_path: Path) -> Iterator[Callable[..., Database]]:
     opened: list[Database] = []
 
     def factory(profile: Profile | None = None) -> Database:
-        database = _StagedDatabase.from_url(f"sqlite:///{tmp_path / 'checked.db'}", profile=profile)
+        database = Database.from_url(f"sqlite:///{tmp_path / 'checked.db'}", profile=profile)
         opened.append(database)
         return database
 
@@ -58,8 +56,8 @@ def db(open_db: Callable[..., Database]) -> Database:
     return database
 
 
-def checked(transaction: Any) -> _StagedTransaction:
-    assert isinstance(transaction, _StagedTransaction)
+def checked(transaction: Any) -> Transaction:
+    assert isinstance(transaction, Transaction)
     return transaction
 
 
@@ -89,7 +87,7 @@ def test_insert_rowcount_is_counted(db: Database) -> None:
 
 
 def test_mismatch_raises_and_rolls_back(db: Database) -> None:
-    with pytest.raises(_RowCountMismatch) as caught, db.transaction() as tx:
+    with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
         checked(tx).execute("UPDATE items SET label = 'before' WHERE id = 1")
         checked(tx).execute_checked("UPDATE items SET label = 'x' WHERE id > 3", expect_rowcount=1)
     assert caught.value.code == "transaction.rowcount_mismatch"
@@ -100,7 +98,7 @@ def test_mismatch_raises_and_rolls_back(db: Database) -> None:
 
 
 def test_optimistic_conflict_zero_rows(db: Database) -> None:
-    with pytest.raises(_RowCountMismatch) as caught, db.transaction() as tx:
+    with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
         checked(tx).execute_checked("DELETE FROM items WHERE id = 99", expect_rowcount=1)
     assert dict(caught.value.details) == {"expected": 1, "actual": 0}
 
@@ -108,9 +106,9 @@ def test_optimistic_conflict_zero_rows(db: Database) -> None:
 def test_caught_mismatch_still_rolls_back_and_fails_later_statements(db: Database) -> None:
     """The contract's rule: the transaction is failed even if the caller catches the error; every later statement
     raises ``UsageError("transaction.failed")``, and the block's end rolls back and raises the error again."""
-    with pytest.raises(_RowCountMismatch) as at_exit, db.transaction() as tx:
+    with pytest.raises(RowCountMismatch) as at_exit, db.transaction() as tx:
         tx.execute("UPDATE items SET label = 'changed' WHERE id = 1")
-        with pytest.raises(_RowCountMismatch):
+        with pytest.raises(RowCountMismatch):
             checked(tx).execute_checked("UPDATE items SET label = 'x'", expect_rowcount=1)
         for call in (
             lambda: tx.execute("UPDATE items SET label = 'y' WHERE id = 2"),
@@ -129,7 +127,7 @@ def test_caught_mismatch_still_rolls_back_and_fails_later_statements(db: Databas
 
 
 def test_max_affected_over_a_multi_row_statement(db: Database) -> None:
-    with pytest.raises(_RowCountMismatch) as caught, db.transaction() as tx:
+    with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
         checked(tx).execute_checked("UPDATE items SET label = 'x' WHERE id <= 4", max_affected=3)
     assert caught.value.code == "transaction.too_many_rows"
     assert dict(caught.value.details) == {"limit": 3, "actual": 4}
@@ -144,7 +142,7 @@ def test_max_affected_at_the_limit_and_below_passes(db: Database) -> None:
 
 
 def test_both_limits_apply(db: Database) -> None:
-    with pytest.raises(_RowCountMismatch) as caught, db.transaction() as tx:
+    with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
         checked(tx).execute_checked("UPDATE items SET label = 'x' WHERE id <= 2", expect_rowcount=2, max_affected=1)
     assert caught.value.code == "transaction.too_many_rows"
     with db.transaction() as tx:
@@ -198,7 +196,7 @@ def test_read_transaction_refuses_it(db: Database) -> None:
 
 def test_unknown_rowcount_is_a_mismatch(db: Database) -> None:
     """A statement whose driver reports no row count (``-1``, a SELECT on SQLite) never passes a limit."""
-    with pytest.raises(_RowCountMismatch) as caught, db.transaction() as tx:
+    with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
         checked(tx).execute_checked("SELECT id FROM items", max_affected=100)
     assert dict(caught.value.details) == {"expected": None, "actual": -1}
 
@@ -244,12 +242,12 @@ def test_canary_values_never_reach_an_error_or_a_log(db: Database, caplog: pytes
     capture_all_logs(caplog)
     canary = new_canary("checked")
     raised: list[TabrionError] = []
-    with pytest.raises(_RowCountMismatch) as at_exit, db.transaction() as tx:
+    with pytest.raises(RowCountMismatch) as at_exit, db.transaction() as tx:
         try:
             checked(tx).execute_checked(
                 "UPDATE items SET label = :label WHERE label <> :label", {"label": canary}, expect_rowcount=1
             )
-        except _RowCountMismatch as exc:
+        except RowCountMismatch as exc:
             raised.append(exc)
     assert_clean(raised[0], canary)
     assert_clean(at_exit.value, canary)
@@ -281,7 +279,7 @@ def test_trigger_changes_are_not_counted(db: Database) -> None:
 def test_max_affected_is_checked_after_the_work(db: Database) -> None:
     """Review I-2 of #78 (I-120 h): the statement runs to its end before the limit is checked, and the rollback undoes
     it; ``max_affected`` bounds what is committed, ``timeout`` bounds the work."""
-    with pytest.raises(_RowCountMismatch), db.transaction() as tx:
+    with pytest.raises(RowCountMismatch), db.transaction() as tx:
         checked(tx).execute_checked("UPDATE items SET n = n + 100", max_affected=1)
     assert db.fetch_scalar("SELECT max(n) FROM items") == 5
     with pytest.raises(StatementTimeout), db.transaction() as tx:

@@ -27,6 +27,9 @@
 > 0.3, specification section 1.3), TB-148 (1) decided for 0.3 (multi-host stays refused, W-10).
 > TAB-XW-6 2026-11-14 (branch `claude/project-thread-rdo6g3-tabxw6`): TB-149 stays in progress, TAB-XW-6 done
 > (guided write transaction, contract section 5.11, staged until 0.3); counts unchanged.
+> 0.3 switch 2026-11-14 (branch `claude/project-thread-rdo6g3-tab03dev`): master builds as `0.3.0.dev0`, the TAB-XW-6
+> names are public (Studio STU-026 needs them), the `staged` keys are gone; the 0.2.x base is `2d054a3` (provisional; to be updated to the 0.2.2-final commit). TB-149 stays
+> in progress, TB-013 records the base; counts unchanged.
 
 ## Summary
 
@@ -526,6 +529,11 @@ required (owner decision of 2026-11-08 11:26Z).
   final (2026-11-14). G-T2 passed (planning folder `reviews/tabrion-021-review.md`): CI push run 43590132481, QA-11
   dry run 43590153478 (`previous` = `52353da`), master nightly 43590155683 with its downstream job 132432986041. The
   README examples pin it; master then builds as `0.2.2.dev0`.
+- **0.2.x base (0.3 switch, 2026-11-14):** master moved to `0.3.0.dev0` after
+  `2d054a3a9b7f73a2d7cdf92db2d632734814f337` (merge of #79, with the TB-150 security fix #77; provisional, to be
+  updated to the `0.2.2` final commit, which lands on master before the switch). That commit is the base for a later
+  0.2.x maintenance branch; it keeps the TAB-XW-6 names unimportable. No branch or tag is made; that is the owner's
+  decision.
 - **Next step:** Studio STU-010 and STU-011 then replace
   their workaround (`fetch_all` with `prepare_threshold=0`, `tabrion_compat`, TD-013) with `inspector`, `query`,
   `stream` and `cancel`.
@@ -593,7 +601,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -612,8 +620,8 @@ required (owner decision of 2026-11-08 11:26Z).
   extended protocol, timeout per dialect) and `tabrion.rowedit` (`insert_row`, `update_row`, `delete_row`: primary
   key exactly, bound parameters only, NULL-safe optimistic predicate, binary collation for text, PostgreSQL `json` as
   `jsonb` and `real` as `real`), moved from addendum A.5 into contract section 5.11 (I-120..I-122). The names are in
-  `surface.json` with `since` 0.3, `X` and a `staged` location and are unimportable below 0.3 through
-  `tabrion._since` (the C-6 mechanism, proven at 0.2 and 0.3 by `tests/unit/test_v03_gate.py`). N-5 is
+  `surface.json` with `since` 0.3 and `X`; they were unimportable below 0.3 through `tabrion._since` (the C-6
+  mechanism) and are public since the 0.3 switch (below). N-5 is
   `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict`, with the residual risk in I-121 (d) and
   the guide [Transactions](guides/transactions.md#guided-writes-03-experimental). Review of #78 (planning folder
   `reviews/pr78-tabxw6-review.md`, ACCEPTED) folded in: L-1 an empty `old` is refused (`rowedit.old_required`),
@@ -646,8 +654,15 @@ required (owner decision of 2026-11-08 11:26Z).
   - **D-3:** the caller-declared environment is acceptable: a required keyword without a default, typed
     `Literal["dev", "test"]`, a guard rail and not a boundary; Studio fills it from the user-local profile.
   - **D-4:** v2 fingerprints stay opt-in in 0.3 (`snapshot(level=1)` stays the default).
-- **Next step:** TAB-XW-2 (and in parallel TAB-XW-7..9, which depend on nothing); at the 0.3 switch the `staged` keys
-  of the 0.3 names go and `tabrion._since` decides nothing any more (as TAB-042 for 0.2).
+- **0.3 switch done** (branch `claude/project-thread-rdo6g3-tab03dev`, for Studio STU-026): master builds as
+  `0.3.0.dev0` (not a release: no tag, no publication). `Transaction` inherits the 0.3 mixin, `RowCountMismatch` is
+  exported, `tabrion.rowedit` imports, the `staged` keys and `tabrion._sa._staged` are gone, and the tests run on the
+  public names (`tests/unit/test_v03_gate.py` now proves the switched state; `tests/unit/test_api_surface.py` probes
+  the later-minor check). `tabrion._since` stays, unused, for a name planned for a later minor than the package's: the
+  follow-up 0.3 work packages land on a 0.3 master and are public when they merge, so they need no gate; TAB-XW-10 is
+  their review before a 0.3 release. The consumers' `tabrion>=0.2,<0.3` excludes `0.3.0.dev0`. The 0.2.x base is
+  `2d054a3` (TB-013; provisional, to be updated to the 0.2.2-final commit).
+- **Next step:** TAB-XW-2 (and in parallel TAB-XW-7..9, which depend on nothing).
 
 ## Tests and quality assurance
 

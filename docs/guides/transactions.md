@@ -134,22 +134,45 @@ There is no upsert helper in Tabrion; the dialect `insert` of SQLAlchemy has `on
 
 ## Guided writes (0.3, experimental)
 
-!!! note "Planned for 0.3"
-    `Transaction.execute_checked` and `tabrion.rowedit` are implemented and frozen for Tabrion 0.3 (experimental),
-    but not importable while the package version is below 0.3
-    ([contract section 5.11](../api/contract.md#511-guided-write-transaction-since-03-experimental-tab-xw-6)). This
-    section describes them ahead of that release; its example is shown, not run.
+!!! note "Experimental since 0.3"
+    `Transaction.execute_checked` and `tabrion.rowedit` are public since Tabrion 0.3 (master builds as `0.3.0.dev0`)
+    and experimental (stability X): their signatures may still change within 0.3
+    ([contract section 5.11](../api/contract.md#511-guided-write-transaction-since-03-experimental-tab-xw-6)). A
+    consumer that requires `tabrion>=0.2,<0.3` does not have them.
 
 A data editor writes one row the user changed and must not overwrite a change someone else made since the row was
 read. `tabrion.rowedit` builds the statement with an **optimistic predicate** on the values the user saw, and
 `execute_checked` runs it with a limit on the affected rows:
 
-```text
-from tabrion.rowedit import update_row
-
-seen = {"id": 7, "label": "old", "price": 2.5}          # the row as read
-with db.transaction() as tx:
-    tx.execute_checked(update_row(items, {"id": 7}, seen, {"label": "new"}), expect_rowcount=1)
+```pycon
+>>> import sqlalchemy
+>>> from tabrion import Database
+>>> from tabrion.errors import RowCountMismatch
+>>> from tabrion.rowedit import insert_row, update_row
+>>> items = sqlalchemy.Table(
+...     "items",
+...     sqlalchemy.MetaData(),
+...     sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
+...     sqlalchemy.Column("label", sqlalchemy.String),
+...     sqlalchemy.Column("price", sqlalchemy.Float),
+... )
+>>> db = Database.from_url("sqlite:///items.db")
+>>> with db.transaction() as tx:
+...     items.create(tx.connection)
+...     added = tx.execute_checked(insert_row(items, {"id": 7, "label": "old", "price": 2.5}), expect_rowcount=1)
+>>> seen = {"id": 7, "label": "old", "price": 2.5}  # the row as read
+>>> with db.transaction() as tx:
+...     tx.execute_checked(update_row(items, {"id": 7}, seen, {"label": "new"}), expect_rowcount=1)
+1
+>>> try:  # the same edit again: the row no longer has the values seen
+...     with db.transaction() as tx:
+...         tx.execute_checked(update_row(items, {"id": 7}, seen, {"label": "mine"}), expect_rowcount=1)
+... except RowCountMismatch as exc:
+...     print(exc.code, dict(exc.details))
+transaction.rowcount_mismatch {'expected': 1, 'actual': 0}
+>>> db.fetch_scalar("SELECT label FROM items WHERE id = 7")
+'new'
+>>> db.close()
 ```
 
 The statement compares every column of `old` NULL-safe and with bound parameters only:

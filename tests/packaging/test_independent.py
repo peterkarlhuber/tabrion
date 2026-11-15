@@ -33,12 +33,19 @@ def _modules(src: Path) -> list[str]:
 
 
 def _module_since() -> dict[str, str]:
-    """``scripts/api_surface.py``'s public modules of a later minor (ADR 0015): ``tabrion.rowedit`` -> ``"0.3"``."""
+    """``scripts/api_surface.py``'s public modules of a later minor (ADR 0015), such as ``"tabrion.rowedit": "0.3"``
+    before the 0.3 switch; empty while no module is planned for a later minor than the package's."""
     text = (ROOT / "scripts" / "api_surface.py").read_text(encoding="utf-8")
     tree = ast.parse(text)
     for node in tree.body:
-        if isinstance(node, ast.Assign) and [t.id for t in node.targets if isinstance(t, ast.Name)] == ["MODULE_SINCE"]:
-            value = ast.literal_eval(node.value)
+        if isinstance(node, ast.Assign):
+            targets, value_node = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:  # ``MODULE_SINCE: dict[str, str] = {}``
+            targets, value_node = [node.target], node.value
+        else:
+            continue
+        if [t.id for t in targets if isinstance(t, ast.Name)] == ["MODULE_SINCE"]:
+            value = ast.literal_eval(value_node)
             assert isinstance(value, dict)
             return {str(k): str(v) for k, v in value.items()}
     raise AssertionError("MODULE_SINCE not found")

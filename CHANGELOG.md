@@ -12,7 +12,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   `docs/ecosystem/migration.md` and `docs/program/STATUS.md` record QA-16 as done including tabrion-studio, the QA-7
   rest, the binding Nodestro pip floor 26.1, `POISON_VERSION` 0.2.99 in every copy, the TB-150 fix and the
   Windows/OneDrive release gate (DSK-021). `docs/TODO.md` TB-012 status note. No code change.
-- **Experimental, planned for 0.3** (TABRION TAB-XW-6, CR-DBX; not importable while the version is below 0.3): the
+- **Experimental, since 0.3** (TABRION TAB-XW-6, CR-DBX; public since master builds as `0.3.0.dev0`): the
   guided write transaction, contract section 5.11 (moved from addendum A.5). `Transaction.execute_checked(statement,
   params, *, expect_rowcount, max_affected, timeout)` runs one statement and checks its row count; a mismatch raises
   the new `tabrion.errors.RowCountMismatch` (`transaction.rowcount_mismatch`, `transaction.too_many_rows`, counts
@@ -21,8 +21,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   old values (PostgreSQL `IS NOT DISTINCT FROM`, SQLite `IS`), bound parameters only and the exact primary key
   (`rowedit.primary_key_required`) and at least one old value (`rowedit.old_required`); the limits cover the
   statement's own rows, not those of rules or triggers. False conflicts with floating-point and JSON values are documented (N-5). The
-  names are in `surface.json` with `since` 0.3 and stability X; `tabrion._since` keeps them unimportable before 0.3,
-  and `scripts/api_surface.py` and `tests/unit/test_v03_gate.py` check both states.
+  names are in `surface.json` with `since` 0.3 and stability X. Until the 0.3 switch `tabrion._since` kept them
+  unimportable (so they are not importable on the 0.2.x base either); since then they are public, and
+  `tests/unit/test_v03_gate.py` checks that state.
 - Docs: TABRION TAB-XW-1 (CR-DBX, Tabrion 0.3 write and DDL primitives). ADR 0015
   (`docs/adr/0015-crdbx-write-and-ddl-primitives.md`): DDL and diff on SQLAlchemy Core and Alembic operations
   (E-X3); revision text only for Alembic projects, never `env.py`, project code or `alembic upgrade` (E-X4); direct
@@ -55,6 +56,20 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- Master builds as `0.3.0.dev0` (the 0.3 switch, as TAB-042 did for 0.2; not a release: no tag, no publication):
+  `tabrion.Transaction` inherits the 0.3 mixin of `tabrion._sa._v03`, `tabrion.errors.RowCountMismatch` is an
+  ordinary exported class (no longer the private `_RowCountMismatch` bound by the version), `tabrion.rowedit` imports
+  without a version check, the private test-only module `tabrion._sa._staged` is removed, and `docs/api/surface.json`
+  has no `staged` entry any more (240 names, 0 staged). `tabrion._since` stays, unused, for a name planned for a later
+  minor than the package's; `scripts/api_surface.py` keeps its later-minor check (`MODULE_SINCE` is empty). The
+  consumers' range `tabrion>=0.2,<0.3` excludes `0.3.0.dev0` (PEP 440: `<0.3` excludes the pre-releases of 0.3), so
+  no consumer resolves to this master by range.
+- **0.2.x base (provisional; to be updated to the `0.2.2` final commit):** the last master commit before the 0.3
+  switch is the base commit for a later 0.2.x maintenance branch. Today that is
+  `2d054a3a9b7f73a2d7cdf92db2d632734814f337` (`0.2.2.dev0`, merge of #79, with the TB-150 security fix #77); the
+  `0.2.2` final version commit (TB-036/TB-150 fixes) lands on master before this switch and then replaces it here.
+  The TAB-XW-6 code is in the base, but not importable there. Whether a branch or tag is made is the owner's
+  decision; none exists yet.
 - `tabrion.postgres.RoleReport` gets the field `broad: tuple[str, ...] = ()` at the end
   (`tabrion.postgres.RoleReport.__init__` takes it as an optional last argument; additive under S-4): the predefined
   roles the role can reach, as `"broad:<role>"` (TB-150, ADR 0015 D-2). It is not part of `restricted` or of

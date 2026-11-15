@@ -35,6 +35,11 @@ Pin only a recorded release commit. pip does not check that: it accepts a pin on
 inside the range, for example `0.1.1.dev0`; only the architecture check AC-6 (planned, QA-15) refuses it. Always
 supply the pin: Tabrion is not on PyPI, so an install without it would ask the package index for the name `tabrion`.
 
+Since the 0.3 switch master builds as `0.3.0.dev0` (internal development of the experimental 0.3 names, not a
+release). That version is outside `>=0.2,<0.3` (PEP 440: `<0.3` excludes the pre-releases of 0.3), so pip refuses a
+pin on a master commit after the switch for a consumer on the 0.2 range. The last master commit of the 0.2 line, the
+0.2.x base, is recorded in TODO TB-013.
+
 A consumer's CI installs Tabrion from that pin (for a library, the requirements file
 `requirements/tabrion.txt`, installed with `-r`; ADR 0009), not from PyPI:
 
