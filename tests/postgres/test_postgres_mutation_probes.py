@@ -356,7 +356,7 @@ PROBES = [
     # TAB-031: the protected tables lose their write privileges.
     (
         "postgres/roles.py",
-        "            if cursor.fetchone() is not None:\n",
+        "            if found is not None:\n",
         "            if False:\n",
         "tests/postgres/test_grants.py::test_r15_protected_tables_in_the_named_schema_only",
     ),
@@ -393,9 +393,116 @@ PROBES = [
     # TB-150 (re-check R-2 of #77): the read after the last statement of the grant transaction.
     (
         "postgres/roles.py",
-        "                )\n        _refuse_predefined(cursor, role)\n    if grant_connect",
-        "                )\n    if grant_connect",
+        "                        revoked.append(int(oid))\n        _refuse_predefined(cursor, role)\n",
+        "                        revoked.append(int(oid))\n",
         "tests/postgres/test_grants.py::test_tb150_a_membership_granted_during_the_transaction_rolls_it_back",
+    ),
+    # TB-150 item 3 (D-125): a protected table still writable after the REVOKE is refused in the grant transaction.
+    (
+        "postgres/roles.py",
+        "        _refuse_protected_writable(cursor, role, revoked)\n",
+        "",
+        "tests/postgres/test_grants.py::test_tb150_a_protected_table_writable_by_public_is_refused",
+    ),
+    (
+        "postgres/roles.py",
+        "        _refuse_protected_writable(cursor, role, revoked)\n",
+        "",
+        "tests/postgres/test_grants.py::test_tb150_a_write_path_granted_during_the_transaction_rolls_it_back",
+    ),
+    # TB-150 item 3: column grants count.
+    (
+        "postgres/roles.py",
+        """    "   OR pg_catalog.has_any_column_privilege(m.oid, t.oid, 'INSERT, UPDATE')))"\n""",
+        """    "   OR false))"\n""",
+        "tests/postgres/test_grants.py::test_tb150_a_protected_table_writable_by_public_is_refused",
+    ),
+    # TB-150 item 3: a NOINHERIT member reaches the writing role with SET ROLE (I-20), so 'MEMBER', not 'USAGE'.
+    (
+        "postgres/roles.py",
+        """    " AND pg_catalog.pg_has_role(r.oid, m.oid, 'MEMBER')"\n""",
+        """    " AND pg_catalog.pg_has_role(r.oid, m.oid, 'USAGE')"\n""",
+        "tests/postgres/test_grants.py::test_tb150_a_protected_table_writable_through_a_nologin_role_is_refused",
+    ),
+    # Review F-4 of #81: TRIGGER on a protected table counts.
+    (
+        "postgres/roles.py",
+        """    " AND (pg_catalog.has_table_privilege(m.oid, t.oid, 'INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER')"\n""",
+        """    " AND (pg_catalog.has_table_privilege(m.oid, t.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')"\n""",
+        "tests/postgres/test_grants.py::test_tb150_a_protected_table_writable_by_public_is_refused",
+    ),
+    # Review F-2 of #81: partitions and inheritance children are revoked and re-checked.
+    (
+        "postgres/roles.py",
+        """    " ON i.inhparent OPERATOR(pg_catalog.=) tree.oid)"\n""",
+        """    " ON false)"\n""",
+        "tests/postgres/test_grants.py::test_tb150_partitions_and_children_of_a_protected_table_are_revoked",
+    ),
+    (
+        "postgres/roles.py",
+        """    " ON i.inhparent OPERATOR(pg_catalog.=) tree.oid)"\n""",
+        """    " ON false)"\n""",
+        "tests/postgres/test_grants.py::test_tb150_a_writable_partition_or_child_is_refused",
+    ),
+    # Review F-1 of #81 (D-127): CREATEROLE before 16 is refused, before the grants and again in the transaction.
+    (
+        "postgres/roles.py",
+        '            ("createrole", createrole),\n',
+        '            ("createrole", False),\n',
+        "tests/postgres/test_grants.py::test_d127_createrole_before_16_is_refused",
+    ),
+    (
+        "postgres/roles.py",
+        "        _refuse_predefined(cursor, role)\n        if old_server:\n"
+        "            _refuse_createrole(cursor, role)\n        # TB-150 item 3",
+        "        _refuse_predefined(cursor, role)\n        # TB-150 item 3",
+        "tests/postgres/test_grants.py::test_d127_createrole_granted_during_the_transaction_rolls_it_back",
+    ),
+    (
+        "postgres/roles.py",
+        "        old_server = connection.info.server_version < _CREATEROLE_SAFE_VERSION\n",
+        "        old_server = True\n",
+        "tests/postgres/test_grants.py::test_d127_createrole_on_16_is_not_refused",
+    ),
+    # Review F-6 of #81: the session user's CREATEROLE counts (I-20).
+    (
+        "postgres/_check.py",
+        """    " OR pg_catalog.pg_has_role(SESSION_USER, r.oid, 'MEMBER')))"\n""",
+        """    " OR false))"\n""",
+        "tests/postgres/test_check_findings.py::test_k31_createrole_of_the_session_user_after_set_role",
+    ),
+    # TB-036 (D-126): TAB-PG-013 for the server-file and server-program roles.
+    (
+        "postgres/_check.py",
+        "    equivalent = [name for name in predefined if name in _SUPERUSER_EQUIVALENT]\n",
+        "    equivalent: list[str] = []\n",
+        "tests/postgres/test_check_findings.py::test_k31_superuser_equivalent_predefined_role",
+    ),
+    # TB-036: CREATEROLE counts before PostgreSQL 16 only.
+    (
+        "postgres/_check.py",
+        "    old_createrole = createrole and facts.server_version < _SAFE_CREATEROLE_VERSION\n",
+        "    old_createrole = False\n",
+        "tests/postgres/test_check_findings.py::test_k31_createrole_before_16",
+    ),
+    (
+        "postgres/_check.py",
+        "    old_createrole = createrole and facts.server_version < _SAFE_CREATEROLE_VERSION\n",
+        "    old_createrole = createrole\n",
+        "tests/postgres/test_check_findings.py::test_k31_createrole_before_16",
+    ),
+    # TB-036: TAB-PG-014 for every other predefined role, and SESSION_USER counts (I-20).
+    (
+        "postgres/_check.py",
+        '    if broad and expect != "owner":\n',
+        "    if False:\n",
+        "tests/postgres/test_check_findings.py::test_k32_other_predefined_role",
+    ),
+    (
+        "postgres/_check.py",
+        """    " OR pg_catalog.pg_has_role(SESSION_USER, p.oid, 'MEMBER'))"\n""",
+        """    " OR false)"\n""",
+        "tests/postgres/test_check_findings.py::test_k32_session_user_after_set_role",
     ),
     # TAB-031: an owner without the right to grant CONNECT is not an error.
     (
@@ -435,8 +542,8 @@ PROBES = [
     # Review L-3 of #8 (mutant 13): the REVOKE includes TRUNCATE.
     (
         "postgres/roles.py",
-        '"REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON {}.{} FROM {}"',
-        '"REVOKE INSERT, UPDATE, DELETE ON {}.{} FROM {}"',
+        '_REVOKE = "REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER ON {} FROM {}"',
+        '_REVOKE = "REVOKE INSERT, UPDATE, DELETE, TRIGGER ON {} FROM {}"',
         "tests/postgres/test_grants.py::test_r15_truncate_granted_before_is_revoked",
     ),
     # Review L-3 of #8 (mutant 15): no CONNECT grant for a role that may connect already.

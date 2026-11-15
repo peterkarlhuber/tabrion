@@ -28,7 +28,7 @@
 > TAB-XW-6 2026-11-14 (branch `claude/project-thread-rdo6g3-tabxw6`): TB-149 stays in progress, TAB-XW-6 done
 > (guided write transaction, contract section 5.11, staged until 0.3); counts unchanged.
 > 0.3 switch 2026-11-14 (branch `claude/project-thread-rdo6g3-tab03dev`): master builds as `0.3.0.dev0`, the TAB-XW-6
-> names are public (Studio STU-026 needs them), the `staged` keys are gone; the 0.2.x base is `2d054a3` (provisional; to be updated to the 0.2.2-final commit). TB-149 stays
+> names are public (Studio STU-026 needs them), the `staged` keys are gone; the 0.2.x base is `5bc690e` (`v0.2.2` final). TB-149 stays
 > in progress, TB-013 records the base; counts unchanged.
 
 ## Summary
@@ -49,13 +49,14 @@ by the owner decision on K-Q; C-02 / DC-TB-1 pull request: TB-132 done, TB-145's
 cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 follow-up pull request: TB-145 done;
 `0.2.1` version pull request: TB-013 records the patch release; `0.2.2.dev0` follow-up pull request after the
 `0.2.1` release commit `af0458d`: TB-013 records its SHA and the G-T2 runs; TAB-XW-1 pull request: TB-149 in
-progress, counts unchanged; predefined-role pull request #77: TB-150 new, P2 from 10 to 11).
+progress, counts unchanged; predefined-role pull request #77: TB-150 new, P2 from 10 to 11; TB-036/TB-150 follow-up pull request (owner order
+2026-11-14 23:56Z): TB-036 and TB-150 done, P2 from 11 to 9).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 3 |
-| P2 Medium | 11 |
+| P2 Medium | 9 |
 | P3 Low | 43 |
 | P4 Optional | 6 |
 
@@ -529,9 +530,11 @@ required (owner decision of 2026-11-08 11:26Z).
   final (2026-11-14). G-T2 passed (planning folder `reviews/tabrion-021-review.md`): CI push run 43590132481, QA-11
   dry run 43590153478 (`previous` = `52353da`), master nightly 43590155683 with its downstream job 132432986041. The
   README examples pin it; master then builds as `0.2.2.dev0`.
+- **Patch `0.2.2`:** the version pull request sets `0.2.2` on master `78603bf` (TB-150 #77/#81, TB-036 #81, profile
+  host check #82; public names unchanged against `af0458d`); `v0.2.2` final is `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` (#83); the follow-up
+  records its SHA, the CI push run, the QA-11 dry run (`previous` = `af0458d`) and the downstream nightly.
 - **0.2.x base (0.3 switch, 2026-11-14):** master moved to `0.3.0.dev0` after
-  `2d054a3a9b7f73a2d7cdf92db2d632734814f337` (merge of #79, with the TB-150 security fix #77; provisional, to be
-  updated to the `0.2.2` final commit, which lands on master before the switch). That commit is the base for a later
+  `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` (`v0.2.2` final, #83). That commit is the base for a later
   0.2.x maintenance branch; it keeps the TAB-XW-6 names unimportable. No branch or tag is made; that is the owner's
   decision.
 - **Next step:** Studio STU-010 and STU-011 then replace
@@ -584,8 +587,9 @@ required (owner decision of 2026-11-08 11:26Z).
   CR-DBX profile import and export (STU-XDM-5) and the profile modes `read_write`/`admin` (E-X8, TAB-XW-1 addendum)
   build on the same format, so the decision is due before TAB-XW-1 at the latest. **Decided for 0.3 by TAB-XW-1**
   (W-10 resolution of planning document 15 section 2.1, [contract addendum 0.3](api/contract-0.3-addendum.md) A.9):
-  multi-host stays refused and Studio refuses to export such a profile; extending the format is not planned. (2)-(4)
-  stay open.
+  multi-host stays refused and Studio refuses to export such a profile; extending the format is not planned. A
+  socket path with a comma (`host = "/socket,remote"`) slipped past the check and is refused since 2026-11-15
+  (0.2.2 batch). (2)-(4) stay open.
 
 ### TB-016 · PyPI path (TABRION TAB-043), not planned
 
@@ -661,7 +665,7 @@ required (owner decision of 2026-11-08 11:26Z).
   the later-minor check). `tabrion._since` stays, unused, for a name planned for a later minor than the package's: the
   follow-up 0.3 work packages land on a 0.3 master and are public when they merge, so they need no gate; TAB-XW-10 is
   their review before a 0.3 release. The consumers' `tabrion>=0.2,<0.3` excludes `0.3.0.dev0`. The 0.2.x base is
-  `2d054a3` (TB-013; provisional, to be updated to the 0.2.2-final commit).
+  `5bc690e` (`v0.2.2` final, TB-013).
 - **Next step:** TAB-XW-2 (and in parallel TAB-XW-7..9, which depend on nothing).
 
 ## Tests and quality assurance
@@ -1144,22 +1148,27 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-036 · Superuser-equivalent predefined roles and `CREATEROLE` are not reported (review I-4)
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** TABRION TAB-016, TAB-017, contract I-20, review H-1
-  (optional part), I-4
+- **Priority:** P2 Medium · **Status:** Done (TAB-PG-013 and TAB-PG-014, D-126) · **Refs:** TABRION TAB-016,
+  TAB-017, contract I-20, I-53, review H-1 (optional part), I-4
 - **What:** membership of `pg_execute_server_program`, `pg_write_server_files` or `pg_read_server_files`, and
   `CREATEROLE` on servers before 16, are ways to superuser-equivalent power that `check_role` does not name.
   `pg_read_all_data` and `pg_write_all_data` do not bypass row-level security. A new reason code would extend the
   frozen reason set (a contract addendum); a finding of `tabrion.check` (TAB-017) would not.
 - **Update (TB-150):** `inspect_role` now names every predefined-role membership in `RoleReport.broad`, and
   `grant_runtime_role` refuses it (`predefined_role`); `role_info`, `check_role` and `CREATEROLE` stay open here.
-- **Next step:** decide with TAB-017: a `tabrion.check` finding for these memberships (preferred, no API change), or a
-  reason code in 0.2 by contract addendum. TAB-017 implements only the codes of specification section 9: a new
-  code is a specification and contract addendum (owner decision); until then TAB-PG-001 covers only roles with
-  `rolsuper` (I-20, I-53).
+- **Resolution (owner order 2026-11-14 23:56Z, D-126):** the preferred option, `tabrion.check` findings, no API
+  change. TAB-PG-013 (`error`, independent of `expect`): `current_user` or `session_user` can reach
+  `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`, or has `CREATEROLE` (also through
+  a role it can become) on a server before 16. TAB-PG-014 (runtime finding: `warning`, `info` for `expect="any"`,
+  none for `"owner"`): any other predefined role. Specification section 9 and contract I-50, I-53 have the addendum;
+  tests `tests/postgres/test_check_findings.py::test_k31_*`, `::test_k32_*` (TAB-T-K31, K32) and mutation probes.
+- **Rest (by design, not open work):** `role_info` and `check_role` keep their frozen fields and reason set and do
+  not refuse these roles; a start-up check that must refuse them runs `tabrion.check` or `inspect_role(...).broad`.
+  `CREATEROLE` on PostgreSQL 16+ is not reported (it no longer reaches other roles without `ADMIN`).
 
 ### TB-150 · `grant_runtime_role` accepted a member of a predefined role such as `pg_write_all_data`
 
-- **Priority:** P2 Medium · **Status:** In progress ([#77](https://github.com/peterkarlhuber/tabrion/pull/77)) · **Refs:** TABRION TAB-031, TAB-016,
+- **Priority:** P2 Medium · **Status:** Done ([#77](https://github.com/peterkarlhuber/tabrion/pull/77); items 2 and 3 in [#81](https://github.com/peterkarlhuber/tabrion/pull/81), D-125..D-127; item 4 is the consumers') · **Refs:** TABRION TAB-031, TAB-016,
   contract I-20, I-35, ADR 0015 D-2, TB-036; consumers: axentra #87, nodestro-runtime #169 (RT-079)
 - **What:** `grant_runtime_role` revokes writes on `protected_tables` from the runtime role, but a member of
   `pg_write_all_data` (PostgreSQL 14+) keeps `INSERT, UPDATE, DELETE` on every table through the predefined role, so
@@ -1171,10 +1180,30 @@ required (owner decision of 2026-11-08 11:26Z).
   and again inside the grant transaction (review F-3 of #77). The new reason value and field are decision D-124
   (owner-confirmed, review F-1 of #77). Tests: `tests/postgres/test_grants.py::test_tb150_*`,
   `tests/unit/test_postgres_unit.py`.
-- **Open after the fix:** (2) `role_info`/`check_role` still do not report predefined
-  roles (TB-036); (3) privileges on a protected table that come from `PUBLIC` or from another role the runtime role
-  inherits are not checked after the `REVOKE` (Axentra and Nodestro re-check with `has_table_privilege`); (4) the
-  consumers may drop their local `pg_write_all_data` checks once they pin a Tabrion with this fix.
+- **After the fix:** (2) done in TB-036: `tabrion.check` reports predefined roles (TAB-PG-013, TAB-PG-014, D-126);
+  `role_info`/`check_role` stay frozen. (3) done (owner order 2026-11-14 23:56Z, D-125): after the `REVOKE`, inside
+  the grant transaction, `grant_runtime_role` checks `has_table_privilege(..., 'INSERT, UPDATE, DELETE, TRUNCATE')`
+  and `has_any_column_privilege(..., 'INSERT, UPDATE')` on each existing protected table for the role and every role
+  it is a member of (`PUBLIC` included) and refuses a hit with the new reason `protected_writable` (rollback, nothing
+  granted); tests `tests/postgres/test_grants.py::test_tb150_a_protected_table_writable_*`,
+  `::test_tb150_a_write_path_granted_during_the_transaction_rolls_it_back` and mutation probes. Review of #81: the
+  `REVOKE` and the check cover `TRIGGER` and the partitions and inheritance children of each protected table (F-2,
+  F-4); before PostgreSQL 16 a role that has or can reach `CREATEROLE` is refused with `createrole` (F-1, D-127); a
+  protected table created after the grant needs a re-run of the grant, documented in I-35 and the guide (F-3; by
+  design, not open work). (4) left to the consumers: Axentra and Nodestro may drop their local `pg_write_all_data`
+  and `has_table_privilege` re-checks once they pin a Tabrion with this fix, and should map `protected_writable` and
+  `createrole`.
+
+### TB-151 · Follow-ups from the re-review of #81 (grant_runtime_role)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TB-150, D-125, D-127, re-review of #81 (N-1, N-3, N-4)
+- **What:** (N-1) a child table in a schema the owner cannot use makes the grant fail with a raw psycopg
+  `InsufficientPrivilege` instead of `RoleUnsafe` (it still rolls back; only a superuser or a member of the owner role
+  can set this up). (N-3) the reason `createrole` does not yet follow the 0.3 addendum's split into `createrole` and
+  `reachable_createrole`. (N-4) two mutants survive: dropping the start-of-transaction `createrole` re-read, and
+  dropping `TRIGGER` from the `REVOKE`. No PostgreSQL 15 job runs the `createrole` path against a real server.
+- **Next step:** map N-1 to `RoleUnsafe`; settle the reason names with the 0.3 addendum (TAB-XW); add tests that
+  kill both mutants; a PG 15 job when CI time allows.
 
 ### TB-037 · Review follow-ups L-1 and I-3 of TAB-015/TAB-016
 

@@ -41,13 +41,13 @@ What it provides (see the [specification](docs/specification.md)):
 ## Installation
 
 Install from Git (Python 3.11 to 3.14), pinned to the full commit SHA of a final version
-([installation](docs/getting-started/installation.md)); the examples pin `0.2.1`. Tabrion is not on PyPI: never
+([installation](docs/getting-started/installation.md)); the examples pin `0.2.2`. Tabrion is not on PyPI: never
 install the bare name from a package index ([SECURITY.md](SECURITY.md), supply chain).
 
 ```bash
-pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@af0458d54467571abfc1afdd44d76e1f4d727c06"                     # core
-pip install "tabrion[postgres] @ git+https://github.com/peterkarlhuber/tabrion@af0458d54467571abfc1afdd44d76e1f4d727c06"           # + psycopg
-pip install "tabrion[sqlalchemy,migrations] @ git+https://github.com/peterkarlhuber/tabrion@af0458d54467571abfc1afdd44d76e1f4d727c06"
+pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@5bc690e2de74a92cd44bb4522cf2533cc2c8d14f"                     # core
+pip install "tabrion[postgres] @ git+https://github.com/peterkarlhuber/tabrion@5bc690e2de74a92cd44bb4522cf2533cc2c8d14f"           # + psycopg
+pip install "tabrion[sqlalchemy,migrations] @ git+https://github.com/peterkarlhuber/tabrion@5bc690e2de74a92cd44bb4522cf2533cc2c8d14f"
 ```
 
 Extras: `postgres`, `sqlalchemy`, `migrations` (implies `sqlalchemy`), `testing`, `all`. Every combination is

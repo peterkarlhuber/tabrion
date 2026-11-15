@@ -6,13 +6,45 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Changed
+
+- Master builds as `0.3.0.dev0` (the 0.3 switch, as TAB-042 did for 0.2; not a release: no tag, no publication):
+  `tabrion.Transaction` inherits the 0.3 mixin of `tabrion._sa._v03`, `tabrion.errors.RowCountMismatch` is an
+  ordinary exported class (no longer the private `_RowCountMismatch` bound by the version), `tabrion.rowedit` imports
+  without a version check, the private test-only module `tabrion._sa._staged` is removed, and `docs/api/surface.json`
+  has no `staged` entry any more (240 names, 0 staged). The experimental TAB-XW-6 names of `[0.2.2]` (guided write
+  transaction, contract section 5.11) are therefore public; until the switch `tabrion._since` kept them unimportable,
+  and `tests/unit/test_v03_gate.py` now checks the public state. `tabrion._since` stays, unused, for a name planned
+  for a later minor than the package's; `scripts/api_surface.py` keeps its later-minor check (`MODULE_SINCE` is
+  empty). The consumers' range `tabrion>=0.2,<0.3` excludes `0.3.0.dev0` (PEP 440: `<0.3` excludes the pre-releases
+  of 0.3), so no consumer resolves to this master by range.
+- **0.2.x base:** the last master commit before the 0.3 switch, `v0.2.2` final
+  `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` (#83), is the base commit for a later 0.2.x maintenance branch. The
+  TAB-XW-6 code is in the base, but not importable there. Whether a branch or tag is made is the owner's decision;
+  none exists yet.
+
+## [0.2.2] - 2026-11-15
+
+TABRION TAB-042 follow-up: `v0.2.2` final, a patch release with the role and profile security fixes TB-150 (#77,
+#81), TB-036 (#81) and the profile host check (#82). The release commit is the merge commit of the pull request that
+sets this version, `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` (#83; ADR 0009, amendment
+of 2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.2.2` on it is an optional
+label. No PyPI upload, no GitHub release and no announcement (G-R). It satisfies the range `tabrion>=0.2,<0.3`.
+**No new or removed public names**: the 235 public names are those of `0.2.1` (`scripts/api_surface.py --base
+af0458d`: 240 names, the 5 more are staged for 0.3 and not importable below 0.3, TAB-XW-6); `RoleReport` gains
+the defaulted field `broad` at the end (see Changed). **Behavior changes**:
+`grant_runtime_role` refuses more roles (new `RoleUnsafe` reasons `predefined_role`, `protected_writable` and,
+before PostgreSQL 16, `createrole`), `tabrion.check` reports TAB-PG-013 and TAB-PG-014, and `tabrion.profilefile`
+refuses a comma in every `host` and `%`, `&`, `=` in a TCP host. Between `0.2.1` and this release master built as
+`0.2.2.dev0` (from `af0458d54467571abfc1afdd44d76e1f4d727c06`).
+
 ### Added
 
 - Docs: migration follow-ups after the owner accepted the migration report (2026-11-14 18:52Z).
   `docs/ecosystem/migration.md` and `docs/program/STATUS.md` record QA-16 as done including tabrion-studio, the QA-7
   rest, the binding Nodestro pip floor 26.1, `POISON_VERSION` 0.2.99 in every copy, the TB-150 fix and the
   Windows/OneDrive release gate (DSK-021). `docs/TODO.md` TB-012 status note. No code change.
-- **Experimental, since 0.3** (TABRION TAB-XW-6, CR-DBX; public since master builds as `0.3.0.dev0`): the
+- **Experimental, planned for 0.3** (TABRION TAB-XW-6, CR-DBX; not importable while the version is below 0.3): the
   guided write transaction, contract section 5.11 (moved from addendum A.5). `Transaction.execute_checked(statement,
   params, *, expect_rowcount, max_affected, timeout)` runs one statement and checks its row count; a mismatch raises
   the new `tabrion.errors.RowCountMismatch` (`transaction.rowcount_mismatch`, `transaction.too_many_rows`, counts
@@ -21,9 +53,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   old values (PostgreSQL `IS NOT DISTINCT FROM`, SQLite `IS`), bound parameters only and the exact primary key
   (`rowedit.primary_key_required`) and at least one old value (`rowedit.old_required`); the limits cover the
   statement's own rows, not those of rules or triggers. False conflicts with floating-point and JSON values are documented (N-5). The
-  names are in `surface.json` with `since` 0.3 and stability X. Until the 0.3 switch `tabrion._since` kept them
-  unimportable (so they are not importable on the 0.2.x base either); since then they are public, and
-  `tests/unit/test_v03_gate.py` checks that state.
+  names are in `surface.json` with `since` 0.3 and stability X; `tabrion._since` keeps them unimportable before 0.3,
+  and `scripts/api_surface.py` and `tests/unit/test_v03_gate.py` check both states.
 - Docs: TABRION TAB-XW-1 (CR-DBX, Tabrion 0.3 write and DDL primitives). ADR 0015
   (`docs/adr/0015-crdbx-write-and-ddl-primitives.md`): DDL and diff on SQLAlchemy Core and Alembic operations
   (E-X3); revision text only for Alembic projects, never `env.py`, project code or `alembic upgrade` (E-X4); direct
@@ -56,20 +87,6 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
-- Master builds as `0.3.0.dev0` (the 0.3 switch, as TAB-042 did for 0.2; not a release: no tag, no publication):
-  `tabrion.Transaction` inherits the 0.3 mixin of `tabrion._sa._v03`, `tabrion.errors.RowCountMismatch` is an
-  ordinary exported class (no longer the private `_RowCountMismatch` bound by the version), `tabrion.rowedit` imports
-  without a version check, the private test-only module `tabrion._sa._staged` is removed, and `docs/api/surface.json`
-  has no `staged` entry any more (240 names, 0 staged). `tabrion._since` stays, unused, for a name planned for a later
-  minor than the package's; `scripts/api_surface.py` keeps its later-minor check (`MODULE_SINCE` is empty). The
-  consumers' range `tabrion>=0.2,<0.3` excludes `0.3.0.dev0` (PEP 440: `<0.3` excludes the pre-releases of 0.3), so
-  no consumer resolves to this master by range.
-- **0.2.x base (provisional; to be updated to the `0.2.2` final commit):** the last master commit before the 0.3
-  switch is the base commit for a later 0.2.x maintenance branch. Today that is
-  `2d054a3a9b7f73a2d7cdf92db2d632734814f337` (`0.2.2.dev0`, merge of #79, with the TB-150 security fix #77); the
-  `0.2.2` final version commit (TB-036/TB-150 fixes) lands on master before this switch and then replaces it here.
-  The TAB-XW-6 code is in the base, but not importable there. Whether a branch or tag is made is the owner's
-  decision; none exists yet.
 - `tabrion.postgres.RoleReport` gets the field `broad: tuple[str, ...] = ()` at the end
   (`tabrion.postgres.RoleReport.__init__` takes it as an optional last argument; additive under S-4): the predefined
   roles the role can reach, as `"broad:<role>"` (TB-150, ADR 0015 D-2). It is not part of `restricted` or of
@@ -81,6 +98,11 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Security
 
+- `tabrion.profilefile`: a `host` that starts with `/` (a socket directory) skipped the refused-character check, so
+  `host = "/socket,remote"` was accepted and libpq would read it as a host list with a remote host behind the socket
+  path. A comma in `host` is now refused before any other check (`profilefile.value`, I-109 d, TB-148 (1), W-10).
+  A TCP `host` also refuses `%`, `&` and `=` (hardening against a URL library that unquotes the host; an IPv6 zone
+  id such as `fe80::1%eth0` is therefore refused too).
 - `tabrion.postgres.grant_runtime_role` refuses a runtime role that is a member of any predefined role (`pg_*` or an
   oid below `FirstNormalObjectId`), directly, through other roles, NOINHERIT or `SET`-only, with `RoleUnsafe`
   reason `predefined_role`, before anything is granted (TB-150). Before, a member of `pg_write_all_data` got the
@@ -101,6 +123,29 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   - Consumers that compare `reasons` exactly, or map each value to a text of their own, should handle
     `predefined_role` before they pin a Tabrion with this fix. Axentra's `_refusal` gives an empty phrase for an
     unknown value. Axentra (#87) and Nodestro (#169) already refuse `pg_write_all_data` themselves.
+- `tabrion.postgres.grant_runtime_role` revokes `INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER` on each existing
+  protected table and on its partitions and inheritance children (before: the named table only, without `TRIGGER`).
+  After the `REVOKE`, inside the grant transaction, it checks `has_table_privilege(..., 'INSERT, UPDATE, DELETE,
+  TRUNCATE, TRIGGER')` and `has_any_column_privilege(..., 'INSERT, UPDATE')` on those tables for the role and every
+  role it is a member of (NOINHERIT and `SET`-only too). That covers grants to `PUBLIC`, to an inherited or `SET
+  ROLE`-reachable role, column grants, grants by another grantor and a membership committed concurrently before the
+  check. A hit rolls the transaction back (nothing granted) and raises `RoleUnsafe` with the new reason
+  `protected_writable` (TB-150 item 3, contract I-35, decision D-125). On a server before PostgreSQL 16 it also
+  refuses a role that has, or can become a role with, `CREATEROLE` (new reason `createrole`, D-127), read before the
+  grants and again in the grant transaction. Not covered: a protected table, partition or child created or attached after the grant gets the
+  default privileges; run the function again after such a migration (contract I-35). **Behavior change:** a deploy that
+  relied on such a grant (or, before 16, on a runtime role with `CREATEROLE`) is now refused; consumers that map
+  `reasons` values should handle `protected_writable` and `createrole`. Axentra's `_writable_protected_tables` and
+  Nodestro's own re-check stay valid.
+- `tabrion.check` reports two new PostgreSQL codes (TB-036, decision D-126, an addendum to specification section 9;
+  no API change): **TAB-PG-013** (`error`, whatever `expect`) when `current_user` or `session_user` can reach
+  `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files` (superuser-equivalent), or has
+  `CREATEROLE` (also through a role it can become) on a server before PostgreSQL 16; **TAB-PG-014** (`warning` for
+  `expect="runtime"`, `info` for `"any"`, none for `"owner"`) for a membership of any other predefined `pg_*` role,
+  for example `pg_write_all_data` or the database owner's `pg_database_owner`. Memberships count through other roles,
+  NOINHERIT, `SET`-only and ADMIN-only. A superuser gets TAB-PG-001 only. `role_info` and `check_role` are unchanged
+  (contract I-20, I-53). **Behavior change:** callers that fail on any `error` or `warning` finding may see these
+  codes for roles that passed before.
 
 ## [0.2.1] - 2026-11-14
 

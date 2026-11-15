@@ -36,6 +36,26 @@ _SESSION_SQL = (
     " ORDER BY s.position),"
     " pg_catalog.current_setting('default_transaction_read_only')"
 )
+# TB-036 (D-126): the predefined roles (named pg_ and with an oid below FirstNormalObjectId, as RoleReport.broad) that
+# current_user or session_user is a member of ('MEMBER': INHERIT, NOINHERIT, SET-only and ADMIN-only alike, I-20; the
+# database owner's pg_database_owner too), and whether either can become a role with CREATEROLE.
+_PREDEFINED_SQL = (
+    "SELECT ARRAY(SELECT p.rolname::pg_catalog.text FROM pg_catalog.pg_roles p"
+    " WHERE pg_catalog.left(p.rolname::pg_catalog.text, 3) OPERATOR(pg_catalog.=) 'pg_'"
+    " AND p.oid OPERATOR(pg_catalog.<) 16384::pg_catalog.oid"
+    " AND p.rolname OPERATOR(pg_catalog.<>) CURRENT_USER AND p.rolname OPERATOR(pg_catalog.<>) SESSION_USER"
+    " AND (pg_catalog.pg_has_role(CURRENT_USER, p.oid, 'MEMBER')"
+    " OR pg_catalog.pg_has_role(SESSION_USER, p.oid, 'MEMBER'))"
+    " ORDER BY 1),"
+    " EXISTS (SELECT 1 FROM pg_catalog.pg_roles r WHERE r.rolcreaterole"
+    " AND (pg_catalog.pg_has_role(CURRENT_USER, r.oid, 'MEMBER')"
+    " OR pg_catalog.pg_has_role(SESSION_USER, r.oid, 'MEMBER')))"
+)
+# Each reads or writes server files or runs programs as the server's operating-system user: superuser-equivalent.
+_SUPERUSER_EQUIVALENT = frozenset({"pg_execute_server_program", "pg_read_server_files", "pg_write_server_files"})
+_SAFE_CREATEROLE_VERSION = 160_000
+"""Before PostgreSQL 16 a CREATEROLE role can grant itself any non-superuser role, the three above included."""
+
 _EXTENSIONS_SQL = (
     "SELECT e.extname::pg_catalog.text, n.nspname::pg_catalog.text FROM pg_catalog.pg_extension e"
     " JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) e.extnamespace"
@@ -65,7 +85,12 @@ def collect(
         creatable, default_read_only = one_row(cursor)
         cursor.execute(_EXTENSIONS_SQL)
         outside_path = [(str(name), str(schema)) for name, schema in cursor.fetchall()]
+        cursor.execute(_PREDEFINED_SQL)
+        predefined, createrole = one_row(cursor)
     findings = _role_findings(facts, expect, [str(name) for name in creatable or []])
+    findings += _predefined_findings(
+        facts, expect, [str(name) for name in predefined or []], createrole=bool(createrole)
+    )
     findings += _setting_findings(facts)
     findings += _tls_findings(target, local=_is_local(target, facts))
     findings += _server_findings(facts, read_only=str(default_read_only) == "on")
@@ -120,6 +145,39 @@ def _role_findings(facts: PostgresDiagnosis, expect: str, creatable: list[str]) 
             "The session's role has, or can get through a role membership, CREATE on the search_path schema(s) "
             f"{', '.join(_safe_name(name) for name in creatable)}; an object created there can shadow others.",
             "REVOKE CREATE ON SCHEMA from the runtime role; only the owner role creates objects.",
+        ))  # fmt: skip
+    return findings
+
+
+def _predefined_findings(
+    facts: PostgresDiagnosis, expect: str, predefined: list[str], *, createrole: bool
+) -> list[Finding]:
+    """TAB-PG-013 and TAB-PG-014 (TB-036, D-126). A superuser is a member of every role: TAB-PG-001 already says it."""
+    if facts.role.superuser:
+        return []
+    findings: list[Finding] = []
+    equivalent = [name for name in predefined if name in _SUPERUSER_EQUIVALENT]
+    old_createrole = createrole and facts.server_version < _SAFE_CREATEROLE_VERSION
+    if equivalent or old_createrole:
+        reasons = [f"a member of {_safe_name(name)}" for name in equivalent]
+        if old_createrole:
+            reasons.append(f"CREATEROLE on PostgreSQL {facts.server_version // 10_000}")
+        findings.append(_finding(
+            "TAB-PG-013", Severity.ERROR, "Role has superuser-equivalent power",
+            f"The session's role is, or can become, {'; '.join(reasons)}: it can read or write server files, run "
+            "programs on the server or make itself such a member, and so gain superuser.",
+            "Revoke the membership (and CREATEROLE) from the role; connect with a runtime role that has neither.",
+        ))  # fmt: skip
+    broad = [name for name in predefined if name not in _SUPERUSER_EQUIVALENT]
+    if broad and expect != "owner":
+        # A runtime-role finding like TAB-PG-003 and TAB-PG-009 (I-53).
+        findings.append(_finding(
+            "TAB-PG-014", Severity.WARNING if expect == "runtime" else Severity.INFO,
+            "Role is a member of a predefined role",
+            "The session's role is, or can become, a member of the predefined role(s) "
+            f"{', '.join(_safe_name(name) for name in broad)}; pg_write_all_data, for one, writes every table, "
+            "the migration bookkeeping included.",
+            "Revoke the membership from the runtime role (tabrion.postgres.grant_runtime_role refuses such a role).",
         ))  # fmt: skip
     return findings
 
