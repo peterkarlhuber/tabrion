@@ -150,6 +150,11 @@ EXPECTED: dict[str, set[str]] = {
         "compare",
         "fingerprint",
         "snapshot",
+        # TAB-XW-2 (CR-DBX), since 0.3, experimental.
+        "CheckShape",
+        "ForeignKeyShape",
+        "IndexShape",
+        "UniqueShape",
     },
     # TAB-XW-6 (CR-DBX), since 0.3, experimental.
     "tabrion.rowedit": {"delete_row", "insert_row", "update_row"},
