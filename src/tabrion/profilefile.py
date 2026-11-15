@@ -61,7 +61,7 @@ _ENVIRONMENTS = ("dev", "test", "prod")
 _SSLMODES = ("disable", "allow", "prefer", "require", "verify-ca", "verify-full")
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,254}")
 _IDENTIFIER = re.compile(r"[^\x00-\x1f\x7f.\s][^\x00-\x1f\x7f.]{0,62}")
-_FINGERPRINT = re.compile(r"v1:sha256:[0-9a-f]{64}")
+_FINGERPRINT = re.compile(r"v[12]:sha256:[0-9a-f]{64}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]")
 _DRIVE_RELATIVE = re.compile(r"[A-Za-z]:(?![\\/])")
 _SEPARATORS = "/\\"
@@ -181,7 +181,8 @@ class ConnectionProfile:
     allow: tuple[str, ...] = ()
     """Allowlist: ``schema.table`` or ``schema.table.column`` (SQLite: ``main.table``); empty means nothing."""
     schema_fingerprint: str | None = None
-    """``v1:sha256:<hex>`` of :func:`tabrion.schema.fingerprint` (TAB-CR-2), or ``None``."""
+    """``v1:sha256:<hex>`` or (since 0.3, a level-2 snapshot) ``v2:sha256:<hex>`` of
+    :func:`tabrion.schema.fingerprint` (TAB-CR-2, TAB-XW-2), or ``None``."""
     description: str | None = None
 
     def url(self) -> str:

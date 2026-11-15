@@ -6,8 +6,32 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Added
+
+- **Experimental, 0.3** (TABRION TAB-XW-2, CR-DBX; contract section 5.10, I-111, moved from addendum A.1): the schema
+  model v2. `tabrion.schema.snapshot(..., level=2)` also reads column defaults, foreign keys, unique and check
+  constraints and indexes on SQLite and PostgreSQL, into the new frozen dataclasses `tabrion.schema.ForeignKeyShape`,
+  `tabrion.schema.UniqueShape`, `tabrion.schema.CheckShape` and `tabrion.schema.IndexShape`; its fingerprint is
+  `v2:sha256:<hex>` over the canonical JSON format 2, in which the order of constraints and indexes does not count.
+  `compare` names the new kinds `column_default`, `foreign_key_missing`/`_added`, `unique_missing`/`_added`,
+  `check_missing`/`_added` and `index_missing`/`_added` (only `index_added` is not breaking), with the constraint or
+  index name; a changed constraint is missing and added. On SQLite the foreign key actions and the indexes are read
+  from the pragmas, because SQLAlchemy misses the actions of a column-level `REFERENCES` and leaves out an expression
+  index; `NO ACTION` is `None` on both engines. **Level 1 stays the default and its `v1:` fingerprints stay
+  byte-identical** (ADR 0015 D-4; `tests/golden/schema_v1.json`, recorded with the 0.2 code). A level-2 snapshot is
+  also the target model for `tabrion.ddl` (TAB-XW-3) and `tabrion.plan` (TAB-XW-4). No DDL is generated.
+
 ### Changed
 
+- `tabrion.schema` (experimental since 0.2, TAB-XW-2; additive under S-4, every new field and parameter has a default
+  that keeps the 0.2 behavior): `schema.ColumnShape` gains `default` (`schema.ColumnShape.__init__` takes it as an
+  optional last argument); `schema.TableShape` gains `foreign_keys`, `unique_constraints`, `check_constraints` and
+  `indexes` (`schema.TableShape.__init__`); `schema.SchemaSnapshot` gains `level` (`schema.SchemaSnapshot.__init__`),
+  and a level-1 snapshot with level-2 detail or a level other than 1 or 2 raises `UsageError`
+  (`schema.level_mismatch`, `schema.invalid_level`); `schema.SchemaDifference` gains `name`
+  (`schema.SchemaDifference.__init__`) and new `kind` values; `schema.snapshot` gains `level=1`; `compare` refuses
+  snapshots of different levels (`schema.level_mismatch`); `SchemaSnapshot.from_json` reads format 1 and 2.
+  `tabrion.profilefile` accepts a `v2:sha256:<hex>` `schema_fingerprint` as well as `v1:` (I-109 e).
 - Master builds as `0.3.0.dev0` (the 0.3 switch, as TAB-042 did for 0.2; not a release: no tag, no publication):
   `tabrion.Transaction` inherits the 0.3 mixin of `tabrion._sa._v03`, `tabrion.errors.RowCountMismatch` is an
   ordinary exported class (no longer the private `_RowCountMismatch` bound by the version), `tabrion.rowedit` imports

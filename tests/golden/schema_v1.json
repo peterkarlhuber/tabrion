@@ -1,0 +1,19 @@
+{
+  "comment": "v1 fingerprints recorded with the 0.2 code of tabrion.schema (master 72e2d03, unchanged since 0.2.0) before TAB-XW-2; tests/unit/test_schema_v2.py::test_v1_fingerprint_unchanged_against_02_golden. Do not regenerate.",
+  "sqlite_ddl": [
+    "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created TEXT DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE invoices (id INTEGER PRIMARY KEY, customer INTEGER NOT NULL REFERENCES customers (id) ON DELETE CASCADE, total_cents INTEGER NOT NULL DEFAULT 0 CHECK (total_cents >= 0), note VARCHAR(20), UNIQUE (customer, note))",
+    "CREATE INDEX invoices_note ON invoices (note)",
+    "CREATE TABLE lines (invoice INTEGER, n INTEGER, amount NUMERIC(10, 2), PRIMARY KEY (invoice, n))"
+  ],
+  "snapshots": [
+    {
+      "json": "{\"dialect\":\"sqlite\",\"format\":1,\"tables\":[{\"columns\":[[\"id\",\"INTEGER\",true],[\"name\",\"TEXT\",false],[\"created\",\"TEXT\",true]],\"name\":\"main.customers\",\"primary_key\":[\"id\"]},{\"columns\":[[\"id\",\"INTEGER\",true],[\"customer\",\"INTEGER\",false],[\"total_cents\",\"INTEGER\",false],[\"note\",\"VARCHAR(20)\",true]],\"name\":\"main.invoices\",\"primary_key\":[\"id\"]},{\"columns\":[[\"invoice\",\"INTEGER\",true],[\"n\",\"INTEGER\",true],[\"amount\",\"NUMERIC(10, 2)\",true]],\"name\":\"main.lines\",\"primary_key\":[\"invoice\",\"n\"]}]}",
+      "fingerprint": "v1:sha256:7a75bc64f32220117c0db54f4fd72b64f5ac638f86a6cc51efdd8cd18b902ab3"
+    },
+    {
+      "json": "{\"dialect\":\"postgresql\",\"format\":1,\"tables\":[{\"columns\":[[\"id\",\"BIGINT\",false],[\"tags\",\"TEXT[]\",true]],\"name\":\"public.a\",\"primary_key\":[\"id\"]},{\"columns\":[],\"name\":\"public.b\",\"primary_key\":[]}]}",
+      "fingerprint": "v1:sha256:18737ad0029eeb1a446361403f4090028a8d469660864f120626133db1247cda"
+    }
+  ]
+}

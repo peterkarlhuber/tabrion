@@ -2,7 +2,7 @@
 
 !!! warning "Planned 0.3, not implemented"
     Everything on this page is **planned for Tabrion 0.3 and not implemented**, except the sections marked as moved
-    into the contract (A.5, TAB-XW-6). None of the other names exists in the code, in `__all__` or in
+    into the contract (A.1, TAB-XW-2; A.5, TAB-XW-6). None of the other names exists in the code, in `__all__` or in
     [`surface.json`](surface.json); none may be imported or relied on. Names, signatures and
     error codes may still change until the independent API review of TAB-XW-10. When a work package implements its
     part, it moves that section into [the contract](contract.md) with implementation notes, adds the names to
@@ -22,7 +22,7 @@ Every planned name is experimental (`X`) and arrives with 0.3. No stable name ch
 
 | Module | Planned names | WP | Extra |
 |---|---|---|---|
-| `tabrion.schema` | `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `IndexShape`; new fields of `ColumnShape`, `TableShape`, `SchemaSnapshot`; `snapshot(level=)`; new `SchemaDifference.kind` values | TAB-XW-2 | `sqlalchemy` |
+| `tabrion.schema` | `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `IndexShape`; new fields of `ColumnShape`, `TableShape`, `SchemaSnapshot`; `snapshot(level=)`; new `SchemaDifference.kind` values (implemented, contract section 5.10, I-111) | TAB-XW-2 | `sqlalchemy` |
 | `tabrion.ddl` (new) | `DdlStatement`, `create_statements`, `table_statements` | TAB-XW-3 | `sqlalchemy` |
 | `tabrion.plan` (new) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers`, `ExecutionResult`, `execute_plan` | TAB-XW-4, TAB-XW-5 | `sqlalchemy`; `revision_text` also `migrations` |
 | `tabrion.rowedit` (new) | `insert_row`, `update_row`, `delete_row` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
@@ -66,87 +66,17 @@ class DatabaseInUse(TabrionError)      # "postgres.database_in_use" (details ses
 
 ## A.1 `tabrion.schema` v2 (TAB-XW-2)
 
-```python
-@dataclass(frozen=True, slots=True)
-class ColumnShape:
-    name: str
-    type: str
-    nullable: bool
-    default: str | None = None  # new: the server default as the dialect reflects it; level 2 only
-
-
-@dataclass(frozen=True, slots=True)
-class ForeignKeyShape:
-    name: str | None
-    columns: tuple[str, ...]
-    referred_table: str  # "schema.table"
-    referred_columns: tuple[str, ...]
-    on_delete: str | None = None  # "CASCADE", "SET NULL", "RESTRICT", "NO ACTION", "SET DEFAULT"
-    on_update: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class UniqueShape:
-    name: str | None
-    columns: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class CheckShape:
-    name: str | None
-    sqltext: str  # as the dialect reflects it
-
-
-@dataclass(frozen=True, slots=True)
-class IndexShape:
-    name: str
-    columns: tuple[str, ...]  # an expression index gives its expression text
-    unique: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class TableShape:
-    name: str
-    columns: tuple[ColumnShape, ...]
-    primary_key: tuple[str, ...]
-    foreign_keys: tuple[ForeignKeyShape, ...] = ()  # new, level 2
-    unique_constraints: tuple[UniqueShape, ...] = ()  # new, level 2
-    check_constraints: tuple[CheckShape, ...] = ()  # new, level 2
-    indexes: tuple[IndexShape, ...] = ()  # new, level 2
-
-
-@dataclass(frozen=True, slots=True)
-class SchemaSnapshot:
-    dialect: str
-    tables: tuple[TableShape, ...]
-    level: Literal[1, 2] = 1  # new
-
-
-def snapshot(
-    inspector: sqlalchemy.Inspector,
-    *,
-    tables: Iterable[str] | None = None,
-    schemas: Iterable[str] | None = None,
-    level: Literal[1, 2] = 1,
-) -> SchemaSnapshot: ...
-def fingerprint(snapshot: SchemaSnapshot) -> str: ...  # "v1:sha256:<hex>" for level 1, "v2:sha256:<hex>" for level 2
-```
-
-- **Levels.** Level 1 is the 0.2 shape (columns, type, nullability, primary key) and its fingerprint stays
-  byte-identical, so a stored `v1:` fingerprint (Nodestro NOD-CR-5, profile `schema_fingerprint`) stays valid.
-  Level 2 adds defaults, foreign keys, unique and check constraints and indexes. `from_json` reads both;
-  `ConnectionProfile.schema_fingerprint` accepts `v1:` and `v2:`.
-- **New `SchemaDifference.kind` values (level 2):** `column_default`, `foreign_key_missing`, `foreign_key_added`,
-  `unique_missing`, `unique_added`, `check_missing`, `check_added`, `index_missing`, `index_added`. A new difference
-  names the table, the column where there is one, and the constraint or index name in a new field
-  `SchemaDifference.name: str | None = None`; never data. Only the `_added` kinds of indexes are not breaking.
-- **D-4:** level 2 stays opt-in in 0.3; `level=1` stays the default. Tests `tests/unit/test_schema_v2.py::test_default_level_is_1`,
-  `::test_v1_fingerprint_unchanged_against_02_golden`.
-- `compare` refuses snapshots of different levels (`UsageError("schema.level_mismatch")`).
-- A level-2 `SchemaSnapshot` is also the **target model** that the Schema Designer edits and that `tabrion.ddl` and
-  `tabrion.plan` take; a consumer builds it with `dataclasses.replace` or `from_json`. There is no separate model.
-- **Tests:** shapes on both engines, a stable v1 fingerprint over the 0.2 golden snapshots, each new difference
-  kind, round trip through JSON, SQLite unnamed constraints.
+**Implemented (TAB-XW-2) and moved into the contract:**
+[section 5.10](contract.md#510-schema-fingerprint-tabrionschema-since-02-experimental-extra-sqlalchemy-tab-cr-2) with
+the implementation note I-111. `tabrion.schema.ForeignKeyShape`, `UniqueShape`, `CheckShape` and `IndexShape` are in
+`surface.json` with `"since": "0.3"` and stability `X`; the new fields of `ColumnShape` (`default`), `TableShape`
+(`foreign_keys`, `unique_constraints`, `check_constraints`, `indexes`), `SchemaSnapshot` (`level`) and
+`SchemaDifference` (`name`, the new `kind` values) and `snapshot(level=)` have defaults that keep the 0.2 behavior.
+`ConnectionProfile.schema_fingerprint` accepts `v1:` and `v2:` (I-109 e). D-4 is
+`tests/unit/test_schema_v2.py::test_default_level_is_1` and `::test_v1_fingerprint_unchanged_against_02_golden`. Added
+in the implementation: `UsageError("schema.invalid_level")` for a level other than 1 or 2, and `schema.level_mismatch`
+also for a level-1 snapshot that holds level-2 detail (I-111 a); `NO ACTION` is `None` (I-111 b); what level 2 does
+not read, such as partial index predicates and index sort order, is listed in I-111 d.
 
 ## A.2 `tabrion.ddl` (TAB-XW-3)
 

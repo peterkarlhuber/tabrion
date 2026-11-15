@@ -1243,21 +1243,75 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.schema.CheckShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str | None",
+        "sqltext: str"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.CheckShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str | None, sqltext: str) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.schema.ColumnShape": {
       "kind": "dataclass",
       "frozen": true,
       "fields": [
         "name: str",
         "type: str",
-        "nullable: bool"
+        "nullable: bool",
+        "default: str | None = None"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.ColumnShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str, type: str, nullable: bool) -> None",
+      "signature": "(self, name: str, type: str, nullable: bool, default: str | None = None) -> None",
       "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.ForeignKeyShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str | None",
+        "columns: tuple[str, ...]",
+        "referred_table: str",
+        "referred_columns: tuple[str, ...]",
+        "on_delete: str | None = None",
+        "on_update: str | None = None"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.ForeignKeyShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str | None, columns: tuple[str, ...], referred_table: str, referred_columns: tuple[str, ...], on_delete: str | None = None, on_update: str | None = None) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.IndexShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str",
+        "columns: tuple[str, ...]",
+        "unique: bool = False"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.IndexShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, columns: tuple[str, ...], unique: bool = False) -> None",
+      "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.SchemaDifference": {
@@ -1266,14 +1320,15 @@
       "fields": [
         "kind: DifferenceKind",
         "table: str",
-        "column: str | None = None"
+        "column: str | None = None",
+        "name: str | None = None"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.SchemaDifference.__init__": {
       "kind": "method",
-      "signature": "(self, kind: DifferenceKind, table: str, column: str | None = None) -> None",
+      "signature": "(self, kind: DifferenceKind, table: str, column: str | None = None, name: str | None = None) -> None",
       "since": "0.2",
       "stability": "X"
     },
@@ -1288,14 +1343,15 @@
       "frozen": true,
       "fields": [
         "dialect: str",
-        "tables: tuple[TableShape, ...]"
+        "tables: tuple[TableShape, ...]",
+        "level: Literal[1, 2] = 1"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.SchemaSnapshot.__init__": {
       "kind": "method",
-      "signature": "(self, dialect: str, tables: tuple[TableShape, ...]) -> None",
+      "signature": "(self, dialect: str, tables: tuple[TableShape, ...], level: Literal[1, 2] = 1) -> None",
       "since": "0.2",
       "stability": "X"
     },
@@ -1323,15 +1379,35 @@
       "fields": [
         "name: str",
         "columns: tuple[ColumnShape, ...]",
-        "primary_key: tuple[str, ...]"
+        "primary_key: tuple[str, ...]",
+        "foreign_keys: tuple[ForeignKeyShape, ...] = ()",
+        "unique_constraints: tuple[UniqueShape, ...] = ()",
+        "check_constraints: tuple[CheckShape, ...] = ()",
+        "indexes: tuple[IndexShape, ...] = ()"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.TableShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str, columns: tuple[ColumnShape, ...], primary_key: tuple[str, ...]) -> None",
+      "signature": "(self, name: str, columns: tuple[ColumnShape, ...], primary_key: tuple[str, ...], foreign_keys: tuple[ForeignKeyShape, ...] = (), unique_constraints: tuple[UniqueShape, ...] = (), check_constraints: tuple[CheckShape, ...] = (), indexes: tuple[IndexShape, ...] = ()) -> None",
       "since": "0.2",
+      "stability": "X"
+    },
+    "tabrion.schema.UniqueShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str | None",
+        "columns: tuple[str, ...]"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.UniqueShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str | None, columns: tuple[str, ...]) -> None",
+      "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.compare": {
@@ -1348,7 +1424,7 @@
     },
     "tabrion.schema.snapshot": {
       "kind": "function",
-      "signature": "(inspector: sqlalchemy.Inspector, *, tables: Iterable[str] | None = None, schemas: Iterable[str] | None = None) -> SchemaSnapshot",
+      "signature": "(inspector: sqlalchemy.Inspector, *, tables: Iterable[str] | None = None, schemas: Iterable[str] | None = None, level: Literal[1, 2] = 1) -> SchemaSnapshot",
       "since": "0.2",
       "stability": "X"
     },
