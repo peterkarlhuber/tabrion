@@ -74,9 +74,11 @@ uses them only after its own area gate (G-S2, G-S3, G-S4), and Tabrion itself en
   declared DEV or TEST environment, bound to the plan hash and the schema fingerprint and after a drift check. It is
   **not a migration runner** and writes no version table; the row "PostgreSQL migration runner in 0.x" stays (E-X4,
   [ADR 0007](adr/0007-no-shared-migration-runner.md)).
-- SQLite `restore()` (TAB-XW-7) and database role DDL that never grants SUPERUSER, BYPASSRLS, CREATEROLE or
-  REPLICATION, also not through membership (TAB-XW-8). Database role DDL is not a tenant or user model; that row stays
-  (E-X6).
+- SQLite `restore()` and `delete_database_file` (TAB-XW-7, implemented: [contract section 3.10](api/contract.md#310-restore-delete_database_file-since-03-experimental-tab-xw-7)),
+  PostgreSQL `create_database`/`drop_database` (TAB-XW-9, implemented: [contract section 4.8](api/contract.md#48-create_database-drop_database-database_sessions-since-03-experimental-tab-xw-9))
+  and database role DDL that never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, also not through
+  membership (TAB-XW-8). Database role DDL is not a tenant or user model; that row stays (E-X6). Restoring a SQLite
+  file is not PostgreSQL backup orchestration, and creating or dropping a database is no migration runner.
 - Unchanged non-goals: `pg_dump`/`pg_restore` wrappers and PostgreSQL backup orchestration. Studio runs the verified
   system tools; a `pg_dump` archive holds no global roles, role memberships, tablespaces or other cluster objects
   (E-X5). Upsert and merge helpers stay a non-goal; the guided write transaction (TAB-XW-6) only checks row counts.
@@ -356,7 +358,7 @@ Reasons:
 |---|---|---|
 | SQLite | `backup()` as online backup API (like Nodestro's snapshot), target `0600` and atomic, with `quick_check` of the result; `integrity_check`, `quick_check`, `foreign_key_check`; backup required before `migrate` | schedules, rotation, encryption, Litestream |
 | PostgreSQL | diagnosis only: `diagnose()` reports `archive_mode`, `wal_level`, whether a role with `pg_read_all_data` exists (findings `TAB-PG-020..022`) | `pg_dump`/`pg_restore`, PITR with pgBackRest/WAL-G, restore drill. The documentation takes over the kit baseline; version rule: restore only to the same or a newer major (finding PG16 ↔ PG17) |
-| SQLite restore | `restore()` is **not** included in 0.1 and 0.2: replacing an open database is product-specific (Nodestro `maintenance()`); the documentation shows the pattern. *Planned for 0.3 under CR-DBX only:* `restore()` (atomic, 0600, with a round-trip restore test) and `delete_database_file` (TAB-XW-7, [contract addendum 0.3](api/contract-0.3-addendum.md)) | — |
+| SQLite restore | `restore()` is **not** included in 0.1 and 0.2: replacing an open database is product-specific (Nodestro `maintenance()`); the documentation shows the pattern. *Since 0.3 under CR-DBX only (experimental):* `restore()` (online backup API in one step, atomic for other connections, new targets 0600, `integrity_check` of the source before and of the target after, with a round-trip restore test) and `delete_database_file` (exclusive-lock check, side files, N-4) (TAB-XW-7, [contract section 3.10](api/contract.md#310-restore-delete_database_file-since-03-experimental-tab-xw-7)) | — |
 
 ---
 

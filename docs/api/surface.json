@@ -473,6 +473,14 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.errors.DatabaseInUse": {
+      "kind": "exception",
+      "bases": [
+        "TabrionError"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.errors.DbErrorRedactionFilter": {
       "kind": "class",
       "since": "0.1",
@@ -956,11 +964,29 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.postgres.create_database": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], name: str, *, owner: str | None = None, template: Literal['template0', 'template1'] = 'template1', encoding: str = 'UTF8', locale: str | None = None) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.postgres.database_sessions": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], name: str) -> int",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.postgres.diagnose": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any]) -> PostgresDiagnosis",
       "since": "0.1",
       "stability": "S"
+    },
+    "tabrion.postgres.drop_database": {
+      "kind": "function",
+      "signature": "(connection: psycopg.Connection[Any], name: str, *, force: bool = False) -> None",
+      "since": "0.3",
+      "stability": "X"
     },
     "tabrion.postgres.extension_status": {
       "kind": "function",
@@ -1559,6 +1585,23 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.sqlite.RestoreResult": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "path: Path",
+        "pages: int",
+        "integrity_check: str"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.sqlite.RestoreResult.__init__": {
+      "kind": "method",
+      "signature": "(self, path: Path, pages: int, integrity_check: str) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.sqlite.SQLiteDiagnosis": {
       "kind": "dataclass",
       "frozen": true,
@@ -1675,6 +1718,12 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.sqlite.delete_database_file": {
+      "kind": "function",
+      "signature": "(path: str | os.PathLike[str], *, missing_ok: bool = False) -> tuple[Path, ...]",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.sqlite.diagnose": {
       "kind": "function",
       "signature": "(connection: sqlite3.Connection, *, run_quick_check: bool = False) -> SQLiteDiagnosis",
@@ -1716,6 +1765,12 @@
       "signature": "(connection: sqlite3.Connection, *, enforce: bool = True) -> Iterator[sqlite3.Connection]",
       "since": "0.1",
       "stability": "S"
+    },
+    "tabrion.sqlite.restore": {
+      "kind": "function",
+      "signature": "(source: str | os.PathLike[str], target: str | os.PathLike[str], *, overwrite: bool = False, verify: bool = True) -> RestoreResult",
+      "since": "0.3",
+      "stability": "X"
     },
     "tabrion.sqlite.write_transaction": {
       "kind": "function",

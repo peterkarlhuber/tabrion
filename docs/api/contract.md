@@ -111,6 +111,9 @@ This applies to every layer A function that takes a connection
 | `tabrion` (layer B) | `Transaction.execute_checked` (section 5.11) | 0.3 | X | Studio (STU-026) |
 | `tabrion.rowedit` (extra `sqlalchemy`) | `insert_row`, `update_row`, `delete_row` (section 5.11) | 0.3 | X | Studio (STU-026) |
 | `tabrion.errors` | `RowCountMismatch` (section 1.4) | 0.3 | X | Studio |
+| `tabrion.sqlite` | `restore`, `RestoreResult`, `delete_database_file` (section 3.10) | 0.3 | X | Studio (STU-XDM-2, STU-XDM-3) |
+| `tabrion.postgres` | `create_database`, `drop_database`, `database_sessions` (section 4.8) | 0.3 | X | Studio (STU-CR-3, STU-XDM-3) |
+| `tabrion.errors` | `DatabaseInUse` (section 1.4) | 0.3 | X | Studio |
 | `tabrion.testing` | `configure`, fixtures (section 6) including a database per session, `RoleSetup`, `truncate_tables`, roles without superuser, `require_extension`, `profiles.*` | 0.1 | S | **AX**, **N**, **O** (dev extra), apps |
 | *(internal)* | Vectors `conformance/` and the loader `tests/support/conformance.py` (sections 10, 11) | - | internal | Tabrion's own tests **only** (K-35) |
 
@@ -125,11 +128,11 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 | Module | `__all__` |
 |---|---|
 | `tabrion` | `Column`, `Database`, `Health`, `Profile`, `Result`, `TLSMode`, `TabrionError`, `Transaction`, `__version__`, `safe_url` (`Column` and `Result` since 0.2) |
-| `tabrion.errors` | `Kind`, `Classification`, `classify`, `safe_message`, `DbErrorRedactionFilter`, and the 25 error classes of section 1.4 (since 0.3 also `RowCountMismatch`) |
+| `tabrion.errors` | `Kind`, `Classification`, `classify`, `safe_message`, `DbErrorRedactionFilter`, and the 25 error classes of section 1.4 (since 0.3 also `RowCountMismatch` and `DatabaseInUse`) |
 | `tabrion.sql` | `split_statements` |
 | `tabrion.config` | `safe_url`, `url_from_env` |
-| `tabrion.sqlite` | the names of section 3, plus `Migration` |
-| `tabrion.postgres` | the names of section 4 (including the role and lock names, re-exported from `tabrion.postgres.roles` and `tabrion.postgres.locks`) |
+| `tabrion.sqlite` | the names of section 3, plus `Migration` (since 0.3 also `restore`, `RestoreResult`, `delete_database_file`, section 3.10) |
+| `tabrion.postgres` | the names of section 4 (including the role and lock names, re-exported from `tabrion.postgres.roles` and `tabrion.postgres.locks`; since 0.3 also `create_database`, `drop_database`, `database_sessions`, section 4.8) |
 | `tabrion.check` | `check`, `Finding`, `Severity` |
 | `tabrion.migrations` | `status`, `require_current`, `SchemaStatus` |
 | `tabrion.profilefile` (since 0.2, experimental) | `FORMAT_VERSION`, `ConnectionProfile`, `ProfileFile`, `ProfileFileError`, `ProfileIssue`, `SecretRef`, `parse`, `load`, `dump` (section 5.9) |
@@ -337,6 +340,8 @@ class RoleUnsafe(TabrionError)              # "postgres.role_unsafe", details re
 class UnsafePath(TabrionError)              # "sqlite.symlink" / "sqlite.unsafe_path" / "sqlite.unsafe_owner" / "sqlite.unsafe_mode"
 class RowCountMismatch(TabrionError)        # 0.3, X: "transaction.rowcount_mismatch" (details expected, actual)
                                             # and "transaction.too_many_rows" (details limit, actual); section 5.11
+class DatabaseInUse(TabrionError)           # 0.3, X: "postgres.database_in_use" (details sessions), "sqlite.in_use";
+                                            # sections 3.10 and 4.8
 ```
 
 **Drop-in rule:** the codes equal the Nodestro codes without the prefix `storage.`. Nodestro maps
@@ -694,6 +699,57 @@ Every `UsageError` and `ConfigurationError` below carries only the code and valu
 | I-30 | 3.8 | `path` is the name SQLite opened (`PRAGMA database_list`); SQLite's unix VFS has already resolved links in it. `file_mode` is `None` on Windows, where POSIX modes say nothing. `is_symlink` covers the file and its `-wal`, `-shm` and `-journal` files. `secure_delete` is true only for `ON` (1), not for `FAST` (2). `compile_options` keeps `DEFAULT_FOREIGN_KEYS`, `DEFAULT_WAL_SYNCHRONOUS`, `ENABLE_DBSTAT_VTAB`, `ENABLE_FTS3/4/5`, `ENABLE_JSON1`, `ENABLE_LOAD_EXTENSION`, `ENABLE_MATH_FUNCTIONS`, `ENABLE_RTREE`, `OMIT_LOAD_EXTENSION`, `SECURE_DELETE`, `TEMP_STORE` and `THREADSAFE`. When the database directory is writable by others and has no sticky bit (POSIX, TM-03), `diagnose` logs a WARNING on the logger `tabrion.sqlite` that another user can replace the database file; when the group or others can write it otherwise, sticky or not, the WARNING says that other users can create files next to the database (side files, #4 re-review DL-1); neither names the path (the path at DEBUG): the frozen `SQLiteDiagnosis` has no field for it, the field is TB-043 (review M-2, deviation D-40) |
 | I-31 | Conventions | T-NOTX for SQLite (`tests/sqlite/test_notx.py`): every function that takes a connection leaves `in_transaction`, `isolation_level`, `row_factory`, `text_factory` and `query_only` as it found them, idle and inside the caller's transaction; the checks and `diagnose` read inside the caller's transaction or in a short `read_transaction` of their own |
 
+### 3.10 `restore`, `delete_database_file` (since 0.3, experimental; TAB-XW-7)
+
+Change request CR-DBX (planning document 15, [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) section 6,
+moved here from section A.6 of the contract addendum 0.3): the SQLite building blocks under Studio's backup, restore
+and delete wizards (STU-XDM-2, STU-XDM-3). Standard library only. Tabrion restores and deletes; it never asks,
+confirms or logs, and it keeps no production lock: restoring into or deleting a production database, and the backup
+before either, are the consumer's (E-X7, ADR 0015 section 7).
+
+```python
+@dataclass(frozen=True, slots=True)
+class RestoreResult:
+    path: Path
+    pages: int
+    integrity_check: str  # "ok", or "not checked" with verify=False
+
+
+def restore(
+    source: str | os.PathLike[str], target: str | os.PathLike[str], *, overwrite: bool = False, verify: bool = True
+) -> RestoreResult: ...  # 0.3, X
+def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = False) -> tuple[Path, ...]: ...  # 0.3, X
+```
+
+- **`restore`:** `check_path` on both; `source` must start with the SQLite header
+  (`UsageError("sqlite.not_a_database")`) and pass `integrity_check` before anything is written
+  (`TabrionError("sqlite.restore_source_corrupt")`). A missing `target` is created `0600` (`O_CREAT|O_EXCL|O_NOFOLLOW`
+  and `fchmod`, as `create_private_file`); an existing one needs `overwrite=True` (`FileExistsError`). The copy uses
+  the online backup API from a read-only source connection into a connection of the target in one step, so the change
+  is atomic for other connections of the target and works in WAL mode. With `verify`, `integrity_check` on the target
+  afterwards (`TabrionError("sqlite.restore_corrupt")`, details `pages`). The same file for both is
+  `UsageError("sqlite.same_file")`. A target another connection holds is `DatabaseInUse("sqlite.in_use")`.
+- **`delete_database_file`:** the file must not be a symbolic link (`UnsafePath("sqlite.symlink")`) and must start
+  with the SQLite header (`UsageError("sqlite.not_a_database")`). It takes SQLite's exclusive lock first and raises
+  `DatabaseInUse("sqlite.in_use")` when another connection holds the file; then it deletes the file and its `-wal`,
+  `-shm` and `-journal` side files and returns the deleted paths. A process that opens the file after the lock check
+  is not prevented (documented race; the consumer stops its own connections first).
+- **N-4 ([ADR 0015 section 9](../adr/0015-crdbx-write-and-ddl-primitives.md#9-conditions-decisions-and-notes-of-the-security-review-of-76-binding-requirements)):**
+  the check and the delete work through a directory file descriptor opened with `O_NOFOLLOW`; device and inode of the
+  checked file are compared again right before the unlink (a swapped file is refused); side files that are symbolic
+  links are only unlinked, never followed. Tests `tests/unit/test_sqlite_delete.py::test_swap_between_check_and_unlink_refused`,
+  `::test_side_file_symlink_unlinked_not_followed`.
+- **Tests:** `tests/sqlite/test_restore.py` (the round trip of planning document 15 section 9.4: backup, restore into a
+  new file, `integrity_check` `ok` and the schema fingerprint equal at levels 1 and 2,
+  `test_round_trip_backup_restore_integrity_and_fingerprint`; WAL mode, a corrupt source, the `0600` mode, a held
+  lock, links) and `tests/unit/test_sqlite_delete.py` (the side files, a held lock, links, a swap, both the
+  directory-descriptor path and the by-name path of Windows).
+
+| # | Rule |
+|---|---|
+| I-170 | **`restore`.** (a) Checked before anything is written, in this order: `":memory:"`/`""` as `source` is `UsageError("sqlite.invalid_source")`, as `target` `sqlite.invalid_target`; `check_path` on both (the four names each); `source` is opened with `O_RDONLY\|O_NOFOLLOW\|O_NONBLOCK` and must be a regular file (`UnsafePath`) whose first 16 bytes are `SQLite format 3\0` (an empty file is refused too); an existing `target` that is the same file (device and inode, or the same normalized path) is `sqlite.same_file`, then `FileExistsError` without `overwrite`, then a non-empty existing `target` without the header is `sqlite.not_a_database` (restore never overwrites a file that is not a SQLite database). (b) The source is opened with `connect(read_only=True)` (its checks of I-22 apply, so a source owned by another user or writable by group or others is `UnsafePath`); one read transaction covers the `integrity_check` and the copy, so both see the same snapshot. A WAL source may get `-wal` and `-shm` files from that read-only connection (I-22). (c) The target is opened with `connect` (I-22) and a profile whose busy timeout is 5 s; a new target is created first and must be the file SQLite opened (`UnsafePath("sqlite.unsafe_path")` otherwise). The copy is `Connection.backup(pages=-1)` with a progress hook that stops when SQLite reports `SQLITE_BUSY` or `SQLITE_LOCKED` (`sqlite3` would otherwise sleep and retry forever): another connection that holds the target's lock for the busy timeout, also while `connect` switches the target to WAL, gives `DatabaseInUse("sqlite.in_use")` and the target is unchanged. (d) SQLite cannot change the page size of a WAL database (`SQLITE_READONLY`): when the source's page size differs, the target is switched to `journal_mode=DELETE` for the copy, which needs it to have no other connection (else `DatabaseInUse`), and back to WAL afterwards; a connection that opened the target in between keeps it in rollback mode until the next `connect`. (e) The target ends in WAL mode, as `connect` leaves every file. `verify` runs `integrity_check` on the target's connection; a failure raises `sqlite.restore_corrupt` with only `details={"pages": n}` (the target is already written; with `verify=False` the result says `"not checked"`). (f) A target that `restore` created is removed again, with its side files, on every error, as long as the name is still that file; an existing target is left as the failed copy left it (the backup API commits the copy in one transaction, so it holds the old or the new database). On POSIX the directory of a new target is `fsync`ed. No error names a path |
+| I-171 | **`delete_database_file`.** (a) `":memory:"`, `""` and a name without a file part (`dir/`, `.`, `..`) are `UsageError("sqlite.invalid_target")`. The name is split, not normalized (`..` is never resolved lexically). (b) On POSIX the directory is opened with `O_RDONLY\|O_DIRECTORY\|O_NOFOLLOW` (the directory itself must not be a link, `UnsafePath("sqlite.symlink")`; links in its parents are allowed, as in `check_path`), and every check and unlink below goes through that descriptor (`dir_fd`). Where the platform has no `dir_fd` (Windows), each name is checked with `lstat` (a reparse point counts as a link) and used by its full name. (c) The file: missing is `FileNotFoundError` without the path (`missing_ok=True` returns `()` and leaves any side files alone); a link is `sqlite.symlink`; it is opened with `O_NOFOLLOW\|O_NONBLOCK` and must be a regular file (`UnsafePath("sqlite.unsafe_path")`, also for a file this user may not open) of this user that is not group- or world-writable (`sqlite.unsafe_owner`, `sqlite.unsafe_mode`, as I-22 (b)) and starts with the SQLite header. Each existing side file must be a regular file under the same rules or a link; anything else (a directory, a FIFO) is refused before anything is deleted. (d) Side files that are links are unlinked (the link itself; on Windows a directory link or junction with `rmdir`) before SQLite opens the database, so SQLite never follows them; this happens even when the delete is then refused. (e) The lock check opens the file through `connect`'s verified open (I-22 (e)), sets `PRAGMA locking_mode=EXCLUSIVE`, runs `BEGIN EXCLUSIVE` and reads `PRAGMA schema_version`, with a busy timeout of 0, then closes the connection. `SQLITE_BUSY`/`SQLITE_LOCKED` is `DatabaseInUse("sqlite.in_use")`: a reader or writer in rollback mode, and in WAL mode every other open connection, also an idle one (it holds a shared lock). An idle connection in rollback mode holds no lock and is not seen: POSIX then deletes the file under it, Windows refuses (below). `SQLITE_NOTADB` (a header SQLite cannot read as a database) is `sqlite.not_a_database`; another driver error propagates. SQLite may remove an empty `-wal` and the `-shm` when that connection closes. (f) **N-4:** right before the unlink, `lstat` through the directory descriptor must show the checked device and inode (where the file system has an inode number), else `UnsafePath("sqlite.unsafe_path")` and nothing is deleted; then the file, then its side files are unlinked (a side file that is a link only as a link). By name (Windows), a `PermissionError` of the unlink of the file is the file another process keeps open (SQLite opens without `FILE_SHARE_DELETE`): `DatabaseInUse("sqlite.in_use")`. (g) The result is the file and every side file that existed at the check, in the order file, `-wal`, `-shm`, `-journal`, as the caller named them; the directory is `fsync`ed. Residual: the comparison of (f) and the unlink are two system calls, so a swap in between is not seen; a process that opens the file after the lock check keeps an unlinked file on POSIX |
+
 ## 4. `tabrion.postgres` (extra `postgres`, psycopg 3.2 or later)
 
 Unless stated otherwise, every function takes a **`psycopg.Connection`**, with or without `autocommit` and with any
@@ -1015,6 +1071,48 @@ def advisory_unlock(connection: psycopg.Connection, key: int) -> bool
 **Tests:** TAB-T-L01..L10 (two competing processes, counting, release, connection loss through
 `pg_terminate_backend` gives `holds()=False`, polling timeout, no active statement while waiting per
 `pg_stat_activity`, close, fork).
+
+### 4.8 `create_database`, `drop_database`, `database_sessions` (since 0.3, experimental; TAB-XW-9)
+
+Change request CR-DBX (planning document 15, [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) sections 1 and
+7, moved here from section A.8 of the contract addendum 0.3): the PostgreSQL building blocks under Studio's create and
+delete wizards (STU-CR-3, STU-XDM-3). Database DDL is composed with `psycopg.sql` (`Identifier` for names, `Literal`
+for validated option values), never with string formatting. Tabrion never asks or confirms: the typed name before a
+drop and the backup (`pg_dump`, which is not a complete backup: no roles, memberships or tablespaces) are the
+consumer's (D-13, E-X5).
+
+```python
+def create_database(
+    connection: psycopg.Connection,
+    name: str,
+    *,
+    owner: str | None = None,
+    template: Literal["template0", "template1"] = "template1",
+    encoding: str = "UTF8",
+    locale: str | None = None,
+) -> None: ...  # 0.3, X
+def drop_database(connection: psycopg.Connection, name: str, *, force: bool = False) -> None: ...  # 0.3, X
+def database_sessions(connection: psycopg.Connection, name: str) -> int: ...  # 0.3, X; read-only, for the preview
+```
+
+- `create_database` and `drop_database` need an autocommit connection that is idle (`CREATE`/`DROP DATABASE` cannot
+  run in a transaction); Tabrion never switches autocommit (T-NOTX) and raises
+  `UsageError("postgres.autocommit_required")`.
+- `create_database` checks `rolcreatedb` (or the membership in `owner` for `OWNER`) first and raises
+  `PermissionDenied`; other driver errors propagate unchanged. The name is checked against the 63-byte limit.
+- `drop_database` refuses the connection's own database, `template0`, `template1` and `postgres`
+  (`UsageError("postgres.database_protected")`), and a database with other sessions unless `force=True`
+  (`DatabaseInUse("postgres.database_in_use")`, details `sessions`). `force=True` uses `WITH (FORCE)` (PostgreSQL 13
+  and later).
+- **Tests:** `tests/postgres/test_databases.py` (create and drop round trip, each refusal, a concurrent session,
+  missing `CREATEDB`, names that need quoting, the connection left as it was).
+
+| # | Rule |
+|---|---|
+| I-190 | **Arguments and connection.** Checked before anything is sent: `name` and `owner` must be a non-empty `str` of at most 63 bytes in UTF-8 without NUL (a longer name would be truncated by PostgreSQL to another object's name); `template` is `"template0"` or `"template1"` also at run time; `encoding` matches `[A-Za-z][A-Za-z0-9_]{0,31}`; `locale` matches `[A-Za-z0-9][A-Za-z0-9_.@-]{0,62}`; `force` is a `bool`. Otherwise `UsageError("postgres.invalid_argument")` with only `details={"parameter": <name>}`, never the value. Then `TypeError` for a connection that is not a `psycopg.Connection`, `postgres.autocommit_required` without autocommit and `UsageError("postgres.nested_transaction")` in autocommit mode inside the caller's `transaction()` block; in pipeline mode the caller's pipeline is synced first (I-34). The connection's `autocommit`, row factory and transaction state are left as they were (T-NOTX); statements run through Tabrion's own `tuple_row` cursor |
+| I-191 | **`create_database`.** (a) Before the statement, in the same autocommit session: the connecting role (`CURRENT_USER`) must have `rolcreatedb` or `rolsuper` (`PermissionDenied("postgres.createdb_required")`); an `owner` must exist (`RoleMissing("postgres.role_missing")`) and the connecting role must be able to become it, `pg_has_role(CURRENT_USER, owner, 'SET')` on PostgreSQL 16 and later (the rule of `CREATE DATABASE ... OWNER` there), `'MEMBER'` before (`PermissionDenied("postgres.owner_not_allowed")`). These `PermissionDenied` carry a classification of kind `PERMISSION` with SQLSTATE `42501`, as the server's refusal would. (b) The statement is `CREATE DATABASE <Identifier> [OWNER <Identifier>] TEMPLATE <Identifier> ENCODING <Literal> [LOCALE <Literal>]`. Driver errors of the statement propagate unchanged: an existing database (`DuplicateDatabase`), an encoding or locale the server does not know, a locale or encoding that differs from `template1`'s (use `template0`), the template in use by another session. (c) The check and the statement are two statements: a privilege revoked in between makes the statement fail with the server's error |
+| I-192 | **`drop_database`.** (a) `force=True` on a server before PostgreSQL 13 is `UsageError("postgres.force_requires_13")`. (b) `postgres`, `template0` and `template1` by name, every database with `datistemplate`, and the connection's own database (`current_database()`) are `UsageError("postgres.database_protected")`, with or without `force`; a name that is not in `pg_database` is `UsageError("postgres.database_missing")`. (c) Without `force`, the other sessions on the database are counted (`pg_stat_activity`, every session but this connection's; every role sees `datname`): more than 0 is `DatabaseInUse("postgres.database_in_use")`, details `sessions`. A session that connects between that count and the statement makes the server refuse with SQLSTATE 55006 (`ObjectInUse`): that is raised as the same `DatabaseInUse` with the sessions counted again and the driver error as `original`, raised outside the `except` block (no `__cause__`, no `__context__`). (d) `force=True` sends `DROP DATABASE <Identifier> WITH (FORCE)`, which terminates the other sessions; the connecting role needs the right to signal them (the owner of the sessions, `pg_signal_backend` or superuser), otherwise the server's error propagates. Any other driver error (not the owner: `InsufficientPrivilege`) propagates unchanged. (e) Nothing is retried (R-NORETRY) |
+| I-193 | **`database_sessions`.** Read-only through the shared reading helper (contract section 4, I-16): any transaction state, a savepoint inside the caller's transaction, a rollback of its own implicit transaction. Counts the sessions on `name` other than this connection's from `pg_stat_activity`; `0` for a database without sessions and for one that does not exist. Same name check as I-190. For a preview only: the number can change before a later `drop_database` |
 
 ## 5. Layer B (`tabrion`, extra `sqlalchemy`)
 

@@ -8,6 +8,22 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- **Experimental, 0.3** (TABRION TAB-XW-7, CR-DBX; contract section 3.10, I-170, I-171, moved from addendum A.6):
+  `tabrion.sqlite.restore` copies a backup file into a database with SQLite's online backup API in one step (atomic
+  for the target's other connections, also in WAL mode), checks the source with `integrity_check` before anything is
+  written and the target after the copy, creates a new target `0600`, never overwrites a file that is not a SQLite
+  database, and returns `tabrion.sqlite.RestoreResult`; a target another connection holds is refused.
+  `tabrion.sqlite.delete_database_file` deletes a database file with its `-wal`, `-shm` and `-journal` files after an
+  exclusive-lock check, refuses links and files that are not SQLite databases, and works through a directory
+  descriptor opened with `O_NOFOLLOW` with a device and inode check right before the unlink (ADR 0015 N-4); side files
+  that are links are removed as links. Standard library only. New error class `tabrion.errors.DatabaseInUse`
+  (`sqlite.in_use`, `postgres.database_in_use`).
+- **Experimental, 0.3** (TABRION TAB-XW-9, CR-DBX; contract section 4.8, I-190..I-193, moved from addendum A.8):
+  `tabrion.postgres.create_database` and `tabrion.postgres.drop_database` compose `CREATE DATABASE`/`DROP DATABASE`
+  with `psycopg.sql.Identifier` and validated literals, need an idle autocommit connection (never switched), check
+  `CREATEDB` and the owner before creating, refuse `postgres`, the templates and the connection's own database, and
+  refuse a database with other sessions unless `force=True` (`WITH (FORCE)`); `tabrion.postgres.database_sessions`
+  counts the other sessions for a preview.
 - **Experimental, 0.3** (TABRION TAB-XW-2, CR-DBX; contract section 5.10, I-111, moved from addendum A.1): the schema
   model v2. `tabrion.schema.snapshot(..., level=2)` also reads column defaults, foreign keys, unique and check
   constraints and indexes on SQLite and PostgreSQL, into the new frozen dataclasses `tabrion.schema.ForeignKeyShape`,
