@@ -126,6 +126,17 @@ EXPECTED: dict[str, set[str]] = {
         "create_database",
         "database_sessions",
         "drop_database",
+        # TAB-XW-8 (CR-DBX), since 0.3, experimental.
+        "RoleOptions",
+        "RolePrivileges",
+        "role_privileges",
+        "create_role",
+        "alter_role",
+        "drop_role",
+        "grant_membership",
+        "revoke_membership",
+        "grant_privileges",
+        "revoke_privileges",
     },
     "tabrion.postgres.roles": {
         "RoleInfo",

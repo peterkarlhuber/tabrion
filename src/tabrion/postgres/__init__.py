@@ -3,7 +3,10 @@
 Contract: ``docs/api/contract.md`` section 4. ``configure``, ``session_configurator``, ``ping``, ``diagnose`` and
 ``extension_status`` are implemented (TAB-015), the reading role functions too (TAB-016, ``tabrion.postgres.roles``);
 ``grant_runtime_role`` (TAB-031) and the locks (TAB-030) are still stubs. Since 0.3 (experimental, TAB-XW-9) also
-``create_database``, ``drop_database`` and ``database_sessions`` (section 4.8; private module ``_databases``).
+``create_database``, ``drop_database`` and ``database_sessions`` (section 4.8; private module ``_databases``) and, with
+TAB-XW-8, the role DDL ``RoleOptions``, ``RolePrivileges``, ``role_privileges``, ``create_role``, ``alter_role``,
+``drop_role``, ``grant_membership``, ``revoke_membership``, ``grant_privileges`` and ``revoke_privileges`` (section
+4.9; private module ``_roleddl``).
 
 psycopg is imported inside the functions only: ``tabrion.Profile`` (layer B, extra ``sqlalchemy``) holds a
 ``SessionSettings``, and a SQLite-only application installs SQLAlchemy without psycopg. A call without psycopg
@@ -38,6 +41,18 @@ from tabrion.postgres._common import (
     settle,
 )
 from tabrion.postgres._databases import create_database, database_sessions, drop_database
+from tabrion.postgres._roleddl import (
+    RoleOptions,
+    RolePrivileges,
+    alter_role,
+    create_role,
+    drop_role,
+    grant_membership,
+    grant_privileges,
+    revoke_membership,
+    revoke_privileges,
+    role_privileges,
+)
 from tabrion.postgres.locks import (
     SessionLock,
     advisory_unlock,
@@ -63,22 +78,32 @@ __all__ = [
     "PingResult",
     "PostgresDiagnosis",
     "RoleInfo",
+    "RoleOptions",
+    "RolePrivileges",
     "RoleReport",
     "SessionLock",
     "SessionSettings",
     "advisory_unlock",
+    "alter_role",
     "check_role",
     "configure",
     "create_database",
+    "create_role",
     "database_sessions",
     "diagnose",
     "drop_database",
+    "drop_role",
     "extension_status",
+    "grant_membership",
+    "grant_privileges",
     "grant_runtime_role",
     "inspect_role",
     "lock_key",
     "ping",
+    "revoke_membership",
+    "revoke_privileges",
     "role_info",
+    "role_privileges",
     "session_configurator",
     "try_advisory_lock",
     "wait_advisory_lock",

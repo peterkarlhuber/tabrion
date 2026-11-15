@@ -97,6 +97,31 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   (`sqlite.unsafe_path`) without the path; both functions `lstat` a file before they open it and never open a
   directory, FIFO or device; `restore` reports a source that SQLite finds damaged while opening it (such as a header
   with a page count beyond the file) as `sqlite.restore_source_corrupt` instead of the driver's `DatabaseError`.
+- **Experimental, 0.3** (TABRION TAB-XW-8, CR-DBX; contract section 4.9, I-180..I-186, moved from addendum A.7):
+  role DDL with the attribute ban, also indirect (owner decision E-X6). `tabrion.postgres.role_privileges` reads a
+  role's attributes, direct memberships, every role reachable through membership (INHERIT, SET and ADMIN option
+  alike), findings (`dangerous`: SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION on the role or a reachable role,
+  CREATEROLE before PostgreSQL 16, TRIGGER on a relation, EXECUTE on a foreign SECURITY DEFINER function, CREATE on
+  `public` or a foreign schema; `broad`: reachable predefined roles) and its owned objects and default privileges, as
+  the frozen dataclass `tabrion.postgres.RolePrivileges`. `tabrion.postgres.create_role`,
+  `tabrion.postgres.alter_role` (with `tabrion.postgres.RoleOptions`: login, inherit, create database, connection
+  limit, expiry; no field for the four banned attributes), `tabrion.postgres.drop_role`,
+  `tabrion.postgres.grant_membership`, `tabrion.postgres.revoke_membership`, `tabrion.postgres.grant_privileges` and
+  `tabrion.postgres.revoke_privileges` run on PostgreSQL 16 and later in a transaction of their own, check the target
+  right before and again right after the statement, compose every name with `psycopg.sql.Identifier`, never grant
+  `WITH ADMIN OPTION`, `WITH GRANT OPTION`, TRIGGER or membership in a predefined role, and refuse with `RoleUnsafe`
+  (new reasons such as `reachable_superuser`, `predefined_role`, `security_definer`, `schema_create`, `trigger`,
+  `owns_objects`, `current_user`). A password is hashed on the client and sent only as a SCRAM-SHA-256 verifier; it
+  is never in an error or a traceback frame. Driver errors are raised as the `DatabaseError` of their kind with the
+  safe message. `tabrion.profilefile` accepts the profile mode `admin` (addendum A.9, E-X8). Security review of #90
+  folded in: every change refuses a session whose current or session user has SUPERUSER, BYPASSRLS or REPLICATION
+  (`RoleUnsafe("postgres.caller_unsafe")`); `grant_privileges` refuses objects of the system (`system_object`) and
+  objects whose owner has one of these attributes (`object_owner`); a role that is or reaches
+  `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files` counts as one with a banned
+  attribute (`server_access:<role>` in `dangerous`, reason `reachable_server_access`); new field
+  `RolePrivileges.public_definers` (SECURITY DEFINER functions PUBLIC may execute, a superuser owner highlighted);
+  `create_role` refuses names with control, format or separator characters; passwords are limited to 1 024
+  characters.
 - **Experimental, 0.3** (TABRION TAB-XW-9, CR-DBX; contract section 4.8, I-190..I-193, moved from addendum A.8):
   `tabrion.postgres.create_database` and `tabrion.postgres.drop_database` compose `CREATE DATABASE`/`DROP DATABASE`
   with `psycopg.sql.Identifier` and validated literals, need an idle autocommit connection (never switched), check
@@ -142,6 +167,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   snapshots of different levels (`schema.level_mismatch`); `SchemaSnapshot.from_json` reads format 1 and 2 and
   refuses a `format` that is not an integer (`true`, `1.0`, `2.0`; before, `true` and `1.0` read as format 1).
   `tabrion.profilefile` accepts a `v2:sha256:<hex>` `schema_fingerprint` as well as `v1:` (I-109 e).
+- `tabrion.sqlite.delete_database_file` (experimental since 0.3, TAB-XW-7; note N-1 of the security review of #88):
+  on POSIX the database's directory must also belong to the effective user or to root, otherwise
+  `UnsafePath("sqlite.unsafe_owner")`; before, only its mode bits were checked. ACLs are not evaluated (SECURITY.md).
 - Master builds as `0.3.0.dev0` (the 0.3 switch, as TAB-042 did for 0.2; not a release: no tag, no publication):
   `tabrion.Transaction` inherits the 0.3 mixin of `tabrion._sa._v03`, `tabrion.errors.RowCountMismatch` is an
   ordinary exported class (no longer the private `_RowCountMismatch` bound by the version), `tabrion.rowedit` imports
