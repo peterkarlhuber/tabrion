@@ -13,8 +13,13 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   constraints and indexes on SQLite and PostgreSQL, into the new frozen dataclasses `tabrion.schema.ForeignKeyShape`,
   `tabrion.schema.UniqueShape`, `tabrion.schema.CheckShape` and `tabrion.schema.IndexShape`, including
   `DEFERRABLE`/`INITIALLY DEFERRED` of foreign and unique keys, PostgreSQL `INCLUDE` and `NULLS NOT DISTINCT`,
-  partial index predicates and the order of index elements (`ordering`); index collation is a documented gap
-  (I-111 d). Its fingerprint is
+  partial index predicates, the order, collation and operator class of index elements, the PostgreSQL access
+  method and `indisvalid`, unique constraint collations, `NOT VALID` and `MATCH`, and PostgreSQL exclusion constraints
+  in the new `tabrion.schema.ExclusionShape` (kinds `exclusion_missing`, `exclusion_added`); `IndexShape.expressions`
+  marks expression elements. The blind spots that remain (triggers, policies, domain checks, partitioning,
+  `UNLOGGED`, identity and generated detail, storage parameters) are listed in I-111 d. SQLite index text is parsed
+  without regular expressions in linear time (review of #85, F1); SQLite unique constraints and foreign keys come
+  from the pragmas, without touching the warning filters (F3, F5). Its fingerprint is
   `v2:sha256:<hex>` over the canonical JSON format 2, in which the order of constraints and indexes does not count.
   `compare` names the new kinds `column_default`, `foreign_key_missing`/`_added`, `unique_missing`/`_added`,
   `check_missing`/`_added` and `index_missing`/`_added` (only `index_added` is not breaking), with the constraint or
@@ -33,7 +38,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   and a level-1 snapshot with level-2 detail or a level other than 1 or 2 raises `UsageError`
   (`schema.level_mismatch`, `schema.invalid_level`); `schema.SchemaDifference` gains `name`
   (`schema.SchemaDifference.__init__`) and new `kind` values; `schema.snapshot` gains `level=1`; `compare` refuses
-  snapshots of different levels (`schema.level_mismatch`); `SchemaSnapshot.from_json` reads format 1 and 2.
+  snapshots of different levels (`schema.level_mismatch`); `SchemaSnapshot.from_json` reads format 1 and 2 and
+  refuses a `format` that is not an integer (`true`, `1.0`, `2.0`; before, `true` and `1.0` read as format 1).
   `tabrion.profilefile` accepts a `v2:sha256:<hex>` `schema_fingerprint` as well as `v1:` (I-109 e).
 - Master builds as `0.3.0.dev0` (the 0.3 switch, as TAB-042 did for 0.2; not a release: no tag, no publication):
   `tabrion.Transaction` inherits the 0.3 mixin of `tabrion._sa._v03`, `tabrion.errors.RowCountMismatch` is an

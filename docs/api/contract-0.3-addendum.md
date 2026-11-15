@@ -68,7 +68,8 @@ class DatabaseInUse(TabrionError)      # "postgres.database_in_use" (details ses
 
 **Implemented (TAB-XW-2) and moved into the contract:**
 [section 5.10](contract.md#510-schema-fingerprint-tabrionschema-since-02-experimental-extra-sqlalchemy-tab-cr-2) with
-the implementation note I-111. `tabrion.schema.ForeignKeyShape`, `UniqueShape`, `CheckShape` and `IndexShape` are in
+the implementation note I-111. `tabrion.schema.ForeignKeyShape`, `UniqueShape`, `CheckShape`, `IndexShape` and (added after the review of #85)
+`ExclusionShape` are in
 `surface.json` with `"since": "0.3"` and stability `X`; the new fields of `ColumnShape` (`default`), `TableShape`
 (`foreign_keys`, `unique_constraints`, `check_constraints`, `indexes`), `SchemaSnapshot` (`level`) and
 `SchemaDifference` (`name`, the new `kind` values) and `snapshot(level=)` have defaults that keep the 0.2 behavior.
@@ -78,7 +79,10 @@ in the implementation: `UsageError("schema.invalid_level")` for a level other th
 also for a level-1 snapshot that holds level-2 detail (I-111 a); `NO ACTION` is `None` (I-111 b); beyond the planned
 shape, level 2 also reads `DEFERRABLE`/`INITIALLY DEFERRED` (foreign and unique keys), PostgreSQL `INCLUDE` and
 `NULLS NOT DISTINCT`, partial index predicates and the order of index elements (new defaulted fields, I-111 b), so a
-change of only these changes a `v2:` fingerprint (drift checks of TAB-XW-5); the remaining gaps are listed in I-111 d.
+change of only these changes a `v2:` fingerprint (drift checks of TAB-XW-5). After the review of #85 also index
+collations, operator classes, access method and `indisvalid`, unique constraint collations, `NOT VALID`, `MATCH` and
+exclusion constraints (new kinds `exclusion_missing`, `exclusion_added`), and `IndexShape.expressions` marks expression
+elements. The remaining blind spots are listed in I-111 d, with a decision due before G-S3.
 
 ## A.2 `tabrion.ddl` (TAB-XW-3)
 

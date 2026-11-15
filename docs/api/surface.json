@@ -1248,14 +1248,15 @@
       "frozen": true,
       "fields": [
         "name: str | None",
-        "sqltext: str"
+        "sqltext: str",
+        "validated: bool = True"
       ],
       "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.CheckShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str | None, sqltext: str) -> None",
+      "signature": "(self, name: str | None, sqltext: str, validated: bool = True) -> None",
       "since": "0.3",
       "stability": "X"
     },
@@ -1277,6 +1278,22 @@
       "since": "0.2",
       "stability": "X"
     },
+    "tabrion.schema.ExclusionShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str",
+        "definition: str"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.ExclusionShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, definition: str) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.schema.ForeignKeyShape": {
       "kind": "dataclass",
       "frozen": true,
@@ -1288,14 +1305,16 @@
         "on_delete: str | None = None",
         "on_update: str | None = None",
         "deferrable: bool = False",
-        "initially_deferred: bool = False"
+        "initially_deferred: bool = False",
+        "match: str | None = None",
+        "validated: bool = True"
       ],
       "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.ForeignKeyShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str | None, columns: tuple[str, ...], referred_table: str, referred_columns: tuple[str, ...], on_delete: str | None = None, on_update: str | None = None, deferrable: bool = False, initially_deferred: bool = False) -> None",
+      "signature": "(self, name: str | None, columns: tuple[str, ...], referred_table: str, referred_columns: tuple[str, ...], on_delete: str | None = None, on_update: str | None = None, deferrable: bool = False, initially_deferred: bool = False, match: str | None = None, validated: bool = True) -> None",
       "since": "0.3",
       "stability": "X"
     },
@@ -1309,14 +1328,19 @@
         "ordering: tuple[str, ...] = ()",
         "where: str | None = None",
         "include: tuple[str, ...] = ()",
-        "nulls_not_distinct: bool = False"
+        "nulls_not_distinct: bool = False",
+        "expressions: tuple[int, ...] = ()",
+        "collations: tuple[str, ...] = ()",
+        "opclasses: tuple[str, ...] = ()",
+        "method: str | None = None",
+        "valid: bool = True"
       ],
       "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.IndexShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str, columns: tuple[str, ...], unique: bool = False, ordering: tuple[str, ...] = (), where: str | None = None, include: tuple[str, ...] = (), nulls_not_distinct: bool = False) -> None",
+      "signature": "(self, name: str, columns: tuple[str, ...], unique: bool = False, ordering: tuple[str, ...] = (), where: str | None = None, include: tuple[str, ...] = (), nulls_not_distinct: bool = False, expressions: tuple[int, ...] = (), collations: tuple[str, ...] = (), opclasses: tuple[str, ...] = (), method: str | None = None, valid: bool = True) -> None",
       "since": "0.3",
       "stability": "X"
     },
@@ -1389,14 +1413,15 @@
         "foreign_keys: tuple[ForeignKeyShape, ...] = ()",
         "unique_constraints: tuple[UniqueShape, ...] = ()",
         "check_constraints: tuple[CheckShape, ...] = ()",
-        "indexes: tuple[IndexShape, ...] = ()"
+        "indexes: tuple[IndexShape, ...] = ()",
+        "exclusion_constraints: tuple[ExclusionShape, ...] = ()"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.TableShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str, columns: tuple[ColumnShape, ...], primary_key: tuple[str, ...], foreign_keys: tuple[ForeignKeyShape, ...] = (), unique_constraints: tuple[UniqueShape, ...] = (), check_constraints: tuple[CheckShape, ...] = (), indexes: tuple[IndexShape, ...] = ()) -> None",
+      "signature": "(self, name: str, columns: tuple[ColumnShape, ...], primary_key: tuple[str, ...], foreign_keys: tuple[ForeignKeyShape, ...] = (), unique_constraints: tuple[UniqueShape, ...] = (), check_constraints: tuple[CheckShape, ...] = (), indexes: tuple[IndexShape, ...] = (), exclusion_constraints: tuple[ExclusionShape, ...] = ()) -> None",
       "since": "0.2",
       "stability": "X"
     },
@@ -1409,14 +1434,15 @@
         "include: tuple[str, ...] = ()",
         "nulls_not_distinct: bool = False",
         "deferrable: bool = False",
-        "initially_deferred: bool = False"
+        "initially_deferred: bool = False",
+        "collations: tuple[str, ...] = ()"
       ],
       "since": "0.3",
       "stability": "X"
     },
     "tabrion.schema.UniqueShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str | None, columns: tuple[str, ...], include: tuple[str, ...] = (), nulls_not_distinct: bool = False, deferrable: bool = False, initially_deferred: bool = False) -> None",
+      "signature": "(self, name: str | None, columns: tuple[str, ...], include: tuple[str, ...] = (), nulls_not_distinct: bool = False, deferrable: bool = False, initially_deferred: bool = False, collations: tuple[str, ...] = ()) -> None",
       "since": "0.3",
       "stability": "X"
     },

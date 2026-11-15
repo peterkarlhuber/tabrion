@@ -645,8 +645,17 @@ required (owner decision of 2026-11-08 11:26Z).
   (D-4: `tests/unit/test_schema_v2.py::test_default_level_is_1`, `::test_v1_fingerprint_unchanged_against_02_golden`).
   `tabrion.profilefile` accepts `v2:` fingerprints. Moved from addendum A.1 into contract section 5.10 (I-111). After
   the draft review, level 2 also reads `DEFERRABLE`/`INITIALLY DEFERRED`, PostgreSQL `INCLUDE` and `NULLS NOT
-  DISTINCT`, partial index predicates and index element order, so the drift check of TAB-XW-5 sees them. Documented
-  gaps (I-111 d): index collation and operator class, `DEFERRABLE` on a SQLite column-level `REFERENCES`.
+  DISTINCT`, partial index predicates and index element order, so the drift check of TAB-XW-5 sees them. Review of
+  #85 (planning folder `reviews/pr85-tabxw2-review.md`, ACCEPTED with conditions) folded in: F1 linear SQLite index
+  parsing with a 100 000-character limit; F2 index collation, operator class, access method, `indisvalid`, unique
+  collations, `NOT VALID`, `MATCH`, exclusion constraints (`ExclusionShape`), the remaining blind spots in I-111 d;
+  F3 no `catch_warnings` (SQLite uniques from the pragmas, unnamed); F4 `IndexShape.expressions`; F5 SQLite foreign
+  keys from the pragma; F6 `from_json` needs an integer `format`.
+- **Decision before G-S3 (review of #85, F2):** the `v2:` fingerprint does not see triggers, row-level security and
+  policies, domain `CHECK` constraints, partitioning, `UNLOGGED`, identity and generated column detail, storage
+  parameters, `NO INHERIT` and `REPLICA IDENTITY` (I-111 d). Either add them to the level-2 shape (name and a hash of
+  the definition would do for triggers and policies), or Studio marks such tables as not fully modeled and refuses
+  bound writes and Designer plans there. Owner: Tabrion with Studio (STU-CR-4, STU-XW-3); due before G-S3.
 - **Open (follow-up work packages):** TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
   (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;

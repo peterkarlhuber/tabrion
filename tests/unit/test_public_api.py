@@ -152,6 +152,7 @@ EXPECTED: dict[str, set[str]] = {
         "snapshot",
         # TAB-XW-2 (CR-DBX), since 0.3, experimental.
         "CheckShape",
+        "ExclusionShape",
         "ForeignKeyShape",
         "IndexShape",
         "UniqueShape",

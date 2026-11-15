@@ -103,7 +103,8 @@ def test_level2_sqlite_shapes(db: Database) -> None:
         ("email", None),
         ("created", "CURRENT_TIMESTAMP"),
     ]
-    assert customers.unique_constraints == (ts.UniqueShape("uq_email", ("email",)), ts.UniqueShape(None, ("name",)))
+    # read from the pragmas: SQLite keeps no unique constraint name it can address (review of #85, F3)
+    assert customers.unique_constraints == (ts.UniqueShape(None, ("email",)), ts.UniqueShape(None, ("name",)))
     assert customers.indexes == ()  # the indexes of the unique constraints are not indexes of the shape
     assert [(c.name, c.default) for c in invoices.columns][3:] == [("total_cents", "0"), ("note", "'x'")]
     assert invoices.foreign_keys == (
@@ -120,7 +121,11 @@ def test_level2_sqlite_shapes(db: Database) -> None:
     assert invoices.indexes == (
         # an expression index keeps its expression texts (SQLAlchemy would leave it out with a warning)
         ts.IndexShape(
-            "invoices(lower", ("lower(note)", "total_cents", "'a,)' || note"), unique=True, ordering=("DESC", "", "")
+            "invoices(lower",
+            ("lower(note)", "total_cents", "'a,)' || note"),
+            unique=True,
+            ordering=("DESC", "", ""),
+            expressions=(0, 2),
         ),
         ts.IndexShape("invoices_note", ("note",)),
     )
@@ -356,6 +361,7 @@ def _detail_table(**index: Any) -> ts.TableShape:
         (),
         foreign_keys=(ts.ForeignKeyShape("fk", ("a",), "main.o", ("k",)),),
         unique_constraints=(ts.UniqueShape("u", ("a", "b")),),
+        check_constraints=(ts.CheckShape("ck", "a > 0"),),
         indexes=(ts.IndexShape("ix", ("a", "b"), **index),),
     )
 
@@ -374,6 +380,17 @@ def _detail_table(**index: Any) -> ts.TableShape:
         ("unique", {"deferrable": True, "initially_deferred": True}, ["unique_missing", "unique_added"]),
         ("fk", {"deferrable": True}, ["foreign_key_missing", "foreign_key_added"]),
         ("fk", {"deferrable": True, "initially_deferred": True}, ["foreign_key_missing", "foreign_key_added"]),
+        # review of #85, F2 and F4
+        ("index", {"expressions": (1,)}, ["index_missing", "index_added"]),
+        ("index", {"collations": ("", "NOCASE")}, ["index_missing", "index_added"]),
+        ("index", {"opclasses": ("", "text_pattern_ops")}, ["index_missing", "index_added"]),
+        ("index", {"method": "hash"}, ["index_missing", "index_added"]),
+        ("index", {"valid": False}, ["index_missing", "index_added"]),
+        ("unique", {"collations": ("", "NOCASE")}, ["unique_missing", "unique_added"]),
+        ("fk", {"match": "FULL"}, ["foreign_key_missing", "foreign_key_added"]),
+        ("fk", {"validated": False}, ["foreign_key_missing", "foreign_key_added"]),
+        ("check", {"validated": False}, ["check_missing", "check_added"]),
+        ("exclusion", {}, ["exclusion_added"]),
     ],
 )
 def test_level2_detail_changes_the_v2_fingerprint(part: str, change: dict[str, Any], kinds: list[str]) -> None:
@@ -383,6 +400,14 @@ def test_level2_detail_changes_the_v2_fingerprint(part: str, change: dict[str, A
     elif part == "unique":
         changed = dataclasses.replace(
             base, unique_constraints=(dataclasses.replace(base.unique_constraints[0], **change),)
+        )
+    elif part == "check":
+        changed = dataclasses.replace(
+            base, check_constraints=(dataclasses.replace(base.check_constraints[0], **change),)
+        )
+    elif part == "exclusion":
+        changed = dataclasses.replace(
+            base, exclusion_constraints=(ts.ExclusionShape("ex", "EXCLUDE USING gist (r WITH &&)"),)
         )
     else:
         changed = dataclasses.replace(base, foreign_keys=(dataclasses.replace(base.foreign_keys[0], **change),))
@@ -456,3 +481,124 @@ def test_sqlite_foreign_key_deferrable(tmp_path: Path, clause: str, deferrable: 
         ),
     )
     assert ts.fingerprint(before) != ts.fingerprint(after)
+
+
+def test_from_json_refuses_a_format_that_is_not_an_int() -> None:
+    # review of #85, F6: True == 1 and 2.0 == 2 in Python, but neither is a format.
+    for form in ("true", "1.0", "2.0"):
+        with pytest.raises(UsageError) as info:
+            ts.SchemaSnapshot.from_json(f'{{"format": {form}, "dialect": "sqlite", "tables": []}}')
+        assert info.value.code == "schema.invalid_snapshot"
+
+
+def test_from_json_refuses_an_expression_position_out_of_range() -> None:
+    data = json.loads(ts.SchemaSnapshot("sqlite", (_detail_table(),), level=2).to_json())
+    data["tables"][0]["indexes"][0]["expressions"] = [2]
+    with pytest.raises(UsageError):
+        ts.SchemaSnapshot.from_json(json.dumps(data))
+    data["tables"][0]["indexes"][0]["expressions"] = [True]
+    with pytest.raises(UsageError):
+        ts.SchemaSnapshot.from_json(json.dumps(data))
+
+
+def _index_of(tmp_path: Path, *statements: str) -> ts.IndexShape:
+    database = make(tmp_path / "ix.db", ("CREATE TABLE t (x INTEGER, y INTEGER)", *statements))
+    try:
+        table = take(database, level=2).table("main.t")
+    finally:
+        database.close()
+    assert table is not None
+    (index,) = table.indexes
+    return index
+
+
+def test_sqlite_long_whitespace_is_parsed_in_linear_time(tmp_path: Path) -> None:
+    # review of #85, F1: _ORDER_SUFFIX and the WHERE pattern were quadratic on a long run of blanks; a hostile file
+    # with 32 000 blanks took seconds. Now plain string methods: 5 runs of 15 000 blanks (under the limit) are parsed.
+    blanks = " " * 15_000
+    index = _index_of(tmp_path, f"CREATE INDEX i ON t (x +{blanks}y{blanks}DESC{blanks}) WHERE{blanks}x > 0{blanks}")
+    assert index.columns == (f"x +{blanks}y",) and index.expressions == (0,)
+    assert index.ordering == ("DESC",) and index.where == "x > 0"
+
+
+def test_sqlite_index_text_over_the_limit_stands_whole(tmp_path: Path) -> None:
+    # Above _MAX_INDEX_SQL (100 000 characters) the text is not split: the whole statement stands for the expression
+    # and the predicate, so the fingerprint still follows every change of it.
+    statement = f"CREATE INDEX i ON t (x +{' ' * 1_000_000}y) WHERE x > 0"
+    index = _index_of(tmp_path, statement)
+    assert index.columns == (statement,) and index.where == statement and index.expressions == (0,)
+
+
+def test_sqlite_column_and_expression_of_the_same_text_differ(tmp_path: Path) -> None:
+    # review of #85, F4: a column named "lower(a)" and the expression lower(a) give different v2 fingerprints.
+    def snap(index: str) -> ts.SchemaSnapshot:
+        database = make(tmp_path / f"{len(index)}.db", ('CREATE TABLE t (a TEXT, "lower(a)" TEXT)', index))
+        try:
+            return take(database, level=2)
+        finally:
+            database.close()
+
+    column, expression = snap('CREATE INDEX i ON t ("lower(a)")'), snap("CREATE INDEX i ON t (lower(a) )")
+    assert column.tables[0].indexes[0].columns == expression.tables[0].indexes[0].columns == ("lower(a)",)
+    assert ts.fingerprint(column) != ts.fingerprint(expression)
+    assert [d.kind for d in ts.compare(column, expression)] == ["index_missing", "index_added"]
+
+
+def test_sqlite_collations_of_unique_index_and_constraint(tmp_path: Path) -> None:
+    # review of #85, F2: a unique index or constraint that turns case-insensitive changes the v2 fingerprint.
+    def snap(name: str, *statements: str) -> ts.SchemaSnapshot:
+        database = make(tmp_path / name, statements)
+        try:
+            assert ts.fingerprint(take(database)).startswith("v1:")
+            return take(database, level=2)
+        finally:
+            database.close()
+
+    plain = snap("a.db", "CREATE TABLE t (a TEXT, b TEXT, UNIQUE (a))", "CREATE UNIQUE INDEX i ON t (b)")
+    nocase = snap(
+        "b.db",
+        "CREATE TABLE t (a TEXT, b TEXT, UNIQUE (a COLLATE NOCASE))",
+        "CREATE UNIQUE INDEX i ON t (b COLLATE NOCASE)",
+    )
+    assert plain.tables[0].unique_constraints == (ts.UniqueShape(None, ("a",)),)
+    assert nocase.tables[0].unique_constraints == (ts.UniqueShape(None, ("a",), collations=("NOCASE",)),)
+    assert nocase.tables[0].indexes == (ts.IndexShape("i", ("b",), unique=True, collations=("NOCASE",)),)
+    assert ts.fingerprint(plain) != ts.fingerprint(nocase)
+    assert [d.kind for d in ts.compare(plain, nocase)] == [
+        "unique_missing",
+        "unique_added",
+        "index_missing",
+        "index_added",
+    ]
+
+
+def test_sqlite_duplicate_foreign_keys_keep_their_actions(tmp_path: Path) -> None:
+    # review of #85, F5: two keys on the same columns; SQLAlchemy reports only one (with a warning), the pragma both.
+    database = make(
+        tmp_path / "dup.db",
+        (
+            "CREATE TABLE p (a INTEGER PRIMARY KEY)",
+            "CREATE TABLE t (a INTEGER, CONSTRAINT f1 FOREIGN KEY (a) REFERENCES p (a) ON DELETE CASCADE, "
+            "CONSTRAINT f2 FOREIGN KEY (a) REFERENCES p (a))",
+        ),
+    )
+    try:
+        with pytest.warns(sqlalchemy.exc.SAWarning):
+            table = take(database, level=2).table("main.t")
+    finally:
+        database.close()
+    assert table is not None
+    # ambiguous: no name is guessed, and each key keeps its own action
+    assert table.foreign_keys == (
+        ts.ForeignKeyShape(None, ("a",), "main.p", ("a",), on_delete="CASCADE"),
+        ts.ForeignKeyShape(None, ("a",), "main.p", ("a",)),
+    )
+
+
+def test_level2_snapshot_leaves_the_warning_filters_alone(db: Database) -> None:
+    # review of #85, F3: no catch_warnings (process-wide state); the fixture has an expression index.
+    import warnings
+
+    before = list(warnings.filters)
+    take(db, level=2)
+    assert warnings.filters == before

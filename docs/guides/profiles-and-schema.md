@@ -138,5 +138,7 @@ True
 ```
 
 A level-2 snapshot is also the target model of the Schema Designer: a consumer edits it with `dataclasses.replace`
-and stores it with `to_json`. Partial index predicates, the order of index elements, PostgreSQL `INCLUDE` and
-`NULLS NOT DISTINCT` and `DEFERRABLE` are part of the shape; index collation is not (I-111 d).
+and stores it with `to_json`. Partial index predicates, the order and collation of index elements, PostgreSQL
+`INCLUDE`, `NULLS NOT DISTINCT`, operator classes and exclusion constraints, `DEFERRABLE` and `NOT VALID` are part of
+the shape. Triggers, policies, domain checks, partitioning and identity or generated column detail are not (I-111 d):
+a change of only these leaves a `v2:` fingerprint as it was.

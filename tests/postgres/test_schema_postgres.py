@@ -153,7 +153,7 @@ def test_xw2_postgres_level2_shapes(db: Database, constrained: str) -> None:
         ts.CheckShape("invoices_total_cents_check", "total_cents >= 0"),
     )
     assert invoices.indexes == (
-        ts.IndexShape("invoices_lower", ("lower(note::text)", "total_cents"), unique=True),
+        ts.IndexShape("invoices_lower", ("lower(note::text)", "total_cents"), unique=True, expressions=(0,)),
         ts.IndexShape("invoices_note", ("note",)),
     )
     assert ts.SchemaSnapshot.from_json(snap.to_json()) == snap
@@ -308,3 +308,119 @@ def test_xw2_postgres_detail_changes_the_v2_fingerprint(
     target, field, value = check
     assert getattr(shapes[target], field) == value
     assert ts.SchemaSnapshot.from_json(after2.to_json()) == after2
+
+
+# Review of #85, F2 and F4: collation, operator class, access method, valid flag, NOT VALID, MATCH, exclusion
+# constraints and expression markers change the v2 fingerprint; level 1 does not see them.
+REVIEW_BASE = (
+    "CREATE TABLE {s}.p (id bigint PRIMARY KEY, k bigint, UNIQUE (id, k))",
+    'CREATE TABLE {s}.t (a text, b bigint, c bigint, r int4range, "lower(a)" text, '
+    "CONSTRAINT fk FOREIGN KEY (b, c) REFERENCES {s}.p (id, k), CONSTRAINT ck CHECK (b > 0))",
+    "CREATE INDEX ix ON {s}.t (a)",
+)
+
+
+@pytest.mark.parametrize(
+    ("statements", "kinds", "check"),
+    [
+        (
+            ["DROP INDEX {s}.ix", 'CREATE INDEX ix ON {s}.t (a COLLATE "C")'],
+            ["index_missing", "index_added"],
+            ("ix", "collations", ("C",)),
+        ),
+        (
+            ["DROP INDEX {s}.ix", "CREATE INDEX ix ON {s}.t (a text_pattern_ops)"],
+            ["index_missing", "index_added"],
+            ("ix", "opclasses", ("text_pattern_ops",)),
+        ),
+        (
+            ["DROP INDEX {s}.ix", "CREATE INDEX ix ON {s}.t USING hash (a)"],
+            ["index_missing", "index_added"],
+            ("ix", "method", "hash"),
+        ),
+        (
+            ["UPDATE pg_catalog.pg_index SET indisvalid = false WHERE indexrelid = '{s}.ix'::regclass"],
+            ["index_missing", "index_added"],
+            ("ix", "valid", False),
+        ),
+        (
+            [
+                "ALTER TABLE {s}.t DROP CONSTRAINT fk",
+                "ALTER TABLE {s}.t ADD CONSTRAINT fk FOREIGN KEY (b, c) REFERENCES {s}.p (id, k) NOT VALID",
+            ],
+            ["foreign_key_missing", "foreign_key_added"],
+            ("fk", "validated", False),
+        ),
+        (
+            [
+                "ALTER TABLE {s}.t DROP CONSTRAINT fk",
+                "ALTER TABLE {s}.t ADD CONSTRAINT fk FOREIGN KEY (b, c) REFERENCES {s}.p (id, k) MATCH FULL",
+            ],
+            ["foreign_key_missing", "foreign_key_added"],
+            ("fk", "match", "FULL"),
+        ),
+        (
+            ["ALTER TABLE {s}.t DROP CONSTRAINT ck", "ALTER TABLE {s}.t ADD CONSTRAINT ck CHECK (b > 0) NOT VALID"],
+            ["check_missing", "check_added"],
+            ("ck", "validated", False),
+        ),
+        (
+            ["ALTER TABLE {s}.t ADD CONSTRAINT ex EXCLUDE USING gist (r WITH &&)"],
+            ["exclusion_added"],
+            ("ex", "definition", "EXCLUDE USING gist (r WITH &&)"),
+        ),
+    ],
+)
+def test_xw2_postgres_review_detail_changes_the_v2_fingerprint(
+    db: Database,
+    tabrion_postgres_url: str,
+    tabrion_postgres_schema: PostgresSchema,
+    statements: list[str],
+    kinds: list[str],
+    check: tuple[str, str, Any],
+) -> None:
+    name = tabrion_postgres_schema.name
+    with psycopg.connect(tabrion_postgres_url, autocommit=True) as conn:
+        for statement in REVIEW_BASE:
+            conn.execute(statement.format(s=name))
+    before1, before2 = take(db, schemas=[name]), take(db, schemas=[name], level=2)
+    with psycopg.connect(tabrion_postgres_url, autocommit=True) as conn:
+        for statement in statements:
+            conn.execute(statement.format(s=name))
+    after1, after2 = take(db, schemas=[name]), take(db, schemas=[name], level=2)
+    assert ts.fingerprint(after1) == ts.fingerprint(before1)  # level 1 does not see it
+    table = after2.table(f"{name}.t")
+    assert table is not None
+    assert ts.fingerprint(after2) != ts.fingerprint(before2)
+    assert [d.kind for d in ts.compare(before2, after2)] == kinds
+    shapes = {
+        s.name: s
+        for s in (
+            *table.indexes,
+            *table.unique_constraints,
+            *table.foreign_keys,
+            *table.check_constraints,
+            *table.exclusion_constraints,
+        )
+    }
+    target, field, value = check
+    assert getattr(shapes[target], field) == value
+    assert ts.SchemaSnapshot.from_json(after2.to_json()) == after2
+
+
+def test_xw2_postgres_column_and_expression_of_the_same_text_differ(
+    db: Database, tabrion_postgres_url: str, tabrion_postgres_schema: PostgresSchema
+) -> None:
+    # review of #85, F4
+    name = tabrion_postgres_schema.name
+    with psycopg.connect(tabrion_postgres_url, autocommit=True) as conn:
+        conn.execute(f'CREATE TABLE {name}.t (a text, "lower(a)" text)')
+        conn.execute(f'CREATE INDEX ix ON {name}.t ("lower(a)")')
+        column = take(db, schemas=[name], level=2)
+        conn.execute(f"DROP INDEX {name}.ix")
+        conn.execute(f"CREATE INDEX ix ON {name}.t (lower(a))")
+        expression = take(db, schemas=[name], level=2)
+    (one,), (two,) = column.tables[0].indexes, expression.tables[0].indexes
+    assert one.columns == two.columns == ("lower(a)",)
+    assert (one.expressions, two.expressions) == ((), (0,))
+    assert ts.fingerprint(column) != ts.fingerprint(expression)
