@@ -24,10 +24,13 @@ target_fingerprint = 'v2:sha256:40aed88adb871b38a892d9411a298ec35588075c9d4d9470
 def upgrade() -> None:
     if op.get_context().dialect.name != dialect:
         raise RuntimeError("this revision was planned for another database engine")
+    # SQLite: a table rebuild or drop deletes the rows of child tables (ON DELETE CASCADE) while foreign keys
+    # are on, and PRAGMA foreign_keys cannot change inside a transaction: refuse to start with them on (set
+    # PRAGMA foreign_keys = OFF before the migration transaction; see the Tabrion migrations guide, 'Why the
+    # foreign keys are off'), and check every reference before the commit.
+    if op.get_bind().exec_driver_sql("PRAGMA foreign_keys").scalar():
+        raise RuntimeError("foreign keys are on: turn them off before the migration transaction begins")
     # step 0: rebuild_table (data_changing, rebuild)
-    # SQLite: run this step with foreign keys off (PRAGMA foreign_keys = OFF outside the transaction) and
-    # check them afterwards (PRAGMA foreign_key_check); see the Tabrion migrations guide,
-    # 'Why the foreign keys are off'.
     op.execute(sa.text('CREATE TABLE _tabrion_old_parts (\n\tid BLOB, \n\tcode BLOB\n)'))
     op.execute(sa.text('INSERT INTO _tabrion_old_parts (id, code) SELECT parts.id, parts.code \nFROM parts'))
     op.execute(sa.text('DROP TABLE parts'))
@@ -36,10 +39,9 @@ def upgrade() -> None:
     op.execute(sa.text('DROP TABLE _tabrion_old_parts'))
     op.execute(sa.text('CREATE TRIGGER parts_tr AFTER INSERT ON parts BEGIN SELECT 1; END'))
     # step 1: drop_table (destructive)
-    # SQLite: run this step with foreign keys off (PRAGMA foreign_keys = OFF outside the transaction) and
-    # check them afterwards (PRAGMA foreign_key_check); see the Tabrion migrations guide,
-    # 'Why the foreign keys are off'.
     op.execute(sa.text('DROP TABLE old'))
+    if op.get_bind().exec_driver_sql("PRAGMA foreign_key_check").first() is not None:
+        raise RuntimeError("a foreign key refers to a missing row: the migration is rolled back")
 
 
 def downgrade() -> None:

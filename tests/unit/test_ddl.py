@@ -718,3 +718,12 @@ def test_xw3_identity_and_generated_columns_are_refused(
     ]
     for call in calls:
         refused("ddl.unsupported_feature", call, table="main.t", feature=feature)
+
+
+def test_xw4_create_statements_refuse_views() -> None:
+    """Review of #89, P89-02: views are read into the level-2 snapshot, not generated."""
+    table = ts.TableShape("main.t", (ts.ColumnShape("id", "INTEGER", False),), ("id",))
+    model = ts.SchemaSnapshot("sqlite", (table,), level=2, views=(ts.ViewShape("main.v", "CREATE VIEW v AS SELECT 1"),))
+    with pytest.raises(UsageError) as caught:
+        ddl.create_statements(model, dialect="sqlite")
+    assert caught.value.details == {"table": "", "feature": "view"}

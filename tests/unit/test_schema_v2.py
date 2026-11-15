@@ -985,3 +985,44 @@ def test_from_json_refuses_loose_d5_parts(patch: dict[str, Any]) -> None:
     with pytest.raises(UsageError) as info:
         ts.SchemaSnapshot.from_json(json.dumps(data))
     assert info.value.code == "schema.invalid_snapshot"
+
+
+# --- review of #89, P89-02: SQLite views in the level-2 snapshot ------------------------------------------------------
+
+
+def test_sqlite_views_reflected_and_in_the_fingerprint(tmp_path: Path) -> None:
+    view = "CREATE VIEW v AS SELECT id FROM t"
+    database = make(tmp_path / "views.db", ("CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT)", view))
+    try:
+        before = take(database, level=2)
+        assert before.views == (ts.ViewShape("main.v", view),)
+        assert take(database).views == ()  # level 1 never reads them
+        assert ts.SchemaSnapshot.from_json(before.to_json()) == before
+        database.execute("DROP VIEW v")
+        database.execute("CREATE VIEW v AS SELECT a FROM t")
+        after = take(database, level=2)
+        assert [(d.kind, d.table, d.breaking) for d in ts.compare(before, after)] == [
+            ("view_missing", "main.v", True),
+            ("view_added", "main.v", True),
+        ]
+        assert ts.fingerprint(before) != ts.fingerprint(after)
+    finally:
+        database.close()
+
+
+def test_level2_without_views_writes_no_views_key() -> None:
+    assert '"views"' not in ts.SchemaSnapshot("sqlite", (_base(),), level=2).to_json()
+
+
+def test_level1_refuses_views() -> None:
+    with pytest.raises(UsageError) as caught:
+        ts.SchemaSnapshot("sqlite", (), views=(ts.ViewShape("main.v", "CREATE VIEW v AS SELECT 1"),))
+    assert caught.value.code == "schema.level_mismatch"
+
+
+def test_from_json_refuses_a_loose_view() -> None:
+    data = json.loads(ts.SchemaSnapshot("sqlite", (_base(),), level=2).to_json())
+    data["views"] = [{"name": "main.v"}]
+    with pytest.raises(UsageError) as info:
+        ts.SchemaSnapshot.from_json(json.dumps(data))
+    assert info.value.code == "schema.invalid_snapshot"

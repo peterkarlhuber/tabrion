@@ -145,7 +145,8 @@ functions they call directly (with their body), and `features` marks what the sh
 partitioning, inheritance, rules, foreign tables, domain columns, `UNLOGGED` ...; SQLite `STRICT`, `AUTOINCREMENT`
 ...; I-111 i): a change of any of them changes the `v2:` fingerprint, and
 [`tabrion.plan`](migrations.md#schema-change-plans-03-experimental) refuses to change a marked table. Still not in
-the shape (I-111 d): index storage parameters, sequences, comments and views. At level 2 a schema or table name with a dot is refused
+the shape (I-111 d): index storage parameters, sequences, comments and PostgreSQL views (SQLite views are, since
+the review of #89). At level 2 a schema or table name with a dot is refused
 (`schema.unsupported_name`), as `schema.table` would not say which table it is.
 
 ### DDL from the model (0.3, experimental)

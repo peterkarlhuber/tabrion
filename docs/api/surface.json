@@ -1633,14 +1633,15 @@
         "dialect: str",
         "tables: tuple[TableShape, ...]",
         "level: Literal[1, 2] = 1",
-        "features: tuple[str, ...] = ()"
+        "features: tuple[str, ...] = ()",
+        "views: tuple[ViewShape, ...] = ()"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.SchemaSnapshot.__init__": {
       "kind": "method",
-      "signature": "(self, dialect: str, tables: tuple[TableShape, ...], level: Literal[1, 2] = 1, features: tuple[str, ...] = ()) -> None",
+      "signature": "(self, dialect: str, tables: tuple[TableShape, ...], level: Literal[1, 2] = 1, features: tuple[str, ...] = (), views: tuple[ViewShape, ...] = ()) -> None",
       "since": "0.2",
       "stability": "X"
     },
@@ -1725,6 +1726,22 @@
     "tabrion.schema.UniqueShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str | None, columns: tuple[str, ...], include: tuple[str, ...] = (), nulls_not_distinct: bool = False, deferrable: bool = False, initially_deferred: bool = False, collations: tuple[str, ...] = ()) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.ViewShape": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "name: str",
+        "definition: str"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.schema.ViewShape.__init__": {
+      "kind": "method",
+      "signature": "(self, name: str, definition: str) -> None",
       "since": "0.3",
       "stability": "X"
     },

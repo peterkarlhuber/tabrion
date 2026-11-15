@@ -746,6 +746,21 @@ required (owner decision of 2026-11-08 11:26Z).
   `plan.unsupported_option`, `plan.unsupported_change`, `plan.invalid_target`; `tabrion.plan` uses the private
   `tabrion.schema._canonical`; SQLite markers block only a rebuild; an Alembic `version_table` under another name is
   not a marker.
+- **Review of #89 (planning folder `reviews/pr89-tabxw4-review.md`): ACCEPTED WITH CONDITIONS**, fixed on the same
+  branch. **P89-01 (High):** the revision of a SQLite plan with a rebuild or table drop refuses to start while
+  `PRAGMA foreign_keys` is on (a `DROP TABLE` deletes child rows through `ON DELETE CASCADE`, and the pragma cannot
+  change inside a transaction) and ends with `PRAGMA foreign_key_check`; the hazard itself is a test; TAB-XW-5 must
+  enforce the same. **P89-02 (Medium):** SQLite views are in the level-2 snapshot (`ViewShape`); a plan refuses to
+  drop a column or table that a view or trigger text names (reason `dependent_object`) and checks every view after a
+  rebuild or table drop; Studio always passes `server_version`; the PostgreSQL PL/pgSQL gap is a residual risk with
+  a preview warning for Studio (I-124 j). **P89-03 (Medium):** risk classes are checked against each step's
+  operation and statements on every plan, `from_json` included; TAB-XW-5 and Studio re-plan and compare the confirmed
+  hash (I-124 a, addendum A.4). **P89-06 (Low):** `CONCURRENTLY` steps first and last, a comment that
+  `autocommit_block` commits earlier steps; the missing fingerprint check in the revision is a residual risk (the
+  check would need Tabrion inside the user's Alembic project). **P89-07:** exact `str` checks. **P89-04, P89-05
+  (Low):** residual risks in I-124 j and SECURITY.md. **Open for G-S3 (Studio):** the preview shows the PostgreSQL
+  PL/pgSQL residual of P89-02, the revision conditions of P89-06 and the fingerprint gaps of P89-04; plans stay
+  server-side and are planned again before they run (P89-03).
 - **Open (follow-up work packages):** TAB-XW-5 `execute_plan`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`;
   TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds

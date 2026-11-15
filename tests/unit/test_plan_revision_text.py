@@ -80,7 +80,20 @@ def render(plan: tp.MigrationPlan, **kwargs: Any) -> str:
 
 
 ALLOWED_NAMES = {"op", "sa", "dialect", "RuntimeError", "NotImplementedError"}
-ALLOWED_ATTRIBUTES = {"execute", "text", "get_context", "dialect", "name", "autocommit_block"}
+ALLOWED_ATTRIBUTES = {
+    "execute",
+    "text",
+    "get_context",
+    "dialect",
+    "name",
+    "autocommit_block",
+    # the SQLite foreign key guard and check (review of #89, P89-01): fixed pragma texts
+    "get_bind",
+    "exec_driver_sql",
+    "scalar",
+    "first",
+}
+FIXED_DRIVER_SQL = {"PRAGMA foreign_keys", "PRAGMA foreign_key_check"}
 MODULE_NAMES = (
     "revision",
     "down_revision",
@@ -117,6 +130,9 @@ def check_literals_only(text: str, plan: tp.MigrationPlan) -> ast.Module:
                 assert node.id in ALLOWED_NAMES, node.id
             if isinstance(node, ast.Attribute):
                 assert node.attr in ALLOWED_ATTRIBUTES, node.attr
+            if isinstance(node, ast.Call) and ast.unparse(node.func) == "op.get_bind().exec_driver_sql":
+                assert len(node.args) == 1 and isinstance(node.args[0], ast.Constant)
+                assert node.args[0].value in FIXED_DRIVER_SQL
             if isinstance(node, ast.Call) and ast.unparse(node.func) == "sa.text":
                 assert len(node.args) == 1 and isinstance(node.args[0], ast.Constant) and not node.keywords
                 texts.append((node.lineno, sqlalchemy.text(node.args[0].value).compile().string))
@@ -363,3 +379,110 @@ def test_xw4_downgrade_is_not_written() -> None:
     exec(compile(render(pg_plan()), "revision.py", "exec"), namespace)  # noqa: S102 - the test's own output
     with pytest.raises(NotImplementedError):
         namespace["downgrade"]()
+
+
+# --- review of #89, P89-01: foreign keys around a SQLite rebuild ----------------------------------------------------
+
+CASCADE = (
+    "CREATE TABLE parent (id INTEGER PRIMARY KEY, a TEXT, b TEXT)",
+    "CREATE TABLE child (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES parent (id) ON DELETE CASCADE)",
+    "INSERT INTO parent VALUES (1, 'x', 'y')",
+    "INSERT INTO child VALUES (1, 1), (2, 1)",
+)
+
+
+def cascade_database(path: Path, *, foreign_keys: bool) -> Any:
+    """A layer-B ``Database`` (``BEGIN`` really opens a transaction, so DDL rolls back) with the reviewer's tables."""
+    from tabrion import Database, Profile
+
+    base = Profile()
+    profile = dataclasses.replace(base, sqlite=dataclasses.replace(base.sqlite, foreign_keys=foreign_keys))
+    database = Database.from_url(f"sqlite:///{path}", profile=profile)
+    if not path.with_suffix(".seeded").exists():
+        for statement in CASCADE:
+            database.execute(statement)
+        path.with_suffix(".seeded").touch()
+    return database
+
+
+def retyped_parent_plan(database: Any) -> tp.MigrationPlan:
+    with database.inspector() as inspector:
+        current = ts.snapshot(inspector, level=2, tables=["main.parent"])
+    parent = current.tables[0]
+    columns = (parent.columns[0], dataclasses.replace(parent.columns[1], type="VARCHAR(5)"), parent.columns[2])
+    return tp.plan(current, dataclasses.replace(current, tables=(dataclasses.replace(parent, columns=columns),)))
+
+
+def upgrade_in_one_transaction(database: Any, text: str) -> None:
+    with database.engine.connect() as connection, connection.begin():
+        run_revision(connection, text)
+
+
+def test_xw4_rebuild_with_foreign_keys_on_loses_child_rows_without_the_guard(tmp_path: Path) -> None:
+    """The hazard of P89-01, reproduced: the plan's statements, run in one transaction with foreign keys on, commit
+    and delete every child row (``DROP TABLE parent`` deletes through ``ON DELETE CASCADE``)."""
+    database = cascade_database(tmp_path / "hazard.db", foreign_keys=True)
+    try:
+        plan = retyped_parent_plan(database)
+        assert [s.operation for s in plan.steps] == ["rebuild_table"]
+        with database.engine.connect() as connection:
+            with connection.begin():
+                for statement in plan.steps[0].statements:
+                    connection.exec_driver_sql(statement.sql)
+            assert connection.exec_driver_sql("SELECT count(*) FROM child").scalar() == 0
+    finally:
+        database.close()
+
+
+def test_xw4_revision_refuses_to_start_with_foreign_keys_on(tmp_path: Path) -> None:
+    """P89-01: the revision's ``upgrade()`` refuses before the first statement while foreign keys are on; no row is
+    lost."""
+    database = cascade_database(tmp_path / "guard.db", foreign_keys=True)
+    try:
+        text = render(retyped_parent_plan(database))
+        with pytest.raises(RuntimeError, match="foreign keys are on"):
+            upgrade_in_one_transaction(database, text)
+        assert database.fetch_scalar("SELECT count(*) FROM child") == 2
+        assert database.fetch_scalar("SELECT type FROM pragma_table_info('parent') WHERE name = 'a'") == "TEXT"
+    finally:
+        database.close()
+
+
+def test_xw4_revision_with_foreign_keys_off_keeps_child_rows(tmp_path: Path) -> None:
+    path = tmp_path / "off.db"
+    database = cascade_database(path, foreign_keys=False)
+    try:
+        plan = retyped_parent_plan(database)
+        upgrade_in_one_transaction(database, render(plan))
+        assert database.fetch_scalar("SELECT count(*) FROM child") == 2
+        with database.inspector() as inspector:
+            after = ts.snapshot(inspector, level=2, tables=["main.parent"])
+        assert ts.fingerprint(after) == plan.target_fingerprint
+    finally:
+        database.close()
+
+
+def test_xw4_revision_foreign_key_check_rolls_back(tmp_path: Path) -> None:
+    """P89-01: ``PRAGMA foreign_key_check`` at the end of ``upgrade()``: a plan that drops a table another table still
+    refers to (the snapshot did not hold the child) raises, and the transaction rolls the drop back."""
+    database = cascade_database(tmp_path / "check.db", foreign_keys=False)
+    try:
+        with database.inspector() as inspector:
+            current = ts.snapshot(inspector, level=2, tables=["main.parent"])
+        plan = tp.plan(current, dataclasses.replace(current, tables=()))
+        assert [s.operation for s in plan.steps] == ["drop_table"]
+        with pytest.raises(RuntimeError, match="foreign key refers to a missing row"):
+            upgrade_in_one_transaction(database, render(plan))
+        assert database.fetch_scalar("SELECT count(*) FROM parent") == 1
+        assert database.fetch_scalar("SELECT count(*) FROM child") == 2
+    finally:
+        database.close()
+
+
+def test_xw4_postgres_and_in_place_revisions_have_no_foreign_key_guard() -> None:
+    assert "PRAGMA" not in render(pg_plan())
+    current = ts.SchemaSnapshot("sqlite", (ts.TableShape("main.t", (column("id", nullable=False),), ("id",)),), level=2)
+    added = dataclasses.replace(
+        current, tables=(dataclasses.replace(current.tables[0], columns=(*current.tables[0].columns, column("v"))),)
+    )
+    assert "PRAGMA" not in render(tp.plan(current, added, server_version=(3, 45, 0)))

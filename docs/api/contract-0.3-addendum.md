@@ -127,6 +127,10 @@ Changes from the planned text, each the safe reading of ADR 0015:
   needs the extra `migrations` for column steps, as the column statements of `tabrion.ddl` do. `downgrade()` always raises `NotImplementedError`.
 - The K-1 check at execution (authorizer, `trusted_schema = OFF`, defensive mode) and
   `test_rebuild_runs_under_authorizer_and_defensive` stay in A.4 (TAB-XW-5).
+- Review of #89 (ACCEPTED with conditions) folded in: the SQLite foreign key guard and check in the revision
+  (P89-01), views in the level-2 snapshot (`ViewShape`) and the new reason `dependent_object` (P89-02), risk
+  classes checked against each step's operation and statements (P89-03), `CONCURRENTLY` steps first and last
+  (P89-06), exact `str` checks (P89-07); the remaining points are residual risks in contract I-124 j.
 
 ## A.4 `tabrion.plan.execute_plan` (TAB-XW-5)
 
@@ -185,6 +189,14 @@ Order of checks, each before any statement runs:
 - `database` is a layer-B `Database` the caller owns; the executor opens its own transactions (an open Tabrion
   transaction of the same thread raises `UsageError("database.nested_transaction")`). It never retries a write
   (R-NORETRY).
+- **Review of #89 (binding for TAB-XW-5):** (P89-01) a SQLite plan with a rebuild or table drop runs with
+  `foreign_keys` off, set before `BEGIN`, and the executor refuses to start on a connection where it is still on;
+  `foreign_key_check` and `integrity_check` run before the commit; test "foreign keys on: refused, no row lost".
+  (P89-02) The `SELECT * FROM <view> LIMIT 0` statements a plan carries run in the transaction like every other
+  statement. (P89-03) The executor never takes a plan from a client, a file or an import: it plans again from the
+  snapshot taken under the locks of D-5.4 and the target held server-side, compares the new `plan_hash` with the hash
+  the user confirmed in the preview (not one that came with the plan) and checks the risk classes of the new plan
+  against `allow`; the "swapped plan" test is written exactly so. See contract I-124 a, f, h.
 - **Tests:** each refusal above as a negative test, a swapped and an edited plan, drift injected between preview and
   execution, dry run leaves the fingerprint unchanged on both engines, a lock timeout, a failing non-transactional
   step reports `partial`, SQLite rebuild golden tests (R-X2).

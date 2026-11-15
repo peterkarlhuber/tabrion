@@ -53,6 +53,7 @@ __all__ = [
     "TableShape",
     "TriggerShape",
     "UniqueShape",
+    "ViewShape",
     "compare",
     "fingerprint",
     "snapshot",
@@ -93,6 +94,8 @@ DifferenceKind = Literal[
     "row_security",
     "feature_missing",
     "feature_added",
+    "view_missing",
+    "view_added",
 ]
 _BREAKING = frozenset(
     {
@@ -122,6 +125,8 @@ _BREAKING = frozenset(
         "row_security",
         "feature_missing",
         "feature_added",
+        "view_missing",
+        "view_added",
     }
 )
 # column_order is not breaking: an application that names its columns does not notice it. Neither is an added table,
@@ -283,6 +288,17 @@ class FunctionShape:
 
 
 @dataclass(frozen=True, slots=True)
+class ViewShape:
+    """A SQLite view (level 2, since 0.3; review of #89, P89-02): ``name`` is ``schema.view``, ``definition`` the
+    ``CREATE VIEW`` text ``sqlite_schema`` keeps. A schema change plan refuses to drop a column or a table that the
+    text of a view or trigger names, and checks every view after a SQLite rebuild. PostgreSQL views are not read: the
+    server refuses to drop a column or table a view depends on."""
+
+    name: str
+    definition: str
+
+
+@dataclass(frozen=True, slots=True)
 class TableShape:
     """One table: ``schema.table`` (SQLite: ``main.table``), its columns in table order and its primary key; at level
     2 (since 0.3) also its foreign keys, unique, check and exclusion constraints and indexes (empty at level 1).
@@ -320,16 +336,18 @@ class SchemaSnapshot:
     ``x.y`` of schema ``s`` or table ``y`` of schema ``s.x`` (review of #87, M-1).
 
     ``features`` (level 2, since 0.3, TAB-XW-4) holds the database-wide markers a schema change plan refuses: on
-    PostgreSQL ``event_trigger:<name>`` for every event trigger (ADR 0015 D-5.3)."""
+    PostgreSQL ``event_trigger:<name>`` for every event trigger (ADR 0015 D-5.3). ``views`` (level 2, since 0.3,
+    review of #89 P89-02) holds the SQLite views of the snapshot's schemas, sorted by name."""
 
     dialect: str
     tables: tuple[TableShape, ...]
     level: Literal[1, 2] = 1
     features: tuple[str, ...] = ()
+    views: tuple[ViewShape, ...] = ()
 
     def __post_init__(self) -> None:
         _check_level(self.level)
-        if self.level == 1 and (self.features or any(_has_level2_detail(table) for table in self.tables)):
+        if self.level == 1 and (self.features or self.views or any(_has_level2_detail(table) for table in self.tables)):
             raise UsageError("schema.level_mismatch")
         if self.level == 2:
             for table in self.tables:
@@ -451,6 +469,21 @@ def snapshot(
             shape = _level2_table(inspector, shape, schema, table, default)
         shapes[shape.name] = shape
     features: tuple[str, ...] = ()
+    view_shapes: tuple[ViewShape, ...] = ()
+    if level == 2 and dialect.name == "sqlite":
+        # The view texts of every schema the snapshot read (review of #89, P89-02): a plan refuses to drop what they
+        # name, and a rebuild checks them. Names are quoted by the dialect's preparer.
+        preparer = dialect.identifier_preparer
+        found: list[ViewShape] = []
+        for schema in sorted({schema for schema, _ in wanted}):
+            rows = _rows(
+                inspector,
+                f"SELECT name, sql FROM {preparer.quote_identifier(schema)}.sqlite_master "  # noqa: S608
+                "WHERE type = 'view'",
+                {},
+            )
+            found.extend(ViewShape(f"{schema}.{name}", str(sql or "")) for name, sql in rows)
+        view_shapes = tuple(sorted(found, key=lambda v: v.name))
     if level == 2 and dialect.name == "postgresql":
         # Every event trigger, enabled or not: it runs on any DDL statement (ADR 0015 D-5.3).
         rows = _rows(inspector, "SELECT evtname FROM pg_catalog.pg_event_trigger", {})
@@ -460,6 +493,7 @@ def snapshot(
         tables=tuple(shapes[name] for name in sorted(shapes)),
         level=level,
         features=features,
+        views=view_shapes,
     )
 
 
@@ -495,6 +529,13 @@ def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDif
         out.extend(
             SchemaDifference("feature_added", "", None, f)
             for f in sorted(set(actual.features) - set(expected.features))
+        )
+        # a changed view is missing and added, as a changed constraint (review of #89, P89-02)
+        out.extend(
+            SchemaDifference("view_missing", v.name) for v in sorted(set(expected.views) - set(actual.views), key=str)
+        )
+        out.extend(
+            SchemaDifference("view_added", v.name) for v in sorted(set(actual.views) - set(expected.views), key=str)
         )
     have = {table.name: table for table in actual.tables}
     want = {table.name: table for table in expected.tables}
@@ -1664,6 +1705,10 @@ def _as_dict_v2(snapshot: SchemaSnapshot) -> dict[str, Any]:
     out: dict[str, Any] = {"format": 2, "dialect": snapshot.dialect, "tables": tables}
     if snapshot.features:
         out["features"] = sorted(set(snapshot.features))
+    if snapshot.views:  # review of #89, P89-02; written only when not empty, as the D-5 keys
+        out["views"] = [
+            dataclasses.asdict(v) for v in sorted(set(snapshot.views), key=lambda v: (v.name, v.definition))
+        ]
     return out
 
 
@@ -1785,4 +1830,7 @@ def _from_dict_v2(data: Mapping[str, Any]) -> SchemaSnapshot:
         tables=tuple(sorted(tables, key=lambda t: t.name)),
         level=2,
         features=_strs(data.get("features", [])),
+        views=tuple(
+            sorted((_shape(ViewShape, v) for v in _list(data.get("views", []))), key=lambda v: (v.name, v.definition))
+        ),
     )

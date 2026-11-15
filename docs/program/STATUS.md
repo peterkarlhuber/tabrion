@@ -7,7 +7,11 @@ its 27 new work packages are listed by reference in [their own section](#change-
 and are not in the 151 until the development-start approval. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
-> **Last update:** 2026-11-15, TABRION TAB-XW-4 (CR-DBX, TB-149): `tabrion.plan`, experimental 0.3: diff of two
+> **Last update:** 2026-11-15, TABRION TAB-XW-4 review of #89 (ACCEPTED with conditions) folded in: SQLite foreign
+> key guard and check in the revision (P89-01), SQLite views in the snapshot and refusal of drops that a view or
+> trigger names (P89-02), risk classes checked per step (P89-03), `CONCURRENTLY` steps first and last (P89-06),
+> residual risks in contract I-124 j and SECURITY.md (P89-04, P89-05, P89-06).
+> Before: 2026-11-15, TABRION TAB-XW-4 (CR-DBX, TB-149): `tabrion.plan`, experimental 0.3: diff of two
 > level-2 snapshots into a `MigrationPlan` with risk classes and `plan_hash`, SQLite rebuild without `RENAME` (K-1 at
 > plan time), Alembic revision text (K-3), `migration_markers`; the D-5 inputs in the level-2 schema model (triggers,
 > policies, row-level security, directly referenced functions, feature markers, event triggers) and their refusal at

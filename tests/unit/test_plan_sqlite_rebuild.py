@@ -123,6 +123,7 @@ GOLDEN = [
     "CREATE INDEX parts_lower ON parts (lower(code))",
     'CREATE TRIGGER "parts ""ins""" AFTER INSERT ON parts BEGIN INSERT INTO log (what) VALUES (\'i\'); END',
     "CREATE TRIGGER parts_log AFTER UPDATE ON parts BEGIN INSERT INTO log (what) VALUES ('u;' || new.code); END",
+    'SELECT * FROM "part_codes" LIMIT 0',  # every view checked before the commit (review of #89, P89-02)
 ]
 
 
@@ -369,3 +370,129 @@ def test_rebuild_never_uses_executescript(path: Path) -> None:
             connection.execute("SELECT 1; SELECT 2")  # what execute does with a second statement
     finally:
         connection.close()
+
+
+# --- review of #89, P89-02: views and triggers that name what a plan drops -------------------------------------------
+
+DEPENDENTS = (
+    "CREATE TABLE parent (id INTEGER PRIMARY KEY, a TEXT, b TEXT)",
+    "CREATE TABLE child (id INTEGER PRIMARY KEY, pid INTEGER)",
+    "INSERT INTO parent VALUES (1, 'x', 'y')",
+)
+
+
+def without_b(model: ts.SchemaSnapshot) -> ts.SchemaSnapshot:
+    return dataclasses.replace(
+        model,
+        tables=tuple(
+            dataclasses.replace(t, columns=t.columns[:2]) if t.name == "main.parent" else t for t in model.tables
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("dependent", "owner"),
+    [
+        ("CREATE VIEW v AS SELECT id, b FROM parent", "main.v"),  # the reviewer's view
+        ('CREATE VIEW v AS SELECT "B" FROM "PARENT"', "main.v"),  # quoted, other case
+        (
+            "CREATE TRIGGER other_tr AFTER INSERT ON child BEGIN SELECT b FROM parent WHERE id = new.pid; END",
+            "main.child",
+        ),  # the reviewer's trigger on another table
+        ("CREATE TRIGGER own_tr AFTER UPDATE ON parent BEGIN SELECT new.b; END", "main.parent"),
+    ],
+)
+@pytest.mark.parametrize("server_version", [None, (3, 45, 0)])
+def test_xw4_dropping_a_column_that_a_view_or_trigger_names_is_refused(
+    tmp_path: Path, dependent: str, owner: str, server_version: tuple[int, ...] | None
+) -> None:
+    """P89-02: SQLite checks neither a view nor a trigger after a rebuild; the plan refuses to drop a column that the
+    text of one names (with the table), in place or by a rebuild."""
+    database = make(tmp_path / "dep.db", [*DEPENDENTS, dependent])
+    try:
+        current = take(database)
+    finally:
+        database.close()
+    with pytest.raises(PlanRefused) as caught:
+        tp.plan(current, without_b(current), server_version=server_version)
+    assert caught.value.details == {"reason": "dependent_object", "table": "main.parent", "object": owner}
+
+
+def test_xw4_a_view_without_the_dropped_column_allows_the_rebuild_and_is_checked(tmp_path: Path) -> None:
+    """A view that names the table but not the dropped column does not refuse the plan; the rebuild ends with
+    ``SELECT * FROM <view> LIMIT 0`` for every view, which runs inside the transaction."""
+    file = tmp_path / "ok.db"
+    make(file, [*DEPENDENTS, "CREATE VIEW v AS SELECT id, a FROM parent", "CREATE VIEW w AS SELECT 1 AS one"]).close()
+    current = current_of(file)
+    assert [v.name for v in current.views] == ["main.v", "main.w"]
+    plan = tp.plan(current, without_b(current))
+    assert [s.sql for s in plan.steps[0].statements][-2:] == [
+        'SELECT * FROM "v" LIMIT 0',
+        'SELECT * FROM "w" LIMIT 0',
+    ]
+    run(file, plan)
+    assert ts.fingerprint(current_of(file)) == plan.target_fingerprint
+
+
+def test_xw4_a_broken_view_fails_the_rebuild_transaction(tmp_path: Path) -> None:
+    """The view check is the last line of defense: a view that the rebuild breaks although the snapshot's text did
+    not name the column (a stale snapshot, changed behind the plan's back) fails the transaction, and nothing is
+    committed."""
+    file = tmp_path / "broken.db"
+    make(file, [*DEPENDENTS, "CREATE VIEW v AS SELECT id, a FROM parent"]).close()
+    current = current_of(file)
+    plan = tp.plan(current, without_b(current))
+    connection = sqlite3.connect(file, isolation_level=None)
+    try:  # make the view depend on b behind the snapshot's back, as a stale snapshot would
+        connection.execute("DROP VIEW v")
+        connection.execute("CREATE VIEW v AS SELECT id, b FROM parent")
+    finally:
+        connection.close()
+    with pytest.raises(sqlite3.OperationalError, match="no such column"):
+        run(file, plan)
+    assert [c.name for c in parts_of_named(current_of(file), "main.parent").columns] == ["id", "a", "b"]
+
+
+def parts_of_named(model: ts.SchemaSnapshot, name: str) -> ts.TableShape:
+    found = model.table(name)
+    assert found is not None
+    return found
+
+
+@pytest.mark.parametrize(
+    ("dependent", "owner"),
+    [
+        ("CREATE VIEW v AS SELECT * FROM parent", "main.v"),
+        ("CREATE TRIGGER other_tr AFTER INSERT ON child BEGIN DELETE FROM parent; END", "main.child"),
+    ],
+)
+def test_xw4_dropping_a_table_that_a_view_or_trigger_names_is_refused(
+    tmp_path: Path, dependent: str, owner: str
+) -> None:
+    database = make(tmp_path / "drop.db", [*DEPENDENTS, dependent])
+    try:
+        current = take(database)
+    finally:
+        database.close()
+    target = dataclasses.replace(current, tables=tuple(t for t in current.tables if t.name != "main.parent"))
+    with pytest.raises(PlanRefused) as caught:
+        tp.plan(current, target)
+    assert caught.value.details == {"reason": "dependent_object", "table": "main.parent", "object": owner}
+
+
+def test_xw4_a_dropped_tables_own_trigger_does_not_refuse(tmp_path: Path) -> None:
+    file = tmp_path / "own.db"
+    make(file, [*DEPENDENTS, "CREATE TRIGGER p_tr AFTER INSERT ON parent BEGIN SELECT new.b; END"]).close()
+    current = current_of(file)
+    target = dataclasses.replace(current, tables=tuple(t for t in current.tables if t.name != "main.parent"))
+    assert [s.operation for s in tp.plan(current, target).steps] == ["drop_table"]
+
+
+def test_xw4_a_plan_never_changes_a_view(tmp_path: Path) -> None:
+    file = tmp_path / "views.db"
+    make(file, [*DEPENDENTS, "CREATE VIEW v AS SELECT id FROM parent"]).close()
+    current = current_of(file)
+    for views in ((), (ts.ViewShape("main.v", "CREATE VIEW v AS SELECT a FROM parent"),)):
+        with pytest.raises(PlanRefused) as caught:
+            tp.plan(current, dataclasses.replace(without_b(current), views=views))
+        assert caught.value.details == {"reason": "unsupported_feature", "table": "main.v", "feature": "view"}

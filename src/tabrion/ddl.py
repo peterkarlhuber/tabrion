@@ -116,6 +116,8 @@ def create_statements(model: SchemaSnapshot, *, dialect: Literal["sqlite", "post
     _known(model, "")
     if model.features:
         raise _unsupported("", "database_feature")
+    if model.views:
+        raise _unsupported("", "view")
     builder = _Builder(name)
     # Every table first, then the foreign keys, so a key can refer to a table that comes later in the model.
     tables = [builder.table(_table_shape(shape), foreign_keys=False) for shape in model.tables]
@@ -333,8 +335,8 @@ def _flag(concurrently: object, builder: _Builder, shape: TableShape) -> bool:
 
 
 _KNOWN_FIELDS: dict[type, frozenset[str]] = {
-    # features (TAB-XW-4) is known in order to be refused by create_statements
-    SchemaSnapshot: frozenset({"dialect", "tables", "level", "features"}),
+    # features and views (TAB-XW-4) are known in order to be refused by create_statements
+    SchemaSnapshot: frozenset({"dialect", "tables", "level", "features", "views"}),
     TableShape: frozenset(
         {
             "name",

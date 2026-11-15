@@ -240,6 +240,7 @@ target model, which you build with `dataclasses.replace` (or `SchemaSnapshot.fro
 >>> from tabrion import Database
 >>> from tabrion import plan as tp
 >>> from tabrion import schema as ts
+>>> from tabrion.errors import PlanRefused
 >>> with Database.from_url("sqlite:///plan.db") as shop:
 ...     _ = shop.execute("CREATE TABLE parts (id INTEGER PRIMARY KEY, code VARCHAR(10))")
 ...     with shop.inspector() as inspector:
@@ -267,8 +268,12 @@ backfilled default), `destructive` (a drop or a narrowing type), `rebuild` (a SQ
 (PostgreSQL: the step blocks writes on an existing table) and `non_transactional` (`CREATE INDEX CONCURRENTLY`, with
 `plan(..., concurrent_indexes=True)`). Show them before anyone confirms a plan. A change SQLite cannot make in place
 becomes one `rebuild_table` step: the rows go to a holder table, the table is created again from the target and the
-rows come back, then its indexes and triggers. It needs the foreign keys off, as
-[above](#why-the-foreign-keys-are-off-the-cascade):
+rows come back, then its indexes and triggers, and every view is read once (`SELECT * FROM <view> LIMIT 0`), so a
+view the rebuild broke fails the transaction. It needs the foreign keys off, as
+[above](#why-the-foreign-keys-are-off-the-cascade): with them on, its `DROP TABLE` deletes the rows of child tables
+through `ON DELETE CASCADE`, and `PRAGMA foreign_keys` cannot change inside a transaction. Pass `server_version`
+(`sqlite3.sqlite_version_info` of the engine that runs the plan) so that a plain column drop runs in place, where
+SQLite checks views and triggers itself:
 
 ```pycon
 >>> shorter = dataclasses.replace(parts, columns=(parts.columns[0], ts.ColumnShape("code", "VARCHAR(5)", True)))
@@ -280,7 +285,10 @@ rows come back, then its indexes and triggers. It needs the foreign keys off, as
 The plan is bound to both fingerprints and to its exact SQL by `plan_hash`; `MigrationPlan.from_json` refuses a plan
 whose content no longer matches its hash. That proves **integrity, not authenticity**: anyone can compute the hash of
 a plan they wrote, so never take a plan from an untrusted source (a project file, a URL, an import); keep it where
-only your code writes it.
+only your code writes it. Each step's risk classes must include those its operation implies (a drop is
+`destructive`), so an edited plan cannot pass a drop off as `additive`; but only planning again proves the
+statements: before a plan runs, plan again from a fresh snapshot and the target you hold, compare the new
+`plan_hash` with the one the user confirmed, and confirm the risk classes of the new plan.
 
 `revision_text` writes the plan as an Alembic revision. The docstring is fixed and every caller value is a string
 literal, so a message cannot become code; `upgrade()` refuses another engine and runs the previewed statements one
@@ -302,7 +310,30 @@ def downgrade() -> None:
 ```
 
 Write the text into `versions/` yourself and review it like any revision. Tabrion never reads the project, never
-runs `env.py`, an Alembic command or a revision.
+runs `env.py`, an Alembic command or a revision. The revision of a SQLite plan with a rebuild or a table drop
+refuses to start while foreign keys are on and runs `PRAGMA foreign_key_check` before the commit; run it with the
+migration profile of [`env.py`](#an-alembic-project-on-tabriondatabase). The revision does not check the source
+fingerprint: apply it to the database it was planned for, soon after the preview. A `CONCURRENTLY` step commits
+every step before it, so the plan puts those steps first (drops) and last (creations).
+
+A plan never drops what other SQLite schema text still names: a column or table that a view or trigger names
+refuses the plan (`dependent_object`). On PostgreSQL the server refuses such a drop for views, policies and
+`UPDATE OF` triggers, but a PL/pgSQL function body that names the column breaks only when it runs: check the
+functions before you drop a column or table.
+
+```pycon
+>>> with Database.from_url("sqlite:///plan.db") as shop:
+...     _ = shop.execute("CREATE VIEW part_codes AS SELECT id, code FROM parts")
+...     with shop.inspector() as inspector:
+...         with_view = ts.snapshot(inspector, level=2)
+>>> parts_now = with_view.table("main.parts")
+>>> no_code = dataclasses.replace(parts_now, columns=parts_now.columns[:1])
+>>> try:
+...     tp.plan(with_view, dataclasses.replace(with_view, tables=(no_code,)), server_version=sqlite3.sqlite_version_info)
+... except PlanRefused as error:
+...     print(dict(error.details))
+{'reason': 'dependent_object', 'table': 'main.parts', 'object': 'main.part_codes'}
+```
 
 **What a plan refuses** (`PlanRefused`, reason `unsupported_feature`, ADR 0015 D-5): any change while the PostgreSQL
 database has an event trigger; changing or dropping a PostgreSQL table that is partitioned or a partition, inherits,
@@ -313,7 +344,6 @@ rebuild of a table whose `CREATE TABLE` holds what the shape does not (`STRICT`,
 `ON CONFLICT`, a column collation):
 
 ```pycon
->>> from tabrion.errors import PlanRefused
 >>> with Database.from_url("sqlite:///strict.db") as strict:
 ...     _ = strict.execute("CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL) STRICT")
 ...     with strict.inspector() as inspector:
@@ -328,9 +358,10 @@ plan.refused {'reason': 'unsupported_feature', 'table': 'main.tags', 'feature': 
 ```
 
 Residual risks (contract I-124 j): functions called by a trigger or policy function are not in the fingerprint; a
-function can change after a drift check because it cannot be locked; after a rebuild that drops a column, a view or
-another table's trigger that names it fails when it is next used; a version table under another name than
-`alembic_version` is not found by `migration_markers`.
+function can change after a drift check because it cannot be locked; function and table owners, privileges,
+publications, statistics and PostgreSQL views are not in the fingerprint either; a SQLite rebuild gives a table
+without an `INTEGER PRIMARY KEY` new `rowid` values; a version table under another name than `alembic_version` is
+not found by `migration_markers`.
 
 ## Things to know
 

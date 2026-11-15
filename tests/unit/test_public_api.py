@@ -174,6 +174,8 @@ EXPECTED: dict[str, set[str]] = {
         "FunctionShape",
         "PolicyShape",
         "TriggerShape",
+        # review of #89 (P89-02), since 0.3, experimental.
+        "ViewShape",
     },
     # TAB-XW-6 (CR-DBX), since 0.3, experimental.
     "tabrion.rowedit": {"delete_row", "insert_row", "update_row"},

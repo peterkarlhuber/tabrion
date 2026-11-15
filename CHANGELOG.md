@@ -42,6 +42,14 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   any change under an event trigger, and a SQLite rebuild that would lose a marked clause (`PlanRefused`, reason
   `unsupported_feature`); `tabrion.ddl` refuses the new fields (I-123 e). The split of D-5 between TAB-XW-4 (inputs
   and plan refusal) and TAB-XW-5 (locks and the repeated drift check) is recorded in ADR 0015 section 10.
+- **Experimental, 0.3** (review of #89): the revision of a SQLite plan with a table rebuild or drop refuses to run
+  while `PRAGMA foreign_keys` is on (a `DROP TABLE` would delete child rows through `ON DELETE CASCADE`) and ends
+  with `PRAGMA foreign_key_check`. The level-2 snapshot reads SQLite views (`tabrion.schema.ViewShape`,
+  `SchemaSnapshot.views`, difference kinds `view_missing` and `view_added`); a plan refuses to drop a column or table
+  that the text of a view or trigger names (`PlanRefused`, reason `dependent_object`) and checks every view after a
+  rebuild or table drop. Risk classes and statement heads are checked against each step's operation on every plan,
+  so `MigrationPlan.from_json` refuses a drop labeled additive. `CONCURRENTLY` index steps run first (drops) and last
+  (creations). `revision_text` and `PlanStep` take only exact `str` values.
 - **Experimental, 0.3** (TABRION TAB-XW-3, CR-DBX; contract section 5.12, I-123, moved from addendum A.2): DDL
   generation from the level-2 schema model in the new module `tabrion.ddl` (extra `sqlalchemy`; column statements
   also need `migrations`). `tabrion.ddl.create_statements` writes `CREATE TABLE` for every table of a model (referred

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import dataclasses
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -178,17 +179,72 @@ def test_xw4_from_json_refuses_an_edited_plan(db: Database) -> None:
             tp.MigrationPlan.from_json(edited(text, change))
         assert info.value.code == "plan.invalid"
         assert info.value.__cause__ is None and info.value.__context__ is None
-    # an edit with a recomputed hash is a valid plan: from_json proves integrity, not authenticity (N-2)
+    # an edit with a recomputed hash that keeps the step consistent is a valid plan: from_json proves integrity, not
+    # authenticity (N-2); a consumer plans again before it runs a plan (I-124 a, review of #89 P89-03)
     data = json.loads(text)
-    data["steps"][0]["statements"][0]["sql"] = "DROP TABLE customers"
-    del data["plan_hash"]
-    data["plan_hash"] = (
-        "sha256:"
-        + __import__("hashlib")
-        .sha256(json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode())
-        .hexdigest()
-    )
-    assert tp.MigrationPlan.from_json(json.dumps(data)).steps[0].statements[0].sql == "DROP TABLE customers"
+    data["steps"][0]["statements"][0]["sql"] = "DROP INDEX other_index"
+    assert tp.MigrationPlan.from_json(rehash(data)).steps[0].statements[0].sql == "DROP INDEX other_index"
+
+
+def rehash(data: dict[str, Any]) -> str:
+    data = {k: v for k, v in data.items() if k != "plan_hash"}
+    body = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return json.dumps({**data, "plan_hash": "sha256:" + hashlib.sha256(body.encode()).hexdigest()})
+
+
+@pytest.mark.parametrize(
+    ("operation", "sql", "risks", "transactional", "dialect"),
+    [
+        ("create_table", "DROP TABLE customers", ["additive"], True, "sqlite"),  # the reviewer's P89-03 probe
+        ("drop_table", "DROP TABLE customers", ["additive"], True, "sqlite"),
+        ("drop_column", "ALTER TABLE t DROP COLUMN c", ["additive"], True, "sqlite"),
+        ("drop_index", "DROP INDEX ix", ["additive"], True, "sqlite"),
+        ("drop_constraint", "ALTER TABLE t DROP CONSTRAINT c", ["additive", "locking"], True, "postgresql"),
+        ("rebuild_table", "CREATE TABLE t (a INTEGER)", ["additive"], True, "sqlite"),
+        ("rebuild_table", "CREATE TABLE t (a INTEGER)", ["rebuild"], True, "postgresql"),
+        ("add_column", "ALTER TABLE t ADD COLUMN c INTEGER", ["additive"], True, "postgresql"),
+        ("create_index", "CREATE INDEX CONCURRENTLY ix ON t (a)", ["additive", "locking"], False, "postgresql"),
+        ("create_index", "CREATE INDEX ix ON t (a)", ["additive"], False, "sqlite"),
+        ("add_column", "DROP TABLE t", ["additive", "locking"], True, "postgresql"),
+        ("create_index", "  drop   table t", ["additive"], True, "sqlite"),
+    ],
+)
+def test_xw4_from_json_refuses_risks_that_do_not_fit_the_step(
+    operation: str, sql: str, risks: list[str], transactional: bool, dialect: str
+) -> None:
+    """Review of #89, P89-03: risk classes are not taken on trust. A step must carry the classes its operation implies
+    (a drop is destructive, a rebuild is a rebuild, PostgreSQL ALTER and DROP lock, CONCURRENTLY is not transactional)
+    and its statements must begin as its operation's do, also with a correct hash."""
+    data = {
+        "format": 1,
+        "dialect": dialect,
+        "source_fingerprint": "v2:sha256:" + "1" * 64,
+        "target_fingerprint": "v2:sha256:" + "2" * 64,
+        "steps": [
+            {
+                "index": 0,
+                "operation": operation,
+                "target": "main.t",
+                "statements": [{"sql": sql, "target": "main.t", "transactional": transactional}],
+                "risks": risks,
+                "transactional": transactional,
+            }
+        ],
+    }
+    with pytest.raises(PlanMismatch) as info:
+        tp.MigrationPlan.from_json(rehash(data))
+    assert info.value.code == "plan.invalid"
+
+
+def test_xw4_planned_steps_pass_the_step_check(db: Database) -> None:
+    """Every plan the planner makes passes the P89-03 check (it runs in the constructor)."""
+    current = take(db)
+    for change in (
+        replace_table(current, "main.invoices", indexes=()),
+        dataclasses.replace(current, tables=()),
+    ):
+        made = tp.plan(current, change)
+        assert tp.MigrationPlan.from_json(made.to_json()) == made
 
 
 @pytest.mark.parametrize(

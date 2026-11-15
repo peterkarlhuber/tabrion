@@ -20,6 +20,12 @@ table with a feature marker of the snapshot (partitioning, inheritance, rules, a
 an event trigger, and a SQLite rebuild of a table whose ``CREATE TABLE`` text holds what the shape does not
 (``STRICT``, ``AUTOINCREMENT`` ...) refuse the plan (``PlanRefused``, reason ``unsupported_feature``).
 
+**What SQLite does not check (review of #89).** A SQLite ``DROP TABLE`` with foreign keys on deletes child rows
+through ``ON DELETE CASCADE``, and neither a rebuild nor a ``DROP TABLE`` checks views or triggers. So a plan
+refuses to drop a column or table that the text of a view or trigger names (reason ``dependent_object``), every
+rebuild and SQLite table drop ends with ``SELECT * FROM <view> LIMIT 0`` for each view, and the revision text
+refuses to run with foreign keys on and checks them before the commit.
+
 **Schema SQL from the file (K-1).** A SQLite rebuild recreates the table's triggers from the text ``sqlite_schema``
 holds, which in a hostile file is attacker data. Each text becomes exactly one statement, must be one complete
 statement with nothing after it (``sqlite3.complete_statement``) and must start with ``CREATE TRIGGER`` and the
@@ -66,6 +72,7 @@ from tabrion.schema import (
     SchemaSnapshot,
     TableShape,
     UniqueShape,
+    ViewShape,
     _canonical,
     fingerprint,
 )
@@ -150,20 +157,20 @@ class PlanStep:
     def __post_init__(self) -> None:
         if type(self.index) is not int or self.index < 0:
             raise _invalid("index")
-        if not isinstance(self.operation, str) or self.operation not in _OPERATIONS:
+        if type(self.operation) is not str or self.operation not in _OPERATIONS:
             raise _invalid("operation")
-        if not isinstance(self.target, str) or not self.target:
+        if type(self.target) is not str or not self.target:
             raise _invalid("target")
         statements = self.statements
         if (
             not isinstance(statements, tuple)
             or not statements
             or not all(
-                isinstance(s, DdlStatement)
-                and isinstance(s.sql, str)
+                type(s) is DdlStatement
+                and type(s.sql) is str  # review of #89, P89-07: no str subclass with its own __repr__
                 and s.sql
-                and isinstance(s.target, str)
-                and isinstance(s.transactional, bool)
+                and type(s.target) is str
+                and type(s.transactional) is bool
                 for s in statements
             )
         ):
@@ -197,19 +204,21 @@ class MigrationPlan:
     plan_hash: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.dialect, str) or self.dialect not in _DIALECTS:
+        if type(self.dialect) is not str or self.dialect not in _DIALECTS:
             raise _invalid("dialect")
         for field in ("source_fingerprint", "target_fingerprint"):
             value = getattr(self, field)
-            if not isinstance(value, str) or not _FINGERPRINT.fullmatch(value):
+            if type(value) is not str or not _FINGERPRINT.fullmatch(value):
                 raise _invalid(field)
         steps = self.steps
         if not isinstance(steps, tuple) or not all(isinstance(s, PlanStep) for s in steps):
             raise _invalid("steps")
         if any(step.index != position for position, step in enumerate(steps)):
             raise _invalid("index")
+        for step in steps:
+            _check_step(self.dialect, step)
         payload = _payload(self.dialect, self.source_fingerprint, self.target_fingerprint, steps)
-        if not isinstance(self.plan_hash, str) or self.plan_hash != _hash(payload):
+        if type(self.plan_hash) is not str or self.plan_hash != _hash(payload):
             raise _invalid("plan_hash")
 
     @property
@@ -231,7 +240,11 @@ class MigrationPlan:
         This proves **integrity, not authenticity** (ADR 0015 N-2): a plan whose hash matches its own content can
         come from anyone, since anyone can compute the hash. Never take a plan from an untrusted source (a project
         file, a URL, an import); keep plans where only your own code writes them (Studio keeps them server-side) and
-        bind the execution to the hash the user saw in the preview."""
+        bind the execution to the hash the user saw in the preview. Every step's risk classes must include those its
+        operation implies and its statements must begin as its operation's do (review of #89, P89-03), but nothing
+        here can tell whether the statements are those a plan of the same snapshots would have: before a plan runs,
+        plan again from a fresh snapshot and the target held server-side, compare the new ``plan_hash`` with the one
+        the user confirmed, and take the risk classes from the new plan (contract I-124 a)."""
         plan_: MigrationPlan | None = None
         try:
             if isinstance(text, str) and len(text) <= _MAX_PLAN_JSON:
@@ -242,6 +255,64 @@ class MigrationPlan:
         if plan_ is None:
             raise _invalid("json")
         return plan_
+
+
+# Review of #89, P89-03: what a step's operation and statements imply, checked on every plan (from_json included), so a
+# plan cannot label a DROP as additive. The statement heads each operation may have (after blanks, case-insensitive).
+_HEADS: dict[str, tuple[str, ...]] = {
+    "create_table": ("CREATE TABLE", "CREATE INDEX", "CREATE UNIQUE INDEX"),
+    "drop_table": ("DROP TABLE", "SELECT * FROM"),
+    "add_column": ("ALTER TABLE",),
+    "drop_column": ("ALTER TABLE",),
+    "alter_column": ("ALTER TABLE",),
+    "add_constraint": ("ALTER TABLE",),
+    "drop_constraint": ("ALTER TABLE",),
+    "create_index": ("CREATE INDEX", "CREATE UNIQUE INDEX"),
+    "drop_index": ("DROP INDEX",),
+    "rebuild_table": (
+        "CREATE TABLE",
+        "INSERT INTO",
+        "DROP TABLE",
+        "CREATE INDEX",
+        "CREATE UNIQUE INDEX",
+        "CREATE TRIGGER",
+        "SELECT * FROM",
+    ),
+}
+_IMPLIED: dict[str, RiskClass] = {
+    "drop_table": RiskClass.DESTRUCTIVE,
+    "drop_column": RiskClass.DESTRUCTIVE,
+    "drop_constraint": RiskClass.DESTRUCTIVE,
+    "drop_index": RiskClass.DESTRUCTIVE,
+    "rebuild_table": RiskClass.REBUILD,
+}
+_LOCKING_OPERATIONS = frozenset({"drop_table", "add_column", "drop_column", "alter_column", "drop_constraint"})
+_BLANKS = re.compile(r"\s+")
+
+
+def _check_step(dialect: str, step: PlanStep) -> None:
+    """``PlanMismatch("plan.invalid")`` when a step's risk classes lack one its operation implies, or a statement does
+    not begin as its operation's statements do (review of #89, P89-03). This keeps a plan from labeling a drop as
+    additive; it cannot prove that the statements are those a plan of the same snapshots would have: a consumer
+    plans again before it runs a plan (contract I-124 a)."""
+    heads = _HEADS[step.operation]
+    for statement in step.statements:
+        text = _BLANKS.sub(" ", statement.sql.strip()).upper()
+        if not text.startswith(heads):
+            raise _invalid("statements")
+    implied = set()
+    if step.operation in _IMPLIED:
+        implied.add(_IMPLIED[step.operation])
+    if step.operation == "rebuild_table" and dialect != "sqlite":
+        raise _invalid("operation")
+    if not step.transactional:
+        if step.operation not in ("create_index", "drop_index") or dialect != "postgresql":
+            raise _invalid("transactional")
+        implied.add(RiskClass.NON_TRANSACTIONAL)
+    elif dialect == "postgresql" and step.operation in _LOCKING_OPERATIONS | {"create_index", "drop_index"}:
+        implied.add(RiskClass.LOCKING)
+    if not implied <= set(step.risks):
+        raise _invalid("risks")
 
 
 def _payload(dialect: str, source: str, target: str, steps: Sequence[PlanStep]) -> dict[str, Any]:
@@ -340,7 +411,9 @@ def plan(
     and drops the indexes of existing tables ``CONCURRENTLY``, each in a step of its own that is not transactional.
 
     Refusals (nothing is planned): ``PlanRefused`` with reason ``unsupported_feature`` (ADR 0015 D-5; ``details``
-    ``table`` and ``feature``) and ``unsafe_schema_sql`` (K-1), ``UsageError("plan.unsupported_change")`` for a
+    ``table`` and ``feature``; also a view that differs between the snapshots), ``dependent_object`` (SQLite: a
+    column or table to be dropped is named by the text of a view or trigger, ``details`` ``table`` and ``object``;
+    review of #89, P89-02) and ``unsafe_schema_sql`` (K-1), ``UsageError("plan.unsupported_change")`` for a
     change the plan cannot make (a PostgreSQL primary key or column order), ``UsageError("plan.invalid_target")`` for
     a target whose foreign key refers to a table the plan drops, and the ``UsageError`` of :mod:`tabrion.ddl` for a
     target it cannot generate."""
@@ -399,9 +472,20 @@ _LANGUAGES = frozenset({"plpgsql", "sql"})
 _SQLITE_DROP_COLUMN = (3, 35)
 
 # Phases (contract I-124 d): foreign keys are dropped first and added last, so every table and key they need exists.
-_DROP_FOREIGN_KEYS, _DROP_OTHERS, _REBUILD, _DROP_TABLES, _COLUMNS, _ADD_OTHERS, _CREATE_TABLES, _ADD_FOREIGN_KEYS = (
-    range(8)
-)
+# A CONCURRENTLY index step commits what ran before it (review of #89, P89-06): the drops come first, before any
+# transactional step, and the creations last, after every transactional step.
+(
+    _DROP_CONCURRENTLY,
+    _DROP_FOREIGN_KEYS,
+    _DROP_OTHERS,
+    _REBUILD,
+    _DROP_TABLES,
+    _COLUMNS,
+    _ADD_OTHERS,
+    _CREATE_TABLES,
+    _ADD_FOREIGN_KEYS,
+    _CREATE_CONCURRENTLY,
+) = range(10)
 
 _Step = tuple[str, str, Sequence[DdlStatement], Iterable[RiskClass]]
 
@@ -418,6 +502,8 @@ class _Planner:
         self.current = {t.name: _canonical(t) for t in current.tables}
         self.target = {t.name: _canonical(t) for t in target.tables}
         self.database_features = sorted(set(current.features) | set(target.features))
+        self.views = sorted(set(current.views), key=lambda v: v.name)
+        self.target_views = sorted(set(target.views), key=lambda v: v.name)
         self.server_version = server_version
         self.concurrent = concurrent
         self.phases: dict[int, list[_Step]] = {}
@@ -439,6 +525,12 @@ class _Planner:
         )
         if (removed or added or changed) and self.database_features:
             raise _refused("unsupported_feature", table="", feature=self.database_features[0])
+        if self.views != self.target_views:  # a plan never creates, changes or drops a view (P89-02)
+            changed_views = sorted({v.name for v in set(self.views) ^ set(self.target_views)})
+            raise _refused("unsupported_feature", table=changed_views[0], feature="view")
+        if not self.postgres:
+            for name in removed:
+                self.check_dependents(name, (), removed)
         for name in added:
             self.check_new(self.target[name])
         for name in removed:
@@ -474,6 +566,28 @@ class _Planner:
                 if key.referred_table in gone:
                     raise UsageError("plan.invalid_target", details={"table": table.name, "field": "foreign_keys"})
 
+    def check_dependents(self, table: str, columns: Sequence[str], removed: Sequence[str]) -> None:
+        """SQLite (review of #89, P89-02): refuse to drop ``columns`` of ``table`` (or, without columns, the table)
+        while the text of a view or trigger names them, since SQLite checks neither after a rebuild or a ``DROP
+        TABLE``. A conservative token match (identifiers, quoted or not, and words in literals, case-insensitive): a
+        text that names the table and one of the columns, or for a dropped table any text of another object that
+        names the table, refuses the plan (``PlanRefused``, reason ``dependent_object``). Triggers of a table that the
+        plan drops go with it."""
+        bare = table.rpartition(".")[2].casefold()
+        wanted = {c.casefold() for c in columns}
+        gone = set(removed)
+        texts: list[tuple[str, str]] = [(view.name, view.definition) for view in self.views]
+        for shape in self.current.values():
+            if shape.name in gone:
+                continue
+            texts.extend((shape.name, trigger.definition) for trigger in shape.triggers)
+        for owner, text in texts:
+            tokens = _tokens(text)
+            if bare not in tokens:
+                continue
+            if (wanted and wanted & tokens) or (not wanted and owner != table):
+                raise _refused("dependent_object", table=table, object=owner)
+
     # tables --------------------------------------------------------------------------------------------------------
 
     def table(self, old: TableShape, new: TableShape) -> None:
@@ -482,6 +596,8 @@ class _Planner:
                 raise _refused("unsupported_feature", table=old.name, feature=feature)
         self.guard(old)
         diff = _TableDiff(old, new)
+        if not self.postgres and diff.dropped:
+            self.check_dependents(old.name, [c.name for c in diff.dropped], ())
         if self.postgres:
             self.postgres_table(diff)
         elif self.needs_rebuild(diff):
@@ -532,13 +648,15 @@ class _Planner:
         concurrent = self.concurrent
         statement = ddl.drop_index_statement(table, index.name, dialect=self.dialect, concurrently=concurrent)
         risks = _index_risks(self.postgres, concurrent)
-        self.add(_DROP_OTHERS, "drop_index", table.name, [statement], RiskClass.DESTRUCTIVE, *risks)
+        phase = _DROP_CONCURRENTLY if concurrent else _DROP_OTHERS
+        self.add(phase, "drop_index", table.name, [statement], RiskClass.DESTRUCTIVE, *risks)
 
     def create_index(self, table: TableShape, index: IndexShape) -> None:
         concurrent = self.concurrent
         statement = ddl.create_index_statement(_plain(table), index, dialect=self.dialect, concurrently=concurrent)
         risks = _index_risks(self.postgres, concurrent)
-        self.add(_ADD_OTHERS, "create_index", table.name, [statement], RiskClass.ADDITIVE, *risks)
+        phase = _CREATE_CONCURRENTLY if concurrent else _ADD_OTHERS
+        self.add(phase, "create_index", table.name, [statement], RiskClass.ADDITIVE, *risks)
 
     # SQLite --------------------------------------------------------------------------------------------------------
 
@@ -589,6 +707,7 @@ class _Planner:
             ddl.drop_table_statement(copy, dialect="sqlite"),
             *created[1:],
             *triggers,
+            *self.view_checks(),
         ]
         risks = {RiskClass.REBUILD}
         risks.update(RiskClass.DESTRUCTIVE for _ in diff.dropped)
@@ -601,6 +720,11 @@ class _Planner:
         if diff.added_constraints or diff.added_indexes:
             risks.add(RiskClass.ADDITIVE)
         self.add(_REBUILD, "rebuild_table", old.name, statements, *risks)
+
+    def view_checks(self) -> list[DdlStatement]:
+        """``SELECT * FROM <view> LIMIT 0`` for every view of the snapshot (review of #89, P89-02): SQLite checks a
+        view only when it is used, so a rebuild or a table drop that broke one fails here, inside the transaction."""
+        return [_view_check(view) for view in self.views]
 
     # whole tables --------------------------------------------------------------------------------------------------
 
@@ -630,7 +754,8 @@ class _Planner:
                 free = list(left)
             for name in free:
                 statement = ddl.drop_table_statement(_bare(self.current[name]), dialect=self.dialect)
-                self.add(_DROP_TABLES, "drop_table", name, [statement], RiskClass.DESTRUCTIVE, *lock)
+                checks = [] if self.postgres else self.view_checks()
+                self.add(_DROP_TABLES, "drop_table", name, [statement, *checks], RiskClass.DESTRUCTIVE, *lock)
                 left.remove(name)
 
     def create_table(self, table: TableShape) -> None:
@@ -826,6 +951,38 @@ def _copy_rows(source: str, target: str, columns: Sequence[str]) -> DdlStatement
     return DdlStatement(str(statement.compile(dialect=SQLiteDialect())).strip(), target)
 
 
+_TOKEN = re.compile(r'"((?:[^"]|"")*)"|`((?:[^`]|``)*)`|\[([^\]]*)\]|([^\W\d][\w$]*)')
+
+
+_WORD = re.compile(r"[^\W\d][\w$]*")
+
+
+def _tokens(sql: str) -> set[str]:
+    """Every identifier of ``sql``, quoted or not, casefolded; words inside string literals count too (conservative:
+    a false match refuses a plan, a missed one could break a view)."""
+    out = {word.casefold() for word in _WORD.findall(sql)}  # every bare word, whatever quote it stands in
+    for match in _TOKEN.finditer(sql):
+        double, back, bracket, word = match.groups()
+        if double is not None:
+            out.add(double.replace('""', '"').casefold())
+        elif back is not None:
+            out.add(back.replace("``", "`").casefold())
+        elif bracket is not None:
+            out.add(bracket.casefold())
+        else:
+            out.add(word.casefold())
+    return out
+
+
+def _view_check(view: ViewShape) -> DdlStatement:
+    schema, _, name = view.name.rpartition(".")
+    preparer = SQLiteDialect().identifier_preparer
+    quoted = preparer.quote_identifier(name)
+    if schema and schema != "main":
+        quoted = f"{preparer.quote_identifier(schema)}.{quoted}"
+    return DdlStatement(f"SELECT * FROM {quoted} LIMIT 0", view.name)  # noqa: S608 - quoted identifiers only
+
+
 # --- K-1: schema SQL from sqlite_schema -----------------------------------------------------------------------------
 
 _MAX_SCHEMA_SQL = 100_000
@@ -905,34 +1062,46 @@ _DOCSTRING = (
     "never runs a revision. The message is the variable `message`.\n"
     '"""'
 )
-_FOREIGN_KEYS_OFF = (
-    "    # SQLite: run this step with foreign keys off (PRAGMA foreign_keys = OFF outside the transaction) and\n"
-    "    # check them afterwards (PRAGMA foreign_key_check); see the Tabrion migrations guide,\n"
-    "    # 'Why the foreign keys are off'."
+_FOREIGN_KEYS_GUARD = (
+    "    # SQLite: a table rebuild or drop deletes the rows of child tables (ON DELETE CASCADE) while foreign keys\n"
+    "    # are on, and PRAGMA foreign_keys cannot change inside a transaction: refuse to start with them on (set\n"
+    "    # PRAGMA foreign_keys = OFF before the migration transaction; see the Tabrion migrations guide, 'Why the\n"
+    "    # foreign keys are off'), and check every reference before the commit.\n"
+    '    if op.get_bind().exec_driver_sql("PRAGMA foreign_keys").scalar():\n'
+    '        raise RuntimeError("foreign keys are on: turn them off before the migration transaction begins")'
 )
+_FOREIGN_KEY_CHECK = (
+    '    if op.get_bind().exec_driver_sql("PRAGMA foreign_key_check").first() is not None:\n'
+    '        raise RuntimeError("a foreign key refers to a missing row: the migration is rolled back")'
+)
+_GUARDED = frozenset({"rebuild_table", "drop_table"})
 
 
 def revision_text(plan: MigrationPlan, *, revision: str, down_revision: str | None, message: str) -> str:
     """An Alembic revision file for ``plan``, as a string (ADR 0015 section 2, K-3).
 
     ``upgrade()`` first refuses an engine other than the plan's dialect, then runs every statement of every step in
-    order with ``op.execute(sa.text(...))`` (a non-transactional step inside ``autocommit_block()``), each step
-    preceded by a comment with its number, operation and risk classes; a SQLite rebuild or table drop gets a comment
-    that its foreign keys must be off. ``downgrade()`` raises ``NotImplementedError``: a plan holds no reverse
-    statements. The module docstring is a fixed text; ``revision``, ``down_revision``, ``message``, the plan hash,
-    the fingerprints and every statement are written as Python string literals (``ascii``), so no text can become
-    code. ``revision`` must match ``[0-9a-zA-Z_]{1,64}`` and ``down_revision`` the same or be ``None``
+    order with ``op.execute(sa.text(...))`` (a non-transactional step inside ``autocommit_block()``, which commits the
+    steps before it), each step preceded by a comment with its number, operation and risk classes. A SQLite plan with
+    a rebuild or a table drop refuses to start while ``PRAGMA foreign_keys`` is on (a ``DROP TABLE`` would delete
+    child rows through ``ON DELETE CASCADE``, and the pragma cannot change inside a transaction) and ends with
+    ``PRAGMA foreign_key_check``, raising ``RuntimeError`` on any row (review of #89, P89-01). The revision does not
+    check the source fingerprint: apply it only to the database it was planned for (contract I-124 j).
+    ``downgrade()`` raises ``NotImplementedError``: a plan holds no reverse statements. The module docstring is a
+    fixed text; ``revision``, ``down_revision``, ``message``, the plan hash, the fingerprints and every statement are
+    written as Python string literals (``ascii``), so no text can become code. ``revision`` must match
+    ``[0-9a-zA-Z_]{1,64}`` and ``down_revision`` the same or be ``None``
     (``UsageError("plan.invalid_revision")``).
 
     The function reads no file, imports no project module and runs nothing; writing the file into a project (and
     its name) is the caller's (Studio STU-XSD-3)."""
     if not isinstance(plan, MigrationPlan):
         raise TypeError("plan must be a MigrationPlan")
-    if not isinstance(revision, str) or not _REVISION_ID.fullmatch(revision):
+    if type(revision) is not str or not _REVISION_ID.fullmatch(revision):
         raise UsageError("plan.invalid_revision", details={"field": "revision"})
-    if down_revision is not None and (not isinstance(down_revision, str) or not _REVISION_ID.fullmatch(down_revision)):
+    if down_revision is not None and (type(down_revision) is not str or not _REVISION_ID.fullmatch(down_revision)):
         raise UsageError("plan.invalid_revision", details={"field": "down_revision"})
-    if not isinstance(message, str):
+    if type(message) is not str:  # review of #89, P89-07: a str subclass could bring its own __repr__
         raise TypeError("message must be a str")
     lines = [
         _DOCSTRING,
@@ -956,17 +1125,22 @@ def revision_text(plan: MigrationPlan, *, revision: str, down_revision: str | No
         "    if op.get_context().dialect.name != dialect:",
         '        raise RuntimeError("this revision was planned for another database engine")',
     ]
+    guarded = plan.dialect == "sqlite" and any(step.operation in _GUARDED for step in plan.steps)
+    if guarded:  # review of #89, P89-01
+        lines.append(_FOREIGN_KEYS_GUARD)
     for step in plan.steps:
         risks = ", ".join(risk.value for risk in step.risks)
         lines.append(f"    # step {step.index}: {step.operation} ({risks})")
-        if plan.dialect == "sqlite" and step.operation in ("rebuild_table", "drop_table"):
-            lines.append(_FOREIGN_KEYS_OFF)
+        if not step.transactional:  # review of #89, P89-06
+            lines.append("    # not transactional: autocommit_block() first commits every step before it")
         for statement in step.statements:
             call = f"op.execute(sa.text({_escape_colons(statement.sql)!a}))"
             if statement.transactional:
                 lines.append(f"    {call}")
             else:
                 lines.extend(["    with op.get_context().autocommit_block():", f"        {call}"])
+    if guarded:
+        lines.append(_FOREIGN_KEY_CHECK)
     lines.extend(
         [
             "",
