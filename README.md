@@ -34,7 +34,7 @@ What it provides (see the [specification](docs/specification.md)):
 | Layer | Modules | Needs |
 |---|---|---|
 | A, driver core | `tabrion.errors`, `tabrion.sql`, `tabrion.config`, `tabrion.sqlite`, `tabrion.check` | the standard library only |
-| A, PostgreSQL | `tabrion.postgres` | extra `postgres` (psycopg 3.2+) |
+| A, PostgreSQL | `tabrion.postgres` | extra `postgres` (psycopg 3.2.3+) |
 | B, SQLAlchemy integration | `tabrion.Database`, `Profile`, `Transaction`, `tabrion.migrations` | extras `sqlalchemy`, `migrations` |
 | Test support | `tabrion.testing` | extra `testing` (pytest) |
 

@@ -160,6 +160,11 @@ Accepted residual risks (documented, not vulnerabilities):
   hard deadline matters (TODO TB-034). The same holds for `tabrion.postgres.SessionLock`: after a half-open TCP loss
   the server keeps the old session and its locks until TCP gives up, so pass keepalives (`keepalives_idle`,
   `keepalives_interval`, `keepalives_count`) or `tcp_user_timeout` in `connect_kwargs`.
+- `Transaction.cancel()` on PostgreSQL is bounded (2 s per request) only with libpq 17 or later
+  (`psycopg.capabilities.has_cancel_safe()`; psycopg's binary packages from 3.2.3 on Linux and macOS). With an older
+  libpq psycopg falls back to the blocking `PQcancel`, which has no timeout of its own; psycopg's C implementation
+  holds the GIL during it, so every thread of the process waits until the server answered the cancel connection.
+  Use libpq 17 or later where a stuck cancel connection must not stall the process (TODO TB-152).
 - `tabrion.postgres` qualifies every catalog function, relation, type and operator it uses with `pg_catalog`
   (`::pg_catalog.text`, `OPERATOR(pg_catalog.=)`), so a schema that a caller's `search_path` names *before*
   `pg_catalog` (the CVE-2018-1058 pattern) can neither change its answers nor run its owner's code as the role that
@@ -186,7 +191,7 @@ Accepted residual risks (documented, not vulnerabilities):
   session whose current or session user has one of these attributes (`postgres.caller_unsafe`), because such a
   session could grant privileges on objects of the system that are superuser-equivalent. `grant_privileges` also
   refuses objects of the system (`pg_catalog`, `information_schema`, `pg_*` schemas, oids below 16 384) and objects
-  whose owner has one of these attributes, and every change that adds privileges refuses a role that is or reaches
+  whose owner has one of these attributes or is or reaches one of the three predefined roles below, and every change that adds privileges refuses a role that is or reaches
   `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`. Run role administration from one
   admin profile with CREATEROLE and nothing more (E-X6); the profile mode `admin` is only a label, so give it the
   same TLS and authentication rules as a write profile (`verify-full` for remote hosts, SCRAM). Residual risks: the

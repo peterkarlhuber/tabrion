@@ -3,9 +3,9 @@
 <!-- docs-test: postgres -->
 
 `tabrion.postgres` is the PostgreSQL part of the driver core (layer A). It works on plain psycopg 3 connections that
-you open, pool and close yourself, and needs the extra `postgres` (`tabrion[postgres]`, psycopg 3.2 or later; install
+you open, pool and close yourself, and needs the extra `postgres` (`tabrion[postgres]`, psycopg 3.2.3 or later; install
 `psycopg[binary]` or a system libpq next to it). Contract:
-[section 4](../api/contract.md#4-tabrionpostgres-extra-postgres-psycopg-32-or-later); the reasons:
+[section 4](../api/contract.md#4-tabrionpostgres-extra-postgres-psycopg-323-or-later); the reasons:
 [ADR 0006](../adr/0006-postgres-session-profile.md).
 
 The examples on this page run against a test server in the pg CI jobs. `DATABASE_URL` is a `postgresql://` URL of a

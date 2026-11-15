@@ -97,7 +97,7 @@ The rules:
 | Extra | Adds | For |
 |---|---|---|
 | (none) | nothing | `tabrion.errors`, `tabrion.sql`, `tabrion.config`, `tabrion.sqlite`, `tabrion.check` |
-| `postgres` | psycopg >=3.2,<4 | `tabrion.postgres` |
+| `postgres` | psycopg >=3.2.3,<4 | `tabrion.postgres` |
 | `sqlalchemy` | SQLAlchemy >=2.0.30,<2.2 | layer B: `tabrion.Database` and friends |
 | `migrations` | the `sqlalchemy` extra plus Alembic >=1.13,<2 | `tabrion.migrations` |
 | `testing` | pytest >=8 | `tabrion.testing` |

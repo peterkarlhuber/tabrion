@@ -46,6 +46,10 @@
 > TAB-XW-5 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw5`): TB-149 stays in progress, TAB-XW-5 done
 > (`tabrion.plan.execute_plan`, contract section 5.13 and I-125; D-5.4, the conditions of the review of #89 for the
 > executor); counts unchanged.
+> Follow-up 2026-11-15 (branch `claude/project-thread-rdo6g3-tabfix1`): review Info of #90 folded in
+> (`grant_privileges` also refuses objects whose owner is or reaches a server-access predefined role,
+> `object_owner`); psycopg floor raised to 3.2.3 for the lowest-versions hang of TAB-T-B40; TB-152 new, P3 from 43
+> to 44.
 
 ## Summary
 
@@ -66,14 +70,14 @@ cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 foll
 `0.2.1` version pull request: TB-013 records the patch release; `0.2.2.dev0` follow-up pull request after the
 `0.2.1` release commit `af0458d`: TB-013 records its SHA and the G-T2 runs; TAB-XW-1 pull request: TB-149 in
 progress, counts unchanged; predefined-role pull request #77: TB-150 new, P2 from 10 to 11; TB-036/TB-150 follow-up pull request (owner order
-2026-11-14 23:56Z): TB-036 and TB-150 done, P2 from 11 to 9).
+2026-11-14 23:56Z): TB-036 and TB-150 done, P2 from 11 to 9; psycopg floor pull request: TB-152 new, P3 from 43 to 44).
 
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 3 |
 | P2 Medium | 9 |
-| P3 Low | 43 |
+| P3 Low | 44 |
 | P4 Optional | 6 |
 
 **Release blockers:** none outside the work packages of M2. The owner decision of 2026-11-08 11:26Z removed the
@@ -1395,6 +1399,28 @@ required (owner decision of 2026-11-08 11:26Z).
   dropping `TRIGGER` from the `REVOKE`. No PostgreSQL 15 job runs the `createrole` path against a real server.
 - **Next step:** map N-1 to `RoleUnsafe`; settle the reason names with the 0.3 addendum (TAB-XW); add tests that
   kill both mutants; a PG 15 job when CI time allows.
+
+### TB-152 · `cancel()` on PostgreSQL is unbounded and holds the GIL with a libpq older than 17
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** I-102, R-T07, TAB-T-B40, TABRION TAB-033 (H-1, L-2 of #32)
+- **What:** with psycopg 3.2.0 and Python 3.11 (the lowest versions), the TAB-T-B40 test
+  `test_b40_a_late_cancel_request_never_reaches_the_next_user` hung for good, also on master. Cause: psycopg's
+  `cancel_safe()` uses libpq 17's non-blocking cancel only when `psycopg.capabilities.has_cancel_safe()`; otherwise
+  it calls the blocking `cancel()` (`PQcancel`), which ignores `timeout`, and psycopg's C implementation
+  (`psycopg_binary`, `psycopg_c`, checked up to 3.3.9) calls `PQcancel` without releasing the GIL. psycopg-binary
+  3.2.0..3.2.2 bundle libpq 16, so the cancel thread held the GIL while `PQcancel` waited for the test's slow cancel
+  proxy, whose threads need the GIL to forward the request: a deadlock (futex wait, no server session open). With
+  psycopg-binary 3.2.3 (libpq 17) the test passes in about 6 s; with the pure-Python implementation (ctypes releases
+  the GIL) it passes with libpq 16 too. Tabrion's own cancel path has no deadlock. Fixed for the default setup by
+  raising the floor to psycopg 3.2.3 (its 3.2.0 `[binary]` extra cannot be installed either, psycopg #853). Open:
+  (1) with any libpq older than 17 (`psycopg[c]` built against one, the Windows binary packages, which bundle libpq
+  16.x, pure Python with such a system libpq) `Transaction.cancel()` has no 2 s bound, and with the C implementation
+  every Python thread waits until the cancel connection is answered (contract I-102, SECURITY.md); Tabrion cannot
+  release the GIL around psycopg's call. (2) The lowest-versions CI job runs no PostgreSQL tests, so this was not
+  caught in CI.
+- **Next step:** add a PostgreSQL service to the lowest-versions job (or a separate floor job) that runs at least
+  the cancel tests of `tests/postgres/test_v02_postgres.py`; ask psycopg upstream to release the GIL in
+  `PGcancel.cancel()`; decide whether Tabrion should warn once when `has_cancel_safe()` is false.
 
 ### TB-037 · Review follow-ups L-1 and I-3 of TAB-015/TAB-016
 

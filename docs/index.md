@@ -19,7 +19,7 @@ inside the application's process: no server, no service, no pool of its own, no 
 | Layer | Modules | Needs |
 |---|---|---|
 | A, driver core | `tabrion.errors`, `tabrion.sql`, `tabrion.config`, `tabrion.sqlite`, `tabrion.check` | the standard library only |
-| A, PostgreSQL helpers | `tabrion.postgres` | psycopg 3.2 or later (`tabrion[postgres]`) |
+| A, PostgreSQL helpers | `tabrion.postgres` | psycopg 3.2.3 or later (`tabrion[postgres]`) |
 | A, test support | `tabrion.testing` | pytest (`tabrion[testing]`) |
 | B, SQLAlchemy integration | `tabrion.Database`, `Profile`, `Transaction`, `Result` (0.2 Studio APIs); `tabrion.migrations` | SQLAlchemy 2.0.30 or later (`tabrion[sqlalchemy]`); Alembic for `tabrion.migrations` (`tabrion[migrations]`) |
 
