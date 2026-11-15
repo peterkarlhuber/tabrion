@@ -144,24 +144,25 @@ def insert_row(table: sqlalchemy.Table, values: Mapping[str, Any]) -> sqlalchemy
 
 
 def update_row(
-    table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]
+    table: sqlalchemy.Table, key: Mapping[str, Any], *, old: Mapping[str, Any], new: Mapping[str, Any]
 ) -> sqlalchemy.Update:
     """Since 0.3, stable. ``UPDATE <table> SET <new> WHERE <pk> = :key AND <column> IS NOT DISTINCT FROM :old``
     (SQLite ``IS``) for every column of ``old``. ``key`` is exactly the primary key, else
     ``UsageError("rowedit.primary_key_required")``; ``old`` names at least one column, else
-    ``UsageError("rowedit.old_required")`` (pass every column the user was shown); ``new`` names at least one column.
-    Run it with ``expect_rowcount=1``: 0 rows is an optimistic conflict."""
+    ``UsageError("rowedit.old_required")`` (pass every column the user was shown); ``new`` names at least one column,
+    else ``UsageError("rowedit.new_required")``. ``old`` and ``new`` are keyword-only, so they cannot be swapped by
+    position. Run it with ``expect_rowcount=1``: 0 rows is an optimistic conflict."""
     table = _table(table)
     where = _key(table, key) + _unchanged(table, old)
     pairs = _columns(table, new, "new")
     if not pairs:
-        raise ValueError("new must name at least one column")
+        raise UsageError("rowedit.new_required")
     return sqlalchemy.update(table).where(*where).values({column: _bound(column, value) for column, value in pairs})
 
 
-def delete_row(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any]) -> sqlalchemy.Delete:
+def delete_row(table: sqlalchemy.Table, key: Mapping[str, Any], *, old: Mapping[str, Any]) -> sqlalchemy.Delete:
     """Since 0.3, stable. ``DELETE FROM <table> WHERE <pk> = :key AND <column> IS NOT DISTINCT FROM :old``
-    (SQLite ``IS``) for every column of ``old``; ``key`` and ``old`` as for :func:`update_row`. Run it with
-    ``expect_rowcount=1``: 0 rows is an optimistic conflict."""
+    (SQLite ``IS``) for every column of ``old``; ``key`` and ``old`` (keyword-only) as for :func:`update_row`. Run
+    it with ``expect_rowcount=1``: 0 rows is an optimistic conflict."""
     table = _table(table)
     return sqlalchemy.delete(table).where(*_key(table, key), *_unchanged(table, old))

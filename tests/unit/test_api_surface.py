@@ -210,12 +210,13 @@ def test_a_name_of_a_later_minor_must_not_be_importable(
 CONTRACT = ROOT / "docs" / "api" / "contract.md"
 
 STUDIO_DATA_EDITOR = {
-    "tabrion.rowedit.insert_row": "tabrion.rowedit",
-    "tabrion.rowedit.update_row": "tabrion.rowedit",
-    "tabrion.rowedit.delete_row": "tabrion.rowedit",
-    "tabrion.errors.RowCountMismatch": "tabrion.errors",
+    "tabrion.Transaction.execute_checked": ("tabrion", "Transaction.execute_checked"),
+    "tabrion.rowedit.insert_row": ("tabrion.rowedit", "insert_row"),
+    "tabrion.rowedit.update_row": ("tabrion.rowedit", "update_row"),
+    "tabrion.rowedit.delete_row": ("tabrion.rowedit", "delete_row"),
+    "tabrion.errors.RowCountMismatch": ("tabrion.errors", "RowCountMismatch"),
 }
-"""Each name and its module as section 0 of the contract lists it."""
+"""Each name with its module and its name as section 0 of the contract lists them."""
 
 
 def _overview_stability(module: str, short: str) -> set[str]:
@@ -232,15 +233,15 @@ def _overview_stability(module: str, short: str) -> set[str]:
 
 @pytest.mark.parametrize("path", sorted(STUDIO_DATA_EDITOR))
 def test_studio_data_editor_names_are_stable(path: str) -> None:
-    """Owner decision 7A (G-S2 follow-up): before Studio 1.1, the names its Data Editor imports are stable, because
+    """Owner decision 7A (G-S2 follow-up): before Studio 1.1, the names its Data Editor uses are stable, because
     consumers use only ``S`` names (API stability policy S-2; Studio's ``check_tabrion_api.py --surface``). A change
     back to ``X`` must change this test, which ``api_surface.py --base`` alone would not notice (TODO TB-094)."""
     entry = json.loads(SURFACE.read_text(encoding="utf-8"))["names"][path]
     assert entry["stability"] == "S", entry
     assert entry["since"] == "0.3", entry
     assert "deprecated" not in entry, entry
-    module, short = path.rsplit(".", 1)
-    assert module == STUDIO_DATA_EDITOR[path]
+    module, short = STUDIO_DATA_EDITOR[path]
+    assert path == f"{module}.{short}"
     assert _overview_stability(module, short) == {"S"}, path
 
 

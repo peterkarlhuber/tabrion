@@ -71,7 +71,7 @@ cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 foll
 `0.2.1` release commit `af0458d`: TB-013 records its SHA and the G-T2 runs; TAB-XW-1 pull request: TB-149 in
 progress, counts unchanged; predefined-role pull request #77: TB-150 new, P2 from 10 to 11; TB-036/TB-150 follow-up pull request (owner order
 2026-11-14 23:56Z): TB-036 and TB-150 done, P2 from 11 to 9; psycopg floor pull request: TB-152 new, P3 from 43 to 44;
-G-S2 follow-up 7A pull request: TB-149 records the stable `tabrion.rowedit` and `RowCountMismatch`, counts unchanged).
+G-S2 follow-up 7A pull request: TB-149 records the stable guided write transaction, counts unchanged).
 
 | Priority | Count |
 |---|---|
@@ -857,19 +857,19 @@ required (owner decision of 2026-11-08 11:26Z).
 - **G-S2 follow-up 7A done** (owner decision: before the Studio 1.1 release, tabrion 0.3 makes the names Studio uses
   stable; branch `claude/project-thread-rdo6g3-gs2-7a`): Studio's `docs/api-consumers.md` (tabrion-studio `9d0e72c`,
   `scripts/check_tabrion_api.py --export`) lists two experimental names in `src/tabrion_studio/write/data_editor.py`,
-  the module `tabrion.rowedit` (`insert_row`, `update_row`, `delete_row`) and `tabrion.errors.RowCountMismatch`.
-  These four are `S` in `surface.json`, contract section 0 and 5.11 (stability paragraph, I-122), the addendum A.5
-  and the guide [Transactions](guides/transactions.md#guided-writes-03); signatures, codes and details unchanged;
-  `tests/unit/test_api_surface.py::test_studio_data_editor_names_are_stable` pins them. **Open (decisions, not
-  changed here):** (1) `Transaction.execute_checked` stays `X`, but the Data Editor calls it on its `Transaction`
-  (`data_editor.py`, `execute_checked(statement, expect_rowcount=1)`); Studio's static check cannot see a method of
-  an instance, so S-2 is not met for it until it is promoted too. (2) `update_row(table, key, old, new)` and
-  `delete_row(table, key, old)` take the mappings positionally; keyword-only `old` and `new` would make a swap
-  impossible, but would break Studio's positional calls, so it is a decision before the stable freeze is relied on.
-  (3) An empty `new` raises a bare `ValueError`, an empty `old` `UsageError("rowedit.old_required")`; whether `new`
-  gets a code (`rowedit.new_required`) is open. (4) Studio also imports `tabrion.postgres.create_database` (`X`,
-  Schema Designer, not the Data Editor) and is outside 7A. (5) The error codes are not in `surface.json` (TB-091),
-  and an `S` to `X` downgrade still passes `--base` (TB-094); the new test covers these four names only.
+  the module `tabrion.rowedit` (`insert_row`, `update_row`, `delete_row`) and `tabrion.errors.RowCountMismatch`; the
+  Data Editor also calls `Transaction.execute_checked` on its `Transaction`, which a static name check cannot see.
+  The owner's follow-up decisions on the pull request: (1) `execute_checked` is promoted too; (2) `old` and `new` are
+  keyword-only, `update_row(table, key, *, old, new)` and `delete_row(table, key, *, old)` (`key` stays positional,
+  next to its table), breaking for `0.3.0.dev0` callers (Studio adapts its calls when it repins from `71370a6`);
+  (3) an empty `new` raises `UsageError("rowedit.new_required")`, symmetric with `rowedit.old_required`. The five
+  names are `S` in `surface.json`, contract section 0 and 5.11 (stability paragraph, I-121, I-122), the addendum A.5
+  and the guide [Transactions](guides/transactions.md#guided-writes-03);
+  `tests/unit/test_api_surface.py::test_studio_data_editor_names_are_stable` pins them, `tests/unit/test_rowedit.py`
+  tests the keyword-only arguments and `rowedit.new_required`. **Still open:** (4) Studio also imports
+  `tabrion.postgres.create_database` (`X`, Schema Designer, not the Data Editor), outside 7A. (5) The error codes are
+  not in `surface.json` (TB-091), and an `S` to `X` downgrade still passes `--base` (TB-094); the new test covers
+  these five names only.
 - **0.3 switch done** (branch `claude/project-thread-rdo6g3-tab03dev`, for Studio STU-026): master builds as
   `0.3.0.dev0` (not a release: no tag, no publication). `Transaction` inherits the 0.3 mixin, `RowCountMismatch` is
   exported, `tabrion.rowedit` imports, the `staged` keys and `tabrion._sa._staged` are gone, and the tests run on the

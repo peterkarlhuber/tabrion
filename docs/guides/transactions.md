@@ -134,11 +134,11 @@ There is no upsert helper in Tabrion; the dialect `insert` of SQLAlchemy has `on
 
 ## Guided writes (0.3)
 
-!!! note "New in 0.3: `tabrion.rowedit` stable, `execute_checked` experimental"
-    `Transaction.execute_checked` and `tabrion.rowedit` are public since Tabrion 0.3 (master builds as `0.3.0.dev0`).
-    `insert_row`, `update_row`, `delete_row` and `RowCountMismatch` are stable (stability S); `execute_checked` is
-    experimental (stability X): its signature may still change within 0.3
-    ([contract section 5.11](../api/contract.md#511-guided-write-transaction-since-03-tab-xw-6)). A
+!!! note "New in 0.3, stable"
+    `Transaction.execute_checked`, `tabrion.rowedit` and `RowCountMismatch` are public since Tabrion 0.3 (master
+    builds as `0.3.0.dev0`) and stable (stability S;
+    [contract section 5.11](../api/contract.md#511-guided-write-transaction-since-03-tab-xw-6)). `old` and `new` are
+    keyword-only. A
     consumer that requires `tabrion>=0.2,<0.3` does not have them.
 
 A data editor writes one row the user changed and must not overwrite a change someone else made since the row was
@@ -163,11 +163,11 @@ read. `tabrion.rowedit` builds the statement with an **optimistic predicate** on
 ...     added = tx.execute_checked(insert_row(items, {"id": 7, "label": "old", "price": 2.5}), expect_rowcount=1)
 >>> seen = {"id": 7, "label": "old", "price": 2.5}  # the row as read
 >>> with db.transaction() as tx:
-...     tx.execute_checked(update_row(items, {"id": 7}, seen, {"label": "new"}), expect_rowcount=1)
+...     tx.execute_checked(update_row(items, {"id": 7}, old=seen, new={"label": "new"}), expect_rowcount=1)
 1
 >>> try:  # the same edit again: the row no longer has the values seen
 ...     with db.transaction() as tx:
-...         tx.execute_checked(update_row(items, {"id": 7}, seen, {"label": "mine"}), expect_rowcount=1)
+...         tx.execute_checked(update_row(items, {"id": 7}, old=seen, new={"label": "mine"}), expect_rowcount=1)
 ... except RowCountMismatch as exc:
 ...     print(exc.code, dict(exc.details))
 transaction.rowcount_mismatch {'expected': 1, 'actual': 0}
@@ -193,7 +193,8 @@ If the row changed or is gone, the statement matches 0 rows: `execute_checked` r
 later statement raises `UsageError("transaction.failed")`, and the block rolls back even if you catch the error. Show
 the user the current row and let them decide. `max_affected` limits a statement that may touch several rows
 (`transaction.too_many_rows` above it); one of the two limits is required. The error carries counts only, never a
-value. Pass every column you showed the user in `old`; an empty `old` is refused (`rowedit.old_required`).
+value. Pass every column you showed the user in `old`; an empty `old` is refused (`rowedit.old_required`),
+and so is an empty `new` (`rowedit.new_required`).
 
 **What the limits do not cover.** The count is that of your statement only: rows that a PostgreSQL rule or a trigger
 (on either engine) changes as a side effect are not counted or limited and commit with it, so a preview should name

@@ -301,7 +301,7 @@
       "kind": "method",
       "signature": "(self, statement: Statement, params: Mapping[str, Any] | None = None, *, expect_rowcount: int | None = None, max_affected: int | None = None, timeout: float | None = None) -> int",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.Transaction.fetch_all": {
       "kind": "method",
@@ -1588,7 +1588,7 @@
     },
     "tabrion.rowedit.delete_row": {
       "kind": "function",
-      "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any]) -> sqlalchemy.Delete",
+      "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], *, old: Mapping[str, Any]) -> sqlalchemy.Delete",
       "since": "0.3",
       "stability": "S"
     },
@@ -1600,7 +1600,7 @@
     },
     "tabrion.rowedit.update_row": {
       "kind": "function",
-      "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]) -> sqlalchemy.Update",
+      "signature": "(table: sqlalchemy.Table, key: Mapping[str, Any], *, old: Mapping[str, Any], new: Mapping[str, Any]) -> sqlalchemy.Update",
       "since": "0.3",
       "stability": "S"
     },

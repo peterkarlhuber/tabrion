@@ -8,10 +8,11 @@ and are not in the 151 until the development-start approval. QA-12
 keeps this file current; every pull request that finishes a work package updates its row in the same pull request.
 
 > **Last update:** 2026-11-15, G-S2 follow-up 7A (CR-DBX, TB-149; owner decision before the Studio 1.1 release):
-> `tabrion.rowedit.insert_row`, `update_row`, `delete_row` and `tabrion.errors.RowCountMismatch`, the experimental
-> names Studio's Data Editor imports, are stable (S) in `surface.json` and contract sections 0 and 5.11; names,
-> signatures, codes and details unchanged. `Transaction.execute_checked` stays experimental; the open points are
-> under TB-149. No version change, tag or release.
+> `Transaction.execute_checked`, `tabrion.rowedit.insert_row`, `update_row`, `delete_row` and
+> `tabrion.errors.RowCountMismatch`, the experimental names Studio's Data Editor uses, are stable (S) in
+> `surface.json` and contract sections 0 and 5.11; before the promotion `old` and `new` became keyword-only and an
+> empty `new` became `rowedit.new_required` (breaking for `0.3.0.dev0` callers). The remaining open points are under
+> TB-149. No version change, tag or release.
 > Before: 2026-11-15, TABRION TAB-XW-5 (CR-DBX, TB-149): `tabrion.plan.execute_plan`, experimental 0.3: runs
 > a confirmed schema change on a declared DEV/TEST database without migration management; plans again inside its
 > transaction (never takes a plan, review of #89 P89-03) and runs only the confirmed hash; PostgreSQL locks the
