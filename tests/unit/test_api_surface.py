@@ -205,6 +205,46 @@ def test_a_name_of_a_later_minor_must_not_be_importable(
     assert "staged" not in result.stderr.replace("staged for a later minor", ""), result.stderr  # the stub matches
 
 
+# --- G-S2 follow-up 7A: the names Studio's Data Editor imports are stable --------------------------------------------
+
+CONTRACT = ROOT / "docs" / "api" / "contract.md"
+
+STUDIO_DATA_EDITOR = {
+    "tabrion.Transaction.execute_checked": ("tabrion", "Transaction.execute_checked"),
+    "tabrion.rowedit.insert_row": ("tabrion.rowedit", "insert_row"),
+    "tabrion.rowedit.update_row": ("tabrion.rowedit", "update_row"),
+    "tabrion.rowedit.delete_row": ("tabrion.rowedit", "delete_row"),
+    "tabrion.errors.RowCountMismatch": ("tabrion.errors", "RowCountMismatch"),
+}
+"""Each name with its module and its name as section 0 of the contract lists them."""
+
+
+def _overview_stability(module: str, short: str) -> set[str]:
+    """The ``Stab.`` cells of the rows of contract section 0 whose module is ``module`` and that name ``short``."""
+    text = CONTRACT.read_text(encoding="utf-8")
+    section = text.split("## 0. Overview of the public names", 1)[1].split("\n## ", 1)[0]
+    found = set()
+    for line in section.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) == 5 and cells[0].split(" ", 1)[0] == f"`{module}`" and f"`{short}`" in cells[1]:
+            found.add(cells[3])
+    return found
+
+
+@pytest.mark.parametrize("path", sorted(STUDIO_DATA_EDITOR))
+def test_studio_data_editor_names_are_stable(path: str) -> None:
+    """Owner decision 7A (G-S2 follow-up): before Studio 1.1, the names its Data Editor uses are stable, because
+    consumers use only ``S`` names (API stability policy S-2; Studio's ``check_tabrion_api.py --surface``). A change
+    back to ``X`` must change this test, which ``api_surface.py --base`` alone would not notice (TODO TB-094)."""
+    entry = json.loads(SURFACE.read_text(encoding="utf-8"))["names"][path]
+    assert entry["stability"] == "S", entry
+    assert entry["since"] == "0.3", entry
+    assert "deprecated" not in entry, entry
+    module, short = STUDIO_DATA_EDITOR[path]
+    assert path == f"{module}.{short}"
+    assert _overview_stability(module, short) == {"S"}, path
+
+
 # --- TB-022: the release check ``--no-stubs`` -------------------------------------------------------------------------
 
 

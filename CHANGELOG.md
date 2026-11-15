@@ -176,6 +176,21 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- **Stable, 0.3** (G-S2 follow-up 7A, owner decision before the Studio 1.1 release; contract sections 0 and 5.11,
+  I-120..I-122): `tabrion.Transaction.execute_checked`, `tabrion.rowedit.insert_row`, `tabrion.rowedit.update_row`,
+  `tabrion.rowedit.delete_row` and `tabrion.errors.RowCountMismatch` change from experimental (X) to stable (S) in
+  `docs/api/surface.json`. They are the names Studio's Data Editor (STU-026) uses, and consumers use only stable
+  names (S-2 of the API stability policy). With them the error codes (`transaction.rowcount_mismatch`,
+  `transaction.too_many_rows`, `transaction.limit_required`, `transaction.failed`, `rowedit.primary_key_required`,
+  `rowedit.old_required`, `rowedit.new_required`) and `details` keys are stable; from now on they change only after a
+  `DeprecationWarning` (S-3). `tests/unit/test_api_surface.py::test_studio_data_editor_names_are_stable` pins the
+  stability in `surface.json` and in contract section 0.
+- **Breaking for `0.3.0.dev0` callers** (G-S2 follow-up 7A, before the promotion above; no released version had
+  these names): `rowedit.update_row` and `rowedit.delete_row` take `old` and `new` as keyword-only arguments,
+  `update_row(table, key, *, old, new)` and `delete_row(table, key, *, old)`, so the two mappings of the same type
+  cannot be swapped by position; `key` stays positional. A positional `old` or `new` raises `TypeError`. An empty
+  `new` raises `UsageError("rowedit.new_required")` (before: `ValueError` without a code), symmetric with
+  `rowedit.old_required`.
 - **Dependency floor:** psycopg `>=3.2.3,<4` (was `>=3.2,<4`) in the extras `postgres` and `dev` (TB-152). psycopg
   3.2.0 to 3.2.2 ship binary packages with libpq 16, where `cancel_safe()` falls back to psycopg's blocking
   `cancel()`: it has no timeout of its own, and the C implementation holds the GIL while it waits for the cancel

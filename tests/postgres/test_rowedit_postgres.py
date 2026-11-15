@@ -105,17 +105,20 @@ def test_round_trip_with_every_old_value_as_read(db: Database, table: Table) -> 
     seen = read(db, table)
     assert seen["price"] == pytest.approx(0.1) and seen["doc"] == ROW["doc"]
     with db.transaction() as tx:
-        assert run(tx, update_row(table, {"id": 1}, seen, {"label": "uno", "price": 0.2})) == 1
+        assert run(tx, update_row(table, {"id": 1}, old=seen, new={"label": "uno", "price": 0.2})) == 1
     seen = read(db, table)
     with db.transaction() as tx:
-        assert run(tx, delete_row(table, {"id": 1}, seen)) == 1
+        assert run(tx, delete_row(table, {"id": 1}, old=seen)) == 1
     assert db.fetch_scalar(f"SELECT count(*) FROM {table.schema}.items WHERE id = 1") == 0
 
 
 def test_concurrent_change_conflicts_and_leaves_the_row(db: Database, table: Table, admin: Any) -> None:
     seen = read(db, table)
     admin.execute(f"UPDATE {table.schema}.items SET label = 'theirs' WHERE id = 1")
-    for statement in (update_row(table, {"id": 1}, seen, {"label": "mine"}), delete_row(table, {"id": 1}, seen)):
+    for statement in (
+        update_row(table, {"id": 1}, old=seen, new={"label": "mine"}),
+        delete_row(table, {"id": 1}, old=seen),
+    ):
         with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
             run(tx, statement)
         assert caught.value.code == "transaction.rowcount_mismatch"
@@ -125,11 +128,14 @@ def test_concurrent_change_conflicts_and_leaves_the_row(db: Database, table: Tab
 
 def test_null_in_old_is_compared_not_distinct(db: Database, table: Table) -> None:
     with db.transaction() as tx:
-        assert run(tx, update_row(table, {"id": 2}, {"label": None, "doc": None, "price": None}, {"label": "x"})) == 1
+        assert (
+            run(tx, update_row(table, {"id": 2}, old={"label": None, "doc": None, "price": None}, new={"label": "x"}))
+            == 1
+        )
     with pytest.raises(RowCountMismatch), db.transaction() as tx:
-        run(tx, update_row(table, {"id": 2}, {"label": None}, {"label": "y"}))
+        run(tx, update_row(table, {"id": 2}, old={"label": None}, new={"label": "y"}))
     with pytest.raises(RowCountMismatch), db.transaction() as tx:
-        run(tx, update_row(table, {"id": 2}, {"mood": "ok"}, {"label": "y"}))
+        run(tx, update_row(table, {"id": 2}, old={"mood": "ok"}, new={"label": "y"}))
     assert read(db, table, 2)["label"] == "x"
 
 
@@ -138,7 +144,7 @@ def test_nondeterministic_collation_cannot_hide_a_change(db: Database, table: Ta
     admin.execute(f"UPDATE {table.schema}.items SET code = 'ABC' WHERE id = 1")
     assert admin.execute(f"SELECT code = 'abc' FROM {table.schema}.items WHERE id = 1").fetchone()[0] is True
     with pytest.raises(RowCountMismatch), db.transaction() as tx:
-        run(tx, update_row(table, {"id": 1}, seen, {"label": "mine"}))
+        run(tx, update_row(table, {"id": 1}, old=seen, new={"label": "mine"}))
     assert read(db, table)["code"] == "ABC"
 
 
@@ -152,9 +158,14 @@ def test_float_and_json_old_values_may_conflict(db: Database, table: Table) -> N
         )
     for old in ({"amount": 0.3}, {"doc": {"a": [1, 2], "b": 2}}):
         with pytest.raises(RowCountMismatch), db.transaction() as tx:
-            run(tx, update_row(table, {"id": 1}, old, {"label": "mine"}))
+            run(tx, update_row(table, {"id": 1}, old=old, new={"label": "mine"}))
     with db.transaction() as tx:
-        run(tx, update_row(table, {"id": 1}, {"amount": 0.1 + 0.2, "doc": {"b": 1, "a": [1, 2]}}, {"label": "mine"}))
+        run(
+            tx,
+            update_row(
+                table, {"id": 1}, old={"amount": 0.1 + 0.2, "doc": {"b": 1, "a": [1, 2]}}, new={"label": "mine"}
+            ),
+        )
     assert read(db, table)["label"] == "mine"
 
 
@@ -168,7 +179,7 @@ def test_max_affected_rolls_back_a_multi_row_statement(db: Database, table: Tabl
 
 def test_caught_mismatch_still_rolls_back(db: Database, table: Table) -> None:
     with pytest.raises(RowCountMismatch), db.transaction() as tx:
-        run(tx, update_row(table, {"id": 3}, {"label": "three"}, {"label": "changed"}))
+        run(tx, update_row(table, {"id": 3}, old={"label": "three"}, new={"label": "changed"}))
         with pytest.raises(RowCountMismatch):
             run(tx, sqlalchemy.update(table).values(label="all"), expect_rowcount=1)
         with pytest.raises(UsageError) as later:
@@ -205,7 +216,7 @@ def test_canary_values_never_reach_an_error(db: Database, table: Table) -> None:
     into the error's DETAIL)."""
     canary = new_canary("pg")
     with pytest.raises(RowCountMismatch) as conflict, db.transaction() as tx:
-        run(tx, update_row(table, {"id": 1}, {"label": canary}, {"label": canary}))
+        run(tx, update_row(table, {"id": 1}, old={"label": canary}, new={"label": canary}))
     assert_clean(conflict.value, canary)
     with db.transaction() as tx:
         run(tx, insert_row(table, {"id": 50, "tag": canary}))
@@ -232,7 +243,10 @@ def test_rules_and_triggers_are_not_counted(db: Database, table: Table, admin: A
     )
     seen = read(db, table)
     with db.transaction() as tx:
-        assert run(tx, update_row(table, {"id": 1}, seen, {"label": "uno"}), expect_rowcount=1, max_affected=1) == 1
+        assert (
+            run(tx, update_row(table, {"id": 1}, old=seen, new={"label": "uno"}), expect_rowcount=1, max_affected=1)
+            == 1
+        )
     assert db.fetch_scalar(f"SELECT count(*) FROM {schema}.other") == 0  # the rule deleted 100 rows, uncounted
     assert db.fetch_scalar(f"SELECT count(*) FROM {schema}.audit") == 50  # the trigger inserted 50, uncounted
     assert read(db, table)["label"] == "uno"

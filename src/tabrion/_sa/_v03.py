@@ -100,7 +100,7 @@ class _TransactionV03:
         max_affected: int | None = None,
         timeout: float | None = None,
     ) -> int:
-        """Since 0.3, experimental. One statement whose affected row count must be ``expect_rowcount`` and at most
+        """Since 0.3, stable. One statement whose affected row count must be ``expect_rowcount`` and at most
         ``max_affected`` (one of the two is required); otherwise ``RowCountMismatch``, and the transaction is failed:
         every later statement raises ``UsageError("transaction.failed")`` and the block rolls back (I-120).
 

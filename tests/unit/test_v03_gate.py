@@ -107,7 +107,7 @@ with tabrion.Database.from_url("sqlite://") as db:
         tx.execute_checked(rowedit.insert_row(t, {"id": 1, "v": "a"}), expect_rowcount=1)
     try:
         with db.transaction() as tx:
-            tx.execute_checked(rowedit.update_row(t, {"id": 1}, {"v": "b"}, {"v": "c"}), expect_rowcount=1)
+            tx.execute_checked(rowedit.update_row(t, {"id": 1}, old={"v": "b"}, new={"v": "c"}), expect_rowcount=1)
     except tabrion.errors.RowCountMismatch as exc:
         print("conflict:", exc.code, dict(exc.details))
 """

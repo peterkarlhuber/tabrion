@@ -1,12 +1,13 @@
-"""Row statements for the guided write transaction (since 0.3, experimental, extra ``sqlalchemy``; TAB-XW-6).
+"""Row statements for the guided write transaction (since 0.3, stable, extra ``sqlalchemy``; TAB-XW-6).
 
 ``insert_row``, ``update_row`` and ``delete_row`` build one-row SQLAlchemy Core statements with an optimistic
 predicate on the old values; ``Transaction.execute_checked(statement, expect_rowcount=1)`` runs them and turns a
 conflict (0 rows) into ``RowCountMismatch``. Contract section 5.11; ADR 0015 section 9 N-5. No upsert and no merge
 (specification section 1.3).
 
-Public since 0.3 (ADR 0015 Consequences; before 0.3 the module refused its import). The implementation lives in
-``tabrion._sa._rowedit``.
+Public since 0.3 (ADR 0015 Consequences; before 0.3 the module refused its import), stable (S) together with
+``Transaction.execute_checked`` and ``RowCountMismatch`` since the G-S2 follow-up 7A for Studio's Data Editor (contract
+section 5.11). The implementation lives in ``tabrion._sa._rowedit``.
 """
 
 from __future__ import annotations

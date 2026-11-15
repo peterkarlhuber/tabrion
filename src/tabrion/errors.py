@@ -1346,8 +1346,9 @@ class UnsafePath(TabrionError):
 
 class RowCountMismatch(TabrionError):
     """Codes ``transaction.rowcount_mismatch`` (details ``expected``, ``actual``) and ``transaction.too_many_rows``
-    (details ``limit``, ``actual``), raised by ``Transaction.execute_checked`` (since 0.3, experimental; contract
-    section 5.11). An optimistic conflict of ``tabrion.rowedit`` is this error with ``actual`` 0.
+    (details ``limit``, ``actual``), raised by ``Transaction.execute_checked`` (contract section 5.11). Since 0.3,
+    stable. An optimistic conflict of ``tabrion.rowedit`` is this error with
+    ``actual`` 0.
     """
 
 

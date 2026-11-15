@@ -91,8 +91,8 @@ def test_values_are_bound_never_in_the_sql_text(dialect: Any) -> None:
     canary = new_canary("bind")
     statements = [
         insert_row(ODD, {"select": 7, "from where": canary}),
-        update_row(ODD, {"select": 7}, {"from where": canary}, {"from where": canary + "2"}),
-        delete_row(ODD, {"select": 7}, {"from where": canary}),
+        update_row(ODD, {"select": 7}, old={"from where": canary}, new={"from where": canary + "2"}),
+        delete_row(ODD, {"select": 7}, old={"from where": canary}),
     ]
     for statement in statements:
         result = compiled(statement, dialect)
@@ -105,12 +105,14 @@ def test_values_are_bound_never_in_the_sql_text(dialect: Any) -> None:
 def test_an_sql_expression_as_a_value_is_bound_not_compiled(db: Database) -> None:
     """A value is always a bound parameter: a SQL construct passed as a value is never compiled into the text."""
     expression = sqlalchemy.literal_column("label || 'x'")
-    statement = update_row(ITEMS, {"id": 1}, {"label": "one"}, {"label": expression})
+    statement = update_row(ITEMS, {"id": 1}, old={"label": "one"}, new={"label": expression})
     assert "label || 'x'" not in str(compiled(statement, SQLITE))
 
 
 def test_update_predicate_on_sqlite_and_postgresql() -> None:
-    statement = update_row(ITEMS, {"id": 1}, {"label": None, "code": "abc", "price": 1.5, "doc": {}}, {"label": "x"})
+    statement = update_row(
+        ITEMS, {"id": 1}, old={"label": None, "code": "abc", "price": 1.5, "doc": {}}, new={"label": "x"}
+    )
     lite = str(compiled(statement, SQLITE))
     assert "items.id = ?" in lite
     assert '(items.label COLLATE "BINARY") IS NULL' in lite
@@ -140,7 +142,7 @@ def test_update_predicate_on_sqlite_and_postgresql() -> None:
     ],
 )
 def test_key_must_be_exactly_the_primary_key(table: Table, key: dict[str, Any]) -> None:
-    for build in (lambda: update_row(table, key, {}, {"v": "x"}), lambda: delete_row(table, key, {})):
+    for build in (lambda: update_row(table, key, old={}, new={"v": "x"}), lambda: delete_row(table, key, old={})):
         with pytest.raises(UsageError) as caught:
             build()
         assert caught.value.code == "rowedit.primary_key_required"
@@ -149,16 +151,16 @@ def test_key_must_be_exactly_the_primary_key(table: Table, key: dict[str, Any]) 
 def test_composite_primary_key(db: Database) -> None:
     with db.transaction() as tx:
         run(tx, insert_row(PAIR, {"a": 1, "b": "x", "v": "old"}))
-        run(tx, update_row(PAIR, {"a": 1, "b": "x"}, {"v": "old"}, {"v": "new"}))
+        run(tx, update_row(PAIR, {"a": 1, "b": "x"}, old={"v": "old"}, new={"v": "new"}))
     assert db.fetch_scalar("SELECT v FROM pair") == "new"
 
 
 @pytest.mark.parametrize(
     "build",
     [
-        lambda: update_row(ITEMS, {"id": 1}, {}, {"label": "x"}),
-        lambda: delete_row(ITEMS, {"id": 1}, {}),
-        lambda: update_row(PAIR, {"a": 1, "b": "x"}, {}, {"v": "x"}),
+        lambda: update_row(ITEMS, {"id": 1}, old={}, new={"label": "x"}),
+        lambda: delete_row(ITEMS, {"id": 1}, old={}),
+        lambda: update_row(PAIR, {"a": 1, "b": "x"}, old={}, new={"v": "x"}),
     ],
     ids=["update", "delete", "composite-key"],
 )
@@ -169,9 +171,32 @@ def test_empty_old_is_refused(build: Any) -> None:
     assert caught.value.code == "rowedit.old_required"
 
 
+def test_empty_new_is_refused() -> None:
+    """G-S2 follow-up 7A: symmetric with ``rowedit.old_required``; an update that sets nothing is a usage error."""
+    with pytest.raises(UsageError) as caught:
+        update_row(ITEMS, {"id": 1}, old={"label": "one"}, new={})
+    assert caught.value.code == "rowedit.new_required"
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: update_row(ITEMS, {"id": 1}, {"label": "one"}, {"label": "x"}),  # type: ignore[call-arg]
+        lambda: update_row(ITEMS, {"id": 1}, {"label": "one"}, new={"label": "x"}),  # type: ignore[call-arg]
+        lambda: delete_row(ITEMS, {"id": 1}, {"label": "one"}),  # type: ignore[call-arg]
+    ],
+    ids=["update", "update-old", "delete"],
+)
+def test_old_and_new_are_keyword_only(build: Any) -> None:
+    """G-S2 follow-up 7A: ``old`` and ``new`` are keyword-only, so a swap of the two mappings cannot happen by
+    position; ``key`` stays positional (``update_row(table, key, *, old, new)``)."""
+    with pytest.raises(TypeError, match="positional argument"):
+        build()
+
+
 def test_null_key_value_is_refused() -> None:
     with pytest.raises(ValueError, match="must not be None"):
-        update_row(ITEMS, {"id": None}, {}, {"label": "x"})
+        update_row(ITEMS, {"id": None}, old={}, new={"label": "x"})
 
 
 @pytest.mark.parametrize(
@@ -180,10 +205,9 @@ def test_null_key_value_is_refused() -> None:
         (lambda: insert_row("items", {"id": 1}), TypeError),  # type: ignore[arg-type]
         (lambda: insert_row(ITEMS, [("id", 1)]), TypeError),  # type: ignore[arg-type]
         (lambda: insert_row(ITEMS, {1: 1}), TypeError),  # type: ignore[dict-item]
-        (lambda: update_row(ITEMS, [1], {}, {"label": "x"}), TypeError),  # type: ignore[arg-type]
-        (lambda: update_row(ITEMS, {"id": 1}, {"label": "one"}, {}), ValueError),
-        (lambda: update_row(ITEMS, {"id": 1}, {"nope": 1}, {"label": "x"}), ValueError),
-        (lambda: delete_row(ITEMS, {"id": 1}, None), TypeError),  # type: ignore[arg-type]
+        (lambda: update_row(ITEMS, [1], old={}, new={"label": "x"}), TypeError),  # type: ignore[arg-type]
+        (lambda: update_row(ITEMS, {"id": 1}, old={"nope": 1}, new={"label": "x"}), ValueError),
+        (lambda: delete_row(ITEMS, {"id": 1}, old=None), TypeError),  # type: ignore[arg-type]
     ],
 )
 def test_invalid_arguments(build: Any, error: type) -> None:
@@ -195,8 +219,8 @@ def test_unknown_column_message_names_no_key_or_value() -> None:
     canary = new_canary("column")
     for build in (
         lambda: insert_row(ITEMS, {canary: canary}),
-        lambda: update_row(ITEMS, {"id": 1}, {canary: canary}, {"label": "x"}),
-        lambda: update_row(ITEMS, {"id": 1}, {"label": "one"}, {canary: canary}),
+        lambda: update_row(ITEMS, {"id": 1}, old={canary: canary}, new={"label": "x"}),
+        lambda: update_row(ITEMS, {"id": 1}, old={"label": "one"}, new={canary: canary}),
     ):
         with pytest.raises(ValueError) as caught:
             build()
@@ -210,11 +234,11 @@ def test_insert_update_delete_round_trip(db: Database) -> None:
     current = row(db)
     assert current == ROW
     with db.transaction() as tx:
-        assert run(tx, update_row(ITEMS, {"id": 1}, current, {"label": "uno", "price": 3.0})) == 1
+        assert run(tx, update_row(ITEMS, {"id": 1}, old=current, new={"label": "uno", "price": 3.0})) == 1
     assert row(db)["label"] == "uno"
     seen = row(db)
     with db.transaction() as tx:
-        assert run(tx, delete_row(ITEMS, {"id": 1}, seen)) == 1
+        assert run(tx, delete_row(ITEMS, {"id": 1}, old=seen)) == 1
     assert db.fetch_scalar("SELECT count(*) FROM items WHERE id = 1") == 0
 
 
@@ -230,8 +254,8 @@ def test_concurrent_change_conflicts_and_leaves_the_row(db: Database) -> None:
     with db.transaction() as tx:  # another writer changes the row after the client read it
         tx.execute("UPDATE items SET label = 'theirs' WHERE id = 1")
     for statement in (
-        update_row(ITEMS, {"id": 1}, seen, {"label": "mine"}),
-        delete_row(ITEMS, {"id": 1}, seen),
+        update_row(ITEMS, {"id": 1}, old=seen, new={"label": "mine"}),
+        delete_row(ITEMS, {"id": 1}, old=seen),
     ):
         with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
             run(tx, statement)
@@ -243,18 +267,18 @@ def test_deleted_row_conflicts(db: Database) -> None:
     seen = row(db)
     db.execute("DELETE FROM items WHERE id = 1")
     with pytest.raises(RowCountMismatch), db.transaction() as tx:
-        run(tx, update_row(ITEMS, {"id": 1}, seen, {"label": "mine"}))
+        run(tx, update_row(ITEMS, {"id": 1}, old=seen, new={"label": "mine"}))
     assert db.fetch_scalar("SELECT count(*) FROM items") == 1
 
 
 def test_null_in_old_is_compared_null_safe(db: Database) -> None:
     """``IS`` on SQLite: an old ``None`` matches a NULL column and only that; ``=`` would match nothing."""
     with db.transaction() as tx:
-        assert run(tx, update_row(ITEMS, {"id": 2}, {"label": None, "doc": None}, {"label": "set"})) == 1
+        assert run(tx, update_row(ITEMS, {"id": 2}, old={"label": None, "doc": None}, new={"label": "set"})) == 1
     with pytest.raises(RowCountMismatch), db.transaction() as tx:  # now no longer NULL: a conflict
-        run(tx, update_row(ITEMS, {"id": 2}, {"label": None}, {"label": "again"}))
+        run(tx, update_row(ITEMS, {"id": 2}, old={"label": None}, new={"label": "again"}))
     with pytest.raises(RowCountMismatch), db.transaction() as tx:  # a value where the column is NULL
-        run(tx, update_row(ITEMS, {"id": 2}, {"price": 0.0}, {"label": "again"}))
+        run(tx, update_row(ITEMS, {"id": 2}, old={"price": 0.0}, new={"label": "again"}))
     assert row(db, 2)["label"] == "set"
 
 
@@ -264,7 +288,7 @@ def test_case_insensitive_collation_cannot_hide_a_change(db: Database) -> None:
     db.execute("UPDATE items SET code = 'ABC' WHERE id = 1")
     assert db.fetch_scalar("SELECT code = 'abc' FROM items WHERE id = 1") == 1  # the column's own collation
     with pytest.raises(RowCountMismatch), db.transaction() as tx:
-        run(tx, update_row(ITEMS, {"id": 1}, seen, {"label": "mine"}))
+        run(tx, update_row(ITEMS, {"id": 1}, old=seen, new={"label": "mine"}))
     assert row(db)["code"] == "ABC"
 
 
@@ -278,18 +302,18 @@ def test_float_and_json_old_values_may_conflict(db: Database) -> None:
     assert stored["price"] != 0.3 and stored["doc"] == {"b": 1, "a": 2}
     for old in ({"price": 0.3}, {"doc": {"a": 2, "b": 1}}, {"doc": json.loads('{"b":1,  "a":2}')}):
         with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
-            run(tx, update_row(ITEMS, {"id": 1}, old, {"label": "mine"}))
+            run(tx, update_row(ITEMS, {"id": 1}, old=old, new={"label": "mine"}))
         assert dict(caught.value.details) == {"expected": 1, "actual": 0}
     assert row(db) == stored  # nothing written
     with db.transaction() as tx:  # the stored float as read, and the JSON text exactly as stored, match
-        run(tx, update_row(ITEMS, {"id": 1}, {"price": stored["price"]}, {"label": "mine"}))
+        run(tx, update_row(ITEMS, {"id": 1}, old={"price": stored["price"]}, new={"label": "mine"}))
         tx.execute("UPDATE items SET doc = :doc WHERE id = 1", {"doc": json.dumps({"a": 2})})
-        run(tx, update_row(ITEMS, {"id": 1}, {"doc": {"a": 2}}, {"label": "mine2"}))
+        run(tx, update_row(ITEMS, {"id": 1}, old={"doc": {"a": 2}}, new={"label": "mine2"}))
     assert row(db)["label"] == "mine2"
 
 
 def test_canary_old_values_never_reach_the_conflict(db: Database) -> None:
     canary = new_canary("old")
     with pytest.raises(RowCountMismatch) as caught, db.transaction() as tx:
-        run(tx, update_row(ITEMS, {"id": 1}, {"label": canary}, {"label": canary + "-new"}))
+        run(tx, update_row(ITEMS, {"id": 1}, old={"label": canary}, new={"label": canary + "-new"}))
     assert_clean(caught.value, canary)
