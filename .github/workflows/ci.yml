@@ -95,7 +95,7 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       # The lower bounds of pyproject.toml (05 section 2.4); psycopg-binary is pinned by name to match psycopg.
-      - run: pip install "psycopg==3.2.0" "psycopg-binary==3.2.0" "sqlalchemy==2.0.30" "alembic==1.13.0" "pytest==8.0.0"
+      - run: pip install "psycopg==3.2.3" "psycopg-binary==3.2.3" "sqlalchemy==2.0.30" "alembic==1.13.0" "pytest==8.0.0"
       - run: pip list
       - run: pytest -m "not postgres and not packaging" -p no:cacheprovider
 

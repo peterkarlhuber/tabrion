@@ -134,7 +134,8 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   safe message. `tabrion.profilefile` accepts the profile mode `admin` (addendum A.9, E-X8). Security review of #90
   folded in: every change refuses a session whose current or session user has SUPERUSER, BYPASSRLS or REPLICATION
   (`RoleUnsafe("postgres.caller_unsafe")`); `grant_privileges` refuses objects of the system (`system_object`) and
-  objects whose owner has one of these attributes (`object_owner`); a role that is or reaches
+  objects whose owner has one of these attributes or is or reaches one of the three server-access roles below
+  (`object_owner`; the latter from the review Info of #90); a role that is or reaches
   `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files` counts as one with a banned
   attribute (`server_access:<role>` in `dangerous`, reason `reachable_server_access`); new field
   `RolePrivileges.public_definers` (SECURITY DEFINER functions PUBLIC may execute, a superuser owner highlighted);
@@ -175,6 +176,15 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- **Dependency floor:** psycopg `>=3.2.3,<4` (was `>=3.2,<4`) in the extras `postgres` and `dev` (TB-152). psycopg
+  3.2.0 to 3.2.2 ship binary packages with libpq 16, where `cancel_safe()` falls back to psycopg's blocking
+  `cancel()`: it has no timeout of its own, and the C implementation holds the GIL while it waits for the cancel
+  connection, so `Transaction.cancel()` stalled every thread of the process for that time (the TAB-T-B40 test, whose
+  slow cancel proxy runs in the same process, hung with the lowest versions). From 3.2.3 the Linux and macOS binary
+  packages bring libpq 17 and the non-blocking, bounded cancel; psycopg 3.2.0's `[binary]` extra could not be
+  installed at all (psycopg #853). With a libpq older than 17 (`psycopg[c]` built against one, the Windows binary
+  packages, the pure-Python implementation with such a system libpq) the unbounded fallback remains; contract I-102
+  and SECURITY.md say so. The lowest-versions CI job installs psycopg 3.2.3.
 - `tabrion.schema` (experimental since 0.2, TAB-XW-2; additive under S-4, every new field and parameter has a default
   that keeps the 0.2 behavior): `schema.ColumnShape` gains `default` (`schema.ColumnShape.__init__` takes it as an
   optional last argument); `schema.TableShape` gains `foreign_keys`, `unique_constraints`, `check_constraints` and

@@ -15,8 +15,8 @@ with string formatting; catalog names are qualified with ``pg_catalog`` (contrac
 The promise holds for the admin profile E-X6 describes, and Tabrion enforces that part (review P90-01 of #90): every
 change refuses a session whose ``CURRENT_USER`` or ``SESSION_USER`` has SUPERUSER, BYPASSRLS or REPLICATION
 (``RoleUnsafe("postgres.caller_unsafe")``), and ``grant_privileges`` refuses objects of the system and objects whose
-owner has one of these attributes. A target that is or reaches ``pg_execute_server_program``,
-``pg_read_server_files`` or ``pg_write_server_files`` counts as one with a banned attribute (P90-02).
+owner has one of these attributes. A role that is or reaches ``pg_execute_server_program``, ``pg_read_server_files`` or
+``pg_write_server_files`` counts as one with a banned attribute (P90-02), as a target and as an object's owner.
 
 A password is hashed on the client (SCRAM-SHA-256, ``PGconn.encrypt_password``) and only the verifier is sent. It is
 never part of an error, a ``repr`` or a log record, and the frames of a traceback do not hold it (I-76): the public
@@ -1015,14 +1015,32 @@ def _system_object(target: _Resolved) -> bool:
     return namespace is not None and (namespace.startswith("pg_") or namespace == "information_schema")
 
 
+# P90-01 and P90-02 for the owners of the objects of ``grant_privileges``: some owner has SUPERUSER, BYPASSRLS or
+# REPLICATION, or is or reaches (as ``_REACH_SQL``: any grant option, any depth, the database owner's implicit
+# ``pg_database_owner`` too) a superuser-equivalent predefined role. A membership in a role with a banned attribute is
+# not counted: attributes are not inherited, the rights of a predefined role are.
+_UNSAFE_OWNER_SQL = (
+    "WITH RECURSIVE edges(member, roleid) AS ("
+    "   SELECT m.member, m.roleid FROM pg_catalog.pg_auth_members m"
+    "   UNION ALL SELECT d.datdba, o.oid FROM pg_catalog.pg_database d, pg_catalog.pg_roles o"
+    "   WHERE d.datname OPERATOR(pg_catalog.=) pg_catalog.current_database()"
+    "   AND o.rolname::pg_catalog.text OPERATOR(pg_catalog.=) 'pg_database_owner'),"
+    " reach(owner, oid) AS (SELECT o, o FROM pg_catalog.unnest(%(owners)s::pg_catalog.oid[]) AS u(o)"
+    "   UNION SELECT reach.owner, e.roleid FROM edges e JOIN reach ON e.member OPERATOR(pg_catalog.=) reach.oid)"
+    " SELECT pg_catalog.bool_or("
+    "   (reach.oid OPERATOR(pg_catalog.=) reach.owner AND (r.rolsuper OR r.rolbypassrls OR r.rolreplication))"
+    "   OR (r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) ANY (%(server)s::pg_catalog.text[])"
+    "     AND r.oid OPERATOR(pg_catalog.<) %(first)s::pg_catalog.oid))"
+    " FROM reach JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) reach.oid"
+)
+
+
 def _unsafe_owners(cursor: psycopg.Cursor[tuple[Any, ...]], targets: list[_Resolved]) -> bool:
-    """Some object is owned by a role with SUPERUSER, BYPASSRLS or REPLICATION (P90-01): a view of it reads with the
-    owner's rights, a function of it may call what only a superuser may grant."""
-    cursor.execute(
-        "SELECT pg_catalog.bool_or(r.rolsuper OR r.rolbypassrls OR r.rolreplication) FROM pg_catalog.pg_roles r"
-        " WHERE r.oid OPERATOR(pg_catalog.=) ANY (%s::pg_catalog.oid[])",
-        ([target.owner for target in targets],),
-    )
+    """Some object is owned by a role with SUPERUSER, BYPASSRLS or REPLICATION (P90-01), or by a role that is or
+    reaches ``pg_execute_server_program``, ``pg_read_server_files`` or ``pg_write_server_files`` (P90-02): a view of
+    it reads with the owner's rights, a function of it may call what only a superuser may grant."""
+    owners = sorted({target.owner for target in targets})
+    cursor.execute(_UNSAFE_OWNER_SQL, {"owners": owners, "server": list(_SERVER_ACCESS), "first": _FIRST_NORMAL_OID})
     return bool(one_row(cursor)[0])
 
 
@@ -1099,8 +1117,9 @@ def grant_privileges(
     Refused (``RoleUnsafe``): the target reasons of :func:`alter_role`; ``security_definer`` for EXECUTE on a
     SECURITY DEFINER function ``role`` does not own; ``schema_create`` for CREATE on ``public`` or on a schema ``role``
     does not own; ``system_object`` for an object of the system (an oid below 16384, ``information_schema`` or a
-    ``pg_`` schema); ``object_owner`` for an object whose owner has SUPERUSER, BYPASSRLS or REPLICATION. Contract
-    section 4.9, I-183, I-186.
+    ``pg_`` schema); ``object_owner`` for an object whose owner has SUPERUSER, BYPASSRLS or REPLICATION or is or
+    reaches ``pg_execute_server_program``, ``pg_read_server_files`` or ``pg_write_server_files``. Contract section 4.9,
+    I-183, I-186.
     """
     name = _check_name(role, "role")
     chosen = _check_privileges(privileges, on, _GRANTABLE)

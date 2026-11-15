@@ -957,6 +957,53 @@ def test_objects_of_a_superuser_owner_refused(env: Env) -> None:
 
 @pytest.mark.parametrize("predefined", ["pg_execute_server_program", "pg_read_server_files", "pg_write_server_files"])
 @pytest.mark.parametrize("depth", [1, 2])
+def test_objects_of_an_owner_reaching_server_access_refused(env: Env, predefined: str, depth: int) -> None:
+    """P90-01 with P90-02: an object whose owner is or reaches a superuser-equivalent predefined role (directly or
+    through a group, with any grant options) is refused like one of a superuser owner; without the membership the same
+    grant goes through."""
+    target = env.role()
+    owner = env.role(by_superuser=True)
+    holder = owner
+    if depth == 2:
+        holder = env.role(by_superuser=True)
+        env.su_sql("GRANT {} TO {} WITH INHERIT FALSE, SET FALSE, ADMIN TRUE", holder, owner)
+    env.su_sql(f"GRANT {predefined} TO {{}}", holder)
+    env.su_sql("CREATE VIEW {}.owned_view AS SELECT 1 AS one", env.schema)
+    env.su_sql("CREATE FUNCTION {}.owned_plain(integer) RETURNS int LANGUAGE sql AS 'SELECT 1'", env.schema)
+    env.su_sql("ALTER VIEW {}.owned_view OWNER TO {}", env.schema, owner)
+    env.su_sql("ALTER FUNCTION {}.owned_plain(integer) OWNER TO {}", env.schema, owner)
+    env.su_sql("GRANT SELECT ON {}.owned_view TO {} WITH GRANT OPTION", env.schema, env.admin)
+    env.su_sql("GRANT EXECUTE ON FUNCTION {}.owned_plain(integer) TO {} WITH GRANT OPTION", env.schema, env.admin)
+    cases: list[tuple[Any, list[Any], str]] = [
+        ("table", ["SELECT"], f"{env.schema}.owned_view"),
+        ("function", ["EXECUTE"], f"{env.schema}.owned_plain(integer)"),
+    ]
+    for on, privileges, name in cases:
+        error = refused(
+            env,
+            lambda on=on, privileges=privileges, name=name: grant_privileges(  # type: ignore[misc]
+                env.adm, target, privileges=privileges, on=on, objects=[name]
+            ),
+            "object_owner",
+        )
+        assert error.details["reasons"] == "object_owner"
+    # One such object among safe ones refuses the whole statement.
+    refused(
+        env,
+        lambda: grant_privileges(
+            env.adm, target, privileges=["SELECT"], on="table", objects=[f"{env.schema}.t", f"{env.schema}.owned_view"]
+        ),
+        "object_owner",
+    )
+    # Without the membership the owner is an ordinary role and the grant goes through.
+    env.su_sql(f"REVOKE {predefined} FROM {{}}", holder)
+    for on, privileges, name in cases:
+        assert grant_privileges(env.adm, target, privileges=privileges, on=on, objects=[name]).safe
+        revoke_privileges(env.adm, target, privileges=privileges, on=on, objects=[name])
+
+
+@pytest.mark.parametrize("predefined", ["pg_execute_server_program", "pg_read_server_files", "pg_write_server_files"])
+@pytest.mark.parametrize("depth", [1, 2])
 def test_target_reaching_server_access_refused(env: Env, predefined: str, depth: int) -> None:
     """P90-02: no LOGIN, password, membership or privilege for a role that is or reaches a superuser-equivalent
     predefined role, directly or through a group (with any grant options)."""
