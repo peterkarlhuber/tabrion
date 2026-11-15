@@ -6,6 +6,21 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-15
+
+TABRION TAB-042 follow-up: `v0.2.2` final, a patch release with the role and profile security fixes TB-150 (#77,
+#81), TB-036 (#81) and the profile host check (#82). The release commit is the merge commit of the pull request that
+sets this version; its full SHA is recorded by the follow-up pull request that moves master on (ADR 0009, amendment
+of 2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.2.2` on it is an optional
+label. No PyPI upload, no GitHub release and no announcement (G-R). It satisfies the range `tabrion>=0.2,<0.3`.
+**No new or removed public names**: the 235 public names are those of `0.2.1` (`scripts/api_surface.py --base
+af0458d`: 240 names, the 5 more are staged for 0.3 and not importable below 0.3, TAB-XW-6); `RoleReport` gains
+the defaulted field `broad` at the end (see Changed). **Behavior changes**:
+`grant_runtime_role` refuses more roles (new `RoleUnsafe` reasons `predefined_role`, `protected_writable` and,
+before PostgreSQL 16, `createrole`), `tabrion.check` reports TAB-PG-013 and TAB-PG-014, and `tabrion.profilefile`
+refuses a comma in every `host` and `%`, `&`, `=` in a TCP host. Between `0.2.1` and this release master built as
+`0.2.2.dev0` (from `af0458d54467571abfc1afdd44d76e1f4d727c06`).
+
 ### Added
 
 - Docs: migration follow-ups after the owner accepted the migration report (2026-11-14 18:52Z).
