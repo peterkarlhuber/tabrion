@@ -611,7 +611,7 @@ def test_xw3_opclass_must_be_a_plain_name() -> None:
 
 def test_xw3_every_shape_field_is_generated_or_refused() -> None:
     """D-5.3 hook: the fields this module knows are exactly the fields of the shapes. A field added to the model
-    (triggers, policies, identity ... in TAB-XW-4/5) fails this test until ``tabrion.ddl`` decides how to generate
+    (triggers, policies ... in TAB-XW-4/5) fails this test until ``tabrion.ddl`` decides how to generate
     it, and until then a shape that sets it is refused at run time (next test)."""
     from tabrion.ddl import _KNOWN_FIELDS
 
@@ -659,3 +659,62 @@ def test_xw3_generated_sql_runs_one_statement_at_a_time(source: Database) -> Non
     for statement in ddl.create_statements(take(source), dialect="sqlite"):
         assert sqlite3.complete_statement(statement.sql + ";")
         assert split_statements(statement.sql) == [statement.sql]
+
+
+# --- review of #87: names with a dot (M-1), identity and generated columns (M-2) -----------------------------------
+
+
+@pytest.mark.parametrize("dialect", ["sqlite", "postgresql"])
+def test_xw3_a_name_with_two_dots_is_refused(dialect: Literal["sqlite", "postgresql"]) -> None:
+    """``s.x.y`` could be ``s."x.y"`` or ``"s.x".y``; the reviewer's probe gave ``DROP TABLE "s.x".y``, the other
+    table. Every function refuses such a name, and a foreign key that refers to one."""
+    dotted = dataclasses.replace(T, name="s.x.y")
+    calls = [
+        lambda: ddl.drop_table_statement(dotted, dialect=dialect),
+        lambda: ddl.table_statements(dotted, dialect=dialect),
+        lambda: ddl.add_column_statement(dotted, column("x"), dialect=dialect),
+        lambda: ddl.drop_column_statement(dotted, "id", dialect=dialect),
+        lambda: ddl.create_index_statement(dotted, ts.IndexShape("ix", ("id",)), dialect=dialect),
+        lambda: ddl.drop_index_statement(dotted, "ix", dialect=dialect),
+    ]
+    for call in calls:
+        refused("ddl.invalid_shape", call, table="s.x.y", field="name")
+    referring = dataclasses.replace(
+        T, columns=(column("id"),), foreign_keys=(ts.ForeignKeyShape("fk", ("id",), "main.x.o", ("k",)),)
+    )
+    refused("ddl.invalid_shape", lambda: ddl.table_statements(referring, dialect=dialect), field="name")
+
+
+IDENTITY = column("id", nullable=False)
+
+
+@pytest.mark.parametrize("dialect", ["sqlite", "postgresql"])
+@pytest.mark.parametrize(
+    ("change", "feature"),
+    [
+        ({"identity": "ALWAYS"}, "identity_column"),
+        ({"identity": "BY DEFAULT"}, "identity_column"),
+        ({"generated": "STORED", "generation_expression": "id * 2"}, "generated_column"),
+        ({"generated": "VIRTUAL", "generation_expression": "id * 2"}, "generated_column"),
+        ({"generation_expression": "id * 2"}, "generated_column"),
+    ],
+)
+def test_xw3_identity_and_generated_columns_are_refused(
+    dialect: Literal["sqlite", "postgresql"], change: dict[str, Any], feature: str
+) -> None:
+    """Neither is generated yet, and a plain column in its place would have other semantics (review of #87, M-2;
+    D-5.3): every function that writes a column refuses it, also as the old side of a change."""
+    special = dataclasses.replace(IDENTITY, **change)
+    table = dataclasses.replace(T, name="main.t", columns=(special,), primary_key=("id",))
+    model = ts.SchemaSnapshot(dialect, (table,), level=2)
+    plain = dataclasses.replace(T, name="main.t", columns=(IDENTITY,), primary_key=("id",))
+    calls = [
+        lambda: ddl.create_statements(model, dialect=dialect),
+        lambda: ddl.table_statements(table, dialect=dialect),
+        lambda: ddl.add_column_statement(plain, dataclasses.replace(special, name="x"), dialect=dialect),
+        lambda: ddl.alter_column_statements(plain, IDENTITY, special, dialect=dialect),
+        lambda: ddl.alter_column_statements(table, special, IDENTITY, dialect=dialect),
+        lambda: ddl.alter_column_statements(table, special, dataclasses.replace(special, name="n"), dialect=dialect),
+    ]
+    for call in calls:
+        refused("ddl.unsupported_feature", call, table="main.t", feature=feature)

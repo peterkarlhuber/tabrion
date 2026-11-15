@@ -1344,14 +1344,17 @@
         "name: str",
         "type: str",
         "nullable: bool",
-        "default: str | None = None"
+        "default: str | None = None",
+        "identity: str | None = None",
+        "generated: str | None = None",
+        "generation_expression: str | None = None"
       ],
       "since": "0.2",
       "stability": "X"
     },
     "tabrion.schema.ColumnShape.__init__": {
       "kind": "method",
-      "signature": "(self, name: str, type: str, nullable: bool, default: str | None = None) -> None",
+      "signature": "(self, name: str, type: str, nullable: bool, default: str | None = None, identity: str | None = None, generated: str | None = None, generation_expression: str | None = None) -> None",
       "since": "0.2",
       "stability": "X"
     },

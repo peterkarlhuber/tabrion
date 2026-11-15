@@ -256,6 +256,9 @@ def test_level_checks() -> None:
     # a level-1 snapshot holds no level-2 detail, so its v1 fingerprint never hides one
     for detail in (
         dataclasses.replace(_base(), columns=(ts.ColumnShape("id", "INTEGER", False, default="1"),)),
+        dataclasses.replace(_base(), columns=(ts.ColumnShape("id", "INTEGER", False, identity="ALWAYS"),)),
+        dataclasses.replace(_base(), columns=(ts.ColumnShape("id", "INTEGER", False, generated="STORED"),)),
+        dataclasses.replace(_base(), columns=(ts.ColumnShape("id", "INTEGER", False, generation_expression="1"),)),
         dataclasses.replace(_base(), foreign_keys=(), unique_constraints=(), check_constraints=()),
     ):
         with pytest.raises(UsageError) as info:
@@ -293,6 +296,9 @@ def test_level2_from_json_refuses_loose_types() -> None:
     table = ("tables", 0)
     for text in (
         bad((*table, "columns", 1, 3), 5),
+        bad((*table, "columns", 1, 4), 5),
+        bad((*table, "columns", 1, 6), False),
+        bad((*table, "columns", 1), ["v", "TEXT", True, None]),  # the four entries of a column before review M-2
         bad((*table, "columns", 1, 2), "yes"),
         bad((*table, "foreign_keys", 0, "columns"), "v"),
         bad((*table, "foreign_keys", 0, "on_delete"), 1),
@@ -661,3 +667,116 @@ def test_sqlite_check_text_is_linear_and_bounded(tmp_path: Path) -> None:
     finally:
         database.close()
     assert table is not None and table.check_constraints == (ts.CheckShape(None, statement),)
+
+
+# --- review of #87: names with a dot (M-1), identity and generated columns (M-2) -----------------------------------
+
+
+def test_level2_refuses_a_name_with_a_dot_sqlite(tmp_path: Path) -> None:
+    """The reviewer's probe on SQLite: table ``x.y`` of schema ``s`` and table ``y`` of the attached schema ``s.x``
+    are both ``s.x.y``. Level 2 refuses the name instead of letting one table hide the other; level 1 keeps the 0.2
+    behavior (I-111 g), where one of them is left out."""
+    engine = sqlalchemy.create_engine(f"sqlite:///{tmp_path / 'main.db'}")
+    try:
+        with engine.connect() as connection:
+            for name, file in (("s", "s.db"), ("s.x", "sx.db")):
+                connection.exec_driver_sql(f"ATTACH DATABASE '{tmp_path / file}' AS \"{name}\"")
+            connection.exec_driver_sql('CREATE TABLE s."x.y" (a INTEGER)')
+            connection.exec_driver_sql('CREATE TABLE "s.x".y (b INTEGER)')
+            inspector = sqlalchemy.inspect(connection)
+            assert [t.name for t in ts.snapshot(inspector, schemas=["s", "s.x"]).tables] == ["s.x.y"]
+            for options in ({"schemas": ["s"]}, {"schemas": ["s.x"]}, {"tables": ["s.x.y"]}):
+                with pytest.raises(UsageError) as info:
+                    ts.snapshot(inspector, level=2, **options)
+                assert info.value.code == "schema.unsupported_name"
+    finally:
+        engine.dispose()
+
+
+def test_level2_model_refuses_an_ambiguous_name() -> None:
+    table = dataclasses.replace(_base(), name="s.x.y")
+    referring = dataclasses.replace(_base(), foreign_keys=(ts.ForeignKeyShape("fk", ("v",), "s.x.o", ("k",)),))
+    for shape in (table, referring):
+        with pytest.raises(UsageError) as info:
+            ts.SchemaSnapshot("postgresql", (shape,), level=2)
+        assert info.value.code == "schema.unsupported_name"
+    text = ts.SchemaSnapshot("postgresql", (_base(),), level=2).to_json().replace('"main.t"', '"s.x.y"')
+    with pytest.raises(UsageError) as info:
+        ts.SchemaSnapshot.from_json(text)
+    assert info.value.code == "schema.invalid_snapshot"
+    # level 1 keeps the 0.2 behavior: a name is any text (D-4)
+    level1 = ts.TableShape("s.x.y", (ts.ColumnShape("id", "INTEGER", False),), ("id",))
+    assert ts.SchemaSnapshot("postgresql", (level1,)).tables == (level1,)
+
+
+GENERATED = (
+    "CREATE TABLE g (id INTEGER PRIMARY KEY, a INTEGER, b INTEGER GENERATED ALWAYS AS (a * 2) STORED, "
+    "\"V, v\" INTEGER AS (a + (1)) VIRTUAL, c TEXT DEFAULT 'AS (x)', CHECK (a > 0))"
+)
+
+
+def test_sqlite_generated_columns(tmp_path: Path) -> None:
+    """Generated columns are in the level-2 shape (``pragma_table_xinfo`` hidden 3 and 2, the expression as
+    written), so the ``v2:`` fingerprint and :func:`compare` see them (review of #87, M-2)."""
+    database = make(tmp_path / "g.db", (GENERATED,))
+    try:
+        snap = take(database, level=2)
+        assert take(database).tables[0].columns[2] == ts.ColumnShape("b", "INTEGER", True)  # level 1 unchanged
+    finally:
+        database.close()
+    table = snap.tables[0]
+    assert [(c.name, c.generated, c.generation_expression, c.identity) for c in table.columns] == [
+        ("id", None, None, None),
+        ("a", None, None, None),
+        ("b", "STORED", "a * 2", None),
+        ("V, v", "VIRTUAL", "a + (1)", None),
+        ("c", None, None, None),
+    ]
+    assert table.columns[4].default == "'AS (x)'"
+    assert table.check_constraints == (ts.CheckShape(None, "a > 0"),)
+    plain = dataclasses.replace(
+        table,
+        columns=tuple(dataclasses.replace(c, generated=None, generation_expression=None) for c in table.columns),
+    )
+    other = ts.SchemaSnapshot("sqlite", (plain,), level=2)
+    assert ts.fingerprint(other) != ts.fingerprint(snap)
+    assert [str(d) for d in ts.compare(snap, other)] == [
+        "column_generated: main.g.b",
+        "column_generated: main.g.V, v",
+    ]
+    assert ts.SchemaSnapshot.from_json(snap.to_json()) == snap
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        ("CREATE TABLE t (a INT, b INT AS (a+1))", {"b": "a+1"}),
+        ('CREATE TABLE t ("x y" INT GENERATED ALWAYS AS ( f(a, (b)) ) STORED, c INT)', {"x y": "f(a, (b))"}),
+        ("CREATE TABLE t (a INT CHECK (CAST(a AS INT) > 0), b TEXT DEFAULT ('AS (1)'))", {}),
+        ("CREATE TABLE t (a INT AS (a", None),
+        ("CREATE TABLE t (a INT AS (')", None),
+        ("CREATE TABLE t (a INT)) AS (1)", None),
+    ],
+)
+def test_sqlite_generated_expressions(sql: str, expected: dict[str, str] | None) -> None:
+    from tabrion.schema import _sqlite_generated_expressions
+
+    assert _sqlite_generated_expressions(sql) == expected
+
+
+@pytest.mark.parametrize(
+    ("change", "kind"),
+    [
+        ({"identity": "ALWAYS"}, "column_identity"),
+        ({"identity": "BY DEFAULT"}, "column_identity"),
+        ({"generated": "STORED", "generation_expression": "id * 2"}, "column_generated"),
+        ({"generated": "VIRTUAL", "generation_expression": "id * 2"}, "column_generated"),
+    ],
+)
+def test_level2_identity_and_generated_change_the_v2_fingerprint(change: dict[str, Any], kind: str) -> None:
+    base = _base()
+    changed = dataclasses.replace(base, columns=(dataclasses.replace(base.columns[0], **change), base.columns[1]))
+    before, after = (ts.SchemaSnapshot("postgresql", (t,), level=2) for t in (base, changed))
+    assert ts.fingerprint(before) != ts.fingerprint(after)
+    assert [(d.kind, d.column, d.breaking) for d in ts.compare(before, after)] == [(kind, "id", True)]
+    assert ts.SchemaSnapshot.from_json(after.to_json()) == after

@@ -139,9 +139,10 @@ True
 
 A level-2 snapshot is also the target model of the Schema Designer: a consumer edits it with `dataclasses.replace`
 and stores it with `to_json`. Partial index predicates, the order and collation of index elements, PostgreSQL
-`INCLUDE`, `NULLS NOT DISTINCT`, operator classes and exclusion constraints, `DEFERRABLE` and `NOT VALID` are part of
-the shape. Triggers, policies, domain checks, partitioning and identity or generated column detail are not (I-111 d):
-a change of only these leaves a `v2:` fingerprint as it was.
+`INCLUDE`, `NULLS NOT DISTINCT`, operator classes and exclusion constraints, `DEFERRABLE`, `NOT VALID`, identity and
+generated columns are part of the shape. Triggers, policies, domain checks and partitioning are not (I-111 d): a
+change of only these leaves a `v2:` fingerprint as it was. At level 2 a schema or table name with a dot is refused
+(`schema.unsupported_name`), as `schema.table` would not say which table it is.
 
 ### DDL from the model (0.3, experimental)
 
@@ -164,6 +165,6 @@ CREATE TABLE items ( id INTEGER, sku TEXT NOT NULL, price INTEGER DEFAULT (0), P
 Defaults, check expressions, index expressions and predicates are schema text from reflection and are written as
 they are; a text that could leave its place in the statement (a `;`, a comment, unbalanced parentheses) is refused
 (`ddl.unsafe_sql_text`), so take models only from your own databases and show the text in a preview. A feature the
-module cannot generate (a PostgreSQL exclusion constraint, `NOT VALID`, an unknown index method, a shape field it
-does not know) is refused with `ddl.unsupported_feature` instead of being left out, and a change SQLite cannot make in
+module cannot generate (an identity or generated column, a PostgreSQL exclusion constraint, `NOT VALID`, an unknown
+index method, a shape field it does not know) is refused with `ddl.unsupported_feature` instead of being left out, and a change SQLite cannot make in
 place raises `ddl.rebuild_required`.

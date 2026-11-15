@@ -11,6 +11,9 @@ keeps this file current; every pull request that finishes a work package updates
 > the level-2 model for SQLite and PostgreSQL (create, drop, column, constraint and index statements; SQLAlchemy
 > Core and Alembic DDL constructs, generation only), round trips on both engines, unsafe schema text and unknown
 > features refused (ADR 0015 D-5.3); contract section 5.12 and I-123 (moved from addendum A.2); the CR-DBX row.
+> Review of #87 fixed on the branch: names with a dot refused at level 2 and in `tabrion.ddl` (M-1), identity and
+> generated columns in the level-2 shape and refused by the DDL (M-2), PostgreSQL column collation from the catalog
+> (L-1), G-S3 preview requirements in TODO (I-1).
 > Before: 2026-11-15, TABRION TAB-XW-2 (CR-DBX, TB-149): `tabrion.schema` v2, experimental 0.3 (level 2:
 > defaults, foreign keys, unique and check constraints, indexes; `v2:` fingerprint, opt-in; `v1:` fingerprints
 > byte-identical, ADR 0015 D-4); contract section 5.10 and I-111 (moved from addendum A.1); the CR-DBX row and the

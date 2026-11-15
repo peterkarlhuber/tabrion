@@ -29,7 +29,17 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   type the dialect does not know, a PostgreSQL identifier above 63 bytes and every feature the module cannot generate
   (exclusion constraints, `NOT VALID`, invalid indexes, unknown access methods, any shape field it does not know: ADR
   0015 D-5.3) are refused, never generated without it; SQLite changes it cannot make in place raise
-  `ddl.rebuild_required` for the plan of TAB-XW-4.
+  `ddl.rebuild_required` for the plan of TAB-XW-4. Review of #87: identity and generated columns are refused
+  (`identity_column`, `generated_column`) instead of being written as plain columns (M-2), and a table name with more
+  than one dot (`s.x.y`, which could name `s."x.y"` or `"s.x".y`) raises `ddl.invalid_shape` (M-1).
+- **Experimental, 0.3** (review of #87; contract I-111 b, e, f, g): the level-2 schema model reads identity and
+  generated columns into the new `tabrion.schema.ColumnShape` fields `identity` (`ALWAYS`, `BY DEFAULT`),
+  `generated` (`STORED`, `VIRTUAL`) and `generation_expression` (PostgreSQL `pg_attribute`, SQLite
+  `pragma_table_xinfo` and the `CREATE TABLE` text), with the new difference kinds `column_identity` and
+  `column_generated`; a format-2 column has seven entries. The PostgreSQL column collation is read from
+  `pg_attribute.attcollation`, so the floor SQLAlchemy 2.0.30 gives the same type text (`TEXT COLLATE "C"`) and
+  `v2:` fingerprint as 2.1. At level 2 a schema or table name with a dot raises `schema.unsupported_name`
+  (`snapshot` and a level-2 `SchemaSnapshot`); level 1 is unchanged (D-4).
 - **Experimental, 0.3** (TABRION TAB-XW-2, CR-DBX; contract section 5.10, I-111, moved from addendum A.1): the schema
   model v2. `tabrion.schema.snapshot(..., level=2)` also reads column defaults, foreign keys, unique and check
   constraints and indexes on SQLite and PostgreSQL, into the new frozen dataclasses `tabrion.schema.ForeignKeyShape`,
@@ -39,7 +49,7 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   method and `indisvalid`, unique constraint collations, `NOT VALID` and `MATCH`, and PostgreSQL exclusion constraints
   in the new `tabrion.schema.ExclusionShape` (kinds `exclusion_missing`, `exclusion_added`); `IndexShape.expressions`
   marks expression elements. The blind spots that remain (triggers, policies, domain checks, partitioning,
-  `UNLOGGED`, identity and generated detail, storage parameters) are listed in I-111 d. SQLite index text is parsed
+  `UNLOGGED`, storage parameters) are listed in I-111 d. SQLite index text is parsed
   without regular expressions in linear time (review of #85, F1); SQLite unique constraints and foreign keys come
   from the pragmas, without touching the warning filters (F3, F5); SQLite CHECK constraints come from a linear
   tokenizer over the `CREATE TABLE` text, because SQLAlchemy 2.0.30 (the floor) merges two checks into one; PostgreSQL

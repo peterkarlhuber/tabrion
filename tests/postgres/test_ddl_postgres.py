@@ -150,20 +150,36 @@ def test_xw3_postgres_unique_options_round_trip(
 def test_xw3_postgres_unique_collation_of_the_column(
     db: Database, tabrion_postgres_url: str, tabrion_postgres_schema: PostgresSchema
 ) -> None:
-    """A unique constraint takes its collation from the column type. SQLAlchemy 2.1 reflects the column's collation
-    into the type text (``TEXT COLLATE "C"``), so the table round-trips; 2.0.30 (the floor) does not, so the
-    constraint's collation is not implied by the model's column and the table is refused, never created without it."""
+    """A unique constraint takes its collation from the column type. The level-2 snapshot reads the column collation
+    from the catalog into the type text (``TEXT COLLATE "C"``) on every SQLAlchemy version, also on the floor 2.0.30,
+    which does not reflect it (review of #87, L-1), so the table round-trips."""
     name = tabrion_postgres_schema.name
     execute(tabrion_postgres_url, COLLATED.format(s=name))
     table = take(db, name).table(f"{name}.coll")
     assert table is not None
+    assert table.columns[1].type == 'TEXT COLLATE "C"'
     assert {u.collations for u in table.unique_constraints} == {("C",), ("C", "")}
-    if "COLLATE" in table.columns[1].type:
-        round_trip(db, tabrion_postgres_url, name)
-    else:
+    round_trip(db, tabrion_postgres_url, name)
+
+
+def test_xw3_postgres_identity_and_generated_columns_are_refused(
+    db: Database, tabrion_postgres_url: str, tabrion_postgres_schema: PostgresSchema
+) -> None:
+    """The reviewer's probe: an identity column was generated as ``INTEGER NOT NULL`` and a generated column as a
+    plain ``INTEGER``. A reflected model with either is now refused (review of #87, M-2)."""
+    name = tabrion_postgres_schema.name
+    for number, column in enumerate(("id int GENERATED ALWAYS AS IDENTITY", "b int GENERATED ALWAYS AS (a*2) STORED")):
+        execute(tabrion_postgres_url, f"CREATE TABLE {name}.t{number} (a int, {column})")
+        table = take(db, name).table(f"{name}.t{number}")
+        assert table is not None
+        feature = "generated_column" if number else "identity_column"
+        with pytest.raises(UsageError) as info:
+            ddl.create_statements(take(db, name), dialect="postgresql")
+        assert (info.value.code, info.value.details["feature"]) == ("ddl.unsupported_feature", feature)
         with pytest.raises(UsageError) as info:
             ddl.table_statements(table, dialect="postgresql")
-        assert (info.value.code, info.value.details["feature"]) == ("ddl.unsupported_feature", "unique_collation")
+        assert (info.value.code, info.value.details["feature"]) == ("ddl.unsupported_feature", feature)
+        execute(tabrion_postgres_url, f"DROP TABLE {name}.t{number}")
 
 
 def test_xw3_postgres_in_place_changes(

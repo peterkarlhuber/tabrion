@@ -18,9 +18,13 @@ no ``$`` outside a literal) and refuses them otherwise (``UsageError("ddl.unsafe
 trusted. A consumer must show them in the preview and never take a model from an untrusted source.
 
 **Fail closed.** A shape with a feature this module cannot generate is refused
-(``UsageError("ddl.unsupported_feature")``) instead of being generated without it: PostgreSQL exclusion constraints,
-``NOT VALID`` constraints, invalid indexes, unknown index methods, and every shape field this module does not know
-(ADR 0015 D-5.3), so a field added to the model later is refused until it is generated.
+(``UsageError("ddl.unsupported_feature")``) instead of being generated without it: identity and generated columns,
+PostgreSQL exclusion constraints, ``NOT VALID`` constraints, invalid indexes, unknown index methods, and every shape
+field this module does not know (ADR 0015 D-5.3), so a field added to the model later is refused until it is
+generated.
+
+**Names.** A table is ``schema.table`` with exactly one dot; a name with more (a dot in the schema or table name)
+does not say which object it names and is refused (``UsageError("ddl.invalid_shape")``, review of #87, M-1).
 """
 
 from __future__ import annotations
@@ -197,6 +201,7 @@ def alter_column_statements(
     builder = _Builder(name)
     shape = _table_shape(table)
     old, new = _column_shape(old), _column_shape(new)
+    builder.plain_column(shape, old)
     builder.check_column(shape, new)
     builder.ident(old.name, shape)
     changes = (old.type != new.type, old.nullable != new.nullable, old.default != new.default)
@@ -338,7 +343,8 @@ _KNOWN_FIELDS: dict[type, frozenset[str]] = {
             "exclusion_constraints",
         }
     ),
-    ColumnShape: frozenset({"name", "type", "nullable", "default"}),
+    # identity, generated and generation_expression are known in order to be refused (_Builder.plain_column)
+    ColumnShape: frozenset({"name", "type", "nullable", "default", "identity", "generated", "generation_expression"}),
     ForeignKeyShape: frozenset(
         {
             "name",
@@ -374,9 +380,9 @@ _KNOWN_FIELDS: dict[type, frozenset[str]] = {
         }
     ),
 }
-"""The fields of each shape this module generates (ADR 0015 D-5.3). A field that is not listed and holds a value
-other than its default is refused (``ddl.unsupported_feature``), so a field added to the model later fails closed
-until this module learns it."""
+"""The fields of each shape this module generates or refuses by name (ADR 0015 D-5.3). A field that is not listed
+and holds a value other than its default is refused (``ddl.unsupported_feature``), so a field added to the model
+later fails closed until this module learns it."""
 
 
 def _known(shape: object, table: str) -> None:
@@ -671,10 +677,11 @@ class _Builder:
         return name
 
     def split(self, qualified: str) -> tuple[str | None, str]:
-        """``(schema, table)`` of ``schema.table`` (the last dot splits, as in ``tabrion.schema.snapshot``); SQLite's
-        ``main`` becomes no schema, so the statements name the table unqualified."""
+        """``(schema, table)`` of ``schema.table``; SQLite's ``main`` becomes no schema, so the statements name the
+        table unqualified. A name without exactly one dot is refused: ``s.x.y`` could be ``s."x.y"`` or
+        ``"s.x".y`` (review of #87, M-1)."""
         schema, dot, table = qualified.rpartition(".")
-        if not dot or not schema or not table:
+        if not dot or not schema or not table or "." in schema:
             raise UsageError("ddl.invalid_shape", details={"table": qualified, "field": "name"})
         return (None if self.name == "sqlite" and schema == "main" else schema), table
 
@@ -735,7 +742,16 @@ class _Builder:
 
     # columns ------------------------------------------------------------------------------------------------------
 
+    def plain_column(self, shape: TableShape, column: ColumnShape) -> None:
+        """Refuse an identity or generated column: neither is generated yet, and a plain column in its place would
+        have other semantics (review of #87, M-2; ADR 0015 D-5.3)."""
+        if column.identity is not None:
+            raise _unsupported(shape.name, "identity_column")
+        if column.generated is not None or column.generation_expression is not None:
+            raise _unsupported(shape.name, "generated_column")
+
     def check_column(self, shape: TableShape, column: ColumnShape) -> None:
+        self.plain_column(shape, column)
         _known(column, shape.name)
         self.ident(column.name, shape, "column")
         if not isinstance(column.nullable, bool):

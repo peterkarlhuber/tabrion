@@ -675,9 +675,27 @@ required (owner decision of 2026-11-08 11:26Z).
   in the statement (`ddl.unsafe_sql_text`). D-5.3 on the generation side: an allowlist of the shape fields and
   features the module generates; anything else (exclusion constraints, `NOT VALID`, invalid indexes, unknown access
   methods, a unique option SQLAlchemy 2.0.30 drops, any new shape field) raises `ddl.unsupported_feature`. Moved from
-  addendum A.2 into contract section 5.12 (I-123). Found on the SQLAlchemy floor: 2.0.30 does not reflect a
-  PostgreSQL column collation into the type text, so on the floor a `v2:` fingerprint does not see a changed column
-  collation (I-123 h); the DDL refuses a collated unique constraint there.
+  addendum A.2 into contract section 5.12 (I-123).
+- **Review of #87 (planning folder `reviews/pr87-tabxw3-review.md`): ACCEPTED WITH CONDITIONS**, fixed on the same
+  branch. **M-1:** `schema.table` is unquoted, so `s."x.y"` and `"s.x".y` were both `s.x.y` (one hid the other in the
+  snapshot; `drop_table_statement` wrote `DROP TABLE "s.x".y`, possibly the other table). Level 2 now refuses a
+  schema or table name with a dot (`schema.unsupported_name`), a level-2 `SchemaSnapshot` a name with more than one
+  dot, and `tabrion.ddl` such a table or referred table (`ddl.invalid_shape`); level 1 keeps the 0.2 behavior and
+  the collision as a documented `v1:` blind spot (D-4; I-111 g). **M-2:** identity and generated columns are in the
+  level-2 shape (`ColumnShape.identity`, `generated`, `generation_expression`; PostgreSQL `attidentity`,
+  `attgenerated`, `pg_get_expr`; SQLite `pragma_table_xinfo` hidden 2/3), change the `v2:` fingerprint
+  (`column_identity`, `column_generated`) and are refused by `tabrion.ddl` (`identity_column`, `generated_column`)
+  until they are generated. **L-1:** the PostgreSQL column collation is read from `pg_attribute.attcollation`, so the
+  floor SQLAlchemy 2.0.30 gives the same type text and fingerprint as 2.1, and the collated unique constraint that
+  was refused on the floor now round-trips there. Still not in the shape: identity sequence options, a SQLite column
+  collation (I-111 d).
+- **Requirements for G-S3 (Studio Schema Designer preview; review of #87, I-1):** (1) The schema texts of a model
+  (defaults, check expressions, index expressions, partial-index predicates, generation expressions) are trusted
+  input: `tabrion.ddl` only keeps them from leaving their place in the statement (`ddl.unsafe_sql_text`). Studio
+  takes a model only from the user's own database or from its own edits, never from an untrusted source, and shows
+  every such text in the preview before anything runs. (2) A PostgreSQL column type change has no `USING`: a type
+  that cannot be cast by assignment fails loudly when the statement runs, never silently; the preview says so, and
+  the plan (TAB-XW-4) reports the failure.
 - **Open (follow-up work packages):** TAB-XW-4 `tabrion.plan`
   (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
