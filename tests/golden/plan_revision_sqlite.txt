@@ -1,0 +1,48 @@
+"""Alembic revision written by Tabrion (tabrion.plan.revision_text, TAB-XW-4).
+
+It runs the statements of one reviewed schema change plan, in its order and as they were previewed. Read every
+statement before you run it with Alembic. The plan hash and the source fingerprint below bind it to the
+preview: run it only on a database whose schema still has that fingerprint. Tabrion wrote this text only; it
+never runs a revision. The message is the variable `message`.
+"""
+
+from alembic import op
+import sqlalchemy as sa
+
+revision = 'a1b2c3'
+down_revision = 'f0e1d2'
+branch_labels = None
+depends_on = None
+
+message = 'add qty'
+dialect = 'sqlite'
+plan_hash = 'sha256:06250348d844ced788b4b790ff2482058b2c8ccd9d77ba5f33c762d2ec9364e7'
+source_fingerprint = 'v2:sha256:a24844157194d121545ffb15ece13838012cd30a9350e4f6901b96f1ede7bf45'
+target_fingerprint = 'v2:sha256:40aed88adb871b38a892d9411a298ec35588075c9d4d947001fb2ae4dc08f0ab'
+
+
+def upgrade() -> None:
+    if op.get_context().dialect.name != dialect:
+        raise RuntimeError("this revision was planned for another database engine")
+    # SQLite: a table rebuild or drop deletes the rows of child tables (ON DELETE CASCADE) while foreign keys
+    # are on, and PRAGMA foreign_keys cannot change inside a transaction: refuse to start with them on (set
+    # PRAGMA foreign_keys = OFF before the migration transaction; see the Tabrion migrations guide, 'Why the
+    # foreign keys are off'), and check every reference before the commit.
+    if op.get_bind().exec_driver_sql("PRAGMA foreign_keys").scalar():
+        raise RuntimeError("foreign keys are on: turn them off before the migration transaction begins")
+    # step 0: rebuild_table (data_changing, rebuild)
+    op.execute(sa.text('CREATE TABLE _tabrion_old_parts (\n\tid BLOB, \n\tcode BLOB\n)'))
+    op.execute(sa.text('INSERT INTO _tabrion_old_parts (id, code) SELECT parts.id, parts.code \nFROM parts'))
+    op.execute(sa.text('DROP TABLE parts'))
+    op.execute(sa.text('CREATE TABLE parts (\n\tid INTEGER NOT NULL, \n\tcode TEXT NOT NULL, \n\tPRIMARY KEY (id)\n)'))
+    op.execute(sa.text('INSERT INTO parts (id, code) SELECT _tabrion_old_parts.id, _tabrion_old_parts.code \nFROM _tabrion_old_parts'))
+    op.execute(sa.text('DROP TABLE _tabrion_old_parts'))
+    op.execute(sa.text('CREATE TRIGGER parts_tr AFTER INSERT ON parts BEGIN SELECT 1; END'))
+    # step 1: drop_table (destructive)
+    op.execute(sa.text('DROP TABLE old'))
+    if op.get_bind().exec_driver_sql("PRAGMA foreign_key_check").first() is not None:
+        raise RuntimeError("a foreign key refers to a missing row: the migration is rolled back")
+
+
+def downgrade() -> None:
+    raise NotImplementedError("Tabrion writes no downgrade: plan the reverse change and review it")

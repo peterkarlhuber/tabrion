@@ -65,6 +65,10 @@ EXPECTED: dict[str, set[str]] = {
         "RowCountMismatch",
         # TAB-XW-7 and TAB-XW-9 (CR-DBX), since 0.3, experimental.
         "DatabaseInUse",
+        # TAB-XW-4 (CR-DBX), since 0.3, experimental.
+        "PlanError",
+        "PlanMismatch",
+        "PlanRefused",
     },
     "tabrion.sql": {"split_statements"},
     "tabrion.config": {"safe_url", "url_from_env"},
@@ -166,6 +170,12 @@ EXPECTED: dict[str, set[str]] = {
         "ForeignKeyShape",
         "IndexShape",
         "UniqueShape",
+        # TAB-XW-4 (ADR 0015 D-5), since 0.3, experimental.
+        "FunctionShape",
+        "PolicyShape",
+        "TriggerShape",
+        # review of #89 (P89-02), since 0.3, experimental.
+        "ViewShape",
     },
     # TAB-XW-6 (CR-DBX), since 0.3, experimental.
     "tabrion.rowedit": {"delete_row", "insert_row", "update_row"},
@@ -183,6 +193,8 @@ EXPECTED: dict[str, set[str]] = {
         "drop_table_statement",
         "table_statements",
     },
+    # TAB-XW-4 (CR-DBX), since 0.3, experimental.
+    "tabrion.plan": {"MigrationPlan", "PlanStep", "RiskClass", "migration_markers", "plan", "revision_text"},
     "tabrion.testing": {
         "configure",
         "profiles",
@@ -306,12 +318,12 @@ def test_every_public_function_is_fully_annotated(module_name: str) -> None:
 def test_return_dataclasses_are_frozen_and_slotted() -> None:
     """Contract convention: every result dataclass is ``@dataclass(frozen=True, slots=True)``."""
     import tabrion
-    from tabrion import check, ddl, errors, migrations, postgres, profilefile, schema, sqlite
+    from tabrion import check, ddl, errors, migrations, plan, postgres, profilefile, schema, sqlite
     from tabrion.testing import postgres as testing_postgres
     from tabrion.testing import profiles
 
     modules: list[ModuleType] = [errors, sqlite, postgres, check, migrations, testing_postgres, profiles]
-    modules += [profilefile, schema, ddl]
+    modules += [profilefile, schema, ddl, plan]
     classes = [getattr(m, n) for m in modules for n in m.__all__ if dataclasses.is_dataclass(getattr(m, n))]
     classes += [tabrion.Profile, tabrion.Health, tabrion.Result, tabrion.Column]
     assert len(classes) >= 20

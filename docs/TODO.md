@@ -37,6 +37,8 @@
 > TAB-XW-7 and TAB-XW-9 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw79`): TB-149 stays in progress,
 > TAB-XW-7 done (SQLite `restore`, `delete_database_file`, contract section 3.10) and TAB-XW-9 done (PostgreSQL
 > `create_database`, `drop_database`, `database_sessions`, contract section 4.8); counts unchanged.
+> TAB-XW-4 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw4`): TB-149 stays in progress, TAB-XW-4 done
+> (`tabrion.plan`, contract section 5.13 and I-124; D-5 parts of the schema model, I-111 i); counts unchanged.
 
 ## Summary
 
@@ -616,7 +618,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -723,9 +725,44 @@ required (owner decision of 2026-11-08 11:26Z).
   every such text in the preview before anything runs. (2) A PostgreSQL column type change has no `USING`: a type
   that cannot be cast by assignment fails loudly when the statement runs, never silently; the preview says so, and
   the plan (TAB-XW-4) reports the failure.
-- **Open (follow-up work packages):** TAB-XW-4 `tabrion.plan`
-  (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
-  predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
+- **TAB-XW-4 done** (branch `claude/project-thread-rdo6g3-tabxw4`): `tabrion.plan`. `plan(current, target)` turns
+  two level-2 snapshots into a `MigrationPlan` (numbered `PlanStep`s with the DDL of `tabrion.ddl`, sorted
+  `RiskClass`es, `transactional`), ordered so dependencies hold, bound to both fingerprints by `plan_hash` over the
+  canonical JSON; `from_json` recomputes it (`PlanMismatch("plan.invalid")`; N-2 in the docstring). SQLite rebuild
+  without `RENAME` (holder table with untyped columns, drop, create from the target, copy back, indexes, triggers), so
+  views and referencing tables stay valid; K-1 at plan time (one complete statement, `CREATE TRIGGER <own name>`).
+  `revision_text` (K-3: fixed docstring, `ascii()` literals, revision ids validated, `op.execute(sa.text(...))` with
+  `:` escaped, `autocommit_block` for `CONCURRENTLY`, `downgrade` raises). `migration_markers` reads the catalog.
+  Moved from addendum A.3 into contract section 5.13 (I-124). **D-5 split, recorded in
+  [ADR 0015 section 10](adr/0015-crdbx-write-and-ddl-primitives.md#10-d-5-drift-blind-spots-of-the-level-2-fingerprint-owner-decision-of-2026-11-15):**
+  TAB-XW-4 delivers the fingerprint inputs (triggers, policies, row-level security, directly referenced functions in
+  the level-2 shape; feature markers for partitioning, domain columns, inheritance, rules, foreign tables, unknown
+  relation kinds and properties, event triggers and the SQLite clauses a rebuild would lose; I-111 i) and the
+  refusal at plan time (`PlanRefused`, reason `unsupported_feature`, I-124 e); TAB-XW-5 delivers D-5.4 (locks, then
+  the drift check again in the execution transaction) and K-1 again at execution. Open points for the review:
+  `concurrent_indexes` is a new keyword; `locking` covers every write-blocking lock; `downgrade` always raises;
+  rebuilds are statements, not `batch_alter_table`; views are not recreated and a view naming a dropped column
+  breaks silently; a `TEMP` trigger head is refused; new reason `unsupported_feature` and `UsageError` codes
+  `plan.unsupported_option`, `plan.unsupported_change`, `plan.invalid_target`; `tabrion.plan` uses the private
+  `tabrion.schema._canonical`; SQLite markers block only a rebuild; an Alembic `version_table` under another name is
+  not a marker.
+- **Review of #89 (planning folder `reviews/pr89-tabxw4-review.md`): ACCEPTED WITH CONDITIONS**, fixed on the same
+  branch. **P89-01 (High):** the revision of a SQLite plan with a rebuild or table drop refuses to start while
+  `PRAGMA foreign_keys` is on (a `DROP TABLE` deletes child rows through `ON DELETE CASCADE`, and the pragma cannot
+  change inside a transaction) and ends with `PRAGMA foreign_key_check`; the hazard itself is a test; TAB-XW-5 must
+  enforce the same. **P89-02 (Medium):** SQLite views are in the level-2 snapshot (`ViewShape`); a plan refuses to
+  drop a column or table that a view or trigger text names (reason `dependent_object`) and checks every view after a
+  rebuild or table drop; Studio always passes `server_version`; the PostgreSQL PL/pgSQL gap is a residual risk with
+  a preview warning for Studio (I-124 j). **P89-03 (Medium):** risk classes are checked against each step's
+  operation and statements on every plan, `from_json` included; TAB-XW-5 and Studio re-plan and compare the confirmed
+  hash (I-124 a, addendum A.4). **P89-06 (Low):** `CONCURRENTLY` steps first and last, a comment that
+  `autocommit_block` commits earlier steps; the missing fingerprint check in the revision is a residual risk (the
+  check would need Tabrion inside the user's Alembic project). **P89-07:** exact `str` checks. **P89-04, P89-05
+  (Low):** residual risks in I-124 j and SECURITY.md. **Open for G-S3 (Studio):** the preview shows the PostgreSQL
+  PL/pgSQL residual of P89-02, the revision conditions of P89-06 and the fingerprint gaps of P89-04; plans stay
+  server-side and are planned again before they run (P89-03).
+- **Open (follow-up work packages):** TAB-XW-5 `execute_plan`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
+  predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`;
   TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
   its names to `surface.json` (`since` 0.3, `X`).
 - **Security review of #76 (planning folder `reviews/pr76-tabxw1-review.md`): ACCEPTED WITH CONDITIONS.** The

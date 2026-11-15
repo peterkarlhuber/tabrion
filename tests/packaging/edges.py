@@ -61,6 +61,7 @@ EDGES: dict[str, Edge] = {
             "tabrion:Result",
             "tabrion.schema",
             "tabrion.ddl",
+            "tabrion.plan",
         ),
         hint='pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@',
         probe=("postgres/roles.py", "import sqlalchemy"),

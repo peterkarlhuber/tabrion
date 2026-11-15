@@ -82,6 +82,19 @@ Accepted residual risks (documented, not vulnerabilities):
   the host's own included, and `close()` does not undo them; a read-only profile is refused there (contract I-37).
 - `tabrion.migrations.status` never runs `env.py`, but Alembic imports every revision file of the script directory,
   so module-level code in a revision file runs: point it only at a trusted script directory (contract I-57).
+- Schema change plans (`tabrion.plan`, 0.3, experimental; contract I-124 j, review of #89):
+  - the level-2 fingerprint does not cover the owner or `EXECUTE` privileges of a function (relevant with
+    `SECURITY DEFINER`), the owner of a table (who bypasses row-level security that is not forced), table and column
+    privileges, publication membership, extended statistics, column storage and statistics settings, comments,
+    PostgreSQL views, nested function calls and the bodies of functions a default or check calls (P89-04): drift
+    in these is not caught by the fingerprint binding;
+  - a PL/pgSQL function body that names a dropped column or table breaks at run time without an error at the drop
+    (P89-02); show it in the preview of every drop and type change;
+  - a SQLite rebuild gives the rows of a table without an `INTEGER PRIMARY KEY` new `rowid` values (P89-05);
+  - a generated Alembic revision does not check the source fingerprint, and a `CONCURRENTLY` step commits the
+    steps before it (P89-06): apply a revision only to the database it was planned for;
+  - `MigrationPlan.from_json` proves integrity, not authenticity (N-2): keep plans server-side, plan again before
+    running one and compare the hash the user confirmed (P89-03).
 - Layer-B timeouts bound the database's work, not every wait: a SQLite lock wait is bounded by the busy timeout, a
   wait for a pool connection by `pool_timeout`, a network that stops answering by the connection's TCP settings
   (contract I-40, I-44; TODO TB-056).
