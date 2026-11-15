@@ -1150,7 +1150,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-150 · `grant_runtime_role` accepted a member of a predefined role such as `pg_write_all_data`
 
-- **Priority:** P2 Medium · **Status:** Done ([#77](https://github.com/peterkarlhuber/tabrion/pull/77); items 2 and 3 in the follow-up, D-125, D-126; item 4 is the consumers') · **Refs:** TABRION TAB-031, TAB-016,
+- **Priority:** P2 Medium · **Status:** Done ([#77](https://github.com/peterkarlhuber/tabrion/pull/77); items 2 and 3 in [#81](https://github.com/peterkarlhuber/tabrion/pull/81), D-125..D-127; item 4 is the consumers') · **Refs:** TABRION TAB-031, TAB-016,
   contract I-20, I-35, ADR 0015 D-2, TB-036; consumers: axentra #87, nodestro-runtime #169 (RT-079)
 - **What:** `grant_runtime_role` revokes writes on `protected_tables` from the runtime role, but a member of
   `pg_write_all_data` (PostgreSQL 14+) keeps `INSERT, UPDATE, DELETE` on every table through the predefined role, so
@@ -1168,9 +1168,13 @@ required (owner decision of 2026-11-08 11:26Z).
   and `has_any_column_privilege(..., 'INSERT, UPDATE')` on each existing protected table for the role and every role
   it is a member of (`PUBLIC` included) and refuses a hit with the new reason `protected_writable` (rollback, nothing
   granted); tests `tests/postgres/test_grants.py::test_tb150_a_protected_table_writable_*`,
-  `::test_tb150_a_write_path_granted_during_the_transaction_rolls_it_back` and mutation probes. (4) left to the
-  consumers: Axentra and Nodestro may drop their local `pg_write_all_data` and `has_table_privilege` re-checks once
-  they pin a Tabrion with this fix, and should map `protected_writable`.
+  `::test_tb150_a_write_path_granted_during_the_transaction_rolls_it_back` and mutation probes. Review of #81: the
+  `REVOKE` and the check cover `TRIGGER` and the partitions and inheritance children of each protected table (F-2,
+  F-4); before PostgreSQL 16 a role that has or can reach `CREATEROLE` is refused with `createrole` (F-1, D-127); a
+  protected table created after the grant needs a re-run of the grant, documented in I-35 and the guide (F-3; by
+  design, not open work). (4) left to the consumers: Axentra and Nodestro may drop their local `pg_write_all_data`
+  and `has_table_privilege` re-checks once they pin a Tabrion with this fix, and should map `protected_writable` and
+  `createrole`.
 
 ### TB-037 · Review follow-ups L-1 and I-3 of TAB-015/TAB-016
 

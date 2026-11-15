@@ -88,7 +88,8 @@ On PostgreSQL, what is wrong depends on who connects. The default `expect="runti
 application's runtime role should have none of them. `expect="owner"` drops them, for the role that runs migrations;
 `expect="any"` reports them as `info`. TAB-PG-001, TAB-PG-002 and TAB-PG-013 are reported whatever you expect.
 Memberships count however the role reaches them (through other roles, NOINHERIT or `SET`-only), for `current_user`
-and `session_user`; a superuser gets only TAB-PG-001. An invalid value raises `ValueError`:
+and `session_user`; a superuser gets only TAB-PG-001. On managed PostgreSQL 15 or older the migration user often
+has `CREATEROLE`, so expect TAB-PG-013 there even with `expect="owner"`. An invalid value raises `ValueError`:
 
 ```pycon
 >>> check(raw, expect="admin")

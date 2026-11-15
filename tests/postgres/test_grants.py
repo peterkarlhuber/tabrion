@@ -1056,7 +1056,7 @@ def _writable_refused(admin: Any, conn: Any, fixture: Fixture) -> None:
     _nothing_granted(admin, fixture, target)
 
 
-@pytest.mark.parametrize("privilege", ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "UPDATE (version)"])
+@pytest.mark.parametrize("privilege", ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "TRIGGER", "UPDATE (version)"])
 def test_tb150_a_protected_table_writable_by_public_is_refused(
     admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture], privilege: str
 ) -> None:
@@ -1142,3 +1142,123 @@ def test_tb150_unprotected_tables_and_plain_reads_stay_allowed(
         (fixture.runtime.name, f"{_quoted(fixture.schema)}.nodestro_schema_migrations"),
     ).fetchone()
     assert writable == (False,)
+
+
+# --- Review F-2 of #81: partitions and inheritance children of a protected table ----------------------------------
+
+CHILD = "CREATE TABLE axentra_child (note text) INHERITS (axentra_schema_migrations)"
+TREE_PROTECTED = ("events", "axentra_schema_migrations")
+WRITE = "INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER"
+
+
+def test_tb150_partitions_and_children_of_a_protected_table_are_revoked(
+    admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture]
+) -> None:
+    """The REVOKE covers a protected table's partitions and inheritance children (a write there shows through the
+    parent); other tables keep their grants."""
+    fixture = make_fixture((*FIXTURE_OBJECTS, CHILD))
+    grant_runtime_role(owner_connection(connect, fixture), fixture.runtime.name, protected_tables=TREE_PROTECTED)
+    for table, writable in (("events_2026", False), ("axentra_child", False), ("events", False), ("plain", True)):
+        held = admin.execute(
+            "SELECT has_table_privilege(%s, %s::regclass, %s)",
+            (fixture.runtime.name, f"{_quoted(fixture.schema)}.{_quoted(table)}", WRITE),
+        ).fetchone()
+        assert held == (writable,), table
+
+
+@pytest.mark.parametrize("table", ["events_2026", "axentra_child"])
+def test_tb150_a_writable_partition_or_child_is_refused(
+    admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture], table: str
+) -> None:
+    """A write grant to PUBLIC on a partition or an inheritance child of a protected table is refused."""
+    fixture = make_fixture((*FIXTURE_OBJECTS, CHILD))
+    admin.execute(sql.SQL("GRANT INSERT ON {} TO PUBLIC").format(sql.Identifier(fixture.schema, table)))
+    target = fixture.runtime.name
+    with pytest.raises(RoleUnsafe) as info:
+        grant_runtime_role(owner_connection(connect, fixture), target, protected_tables=TREE_PROTECTED)
+    assert info.value.details == {"reasons": "protected_writable"}
+    _nothing_granted(admin, fixture, target)
+
+
+# --- Review F-1 of #81 (D-127): CREATEROLE before PostgreSQL 16 ------------------------------------------------------
+
+
+@pytest.fixture
+def old_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CREATEROLE rule as on PostgreSQL 15 or older (the CI servers are 16+): the version cut-off is raised."""
+    from tabrion.postgres import roles
+
+    monkeypatch.setattr(roles, "_CREATEROLE_SAFE_VERSION", 10_000_000)
+
+
+@pytest.mark.parametrize("how", ["direct", "noinherit_via_nologin"])
+def test_d127_createrole_before_16_is_refused(
+    admin: Any,
+    connect: Callable[..., Any],
+    make_fixture: Callable[..., Fixture],
+    nologin_role: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+    old_server: None,
+    how: str,
+) -> None:
+    """Before 16 a CREATEROLE role (also one reached with SET ROLE, I-20) can grant itself pg_write_all_data or the
+    owner role after the grant, so the REVOKE would not hold: refused with ``createrole``, nothing granted."""
+    fixture = make_fixture()
+    target = sql.Identifier(fixture.runtime.name)
+    if how == "direct":
+        admin.execute(sql.SQL("ALTER ROLE {} CREATEROLE").format(target))
+    else:
+        holder = nologin_role("CREATEROLE")
+        admin.execute(sql.SQL("ALTER ROLE {} NOINHERIT").format(target))
+        admin.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(holder), target))
+    from tabrion.postgres import roles
+
+    def not_reached(cursor: Any, role: str) -> None:
+        raise AssertionError("refused only in the grant transaction, not by the pre-check")
+
+    monkeypatch.setattr(roles, "_refuse_createrole", not_reached)  # the pre-check refuses before the transaction
+    conn = owner_connection(connect, fixture)
+    with pytest.raises(RoleUnsafe) as info:
+        roles.grant_runtime_role(conn, fixture.runtime.name, protected_tables=NODESTRO_PROTECTED)
+    assert info.value.details == {"reasons": "createrole"}
+    assert conn.info.transaction_status == IDLE
+    _nothing_granted(admin, fixture, fixture.runtime.name)
+
+
+def test_d127_createrole_granted_during_the_transaction_rolls_it_back(
+    admin: Any,
+    connect: Callable[..., Any],
+    make_fixture: Callable[..., Fixture],
+    monkeypatch: pytest.MonkeyPatch,
+    old_server: None,
+) -> None:
+    """CREATEROLE given (and committed) while the grant transaction runs is found by the read after the last
+    statement; the transaction rolls back."""
+    from tabrion.postgres import roles
+
+    fixture = make_fixture()
+    target = fixture.runtime.name
+    statements = roles._GRANTS
+
+    class GrantMidway:
+        def __iter__(self) -> Iterator[str]:
+            yield from statements
+            admin.execute(sql.SQL("ALTER ROLE {} CREATEROLE").format(sql.Identifier(target)))
+
+    monkeypatch.setattr(roles, "_GRANTS", GrantMidway())
+    with pytest.raises(RoleUnsafe) as info:
+        roles.grant_runtime_role(owner_connection(connect, fixture), target, protected_tables=NODESTRO_PROTECTED)
+    assert info.value.details == {"reasons": "createrole"}
+    _nothing_granted(admin, fixture, target)
+
+
+def test_d127_createrole_on_16_is_not_refused(
+    admin: Any, connect: Callable[..., Any], make_fixture: Callable[..., Fixture]
+) -> None:
+    """On PostgreSQL 16+ CREATEROLE reaches only roles it holds ADMIN on, so it is not a reason (real server)."""
+    fixture = make_fixture()
+    conn = owner_connection(connect, fixture)
+    assert conn.info.server_version >= 160000
+    admin.execute(sql.SQL("ALTER ROLE {} CREATEROLE").format(sql.Identifier(fixture.runtime.name)))
+    report = grant_runtime_role(conn, fixture.runtime.name, protected_tables=NODESTRO_PROTECTED)
+    assert report.restricted and report.broad == ()

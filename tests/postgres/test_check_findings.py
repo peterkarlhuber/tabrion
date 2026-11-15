@@ -323,6 +323,28 @@ def test_k31_createrole_before_16(
     assert "TAB-PG-013" not in codes(check(connection))
 
 
+def test_k31_createrole_of_the_session_user_after_set_role(
+    connect: Callable[..., Any], runtime: Role, schema: str, admin: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F-6 of #81: after ``SET ROLE`` to a plain role, ``current_user`` reaches no CREATEROLE role, but the
+    session user (a member of one) may ``RESET ROLE``; before 16 that is TAB-PG-013 (I-20)."""
+    holder, plain = new_name(), new_name()
+    admin.execute(f'CREATE ROLE "{holder}" NOLOGIN CREATEROLE')
+    admin.execute(f'CREATE ROLE "{plain}" NOLOGIN')
+    admin.execute(f'GRANT "{holder}" TO "{runtime.name}"')
+    admin.execute(f'GRANT "{plain}" TO "{runtime.name}"')
+    try:
+        connection = open_as(connect, runtime.url, schema, autocommit=True)
+        connection.execute(f'SET ROLE "{plain}"')
+        patched(monkeypatch, server_version=150007)
+        finding = only(check(connection), "TAB-PG-013")
+        assert "CREATEROLE on PostgreSQL 15" in finding.detail
+        connection.close()
+    finally:
+        admin.execute(f'DROP ROLE "{holder}"')
+        admin.execute(f'DROP ROLE "{plain}"')
+
+
 @pytest.mark.parametrize("predefined", ["pg_write_all_data", "pg_read_all_data", "pg_monitor", "pg_signal_backend"])
 def test_k32_other_predefined_role(
     connect: Callable[..., Any], runtime: Role, schema: str, admin: Any, predefined: str

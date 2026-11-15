@@ -309,16 +309,52 @@ def _refuse_predefined(cursor: psycopg.Cursor[tuple[Any, ...]], role: str) -> No
         raise RoleUnsafe("postgres.role_unsafe", details={"reasons": "predefined_role"})
 
 
-# TB-150 item 3 (D-125): after the REVOKE, a write privilege on a protected table may still come from PUBLIC, from a
-# grant by another grantor, or from a role ``role`` is a member of ('MEMBER': INHERIT, NOINHERIT and SET-only alike,
-# as I-20; ``role`` itself and PUBLIC through every role are included). Column grants count (has_any_column_privilege).
-# Read inside the grant transaction, so a hit rolls everything back. A fixed statement; values are bound parameters.
+# D-127 (review F-1 of #81): before PostgreSQL 16 a CREATEROLE role can grant itself any non-superuser role
+# (pg_write_all_data, the owner role), so the REVOKE on protected_tables would not hold. 'MEMBER' as I-20.
+_CREATEROLE_SAFE_VERSION = 160_000
+_CREATEROLE_SQL = (
+    "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles r, pg_catalog.pg_roles c"
+    " WHERE r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
+    " AND c.rolcreaterole AND pg_catalog.pg_has_role(r.oid, c.oid, 'MEMBER'))"
+)
+
+
+def _createrole_reachable(cursor: psycopg.Cursor[tuple[Any, ...]], role: str) -> bool:
+    cursor.execute(_CREATEROLE_SQL, (role,))
+    return bool(one_row(cursor)[0])
+
+
+def _refuse_createrole(cursor: psycopg.Cursor[tuple[Any, ...]], role: str) -> None:
+    if _createrole_reachable(cursor, role):
+        raise RoleUnsafe("postgres.role_unsafe", details={"reasons": "createrole"})
+
+
+_REVOKE = "REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER ON {} FROM {}"
+"""TRIGGER too (review F-4 of #81): a trigger on the bookkeeping runs as the owner whenever the owner writes it."""
+
+# A protected table with its partitions and inheritance children at any depth (review F-2 of #81): a write to a
+# child shows through the parent. Each row: oid, schema, name. A fixed statement; the oid is a bound parameter.
+_TREE_SQL = (
+    "WITH RECURSIVE tree(oid) AS (SELECT %s::pg_catalog.oid"
+    " UNION SELECT i.inhrelid FROM pg_catalog.pg_inherits i JOIN tree"
+    " ON i.inhparent OPERATOR(pg_catalog.=) tree.oid)"
+    " SELECT c.oid, n.nspname::pg_catalog.text, c.relname::pg_catalog.text"
+    " FROM tree JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) tree.oid"
+    " JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace"
+    " ORDER BY c.oid"
+)
+
+# TB-150 item 3 (D-125): after the REVOKE, a write privilege on a protected table (or a partition or child of one)
+# may still come from PUBLIC, from a grant by another grantor, or from a role ``role`` is a member of ('MEMBER':
+# INHERIT, NOINHERIT and SET-only alike, as I-20; ``role`` itself and PUBLIC through every role are included). Column
+# grants count (has_any_column_privilege), and TRIGGER (review F-4 of #81). Read inside the grant transaction, so a
+# hit rolls everything back. A fixed statement; values are bound parameters.
 _PROTECTED_WRITABLE_SQL = (
     "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles r, pg_catalog.pg_roles m,"
     " pg_catalog.unnest(%s::pg_catalog.oid[]) AS t(oid)"
     " WHERE r.rolname::pg_catalog.text OPERATOR(pg_catalog.=) %s::pg_catalog.text"
     " AND pg_catalog.pg_has_role(r.oid, m.oid, 'MEMBER')"
-    " AND (pg_catalog.has_table_privilege(m.oid, t.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')"
+    " AND (pg_catalog.has_table_privilege(m.oid, t.oid, 'INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER')"
     "   OR pg_catalog.has_any_column_privilege(m.oid, t.oid, 'INSERT, UPDATE')))"
 )
 
@@ -345,10 +381,11 @@ def grant_runtime_role(
     (``roles.py:107-190``) and Nodestro's (``storage_postgres.py:888-944``): ``USAGE`` on the schema, ``SELECT,
     INSERT, UPDATE, DELETE`` on every table, ``USAGE, SELECT`` on every sequence and ``EXECUTE`` on every function of
     the schema, the same as the connecting role's default privileges in the schema, and ``REVOKE INSERT, UPDATE,
-    DELETE, TRUNCATE`` on each of ``protected_tables`` that exists in the schema (the migration bookkeeping stays
-    read-only for the runtime role). Then ``GRANT CONNECT ON DATABASE`` in a transaction of its own when
-    ``grant_connect`` holds and the role may not connect yet; an owner without the right to grant it leaves
-    ``connect=False`` in the result. Returns a fresh :func:`inspect_role`.
+    DELETE, TRUNCATE, TRIGGER`` on each of ``protected_tables`` that exists in the schema and on its partitions and
+    inheritance children (the migration bookkeeping stays read-only for the runtime role). A protected table created
+    later gets the default privileges (write access): run the function again after such a migration. Then ``GRANT
+    CONNECT ON DATABASE`` in a transaction of its own when ``grant_connect`` holds and the role may not connect yet;
+    an owner without the right to grant it leaves ``connect=False`` in the result. Returns a fresh :func:`inspect_role`.
 
     Refused before anything is granted (``RoleUnsafe``, details ``reasons``): ``table_owner`` when ``role`` is the
     connecting role or can become it (``SET ROLE``, contract I-20), owns the schema or can become its owner, or owns
@@ -359,7 +396,9 @@ def grant_runtime_role(
     and after the last statement, so a membership granted in between rolls everything back. ``protected_writable``
     when, after the ``REVOKE`` and in the same transaction, ``role`` or a role it is a member of (also NOINHERIT),
     or ``PUBLIC``, may still ``INSERT``, ``UPDATE`` (also a column), ``DELETE`` or ``TRUNCATE`` one of
-    ``protected_tables`` (TB-150, D-125): the transaction rolls back and nothing is granted. ``RoleMissing`` for an
+    ``protected_tables`` (TB-150, D-125): the transaction rolls back and nothing is granted. ``createrole`` on a
+    server before PostgreSQL 16 when ``role`` is or can become a ``CREATEROLE`` role (it could grant itself any
+    non-superuser role; D-127), also read in the grant transaction. ``RoleMissing`` for an
     unknown role,
     ``UsageError("postgres.schema_missing")`` for a schema that does not exist. Needs a transaction of its own:
     ``UsageError("postgres.nested_transaction")`` while the caller's transaction runs (contract T-NOTX, I-35).
@@ -395,6 +434,8 @@ def grant_runtime_role(
             (before.schema, role),
         )
         row = cursor.fetchone()
+        old_server = connection.info.server_version < _CREATEROLE_SAFE_VERSION
+        createrole = old_server and _createrole_reachable(cursor, role)
     if row is None:
         raise RoleMissing("postgres.role_missing")  # dropped since inspect_role
     if not row[1]:
@@ -408,6 +449,8 @@ def grant_runtime_role(
             # Any predefined role (ADR 0015 D-2); pg_write_all_data writes every table, so the REVOKE on
             # protected_tables would not hold (TB-150).
             ("predefined_role", bool(before.broad)),
+            # Before PostgreSQL 16 only: CREATEROLE grants itself any non-superuser role (D-127).
+            ("createrole", createrole),
         )
         if flag
     ]
@@ -419,6 +462,8 @@ def grant_runtime_role(
         # The membership may have been granted since the check above (review F-3 of #77): read it again in the grant
         # transaction, before the first statement and after the last; a hit rolls everything back.
         _refuse_predefined(cursor, role)
+        if old_server:
+            _refuse_createrole(cursor, role)
         for statement in _GRANTS:
             cursor.execute(sql.SQL(statement).format(schema=namespace, role=target))
         revoked: list[int] = []
@@ -433,13 +478,15 @@ def grant_runtime_role(
             )
             found = cursor.fetchone()
             if found is not None:
-                cursor.execute(
-                    sql.SQL("REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON {}.{} FROM {}").format(
-                        namespace, sql.Identifier(table), target
-                    )
-                )
-                revoked.append(int(found[0]))
+                # The table, its partitions and its inheritance children (review F-2 of #81).
+                cursor.execute(_TREE_SQL, (found[0],))
+                for oid, relation_schema, relation in cursor.fetchall():
+                    if int(oid) not in revoked:
+                        cursor.execute(sql.SQL(_REVOKE).format(sql.Identifier(relation_schema, relation), target))
+                        revoked.append(int(oid))
         _refuse_predefined(cursor, role)
+        if old_server:
+            _refuse_createrole(cursor, role)
         # TB-150 item 3: the REVOKE removes only the role's own grants; PUBLIC or another role may still write.
         _refuse_protected_writable(cursor, role, revoked)
     if grant_connect and not before.connect:

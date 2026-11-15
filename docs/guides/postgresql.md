@@ -148,11 +148,15 @@ row-level security.
 DML rights on a schema, now and for future objects, and revokes writes on bookkeeping tables. It refuses (and grants
 nothing) when the role is the owner, a superuser, has `BYPASSRLS`, owns tables, or is a member of any predefined
 `pg_*` role (`details["reasons"]` `predefined_role`; `pg_write_all_data`, for one, writes every table and so the
-bookkeeping tables despite the revoke). `inspect_role(...).broad` names those memberships as `"broad:<role>"`. After
-the revoke it checks, in the same transaction, that nothing else still lets the role write a protected table (a
-grant to `PUBLIC`, to a role it inherits or can `SET ROLE` to, or a column grant); if something does, it rolls back
-and raises `RoleUnsafe` with `protected_writable`. It needs a transaction of its own, so it refuses to run inside
-yours.
+bookkeeping tables despite the revoke). `inspect_role(...).broad` names those memberships as `"broad:<role>"`. The
+revoke (`INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER`) also covers the partitions and inheritance children of each
+protected table. After the revoke it checks, in the same transaction, that the role holds none of those privileges
+(or a column `INSERT`/`UPDATE`) on them through another path (a grant to `PUBLIC`, to a role it inherits or can
+`SET ROLE` to); if it does, it rolls back and raises `RoleUnsafe` with `protected_writable`. On a server before
+PostgreSQL 16 it also refuses a role that has, or can become a role with, `CREATEROLE` (`createrole`). A protected
+table that does not exist yet is skipped, and a later migration that creates it gives the runtime role write access
+through the default privileges: run `grant_runtime_role` again after such a migration. It needs a transaction of
+its own, so it refuses to run inside yours.
 
 `role_info` and `check_role` do not look at predefined roles or `CREATEROLE`; `tabrion.check` does (TAB-PG-013 and
 TAB-PG-014, [Diagnosis](check.md)).

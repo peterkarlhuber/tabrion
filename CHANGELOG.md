@@ -86,16 +86,20 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   - Consumers that compare `reasons` exactly, or map each value to a text of their own, should handle
     `predefined_role` before they pin a Tabrion with this fix. Axentra's `_refusal` gives an empty phrase for an
     unknown value. Axentra (#87) and Nodestro (#169) already refuse `pg_write_all_data` themselves.
-- `tabrion.postgres.grant_runtime_role` checks, after the `REVOKE` and inside the grant transaction, that the runtime
-  role cannot still write a protected table: `has_table_privilege(..., 'INSERT, UPDATE, DELETE, TRUNCATE')` or
-  `has_any_column_privilege(..., 'INSERT, UPDATE')` for the role and every role it is a member of (NOINHERIT and
-  `SET`-only too), which covers grants to `PUBLIC`, to an inherited or `SET ROLE`-reachable role, column grants,
-  grants by another grantor and a membership committed concurrently before the check. A hit rolls the transaction back
-  (nothing granted) and raises `RoleUnsafe` with the new reason `protected_writable` (TB-150 item 3, contract I-35,
-  decision D-125). Before, the function returned normally and the bookkeeping tables stayed writable through that
-  path. **Behavior change:** a deploy that relied on such a grant is now refused; consumers that map `reasons`
-  values should handle `protected_writable`. Axentra's `_writable_protected_tables` and Nodestro's own re-check stay
-  valid.
+- `tabrion.postgres.grant_runtime_role` revokes `INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER` on each existing
+  protected table and on its partitions and inheritance children (before: the named table only, without `TRIGGER`).
+  After the `REVOKE`, inside the grant transaction, it checks `has_table_privilege(..., 'INSERT, UPDATE, DELETE,
+  TRUNCATE, TRIGGER')` and `has_any_column_privilege(..., 'INSERT, UPDATE')` on those tables for the role and every
+  role it is a member of (NOINHERIT and `SET`-only too). That covers grants to `PUBLIC`, to an inherited or `SET
+  ROLE`-reachable role, column grants, grants by another grantor and a membership committed concurrently before the
+  check. A hit rolls the transaction back (nothing granted) and raises `RoleUnsafe` with the new reason
+  `protected_writable` (TB-150 item 3, contract I-35, decision D-125). On a server before PostgreSQL 16 it also
+  refuses a role that has, or can become a role with, `CREATEROLE` (new reason `createrole`, D-127), read before the
+  grants and again in the grant transaction. Not covered: a protected table created after the grant gets the default
+  privileges; run the function again after such a migration (contract I-35). **Behavior change:** a deploy that
+  relied on such a grant (or, before 16, on a runtime role with `CREATEROLE`) is now refused; consumers that map
+  `reasons` values should handle `protected_writable` and `createrole`. Axentra's `_writable_protected_tables` and
+  Nodestro's own re-check stay valid.
 - `tabrion.check` reports two new PostgreSQL codes (TB-036, decision D-126, an addendum to specification section 9;
   no API change): **TAB-PG-013** (`error`, whatever `expect`) when `current_user` or `session_user` can reach
   `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files` (superuser-equivalent), or has
