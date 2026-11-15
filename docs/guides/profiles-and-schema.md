@@ -110,3 +110,35 @@ An added table or column and a new column order (`column_order`) are not breakin
 missing table or column, a changed type or nullability and a changed primary key are. Views are left out. The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy
 upgrade can change a fingerprint without a schema change; `compare` then names the column, and the consumer records
 the new fingerprint.
+
+### Level 2: constraints, indexes and defaults (0.3, experimental)
+
+`snapshot(..., level=2)` also reads column defaults, foreign keys, unique and check constraints and indexes (contract
+I-111). Its fingerprint starts with `v2:`; level 1 stays the default, and a stored `v1:` fingerprint keeps its value.
+Each new difference names the constraint or index; only an added index is not breaking.
+
+```pycon
+>>> from tabrion import Database, schema
+>>> db = Database.from_url("sqlite:///shop.db")
+>>> db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, sku TEXT NOT NULL UNIQUE, price INTEGER DEFAULT 0)")
+0
+>>> with db.inspector() as inspector:
+...     released = schema.snapshot(inspector, level=2)
+>>> schema.fingerprint(released).startswith("v2:sha256:")
+True
+>>> [u.columns for u in released.table("main.items").unique_constraints]
+[('sku',)]
+>>> db.execute("CREATE INDEX items_price ON items (price)")
+0
+>>> with db.inspector() as inspector:
+...     now = schema.snapshot(inspector, level=2)
+>>> [(str(d), d.breaking) for d in schema.compare(released, now)]
+[('index_added: main.items.price (items_price)', False)]
+>>> db.close()
+```
+
+A level-2 snapshot is also the target model of the Schema Designer: a consumer edits it with `dataclasses.replace`
+and stores it with `to_json`. Partial index predicates, the order and collation of index elements, PostgreSQL
+`INCLUDE`, `NULLS NOT DISTINCT`, operator classes and exclusion constraints, `DEFERRABLE` and `NOT VALID` are part of
+the shape. Triggers, policies, domain checks, partitioning and identity or generated column detail are not (I-111 d):
+a change of only these leaves a `v2:` fingerprint as it was.

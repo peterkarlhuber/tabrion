@@ -157,6 +157,10 @@ def test_cr1_plain_password_is_refused_and_never_repeated(password: str) -> None
             'engine = "sqlite"\npath = "a"\nschema_fingerprint = "sha256:abc"',
             [("profile[0].schema_fingerprint", "profilefile.value")],
         ),
+        (
+            f'engine = "sqlite"\npath = "a"\nschema_fingerprint = "v3:sha256:{"a" * 64}"',
+            [("profile[0].schema_fingerprint", "profilefile.value")],
+        ),
         ('engine = "sqlite"\npath = "a"\npassword = "env:1BAD"', [("profile[0].password", "profilefile.value")]),
         ('engine = "sqlite"\npath = "a"\npassword = "keyring:svc"', [("profile[0].password", "profilefile.value")]),
         ('engine = "sqlite"\npath = "a"\npassword = "file:"', [("profile[0].password", "profilefile.value")]),
@@ -378,3 +382,14 @@ def test_cr1_deep_nesting_is_a_syntax_issue() -> None:
 
 def test_cr1_type_of_input() -> None:
     assert _issues(42) == [("", "profilefile.type")]  # type: ignore[arg-type]
+
+
+def test_schema_fingerprint_accepts_v2() -> None:
+    # TAB-XW-2 (addendum A.1): a level-2 fingerprint of tabrion.schema is accepted as well as a v1 one.
+    text = (
+        'version = 1\n[[profile]]\nname = "p"\nengine = "sqlite"\npath = "a"\n'
+        f'schema_fingerprint = "v2:sha256:{"b" * 64}"\n'
+    )
+    (profile,) = pf.parse(text).profiles
+    assert profile.schema_fingerprint == "v2:sha256:" + "b" * 64
+    assert pf.parse(pf.dump([profile])).profiles == (profile,)

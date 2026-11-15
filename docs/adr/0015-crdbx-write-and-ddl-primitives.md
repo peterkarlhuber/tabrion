@@ -1,6 +1,6 @@
 # ADR 0015: Tabrion 0.3 write and DDL primitives: SQLAlchemy and Alembic, revision text only, plan binding and guards
 
-- **Status:** Accepted (2026-11-14, TABRION TAB-XW-1), with the conditions K-1..K-3, the decisions D-1..D-4 and the
+- **Status:** Accepted (2026-11-14, TABRION TAB-XW-1), with the conditions K-1..K-3, the decisions D-1..D-4 (and D-5 of 2026-11-15, section 10) and the
   notes N-1..N-5 of the security review of #76 (planning folder `reviews/pr76-tabxw1-review.md`, ACCEPTED WITH
   CONDITIONS) written in as requirements (section 9). The content was decided by the owner on change request CR-DBX
   (2026-11-13 23:35Z: E-X3..E-X13 as recommended, with the binding refinements of E-X4, E-X5, E-X6 and E-X9 in
@@ -206,6 +206,26 @@ repeats each requirement at its function.
 | **N-3** | Reachability counts the ADMIN option on a dangerous role | TAB-XW-8 | `tests/postgres/test_role_ddl.py::test_admin_option_on_dangerous_role_counts_as_reachable` |
 | **N-4** | `delete_database_file` works through a directory file descriptor with `O_NOFOLLOW` and compares device and inode of the checked file before the unlink; side files that are links are only unlinked, never followed | TAB-XW-7 | `tests/unit/test_sqlite_delete.py::test_swap_between_check_and_unlink_refused`, `::test_side_file_symlink_unlinked_not_followed` |
 | **N-5** | `IS NOT DISTINCT FROM` on floating-point, JSON or collation-dependent columns may give false conflicts (safe side: no write); documented in the guide | TAB-XW-6 | `tests/unit/test_rowedit.py::test_float_and_json_old_values_may_conflict` |
+
+### 10. D-5: drift blind spots of the level-2 fingerprint (owner decision of 2026-11-15)
+
+The review of #85 (planning folder `reviews/pr85-tabxw2-review.md`, F2) found schema features that the `v2:`
+fingerprint of `tabrion.schema` does not see ([contract I-111 d](../api/contract.md#510-schema-fingerprint-tabrionschema-since-02-experimental-extra-sqlalchemy-tab-cr-2)),
+so a plan bound to a fingerprint (section 4) would not notice them changing. The owner decided how to close them on
+2026-11-15 at 06:37Z (confirmed 06:38Z). The decision is binding for TAB-XW-3..TAB-XW-5; TAB-XW-2 (#85) only records
+it. **G-S3 stays locked** until the implementation is in place, independently reviewed and tested.
+
+| ID | Decision | WP |
+|---|---|---|
+| **D-5.1** | **Triggers and row-level security policies** go into the level-2 fingerprint, together with the functions they reference directly (the function body). Calls nested inside those functions are not followed; that is a documented residual risk. A table whose trigger or policy function is written in C or in a language Tabrion does not know is refused. As long as a table's triggers and policies cannot be checked reliably, schema changes on that table are refused | TAB-XW-3..TAB-XW-5 |
+| **D-5.2** | **Domain `CHECK` constraints and partitioning** are detected; schema changes on affected tables are refused with a clear explanation | TAB-XW-4, TAB-XW-5 |
+| **D-5.3** | **Unknown PostgreSQL features fail closed:** an allowlist of known relation kinds and features; anything else is refused, for example table inheritance, rules, foreign tables and event triggers | TAB-XW-4, TAB-XW-5 |
+| **D-5.4** | **Drift check right before execution**, repeated in the execution transaction after the affected tables are locked under `lock_timeout` (section 4, N-1). Functions cannot be locked; a function changed between the check and a step is a documented residual risk | TAB-XW-5 |
+| **D-5.5** | **Data Editor (G-S2):** a table with triggers gets a notice in Studio, not a block | Studio (STU-026, STU-XDE) |
+
+Residual risks, to be repeated in the contract and the guides when TAB-XW-3..TAB-XW-5 implement D-5: functions called
+from a trigger or policy function are not in the fingerprint, and a function can change after the drift check because
+it cannot be locked.
 
 ## Rationale
 

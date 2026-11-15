@@ -30,6 +30,8 @@
 > 0.3 switch 2026-11-14 (branch `claude/project-thread-rdo6g3-tab03dev`): master builds as `0.3.0.dev0`, the TAB-XW-6
 > names are public (Studio STU-026 needs them), the `staged` keys are gone; the 0.2.x base is `5bc690e` (`v0.2.2` final). TB-149 stays
 > in progress, TB-013 records the base; counts unchanged.
+> TAB-XW-2 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw2`): TB-149 stays in progress, TAB-XW-2 done
+> (`tabrion.schema` v2, contract section 5.10 and I-111); TB-015 notes the extension; counts unchanged.
 
 ## Summary
 
@@ -572,6 +574,9 @@ required (owner decision of 2026-11-08 11:26Z).
   `tests/postgres/test_schema_postgres.py`. Review of #64, L-4: views are left out, `compare` names a new column
   order (`column_order`), `from_json` refuses deep nesting and a `primary_key` that is not a list.
 - **Next step (consumer):** Nodestro NOD-CR-5 stores the fingerprint and the snapshot JSON with a release.
+- **0.3 (CR-DBX TAB-XW-2, TB-149):** level 2 (`snapshot(level=2)`: defaults, foreign keys, unique and check
+  constraints, indexes; `v2:` fingerprint) is opt-in; level 1 and its `v1:` fingerprints are unchanged (ADR 0015 D-4,
+  golden `tests/golden/schema_v1.json`), so a stored NOD-CR-5 fingerprint stays valid.
 
 ### TB-148 · Profile file follow-ups from the review of #64 (TABRION TAB-CR-1)
 
@@ -606,7 +611,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -632,7 +637,33 @@ required (owner decision of 2026-11-08 11:26Z).
   `reviews/pr78-tabxw6-review.md`, ACCEPTED) folded in: L-1 an empty `old` is refused (`rowedit.old_required`),
   I-1 rules and triggers are not counted (documented, PostgreSQL rule probe as a test), I-2 `max_affected` bounds
   what is committed, `timeout` the work (I-120 g, h).
-- **Open (follow-up work packages):** TAB-XW-2 `tabrion.schema` v2; TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
+- **TAB-XW-2 done** (branch `claude/project-thread-rdo6g3-tabxw2`): `tabrion.schema` v2. `snapshot(level=2)` reads
+  column defaults, foreign keys, unique and check constraints and indexes on SQLite and PostgreSQL into
+  `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `IndexShape` and the new fields of `ColumnShape`, `TableShape`,
+  `SchemaSnapshot` (`level`) and `SchemaDifference` (`name`, nine new kinds); fingerprint `v2:sha256:` over the
+  canonical format-2 JSON, constraint order does not count; SQLite foreign key actions and indexes from the pragmas
+  (SQLAlchemy misses column-level actions and expression indexes). Level 1 stays the default and byte-identical
+  (D-4: `tests/unit/test_schema_v2.py::test_default_level_is_1`, `::test_v1_fingerprint_unchanged_against_02_golden`).
+  `tabrion.profilefile` accepts `v2:` fingerprints. Moved from addendum A.1 into contract section 5.10 (I-111). After
+  the draft review, level 2 also reads `DEFERRABLE`/`INITIALLY DEFERRED`, PostgreSQL `INCLUDE` and `NULLS NOT
+  DISTINCT`, partial index predicates and index element order, so the drift check of TAB-XW-5 sees them. Review of
+  #85 (planning folder `reviews/pr85-tabxw2-review.md`, ACCEPTED with conditions) folded in: F1 linear SQLite index
+  parsing with a 100 000-character limit; F2 index collation, operator class, access method, `indisvalid`, unique
+  collations, `NOT VALID`, `MATCH`, exclusion constraints (`ExclusionShape`), the remaining blind spots in I-111 d;
+  F3 no `catch_warnings` (SQLite uniques from the pragmas, unnamed); F4 `IndexShape.expressions`; F5 SQLite foreign
+  keys from the pragma; F6 `from_json` needs an integer `format`.
+- **Decided (owner, 2026-11-15 06:37Z, confirmed 06:38Z): drift blind spots, D-5 in
+  [ADR 0015 section 10](adr/0015-crdbx-write-and-ddl-primitives.md#10-d-5-drift-blind-spots-of-the-level-2-fingerprint-owner-decision-of-2026-11-15)**
+  (review of #85, F2; I-111 d). (1) Triggers and RLS policies go into the level-2 fingerprint with the functions they
+  reference directly (function body); nested calls are not followed (residual risk); a table whose trigger or policy
+  function is in C or an unknown language is refused; while not reliably checkable, schema changes on such tables are
+  refused. (2) Domain checks and partitioning are detected; schema changes on affected tables are blocked with a
+  clear explanation. (3) Unknown PostgreSQL features fail closed through an allowlist of known relation kinds and
+  features (inheritance, rules, foreign tables, event triggers refused). (4) The drift check is repeated right before
+  execution in the same transaction after locking the affected tables under `lock_timeout`; functions cannot be
+  locked (residual risk). (5) Data Editor (G-S2): tables with triggers get a notice, not a block. Implemented in
+  TAB-XW-3..TAB-XW-5, not in #85; **G-S3 stays locked** until it is implemented, independently reviewed and tested.
+- **Open (follow-up work packages):** TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
   (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
   TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds

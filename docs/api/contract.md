@@ -133,7 +133,7 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 | `tabrion.check` | `check`, `Finding`, `Severity` |
 | `tabrion.migrations` | `status`, `require_current`, `SchemaStatus` |
 | `tabrion.profilefile` (since 0.2, experimental) | `FORMAT_VERSION`, `ConnectionProfile`, `ProfileFile`, `ProfileFileError`, `ProfileIssue`, `SecretRef`, `parse`, `load`, `dump` (section 5.9) |
-| `tabrion.schema` (since 0.2, experimental, extra `sqlalchemy`) | `ColumnShape`, `TableShape`, `SchemaSnapshot`, `SchemaDifference`, `snapshot`, `fingerprint`, `compare` (section 5.10) |
+| `tabrion.schema` (since 0.2, experimental, extra `sqlalchemy`) | `ColumnShape`, `TableShape`, `SchemaSnapshot`, `SchemaDifference`, `snapshot`, `fingerprint`, `compare`; since 0.3 also `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `ExclusionShape`, `IndexShape` (section 5.10) |
 | `tabrion.rowedit` (since 0.3, experimental, extra `sqlalchemy`) | `delete_row`, `insert_row`, `update_row` (section 5.11) |
 | `tabrion.testing` | `configure`, `profiles`, the fixtures of section 6 (including `tabrion_role_setup`), `postgres_server_version`, `truncate_tables`, `require_extension`, `RoleSetup`, `TestRoles`, `PostgresSchema`, `PostgresDatabaseHandle` |
 | `tabrion.testing.profiles` | `SQLiteConnect`, `ProfileCase`, `PortabilityCase`, `sqlite_profile_cases`, `portability_cases` |
@@ -1314,7 +1314,7 @@ class ConnectionProfile:
     statement_timeout_ms: int | None = None
     application_name: str | None = None
     allow: tuple[str, ...] = ()  # "schema.table" or "schema.table.column"; empty = nothing
-    schema_fingerprint: str | None = None  # "v1:sha256:<hex>" of section 5.10
+    schema_fingerprint: str | None = None  # "v1:sha256:<hex>" or (since 0.3) "v2:sha256:<hex>" of section 5.10
     description: str | None = None
 
     def url(self) -> str: ...  # SQLAlchemy URL without any password
@@ -1358,7 +1358,7 @@ included), a `?`, `#` or `%` in a SQLite `path`, and `/`, `?`,
 | b | `password` is `env:NAME` (`[A-Za-z_][A-Za-z0-9_]*`), `keyring:` (the consumer's default entry), `keyring:<service>/<user>`, `file:PATH` or `prompt`. Anything else is `profilefile.plain_password`, and the text is never repeated: not in the error, its `issues`, `repr`, chain or frame locals (I-76) |
 | c | `path` and `file:` targets that name another host, a device or a drive-relative path (`//host`, `\\host`, `\\?\`, `\\.\`, the NT prefix `\??\` or `/??/`, `C:x`, `file:...`, and `/net` or `/Network` after normalizing the text, so `/x/../net/host` too) are `profilefile.network_path` (text check, the same on every platform; Studio's `network_or_device`, reviews T-2 and R-3). A `%` in a SQLite `path` is refused (I-109 d), so a percent-encoded form (`%2F%2Fhost/share`, `%5C%5Chost`, `C%3Ax`, `%2Fnet/...`) cannot pass the text check and become a network path when SQLAlchemy 2.1 unquotes `url()` (G-T2 review of #65, B-1). A relative SQLite path is relative to the profile file's folder; the consumer resolves it and applies `tabrion.sqlite.check_path` |
 | d | `host` must not hold a URL or credentials (`@`, `/` unless it is a socket folder starting with `/`, `?`, `#`, `\`, blank, `://`; a TCP host also not `%`, `&` or `=`, review of #82). A comma is refused in every `host`, a socket folder included (TB-148, W-10). `database` must not hold `/`, `?`, `#`, `%` or `@`, and a SQLite `path` must not hold `?`, `#` or `%`: `url()` writes both unquoted, because SQLAlchemy 2.0 does not unquote the database part of a URL and 2.1 does (review of #64, L-2; G-T2 review of #65, B-1). `port` 1 to 65 535, default 5432 for a TCP host. `sslmode` is one of libpq's six modes; when left out it is `prefer` for a socket folder, `localhost` and a loopback address and `verify-full` for any other host (Studio review T-4) |
-| e | `mode` defaults to `read_only`; `allow` entries are `schema.table` or `schema.table.column` (SQLite schema `main`), duplicates are dropped; `schema_fingerprint` matches `v1:sha256:[0-9a-f]{64}`; `statement_timeout_ms` 1 to 2 147 483 647 |
+| e | `mode` defaults to `read_only`; `allow` entries are `schema.table` or `schema.table.column` (SQLite schema `main`), duplicates are dropped; `schema_fingerprint` matches `v1:sha256:[0-9a-f]{64}` or (since 0.3, a level-2 snapshot, I-111) `v2:sha256:[0-9a-f]{64}`; `statement_timeout_ms` 1 to 2 147 483 647 |
 | f | A TOML syntax error keeps only its line number (`pointer = "line N"`), never the parser's message, which may quote the file. Errors are raised outside an `except` block (no `__context__`) |
 | g | `load` refuses a path that is a symbolic link (`profilefile.symlink`), a file that is not regular (`profilefile.not_regular_file`), a larger file (`profilefile.too_large`) and an unreadable one (`profilefile.unreadable`); the path is not in the error |
 | h | `dump` writes the canonical form (fixed key order, basic strings with every control character, U+2028 and U+2029 escaped), parses its own output and raises `ProfileFileError` unless it reads back to the same profiles, so its output always parses |
@@ -1377,6 +1377,61 @@ class ColumnShape:
     name: str
     type: str  # the type as the dialect compiles it: "INTEGER", "VARCHAR(20)", "TEXT[]"
     nullable: bool
+    default: str | None = None  # since 0.3, level 2: the server default as the dialect reflects it
+
+
+@dataclass(frozen=True, slots=True)
+class ForeignKeyShape:  # since 0.3, level 2
+    name: str | None  # None for an unnamed (or, on SQLite, ambiguous) key
+    columns: tuple[str, ...]
+    referred_table: str  # "schema.table"
+    referred_columns: tuple[str, ...]
+    on_delete: str | None = None  # "CASCADE", "SET NULL", "SET DEFAULT", "RESTRICT"; None is NO ACTION
+    on_update: str | None = None
+    deferrable: bool = False  # DEFERRABLE
+    initially_deferred: bool = False  # INITIALLY DEFERRED
+    match: str | None = None  # PostgreSQL "FULL" or "PARTIAL"; None is MATCH SIMPLE
+    validated: bool = True  # False for PostgreSQL NOT VALID
+
+
+@dataclass(frozen=True, slots=True)
+class UniqueShape:  # since 0.3, level 2
+    name: str | None  # None on SQLite
+    columns: tuple[str, ...]
+    include: tuple[str, ...] = ()  # PostgreSQL INCLUDE
+    nulls_not_distinct: bool = False  # PostgreSQL NULLS NOT DISTINCT
+    deferrable: bool = False
+    initially_deferred: bool = False
+    collations: tuple[str, ...] = ()  # () = all default; else per column "" or the collation ("NOCASE")
+
+
+@dataclass(frozen=True, slots=True)
+class CheckShape:  # since 0.3, level 2
+    name: str | None
+    sqltext: str  # as the dialect reflects it
+    validated: bool = True  # False for PostgreSQL NOT VALID
+
+
+@dataclass(frozen=True, slots=True)
+class ExclusionShape:  # since 0.3, level 2, PostgreSQL
+    name: str
+    definition: str  # pg_get_constraintdef: "EXCLUDE USING gist (r WITH &&)"
+
+
+@dataclass(frozen=True, slots=True)
+class IndexShape:  # since 0.3, level 2
+    name: str
+    columns: tuple[str, ...]  # a column name, or the expression text for an expression element
+    unique: bool = False
+    ordering: tuple[str, ...] = ()  # () = all default; else per element "", "DESC", "NULLS FIRST", "DESC NULLS LAST"...
+    where: str | None = None  # partial index predicate
+    include: tuple[str, ...] = ()  # PostgreSQL INCLUDE
+    nulls_not_distinct: bool = False  # PostgreSQL NULLS NOT DISTINCT
+    expressions: tuple[int, ...] = ()  # positions (from 0) of the expression elements
+    collations: tuple[str, ...] = ()  # () = all default; else per element "" or the collation
+    opclasses: tuple[str, ...] = ()  # () = all default; else per element "" or the PostgreSQL operator class
+    method: str | None = None  # PostgreSQL access method when not btree ("hash", "gin")
+    valid: bool = True  # False for a PostgreSQL index with indisvalid false
 
 
 @dataclass(frozen=True, slots=True)
@@ -1384,12 +1439,18 @@ class TableShape:
     name: str  # "schema.table" (SQLite: "main.table")
     columns: tuple[ColumnShape, ...]
     primary_key: tuple[str, ...]
+    foreign_keys: tuple[ForeignKeyShape, ...] = ()  # since 0.3, level 2
+    unique_constraints: tuple[UniqueShape, ...] = ()  # since 0.3, level 2
+    check_constraints: tuple[CheckShape, ...] = ()  # since 0.3, level 2
+    indexes: tuple[IndexShape, ...] = ()  # since 0.3, level 2
+    exclusion_constraints: tuple[ExclusionShape, ...] = ()  # since 0.3, level 2
 
 
 @dataclass(frozen=True, slots=True)
 class SchemaSnapshot:
     dialect: str
     tables: tuple[TableShape, ...]  # sorted by name
+    level: Literal[1, 2] = 1  # since 0.3
 
     def to_json(self) -> str: ...
     @classmethod
@@ -1408,27 +1469,59 @@ class SchemaDifference:
         "column_nullable",
         "column_order",
         "primary_key",
+        # since 0.3, level 2:
+        "column_default",
+        "foreign_key_missing",
+        "foreign_key_added",
+        "unique_missing",
+        "unique_added",
+        "check_missing",
+        "check_added",
+        "exclusion_missing",
+        "exclusion_added",
+        "index_missing",
+        "index_added",
     ]
     table: str
     column: str | None = None
+    name: str | None = None  # since 0.3: the constraint or index name of a level-2 difference
 
     @property
-    def breaking(self) -> bool: ...  # False only for table_added, column_added and column_order
+    def breaking(self) -> bool: ...  # False only for table_added, column_added, column_order and index_added
 
 
 def snapshot(
-    inspector: sqlalchemy.Inspector, *, tables: Iterable[str] | None = None, schemas: Iterable[str] | None = None
+    inspector: sqlalchemy.Inspector,
+    *,
+    tables: Iterable[str] | None = None,
+    schemas: Iterable[str] | None = None,
+    level: Literal[1, 2] = 1,  # since 0.3
 ) -> SchemaSnapshot: ...
-def fingerprint(snapshot: SchemaSnapshot) -> str: ...  # "v1:sha256:<64 hex>"
+def fingerprint(snapshot: SchemaSnapshot) -> str: ...  # "v1:sha256:<64 hex>" (level 1), "v2:sha256:<64 hex>" (level 2)
 def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDifference, ...]: ...
 ```
 
 | I-110 | Rule |
 |---|---|
 | a | `snapshot` takes the inspector of `Database.inspector()` (read-only, I-105). With `tables`, only those (`schema.table`, or `table` in the default schema); a missing one or a view (also a materialized view) is left out, so `compare` reports `table_missing`. Without, every table of `schemas` (default: the default schema). Views are not included. Above 10 000 tables: `UsageError("schema.too_many_tables")` |
-| b | The fingerprint is the SHA-256 of the snapshot's canonical JSON (`to_json`: sorted keys, no blanks, ASCII) with the prefix `v1:sha256:`. Table creation order and data do not count; column order does, and `compare` names a new order of the columns both snapshots have as `column_order` (table only, not breaking), so a changed fingerprint always has a named difference. The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy upgrade that writes a type differently changes the fingerprint, and `compare` then names the column (`column_type`) |
-| c | `compare` refuses snapshots of different dialects (`UsageError("schema.dialect_mismatch")`); a difference names a table and a column, never data. `from_json` refuses anything but a format-1 snapshot, including deep nesting and a `primary_key` that is not a list (`UsageError("schema.invalid_snapshot")`, no `__context__`) |
+| b | The fingerprint is the SHA-256 of the snapshot's canonical JSON (`to_json`: sorted keys, no blanks, ASCII) with the prefix `v1:sha256:` (a level-2 snapshot: `v2:sha256:`, I-111). Table creation order and data do not count; column order does, and `compare` names a new order of the columns both snapshots have as `column_order` (table only, not breaking), so a changed fingerprint always has a named difference. The type text comes from SQLAlchemy's dialect compiler, so a SQLAlchemy upgrade that writes a type differently changes the fingerprint, and `compare` then names the column (`column_type`) |
+| c | `compare` refuses snapshots of different dialects (`UsageError("schema.dialect_mismatch")`); a difference names a table and a column, never data. `from_json` refuses anything but a format-1 snapshot (since 0.3 also format 2, I-111 e), including deep nesting and a `primary_key` that is not a list (`UsageError("schema.invalid_snapshot")`, no `__context__`) |
 | d | Tests: `tests/unit/test_schema.py` (SQLite: shape, stable and sensitive fingerprint, selection, every difference kind including `column_order`, views left out, JSON round trip and refusals, read-only inspector, table cap) and `tests/postgres/test_schema_postgres.py` (types such as `TEXT[]` and `TIMESTAMP WITH TIME ZONE`, a composite primary key, drift) |
+
+**Level 2 (since 0.3, experimental; TAB-XW-2, CR-DBX, moved from addendum A.1).** A level-2 snapshot adds what the
+Schema Designer (Studio STU-CR-4) shows and edits and what `tabrion.ddl` (TAB-XW-3) and `tabrion.plan` (TAB-XW-4)
+take as the target model; a consumer builds or edits it with `dataclasses.replace` or `from_json`. There is no
+separate model.
+
+| I-111 | Rule |
+|---|---|
+| a | **Opt-in (ADR 0015 D-4).** `snapshot(level=1)` stays the default; a level-1 snapshot, its format-1 JSON and its `v1:` fingerprint are byte-identical to 0.2, so a stored `v1:` fingerprint (Nodestro NOD-CR-5, profile `schema_fingerprint`) stays valid. A `SchemaSnapshot` with a level other than 1 or 2 raises `UsageError("schema.invalid_level")` (also `snapshot(level=)`); a level-1 snapshot with level-2 detail (a default, a constraint or an index) raises `UsageError("schema.level_mismatch")`, so a `v1:` fingerprint never hides one. `compare` refuses snapshots of different levels (`schema.level_mismatch`) |
+| b | **What level 2 reads** (catalog only, never data): the column default as the dialect reflects it (PostgreSQL `'x'::character varying`, `nextval('s'::regclass)`; SQLite the text as written; an identity column has none); foreign keys with the referred table as `schema.table` (a referred table without a schema, which SQLAlchemy reports for one found through `search_path`, gets the default schema; on SQLite the table's own schema), the actions `CASCADE`, `SET NULL`, `SET DEFAULT`, `RESTRICT` (`NO ACTION`, written or not, is `None`), `DEFERRABLE`/`INITIALLY DEFERRED`, PostgreSQL `MATCH FULL`/`PARTIAL` and `NOT VALID`; unique constraints with PostgreSQL `INCLUDE`, `NULLS NOT DISTINCT`, `DEFERRABLE`/`INITIALLY DEFERRED` and the collation of each column; check constraints with the expression as the dialect reflects it (PostgreSQL normalizes it, `length(note::text) < 30`) and PostgreSQL `NOT VALID`; PostgreSQL exclusion constraints (name and `pg_get_constraintdef`); indexes that are not the index of a primary key, unique or exclusion constraint, with a column name per key element and the expression text for an expression element (`expressions` holds their positions, so a column named `lower(a)` and the expression `lower(a)` differ), the order of each element (`DESC` and a `NULLS FIRST`/`NULLS LAST` that differs from the engine's default for that direction; PostgreSQL `ASC NULLS LAST`, `DESC NULLS FIRST`), its collation when it is not the database default (PostgreSQL `indcollation` other than 0 and 100; SQLite other than `BINARY`, so `COLLATE NOCASE` counts), a PostgreSQL operator class that is not the default for the element's type (`pg_opclass.opcdefault`), the partial index predicate (PostgreSQL as `pg_get_expr` returns it, `(a > 0)`; SQLite as written after `WHERE`), PostgreSQL `INCLUDE`, `NULLS NOT DISTINCT`, the access method other than `btree` and `indisvalid`. PostgreSQL detail SQLAlchemy does not reflect comes from `pg_constraint`, `pg_index`, `pg_opclass` and `pg_collation`, with the schema and table names bound as parameters. Names are those SQLAlchemy reflects |
+| c | **SQLite.** Foreign keys come from `pragma_foreign_key_list` (every key, with its actions); SQLAlchemy's parse of the `CREATE TABLE` text supplies the name and `DEFERRABLE` only where exactly one key of the pragma and one of the parse have the same columns, referred table and referred columns, else the key is unnamed and not deferrable (two keys on the same columns: SQLAlchemy warns, review of #85 F5). Indexes and unique constraints come from `pragma_index_list` (origin `c` and `u`) and `pragma_index_xinfo` (columns, `DESC`, collation); SQLite keeps no unique constraint name it can address, so a unique constraint has `name` `None`. CHECK constraints (name and expression, column and table level) are read from the `CREATE TABLE` text in `sqlite_master` with a linear tokenizer that respects string literals, quoted identifiers, comments and nested parentheses, the same on every SQLAlchemy version (SQLAlchemy 2.0.30, the floor of the extra, reads them with a greedy regular expression that merged two checks into one text); a `CREATE TABLE` text longer than 1 000 000 characters, or one that does not tokenize, stands whole as one check. Nothing touches the process-wide warning filters (review of #85 F3). The text of an expression element and the predicate of a partial index are taken from the index's `CREATE INDEX` statement in `sqlite_master` with plain string scanning, no regular expression, so the time is linear in its length (review of #85 F1: the earlier patterns were quadratic on a long run of blanks); a statement longer than 100 000 characters, or one that cannot be split, stands whole for each expression element and for the predicate. SQLite refuses `NULLS FIRST`/`NULLS LAST` in an index and has no deferrable unique constraint. The queries bind the table and index names as parameters; the schema name is quoted by the dialect's preparer |
+| d | **Not in the shape (documented blind spots, review of #85 F2):** a change of only these does not change a `v2:` fingerprint. PostgreSQL: index storage parameters (`fillfactor`), identity (`GENERATED ALWAYS`/`BY DEFAULT`, added later) and generated columns and their expressions, triggers, row-level security (`ENABLE ROW LEVEL SECURITY`) and policies, `CHECK` constraints of domains, `NO INHERIT`, `UNLOGGED`, partitioning, `REPLICA IDENTITY`, sequences (increment), comments and views. SQLite: `STRICT`, `ON CONFLICT` clauses, generated column expressions, `DEFERRABLE` written on a column-level `REFERENCES`, the names of unique constraints. Texts SQLite keeps as written (expressions, predicates, checks) differ when only their blanks differ, which is safe but loud. How these blind spots are closed is decided in [ADR 0015 section 10](../adr/0015-crdbx-write-and-ddl-primitives.md#10-d-5-drift-blind-spots-of-the-level-2-fingerprint-owner-decision-of-2026-11-15) (D-5, owner decision of 2026-11-15): triggers and RLS policies with their directly referenced functions join the fingerprint, domain checks and partitioning block schema changes, unknown PostgreSQL features fail closed, and the drift check is repeated after locking; implemented in TAB-XW-3..TAB-XW-5, and G-S3 stays locked until then |
+| e | **Fingerprint and JSON.** `v2:sha256:` plus the SHA-256 of the canonical format-2 JSON (sorted keys, no blanks, ASCII). Constraints and indexes are written in a fixed order (foreign keys by columns, referred table, referred columns, name and actions; unique constraints by columns and name; checks by name and text; indexes by name; exclusion constraints by name; an `ordering`, `collations` or `opclasses` of only `""` entries is written as empty), so their order does not count; column order counts as at level 1. `from_json` reads format 1 (level 1) and format 2 (level 2; every shape object must have exactly its fields, each of its type, and an expression position must be within the columns) and refuses any other value or type, a `format` that is not an integer (`true`, `2.0`) with `UsageError("schema.invalid_snapshot")` (no `__context__`) |
+| f | **Comparison.** Constraints and indexes are matched as whole shapes, so a changed one (another action, column, collation, a renamed index) is reported as `_missing` and `_added`. A level-2 difference names the table, the column when the constraint or index has exactly one column of the table and no expression, and the constraint or index name (`name`, `None` for an unnamed constraint); `str` appends the name in parentheses (`index_added: public.t.v (t_v_idx)`). Only `index_added` of the new kinds is not breaking: an added constraint can refuse a write that worked before |
+| g | Tests: `tests/unit/test_schema_v2.py` (D-4: `test_default_level_is_1`, `test_v1_fingerprint_unchanged_against_02_golden` against `tests/golden/schema_v1.json`, recorded with the 0.2 code; SQLite shapes including unnamed constraints, a column-level foreign key action and an expression index; every new difference kind; creation and constraint order; JSON round trip and refusals; level checks; the element parser; each detail attribute alone changes the `v2:` fingerprint and is named, level 1 unchanged: `test_level2_detail_changes_the_v2_fingerprint`, `test_sqlite_index_detail`, `test_sqlite_foreign_key_deferrable`; review of #85: `test_sqlite_long_whitespace_is_parsed_in_linear_time`, `test_sqlite_index_text_over_the_limit_stands_whole` (F1), `test_level2_snapshot_leaves_the_warning_filters_alone` (F3), `test_sqlite_column_and_expression_of_the_same_text_differ` (F4), `test_sqlite_duplicate_foreign_keys_keep_their_actions` (F5), `test_sqlite_collations_of_unique_index_and_constraint` (F2), `test_from_json_refuses_a_format_that_is_not_an_int`; SQLite CHECK tokenizer, on the floor and current SQLAlchemy: `test_sqlite_check_constraints_parsed`, `test_sqlite_check_constraints_reflected`, `test_sqlite_check_text_is_linear_and_bounded`) and `tests/postgres/test_schema_postgres.py` (level 1 unchanged on a constrained schema, level-2 shapes, drift of each kind, a foreign key into the default schema; `test_xw2_postgres_detail_changes_the_v2_fingerprint` for sort and `NULLS` order, `WHERE`, `INCLUDE`, `NULLS NOT DISTINCT` and `DEFERRABLE`/`INITIALLY DEFERRED`; review of #85: `test_xw2_postgres_review_detail_changes_the_v2_fingerprint` for collation, operator class, access method, `indisvalid`, `NOT VALID`, `MATCH FULL` and an exclusion constraint, `test_xw2_postgres_column_and_expression_of_the_same_text_differ`); `tests/unit/test_profilefile.py` (`v2:` accepted, `v3:` refused) |
 
 ### 5.11 Guided write transaction (since 0.3, experimental; TAB-XW-6)
 
