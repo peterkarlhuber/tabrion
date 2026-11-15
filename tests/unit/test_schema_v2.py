@@ -602,3 +602,62 @@ def test_level2_snapshot_leaves_the_warning_filters_alone(db: Database) -> None:
     before = list(warnings.filters)
     take(db, level=2)
     assert warnings.filters == before
+
+
+# SQLite CHECK constraints are read with Tabrion's own tokenizer: SQLAlchemy 2.0.30 (the floor of the extra) reads
+# them with a greedy regular expression, so two checks became one text (CI job "lowest supported dependency
+# versions" on #85). These tests run on every SQLAlchemy version.
+CHECK_TABLE = (
+    'CREATE TABLE "t(" (\n'
+    "  a INTEGER CHECK (a > (0 + (1))) CONSTRAINT [ck)a] CHECK (a < 100),\n"
+    "  b TEXT DEFAULT ')' CHECK (b <> ')' AND b <> 'it''s)'),\n"
+    '  "check)" INTEGER /* CHECK (no) ) */ CHECK ("check)" >= 0), -- CHECK (nor this) )\n'
+    "  c INTEGER,\n"
+    '  CONSTRAINT "ck ""c""" CHECK (c IN (1, 2, 3)),\n'
+    "  CHECK (c IS NULL OR a IS NOT NULL),\n"
+    "  CONSTRAINT `ck_b` CHECK (length(b) < 30)\n"
+    ")"
+)
+CHECKS = [
+    (None, "a > (0 + (1))"),
+    ("ck)a", "a < 100"),
+    (None, "b <> ')' AND b <> 'it''s)'"),
+    (None, '"check)" >= 0'),
+    ('ck "c"', "c IN (1, 2, 3)"),
+    (None, "c IS NULL OR a IS NOT NULL"),
+    ("ck_b", "length(b) < 30"),
+]
+
+
+def test_sqlite_check_constraints_parsed() -> None:
+    assert ts._sqlite_check_constraints(CHECK_TABLE) == CHECKS
+    assert ts._sqlite_check_constraints("CREATE TABLE t (a INTEGER)") == []
+    for bad in ("CREATE TABLE t (a CHECK (a > 0)", "CREATE TABLE t (a TEXT DEFAULT 'x)", "CREATE TABLE t (a))"):
+        assert ts._sqlite_check_constraints(bad) is None
+
+
+def test_sqlite_check_constraints_reflected(tmp_path: Path) -> None:
+    database = make(tmp_path / "checks.db", (CHECK_TABLE,))
+    try:
+        table = take(database, level=2).table("main.t(")
+    finally:
+        database.close()
+    assert table is not None
+    expected = tuple(sorted((ts.CheckShape(n, t) for n, t in CHECKS), key=lambda c: (c.name or "", c.sqltext)))
+    assert table.check_constraints == expected
+
+
+def test_sqlite_check_text_is_linear_and_bounded(tmp_path: Path) -> None:
+    # As F1: long blank runs are read in linear time; a CREATE TABLE text over 1 000 000 characters stands whole.
+    blanks = " " * 200_000
+    assert ts._sqlite_check_constraints(f"CREATE TABLE t (a INTEGER CHECK ({blanks}a > 0{blanks}))") == [
+        (None, "a > 0")
+    ]
+    statement = f"CREATE TABLE t (a INTEGER CHECK (a >{' ' * 1_000_000}0))"
+    assert ts._sqlite_check_constraints(statement) is None
+    database = make(tmp_path / "long.db", (statement,))
+    try:
+        table = take(database, level=2).table("main.t")
+    finally:
+        database.close()
+    assert table is not None and table.check_constraints == (ts.CheckShape(None, statement),)

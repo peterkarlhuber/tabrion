@@ -464,6 +464,7 @@ class _PgIndex:
     valid: bool
     collations: tuple[str, ...]
     opclasses: tuple[str, ...]
+    include: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -493,7 +494,12 @@ def _level2_table(
         unique = _unique_constraints(inspector, table, arg, catalog)
         indexes = _indexes(inspector, table, arg, catalog)
     checks = []
-    for c in _reflect(inspector.get_check_constraints, table, arg):
+    reflected = (
+        _sqlite_checks(inspector, schema, table)
+        if inspector.dialect.name == "sqlite"
+        else _reflect(inspector.get_check_constraints, table, arg)
+    )
+    for c in reflected:
         name = _optional_name(c.get("name"))
         found = catalog.constraints.get(name or "")
         checks.append(CheckShape(name=name, sqltext=str(c["sqltext"]), validated=found is None or found.validated))
@@ -537,8 +543,9 @@ _PG_CONSTRAINTS = (
     "LEFT JOIN pg_catalog.pg_class ci ON ci.oid = c.conindid "
     "WHERE n.nspname = :s AND r.relname = :t AND c.contype IN ('c', 'f', 'u', 'x')"
 )
-# One row per index of the table: its access method, indisvalid, and per key element the collation (when it is not
-# the database default, oid 100, or none) and the operator class (when it is not the default for its type).
+# One row per index of the table: its access method, indisvalid, per key element the collation (when it is not the
+# database default, oid 100, or none) and the operator class (when it is not the default for its type), and the
+# INCLUDE columns (SQLAlchemy 2.0.30 does not report them for a unique constraint).
 _PG_INDEXES = (
     "SELECT i.relname, am.amname, x.indisvalid, "
     "ARRAY(SELECT CASE WHEN x.indcollation[k] IN (0, 100) THEN '' ELSE "
@@ -546,7 +553,9 @@ _PG_INDEXES = (
     "FROM generate_series(0, x.indnkeyatts - 1) k ORDER BY k), "
     "ARRAY(SELECT CASE WHEN oc.opcdefault THEN '' ELSE oc.opcname END "
     "FROM generate_series(0, x.indnkeyatts - 1) k JOIN pg_catalog.pg_opclass oc ON oc.oid = x.indclass[k] "
-    "ORDER BY k) "
+    "ORDER BY k), "
+    "ARRAY(SELECT a.attname FROM generate_series(x.indnkeyatts, x.indnatts - 1) k "
+    "JOIN pg_catalog.pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = x.indkey[k] ORDER BY k) "
     "FROM pg_catalog.pg_index x "
     "JOIN pg_catalog.pg_class i ON i.oid = x.indexrelid "
     "JOIN pg_catalog.pg_class r ON r.oid = x.indrelid "
@@ -576,8 +585,9 @@ def _postgres_catalog(inspector: sqlalchemy.Inspector, schema: str, table: str) 
             valid=bool(valid),
             collations=_defaults([str(c or "") for c in collations]),
             opclasses=_defaults([str(o or "") for o in opclasses]),
+            include=tuple(str(c) for c in include),
         )
-        for name, method, valid, collations, opclasses in _rows(inspector, _PG_INDEXES, params)
+        for name, method, valid, collations, opclasses, include in _rows(inspector, _PG_INDEXES, params)
     }
     return _Catalog(constraints, indexes, tuple(exclusions))
 
@@ -625,7 +635,7 @@ def _unique_constraints(
             UniqueShape(
                 name=name,
                 columns=tuple(str(c) for c in u["column_names"]),
-                include=tuple(str(c) for c in options.get("postgresql_include") or ()),
+                include=index.include if index else tuple(str(c) for c in options.get("postgresql_include") or ()),
                 nulls_not_distinct=bool(options.get("postgresql_nulls_not_distinct")),
                 deferrable=found.deferrable if found else False,
                 initially_deferred=found.initially_deferred if found else False,
@@ -660,7 +670,7 @@ def _indexes(inspector: sqlalchemy.Inspector, table: str, arg: str | None, catal
                     [" ".join(_PG_SORTING.get(str(o), str(o)) for o in sorting.get(k, ())) for k in keys]
                 ),
                 where=None if where is None else str(where),
-                include=tuple(str(c) for c in options.get("postgresql_include") or ()),
+                include=found.include if found else tuple(str(c) for c in options.get("postgresql_include") or ()),
                 nulls_not_distinct=bool(options.get("postgresql_nulls_not_distinct")),
                 expressions=tuple(i for i, name in enumerate(names) if name is None),
                 collations=found.collations if found else (),
@@ -800,6 +810,122 @@ def _sqlite_indexes(
             )
         )
     return indexes, unique
+
+
+_MAX_TABLE_SQL = 1_000_000
+"""Longest SQLite ``CREATE TABLE`` text whose CHECK constraints are read one by one; a longer one stands whole."""
+
+
+def _sqlite_checks(inspector: sqlalchemy.Inspector, schema: str, table: str) -> list[dict[str, Any]]:
+    # SQLAlchemy reads SQLite CHECK constraints with a regular expression over the CREATE TABLE text, and up to at
+    # least 2.0.30 (the floor of the extra) it is greedy: two checks became one text that ran to the last ")". This
+    # reads them with a linear tokenizer instead, the same on every SQLAlchemy version. The schema name is quoted by
+    # the dialect's preparer; the table name is a bound parameter.
+    quoted = inspector.dialect.identifier_preparer.quote_identifier(schema)
+    found = _rows(
+        inspector,
+        f"SELECT sql FROM {quoted}.sqlite_master WHERE type = 'table' AND name = :t",  # noqa: S608
+        {"t": table},
+    )
+    sql = str(found[0][0]) if found and found[0][0] is not None else ""
+    checks = _sqlite_check_constraints(sql)
+    if checks is None:  # too long or not tokenized: the whole statement stands for its checks
+        return [{"name": None, "sqltext": sql}] if "check" in sql.lower() else []
+    return [{"name": name, "sqltext": text} for name, text in checks]
+
+
+def _sql_tokens(sql: str) -> list[tuple[str, str, int, int]] | None:
+    """SQLite tokens ``(kind, text, start, end)``: ``word``, ``ident`` (quoted), ``string``, ``(``, ``)``, ``,`` or
+    ``other``; blanks and comments are skipped. ``None`` for an unterminated quote. Linear in the length."""
+    out: list[tuple[str, str, int, int]] = []
+    i, n = 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch.isspace():
+            i += 1
+        elif sql.startswith("--", i):
+            end = sql.find("\n", i)
+            i = n if end == -1 else end + 1
+        elif sql.startswith("/*", i):
+            end = sql.find("*/", i + 2)
+            i = n if end == -1 else end + 2
+        elif ch in "'\"`[":
+            close = "]" if ch == "[" else ch
+            end = sql.find(close, i + 1)
+            while end != -1 and close != "]" and sql[end + 1 : end + 2] == close:  # a doubled quote
+                end = sql.find(close, end + 2)
+            if end == -1:
+                return None
+            out.append(("string" if ch == "'" else "ident", sql[i : end + 1], i, end + 1))
+            i = end + 1
+        elif ch in "(),":
+            out.append((ch, ch, i, i + 1))
+            i += 1
+        elif ch.isalnum() or ch in "_$":
+            end = i
+            while end < n and (sql[end].isalnum() or sql[end] in "_$"):
+                end += 1
+            out.append(("word", sql[i:end], i, end))
+            i = end
+        else:
+            out.append(("other", ch, i, i + 1))
+            i += 1
+    return out
+
+
+def _unquote(text: str) -> str:
+    if text[:1] == "[":
+        return text[1:-1]
+    if text[:1] in ('"', "`", "'"):
+        return text[1:-1].replace(text[0] * 2, text[0])
+    return text
+
+
+def _sqlite_check_constraints(sql: str) -> list[tuple[str | None, str]] | None:
+    """The ``(name, expression)`` of every CHECK of a ``CREATE TABLE`` text, column and table level, in order; the
+    expression as written between its parentheses. ``None`` when the text is longer than ``_MAX_TABLE_SQL``, has an
+    unterminated quote or unbalanced parentheses."""
+    if len(sql) > _MAX_TABLE_SQL:
+        return None
+    tokens = _sql_tokens(sql)
+    if tokens is None:
+        return None
+    out: list[tuple[str | None, str]] = []
+    depth, i = 0, 0
+    while i < len(tokens):
+        kind, text = tokens[i][0], tokens[i][1]
+        if kind == "(":
+            depth += 1
+        elif kind == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+        elif (
+            kind == "word"
+            and text.upper() == "CHECK"
+            and depth >= 1
+            and i + 1 < len(tokens)
+            and tokens[i + 1][0] == "("
+        ):
+            level, j = 0, i + 1
+            while j < len(tokens):
+                if tokens[j][0] == "(":
+                    level += 1
+                elif tokens[j][0] == ")":
+                    level -= 1
+                    if level == 0:
+                        break
+                j += 1
+            if j == len(tokens):
+                return None
+            name = None
+            if i >= 2 and tokens[i - 2][0] == "word" and tokens[i - 2][1].upper() == "CONSTRAINT":
+                name = _unquote(tokens[i - 1][1])
+            out.append((name, sql[tokens[i + 1][3] : tokens[j][2]].strip()))
+            i = j + 1
+            continue
+        i += 1
+    return out if depth == 0 else None
 
 
 def _strip_order(element: str) -> str:

@@ -19,7 +19,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   marks expression elements. The blind spots that remain (triggers, policies, domain checks, partitioning,
   `UNLOGGED`, identity and generated detail, storage parameters) are listed in I-111 d. SQLite index text is parsed
   without regular expressions in linear time (review of #85, F1); SQLite unique constraints and foreign keys come
-  from the pragmas, without touching the warning filters (F3, F5). Its fingerprint is
+  from the pragmas, without touching the warning filters (F3, F5); SQLite CHECK constraints come from a linear
+  tokenizer over the `CREATE TABLE` text, because SQLAlchemy 2.0.30 (the floor) merges two checks into one; PostgreSQL
+  `INCLUDE` columns come from `pg_index`, which SQLAlchemy 2.0.30 does not report for a unique constraint. Its fingerprint is
   `v2:sha256:<hex>` over the canonical JSON format 2, in which the order of constraints and indexes does not count.
   `compare` names the new kinds `column_default`, `foreign_key_missing`/`_added`, `unique_missing`/`_added`,
   `check_missing`/`_added` and `index_missing`/`_added` (only `index_added` is not breaking), with the constraint or
