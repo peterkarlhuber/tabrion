@@ -288,7 +288,7 @@ by one; `downgrade()` raises `NotImplementedError` (plan and review the reverse 
 
 ```pycon
 >>> text = tp.revision_text(change, revision="0004", down_revision="0003", message="parts: add qty")
->>> print(text[text.index("def upgrade"):])
+>>> print(text[text.index("def upgrade") :])
 def upgrade() -> None:
     if op.get_context().dialect.name != dialect:
         raise RuntimeError("this revision was planned for another database engine")
