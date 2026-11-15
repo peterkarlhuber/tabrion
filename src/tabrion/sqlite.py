@@ -1540,13 +1540,16 @@ class _Entries:
             except BaseException:
                 self.close()
                 raise
-        elif _POSIX:
+        else:
             try:
                 info = os.stat(directory)
             except OSError as exc:
                 raise _directory_error(exc, directory) from None
-        else:
-            return
+            # Windows reports a path through a regular file as ENOENT, not ENOTDIR: check the directory itself.
+            if not stat.S_ISDIR(info.st_mode):
+                raise _unsafe("sqlite.unsafe_path", directory)
+            if not _POSIX:
+                return
         self.shared = bool(info.st_mode & (stat.S_IWGRP | stat.S_IWOTH))
 
     def _name(self, base: str) -> str:
