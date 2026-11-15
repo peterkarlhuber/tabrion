@@ -73,6 +73,8 @@ A plain `sqlite3.connect` leaves foreign keys off and `trusted_schema` on; the T
 | TAB-PG-010 | PostgreSQL | remote host without `verify-full` | warning |
 | TAB-PG-011 | PostgreSQL | remote host without TLS | error |
 | TAB-PG-012 | PostgreSQL | `transaction_timeout` wanted, server older than 17 | info |
+| TAB-PG-013 | PostgreSQL | role can reach `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`, or has `CREATEROLE` on a server older than 16 (superuser-equivalent) | error |
+| TAB-PG-014 | PostgreSQL | role is a member of another predefined `pg_*` role (runtime) | warning |
 | TAB-PG-020 | PostgreSQL | `archive_mode=off` (no point-in-time recovery) | info |
 | TAB-PG-021 | PostgreSQL | server is a standby, profile writes | warning |
 | TAB-PG-030 | PostgreSQL | extension installed, its schema not in `search_path` | warning |
@@ -82,9 +84,12 @@ A plain `sqlite3.connect` leaves foreign keys off and `trusted_schema` on; the T
 ## The role you expect: `expect`
 
 On PostgreSQL, what is wrong depends on who connects. The default `expect="runtime"` treats owning tables
-(TAB-PG-003) and `CREATE` rights (TAB-PG-009) as warnings: the application's runtime role should have neither.
-`expect="owner"` drops them, for the role that runs migrations; `expect="any"` reports them as `info`. TAB-PG-001
-and TAB-PG-002 are reported whatever you expect. An invalid value raises `ValueError`:
+(TAB-PG-003), `CREATE` rights (TAB-PG-009) and predefined-role memberships (TAB-PG-014) as warnings: the
+application's runtime role should have none of them. `expect="owner"` drops them, for the role that runs migrations;
+`expect="any"` reports them as `info`. TAB-PG-001, TAB-PG-002 and TAB-PG-013 are reported whatever you expect.
+Memberships count however the role reaches them (through other roles, NOINHERIT or `SET`-only), for `current_user`
+and `session_user`; a superuser gets only TAB-PG-001. On managed PostgreSQL 15 or older the migration user often
+has `CREATEROLE`, so expect TAB-PG-013 there even with `expect="owner"`. An invalid value raises `ValueError`:
 
 ```pycon
 >>> check(raw, expect="admin")

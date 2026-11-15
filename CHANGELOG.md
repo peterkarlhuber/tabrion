@@ -91,6 +91,29 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   - Consumers that compare `reasons` exactly, or map each value to a text of their own, should handle
     `predefined_role` before they pin a Tabrion with this fix. Axentra's `_refusal` gives an empty phrase for an
     unknown value. Axentra (#87) and Nodestro (#169) already refuse `pg_write_all_data` themselves.
+- `tabrion.postgres.grant_runtime_role` revokes `INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER` on each existing
+  protected table and on its partitions and inheritance children (before: the named table only, without `TRIGGER`).
+  After the `REVOKE`, inside the grant transaction, it checks `has_table_privilege(..., 'INSERT, UPDATE, DELETE,
+  TRUNCATE, TRIGGER')` and `has_any_column_privilege(..., 'INSERT, UPDATE')` on those tables for the role and every
+  role it is a member of (NOINHERIT and `SET`-only too). That covers grants to `PUBLIC`, to an inherited or `SET
+  ROLE`-reachable role, column grants, grants by another grantor and a membership committed concurrently before the
+  check. A hit rolls the transaction back (nothing granted) and raises `RoleUnsafe` with the new reason
+  `protected_writable` (TB-150 item 3, contract I-35, decision D-125). On a server before PostgreSQL 16 it also
+  refuses a role that has, or can become a role with, `CREATEROLE` (new reason `createrole`, D-127), read before the
+  grants and again in the grant transaction. Not covered: a protected table, partition or child created or attached after the grant gets the
+  default privileges; run the function again after such a migration (contract I-35). **Behavior change:** a deploy that
+  relied on such a grant (or, before 16, on a runtime role with `CREATEROLE`) is now refused; consumers that map
+  `reasons` values should handle `protected_writable` and `createrole`. Axentra's `_writable_protected_tables` and
+  Nodestro's own re-check stay valid.
+- `tabrion.check` reports two new PostgreSQL codes (TB-036, decision D-126, an addendum to specification section 9;
+  no API change): **TAB-PG-013** (`error`, whatever `expect`) when `current_user` or `session_user` can reach
+  `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files` (superuser-equivalent), or has
+  `CREATEROLE` (also through a role it can become) on a server before PostgreSQL 16; **TAB-PG-014** (`warning` for
+  `expect="runtime"`, `info` for `"any"`, none for `"owner"`) for a membership of any other predefined `pg_*` role,
+  for example `pg_write_all_data` or the database owner's `pg_database_owner`. Memberships count through other roles,
+  NOINHERIT, `SET`-only and ADMIN-only. A superuser gets TAB-PG-001 only. `role_info` and `check_role` are unchanged
+  (contract I-20, I-53). **Behavior change:** callers that fail on any `error` or `warning` finding may see these
+  codes for roles that passed before.
 
 ## [0.2.1] - 2026-11-14
 

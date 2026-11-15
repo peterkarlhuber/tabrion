@@ -275,3 +275,108 @@ def test_k29_closed_connection_raises(connect: Callable[..., Any], runtime: Role
     connection.close()
     with pytest.raises(psycopg.OperationalError):
         check(connection)
+
+
+# --- TB-036 (D-126): TAB-T-K31 (TAB-PG-013) and TAB-T-K32 (TAB-PG-014), predefined roles and CREATEROLE -------------
+
+
+@pytest.mark.parametrize("predefined", ["pg_execute_server_program", "pg_read_server_files", "pg_write_server_files"])
+@pytest.mark.parametrize("how", ["direct", "noinherit_via_nologin"])
+def test_k31_superuser_equivalent_predefined_role(
+    connect: Callable[..., Any], runtime: Role, schema: str, admin: Any, predefined: str, how: str
+) -> None:
+    """A member of a server-file or server-program role is superuser-equivalent: an error whatever ``expect``, also
+    for a NOINHERIT member through a NOLOGIN role (it reaches the role with ``SET ROLE``, I-20)."""
+    if how == "direct":
+        admin.execute(f'GRANT {predefined} TO "{runtime.name}"')
+    else:
+        holder = new_name()
+        admin.execute(f'CREATE ROLE "{holder}" NOLOGIN')
+        admin.execute(f'GRANT {predefined} TO "{holder}"')
+        admin.execute(f'ALTER ROLE "{runtime.name}" NOINHERIT')
+        admin.execute(f'GRANT "{holder}" TO "{runtime.name}"')
+    try:
+        connection = open_as(connect, runtime.url, schema)
+        for expect in ("runtime", "owner", "any"):
+            findings = check(connection, expect=expect)
+            finding = only(findings, "TAB-PG-013")
+            assert finding.severity is Severity.ERROR and predefined in finding.detail
+            assert "TAB-PG-014" not in codes(findings)
+            assert "TAB-PG-001" not in codes(findings)  # role_info (frozen, I-20) still does not say superuser
+    finally:
+        if how != "direct":
+            admin.execute(f'DROP ROLE "{holder}"')
+
+
+def test_k31_createrole_before_16(
+    connect: Callable[..., Any], runtime: Role, schema: str, admin: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before PostgreSQL 16 a CREATEROLE role can grant itself any non-superuser role (checked on the real result
+    with ``server_version`` replaced, as K17); on 16 and later it cannot, and nothing is reported."""
+    connection = open_as(connect, runtime.url, schema)
+    patched(monkeypatch, server_version=150007)
+    assert "TAB-PG-013" not in codes(check(connection))  # without CREATEROLE
+    admin.execute(f'ALTER ROLE "{runtime.name}" CREATEROLE')
+    finding = only(check(connection, expect="owner"), "TAB-PG-013")
+    assert finding.severity is Severity.ERROR and "CREATEROLE on PostgreSQL 15" in finding.detail
+    monkeypatch.undo()
+    assert "TAB-PG-013" not in codes(check(connection))
+
+
+def test_k31_createrole_of_the_session_user_after_set_role(
+    connect: Callable[..., Any], runtime: Role, schema: str, admin: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F-6 of #81: after ``SET ROLE`` to a plain role, ``current_user`` reaches no CREATEROLE role, but the
+    session user (a member of one) may ``RESET ROLE``; before 16 that is TAB-PG-013 (I-20)."""
+    holder, plain = new_name(), new_name()
+    admin.execute(f'CREATE ROLE "{holder}" NOLOGIN CREATEROLE')
+    admin.execute(f'CREATE ROLE "{plain}" NOLOGIN')
+    admin.execute(f'GRANT "{holder}" TO "{runtime.name}"')
+    admin.execute(f'GRANT "{plain}" TO "{runtime.name}"')
+    try:
+        connection = open_as(connect, runtime.url, schema, autocommit=True)
+        connection.execute(f'SET ROLE "{plain}"')
+        patched(monkeypatch, server_version=150007)
+        finding = only(check(connection), "TAB-PG-013")
+        assert "CREATEROLE on PostgreSQL 15" in finding.detail
+        connection.close()
+    finally:
+        admin.execute(f'DROP ROLE "{holder}"')
+        admin.execute(f'DROP ROLE "{plain}"')
+
+
+@pytest.mark.parametrize("predefined", ["pg_write_all_data", "pg_read_all_data", "pg_monitor", "pg_signal_backend"])
+def test_k32_other_predefined_role(
+    connect: Callable[..., Any], runtime: Role, schema: str, admin: Any, predefined: str
+) -> None:
+    """Any other predefined role is broad: a runtime-role finding (warning; ``any``: info; ``owner``: none)."""
+    connection = open_as(connect, runtime.url, schema)
+    assert not {"TAB-PG-013", "TAB-PG-014"} & set(codes(check(connection, expect="any")))
+    admin.execute(f'GRANT {predefined} TO "{runtime.name}"')
+    finding = only(check(connection), "TAB-PG-014")
+    assert finding.severity is Severity.WARNING and predefined in finding.detail
+    assert "TAB-PG-013" not in codes(check(connection))
+    assert only(check(connection, expect="any"), "TAB-PG-014").severity is Severity.INFO
+    assert "TAB-PG-014" not in codes(check(connection, expect="owner"))
+
+
+def test_k32_session_user_after_set_role(connect: Callable[..., Any], runtime: Role, schema: str, admin: Any) -> None:
+    """``SESSION_USER`` counts (I-20): after ``SET ROLE`` to a plain role the session may still ``RESET ROLE``."""
+    plain = new_name()
+    admin.execute(f'CREATE ROLE "{plain}" NOLOGIN')
+    admin.execute(f'GRANT "{plain}" TO "{runtime.name}"')
+    admin.execute(f'GRANT pg_write_all_data TO "{runtime.name}"')
+    try:
+        connection = open_as(connect, runtime.url, schema, autocommit=True)
+        connection.execute(f'SET ROLE "{plain}"')
+        assert "pg_write_all_data" in only(check(connection), "TAB-PG-014").detail
+        connection.close()
+    finally:
+        admin.execute(f'DROP ROLE "{plain}"')
+
+
+def test_k31_k32_superuser_reports_tab_pg_001_only(connect: Callable[..., Any], admin_url: str, schema: str) -> None:
+    """A superuser is a member of every role; TAB-PG-001 says it, so TAB-PG-013/014 stay quiet."""
+    findings = codes(check(open_as(connect, admin_url, schema)))
+    assert "TAB-PG-001" in findings
+    assert not {"TAB-PG-013", "TAB-PG-014"} & set(findings)
