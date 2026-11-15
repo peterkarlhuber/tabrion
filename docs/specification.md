@@ -110,6 +110,8 @@ tabrion/                     package; layer B in the package root (importable on
 │   ├── _types.py            the documentation-only aliases Statement, Params, Isolation
 │   └── _v02.py              0.2 methods of Database and Transaction (mixins the public classes inherit since 0.2)
 ├── schema.py                layer B, extra [sqlalchemy]: snapshot, fingerprint, compare (since 0.2, TAB-CR-2)
+├── ddl.py                   extra [sqlalchemy] (column statements also [migrations]): DDL text from the level-2
+│                            schema model, generation only (since 0.3, experimental, TAB-XW-3)
 ├── migrations.py            layer B, extra [migrations]: status, require_current, SchemaStatus (without env.py)
 └── testing/                 extra [testing] (pytest); pytest plugin only on explicit request (pytest_plugins)
     ├── __init__.py          configure(), fixtures
@@ -126,6 +128,7 @@ tabrion/                     package; layer B in the package root (importable on
 | `postgres.*` | stdlib, psycopg | sqlalchemy, alembic, pytest, psycopg_pool |
 | `_sa.*` | layer A, sqlalchemy | pytest, alembic |
 | `migrations` | `_sa`, alembic | pytest |
+| `ddl` (since 0.3) | `schema`, layer A, sqlalchemy, alembic | pytest, psycopg, psycopg_pool, `_sa`, `migrations` |
 | `testing.*` | everything above, pytest | — |
 | everything | — | orkexa, axentra, axentra_studio, nodestro_*, tabrion_studio (P6, K-33) |
 

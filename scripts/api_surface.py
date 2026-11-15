@@ -73,6 +73,7 @@ PUBLIC_MODULES = (
     "tabrion.profilefile",
     "tabrion.schema",
     "tabrion.rowedit",
+    "tabrion.ddl",
     "tabrion.migrations",
     "tabrion.testing",
     "tabrion.testing.profiles",

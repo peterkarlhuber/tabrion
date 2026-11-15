@@ -54,7 +54,14 @@ EDGES: dict[str, Edge] = {
     "sqlalchemy": Edge(
         blocked=("sqlalchemy",),
         imports=(*CORE, *POSTGRES),
-        refuses=("tabrion:Database", "tabrion:Profile", "tabrion:Transaction", "tabrion:Result", "tabrion.schema"),
+        refuses=(
+            "tabrion:Database",
+            "tabrion:Profile",
+            "tabrion:Transaction",
+            "tabrion:Result",
+            "tabrion.schema",
+            "tabrion.ddl",
+        ),
         hint='pip install "tabrion[sqlalchemy] @ git+https://github.com/peterkarlhuber/tabrion@',
         probe=("postgres/roles.py", "import sqlalchemy"),
         requirements=("sqlalchemy",),

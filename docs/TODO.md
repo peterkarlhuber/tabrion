@@ -32,6 +32,8 @@
 > in progress, TB-013 records the base; counts unchanged.
 > TAB-XW-2 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw2`): TB-149 stays in progress, TAB-XW-2 done
 > (`tabrion.schema` v2, contract section 5.10 and I-111); TB-015 notes the extension; counts unchanged.
+> TAB-XW-3 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw3`): TB-149 stays in progress, TAB-XW-3 done
+> (`tabrion.ddl`, contract section 5.12 and I-123); counts unchanged.
 
 ## Summary
 
@@ -611,7 +613,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -663,7 +665,20 @@ required (owner decision of 2026-11-08 11:26Z).
   execution in the same transaction after locking the affected tables under `lock_timeout`; functions cannot be
   locked (residual risk). (5) Data Editor (G-S2): tables with triggers get a notice, not a block. Implemented in
   TAB-XW-3..TAB-XW-5, not in #85; **G-S3 stays locked** until it is implemented, independently reviewed and tested.
-- **Open (follow-up work packages):** TAB-XW-3 `tabrion.ddl`; TAB-XW-4 `tabrion.plan`
+- **TAB-XW-3 done** (branch `claude/project-thread-rdo6g3-tabxw3`): `tabrion.ddl`, DDL text from the level-2 model
+  for SQLite and PostgreSQL, generation only (no connection, no diff, no executor). `create_statements`,
+  `table_statements` and one function per change (drop table, add, drop and alter column, add and drop constraint,
+  create and drop index, `CONCURRENTLY` marked not transactional), compiled by SQLAlchemy Core and, for column
+  statements, Alembic's DDL constructs (extra `migrations`); identifiers quoted by the dialect. Round trips (model,
+  DDL, empty database, reflection, equal model and `v2:` fingerprint) on SQLite and PostgreSQL 16 with SQLAlchemy
+  2.0.30 and 2.1. Default, check, expression and predicate texts are trusted schema text but cannot leave their place
+  in the statement (`ddl.unsafe_sql_text`). D-5.3 on the generation side: an allowlist of the shape fields and
+  features the module generates; anything else (exclusion constraints, `NOT VALID`, invalid indexes, unknown access
+  methods, a unique option SQLAlchemy 2.0.30 drops, any new shape field) raises `ddl.unsupported_feature`. Moved from
+  addendum A.2 into contract section 5.12 (I-123). Found on the SQLAlchemy floor: 2.0.30 does not reflect a
+  PostgreSQL column collation into the type text, so on the floor a `v2:` fingerprint does not see a changed column
+  collation (I-123 h); the DDL refuses a collated unique constraint there.
+- **Open (follow-up work packages):** TAB-XW-4 `tabrion.plan`
   (diff, risk classes, SQLite rebuild, revision text); TAB-XW-5 `execute_plan`; TAB-XW-7 SQLite `restore`, `delete_database_file`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
   predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`; TAB-XW-9 `create_database`/`drop_database`;
   TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds

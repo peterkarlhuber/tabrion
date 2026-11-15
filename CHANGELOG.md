@@ -8,6 +8,28 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Added
 
+- **Experimental, 0.3** (TABRION TAB-XW-3, CR-DBX; contract section 5.12, I-123, moved from addendum A.2): DDL
+  generation from the level-2 schema model in the new module `tabrion.ddl` (extra `sqlalchemy`; column statements
+  also need `migrations`). `tabrion.ddl.create_statements` writes `CREATE TABLE` for every table of a model (referred
+  tables first; on PostgreSQL a foreign key cycle as `ALTER TABLE ... ADD CONSTRAINT` after the tables) and then every
+  `CREATE INDEX`; `tabrion.ddl.table_statements`, `tabrion.ddl.drop_table_statement`,
+  `tabrion.ddl.add_column_statement`, `tabrion.ddl.drop_column_statement`, `tabrion.ddl.alter_column_statements`,
+  `tabrion.ddl.add_constraint_statement`, `tabrion.ddl.drop_constraint_statement`,
+  `tabrion.ddl.create_index_statement` and `tabrion.ddl.drop_index_statement` write one change each, as the frozen
+  dataclass `tabrion.ddl.DdlStatement` (`sql`, `target`, `transactional`). The text is compiled by SQLAlchemy Core
+  (`CreateTable`, `CreateIndex`, `AddConstraint` ...) and Alembic's DDL constructs for SQLite and PostgreSQL without a
+  connection; identifiers are quoted by the dialect, nothing runs. Columns with defaults and PostgreSQL serials,
+  primary keys, foreign keys with actions, `DEFERRABLE` and `MATCH FULL`, unique constraints (PostgreSQL `INCLUDE` and
+  `NULLS NOT DISTINCT` where the installed SQLAlchemy writes them), checks, and indexes with expressions, order,
+  collations, operator classes, access methods, `INCLUDE`, `NULLS NOT DISTINCT` and predicates round-trip: the
+  statements run on an empty database reflect back to the same model and `v2:` fingerprint, on SQLite and
+  PostgreSQL 16, with SQLAlchemy 2.0.30 and 2.1. Default, check, expression and predicate texts are schema text from
+  reflection, written as they are; they are refused when they could leave their place in the statement (`;`,
+  comments, unbalanced parentheses, a top-level comma; on PostgreSQL a backslash or `$`; `ddl.unsafe_sql_text`). A
+  type the dialect does not know, a PostgreSQL identifier above 63 bytes and every feature the module cannot generate
+  (exclusion constraints, `NOT VALID`, invalid indexes, unknown access methods, any shape field it does not know: ADR
+  0015 D-5.3) are refused, never generated without it; SQLite changes it cannot make in place raise
+  `ddl.rebuild_required` for the plan of TAB-XW-4.
 - **Experimental, 0.3** (TABRION TAB-XW-2, CR-DBX; contract section 5.10, I-111, moved from addendum A.1): the schema
   model v2. `tabrion.schema.snapshot(..., level=2)` also reads column defaults, foreign keys, unique and check
   constraints and indexes on SQLite and PostgreSQL, into the new frozen dataclasses `tabrion.schema.ForeignKeyShape`,

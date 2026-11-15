@@ -159,6 +159,20 @@ EXPECTED: dict[str, set[str]] = {
     },
     # TAB-XW-6 (CR-DBX), since 0.3, experimental.
     "tabrion.rowedit": {"delete_row", "insert_row", "update_row"},
+    # TAB-XW-3 (CR-DBX), since 0.3, experimental.
+    "tabrion.ddl": {
+        "DdlStatement",
+        "add_column_statement",
+        "add_constraint_statement",
+        "alter_column_statements",
+        "create_index_statement",
+        "create_statements",
+        "drop_column_statement",
+        "drop_constraint_statement",
+        "drop_index_statement",
+        "drop_table_statement",
+        "table_statements",
+    },
     "tabrion.testing": {
         "configure",
         "profiles",
@@ -282,12 +296,12 @@ def test_every_public_function_is_fully_annotated(module_name: str) -> None:
 def test_return_dataclasses_are_frozen_and_slotted() -> None:
     """Contract convention: every result dataclass is ``@dataclass(frozen=True, slots=True)``."""
     import tabrion
-    from tabrion import check, errors, migrations, postgres, profilefile, schema, sqlite
+    from tabrion import check, ddl, errors, migrations, postgres, profilefile, schema, sqlite
     from tabrion.testing import postgres as testing_postgres
     from tabrion.testing import profiles
 
     modules: list[ModuleType] = [errors, sqlite, postgres, check, migrations, testing_postgres, profiles]
-    modules += [profilefile, schema]
+    modules += [profilefile, schema, ddl]
     classes = [getattr(m, n) for m in modules for n in m.__all__ if dataclasses.is_dataclass(getattr(m, n))]
     classes += [tabrion.Profile, tabrion.Health, tabrion.Result, tabrion.Column]
     assert len(classes) >= 20

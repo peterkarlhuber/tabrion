@@ -2,7 +2,7 @@
 
 !!! warning "Planned 0.3, not implemented"
     Everything on this page is **planned for Tabrion 0.3 and not implemented**, except the sections marked as moved
-    into the contract (A.1, TAB-XW-2; A.5, TAB-XW-6). None of the other names exists in the code, in `__all__` or in
+    into the contract (A.1, TAB-XW-2; A.2, TAB-XW-3; A.5, TAB-XW-6). None of the other names exists in the code, in `__all__` or in
     [`surface.json`](surface.json); none may be imported or relied on. Names, signatures and
     error codes may still change until the independent API review of TAB-XW-10. When a work package implements its
     part, it moves that section into [the contract](contract.md) with implementation notes, adds the names to
@@ -23,7 +23,7 @@ Every planned name is experimental (`X`) and arrives with 0.3. No stable name ch
 | Module | Planned names | WP | Extra |
 |---|---|---|---|
 | `tabrion.schema` | `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `IndexShape`; new fields of `ColumnShape`, `TableShape`, `SchemaSnapshot`; `snapshot(level=)`; new `SchemaDifference.kind` values (implemented, contract section 5.10, I-111) | TAB-XW-2 | `sqlalchemy` |
-| `tabrion.ddl` (new) | `DdlStatement`, `create_statements`, `table_statements` | TAB-XW-3 | `sqlalchemy` |
+| `tabrion.ddl` (new) | `DdlStatement`, `create_statements`, `table_statements` and the in-place statements (implemented, contract section 5.12, I-123) | TAB-XW-3 | `sqlalchemy`; column statements also `migrations` |
 | `tabrion.plan` (new) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers`, `ExecutionResult`, `execute_plan` | TAB-XW-4, TAB-XW-5 | `sqlalchemy`; `revision_text` also `migrations` |
 | `tabrion.rowedit` (new) | `insert_row`, `update_row`, `delete_row` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
 | `tabrion` (layer B) | `Transaction.execute_checked` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
@@ -86,30 +86,20 @@ elements. The remaining blind spots are listed in I-111 d, with a decision due b
 
 ## A.2 `tabrion.ddl` (TAB-XW-3)
 
-```python
-@dataclass(frozen=True, slots=True)
-class DdlStatement:
-    sql: str  # dialect SQL compiled by SQLAlchemy; identifiers quoted, no bound values
-    target: str  # "schema.table", "schema.table.column" or the index or constraint name
-    transactional: bool  # False for CREATE INDEX CONCURRENTLY and other non-transactional statements
-
-
-def create_statements(
-    model: SchemaSnapshot, *, dialect: Literal["sqlite", "postgresql"]
-) -> tuple[DdlStatement, ...]: ...  # every table in dependency order, then indexes
-def table_statements(
-    table: TableShape, *, dialect: Literal["sqlite", "postgresql"]
-) -> tuple[DdlStatement, ...]: ...  # CREATE TABLE and its indexes
-```
-
-- Compiled with SQLAlchemy Core (`CreateTable`, `CreateIndex`) against the named dialect, without a connection. A
-  type text that the dialect cannot parse back raises `UsageError("ddl.unsupported_type")` naming the column; an
-  identifier longer than the PostgreSQL limit of 63 bytes raises `UsageError("ddl.identifier_too_long")` (no silent
-  truncation, review L-2 of #8). A `level=1` model raises `UsageError("ddl.level_required")`.
-- A default or check text is taken from the model as SQL text; it is schema, not data. The consumer must show it
-  in the preview before it reaches `tabrion.plan`.
-- **Tests:** golden DDL for both dialects, a round trip (create, snapshot, `compare` empty), quoting of reserved
-  words and mixed case.
+**Implemented (TAB-XW-3) and moved into the contract:**
+[section 5.12](contract.md#512-ddl-from-the-schema-model-tabrionddl-since-03-experimental-extra-sqlalchemy-tab-xw-3) with
+the implementation note I-123. `tabrion.ddl.DdlStatement`, `create_statements` and `table_statements` keep the planned
+signatures (`transactional` got the default `True`); added in the implementation, so the plan of TAB-XW-4 has a
+statement for each of its operations: `drop_table_statement`, `add_column_statement`, `drop_column_statement`,
+`alter_column_statements`, `add_constraint_statement`, `drop_constraint_statement`, `create_index_statement` and
+`drop_index_statement` (with `concurrently`), all in `surface.json` with `"since": "0.3"` and stability `X`. Column
+statements use Alembic's DDL constructs and need the extra `migrations` as well (ADR 0015 section 1). Error codes
+beyond the planned `ddl.unsupported_type`, `ddl.identifier_too_long` and `ddl.level_required`:
+`ddl.unsupported_dialect`, `ddl.dialect_mismatch`, `ddl.invalid_shape`, `ddl.unsafe_sql_text` (a default, check,
+expression or predicate text that could leave its place in the statement), `ddl.unsupported_feature` (fail closed,
+ADR 0015 D-5.3, including every shape field the module does not know) and `ddl.rebuild_required` (an in-place change
+SQLite cannot make). The tests named in A.2 (golden DDL, round trip, quoting) are in `tests/unit/test_ddl.py` and
+`tests/postgres/test_ddl_postgres.py`.
 
 ## A.3 `tabrion.plan`: diff, plan and revision text (TAB-XW-4)
 
