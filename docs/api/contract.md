@@ -1333,7 +1333,8 @@ def dump(profiles: Iterable[ConnectionProfile]) -> str: ...
 
 The file (TOML, UTF-8, at most 256 KiB) follows Tabrion Studio's schema version 1 (`studio.toml`, `profiles.toml`):
 `version = 1` and an array of `[[profile]]` tables. It adds keys and secret references, and it refuses three things
-Studio accepts: a libpq multi-host `host = "db1,db2"` (TB-148), a `?`, `#` or `%` in a SQLite `path`, and `/`, `?`,
+Studio accepts: a libpq multi-host `host = "db1,db2"` (TB-148; a comma is refused in every `host`, a socket path
+included), a `?`, `#` or `%` in a SQLite `path`, and `/`, `?`,
 `#`, `%` or `@` in `database` (I-109 d). The format fixes no file name or extension
 (R-CR-6); a consumer may pick one.
 

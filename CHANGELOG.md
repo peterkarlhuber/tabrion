@@ -66,6 +66,9 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Security
 
+- `tabrion.profilefile`: a `host` that starts with `/` (a socket directory) skipped the refused-character check, so
+  `host = "/socket,remote"` was accepted and libpq would read it as a host list with a remote host behind the socket
+  path. A comma in `host` is now refused before any other check (`profilefile.value`, I-109 d, TB-148 (1), W-10).
 - `tabrion.postgres.grant_runtime_role` refuses a runtime role that is a member of any predefined role (`pg_*` or an
   oid below `FirstNormalObjectId`), directly, through other roles, NOINHERIT or `SET`-only, with `RoleUnsafe`
   reason `predefined_role`, before anything is granted (TB-150). Before, a member of `pg_write_all_data` got the

@@ -485,9 +485,14 @@ class _Reader:
         value = self.text(key, limit=255)
         if value is None:
             return None
+        if "," in value:
+            # libpq reads a comma as a host list ("/socket,remote" would add a remote host behind a socket path),
+            # so it is refused before the socket-path branch (TB-148, W-10).
+            self._issue(key, "profilefile.value")
+            return None
         if value.startswith("/"):
             return value
-        if any(char in value for char in "@/?#\\ ,") or "://" in value:
+        if any(char in value for char in "@/?#\\ ") or "://" in value:
             self._issue(key, "profilefile.value")  # a URL or credentials in the host field
             return None
         return value
