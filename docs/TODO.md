@@ -531,8 +531,9 @@ required (owner decision of 2026-11-08 11:26Z).
   dry run 43590153478 (`previous` = `52353da`), master nightly 43590155683 with its downstream job 132432986041. The
   README examples pin it; master then builds as `0.2.2.dev0`.
 - **Patch `0.2.2`:** the version pull request sets `0.2.2` on master `78603bf` (TB-150 #77/#81, TB-036 #81, profile
-  host check #82; public names unchanged against `af0458d`); `v0.2.2` final is `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` (#83); the follow-up
-  records its SHA, the CI push run, the QA-11 dry run (`previous` = `af0458d`) and the downstream nightly.
+  host check #82; public names unchanged against `af0458d`); `v0.2.2` final is `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` (#83). G-T2 passed: CI push
+  run 43668949725, QA-11 dry run 43668961319 (`previous` = `af0458d`), master nightly 43668963223 with its downstream
+  job 132674522166.
 - **0.2.x base (0.3 switch, 2026-11-14):** master moved to `0.3.0.dev0` after
   `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` (`v0.2.2` final, #83). That commit is the base for a later
   0.2.x maintenance branch; it keeps the TAB-XW-6 names unimportable. No branch or tag is made; that is the owner's
