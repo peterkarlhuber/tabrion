@@ -2,7 +2,7 @@
 
 !!! warning "Planned 0.3, not implemented"
     Everything on this page is **planned for Tabrion 0.3 and not implemented**, except the sections marked as moved
-    into the contract (A.1, TAB-XW-2; A.2, TAB-XW-3; A.5, TAB-XW-6). None of the other names exists in the code, in `__all__` or in
+    into the contract (A.1, TAB-XW-2; A.2, TAB-XW-3; A.5, TAB-XW-6; A.6, TAB-XW-7; A.8, TAB-XW-9). None of the other names exists in the code, in `__all__` or in
     [`surface.json`](surface.json); none may be imported or relied on. Names, signatures and
     error codes may still change until the independent API review of TAB-XW-10. When a work package implements its
     part, it moves that section into [the contract](contract.md) with implementation notes, adds the names to
@@ -27,9 +27,9 @@ Every planned name is experimental (`X`) and arrives with 0.3. No stable name ch
 | `tabrion.plan` (new) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers`, `ExecutionResult`, `execute_plan` | TAB-XW-4, TAB-XW-5 | `sqlalchemy`; `revision_text` also `migrations` |
 | `tabrion.rowedit` (new) | `insert_row`, `update_row`, `delete_row` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
 | `tabrion` (layer B) | `Transaction.execute_checked` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
-| `tabrion.sqlite` | `restore`, `RestoreResult`, `delete_database_file` | TAB-XW-7 | none (standard library) |
+| `tabrion.sqlite` | `restore`, `RestoreResult`, `delete_database_file` (implemented, contract section 3.10) | TAB-XW-7 | none (standard library) |
 | `tabrion.postgres` | `RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges`, `revoke_privileges` | TAB-XW-8 | `postgres` |
-| `tabrion.postgres` | `create_database`, `drop_database`, `database_sessions` | TAB-XW-9 | `postgres` |
+| `tabrion.postgres` | `create_database`, `drop_database`, `database_sessions` (implemented, contract section 4.8) | TAB-XW-9 | `postgres` |
 | `tabrion.profilefile` | `ConnectionProfile.mode` value `"admin"` | TAB-XW-8 (E-X8) | none |
 | `tabrion.errors` | `RowCountMismatch`, `PlanError`, `PlanMismatch`, `SchemaDrift`, `PlanRefused`, `PlanFailed`, `DatabaseInUse`; new `RoleUnsafe` reasons | TAB-XW-4..9 | none |
 
@@ -53,7 +53,8 @@ class PlanError(TabrionError)          # base of the plan errors
                                            # markers (comma list)
     class PlanFailed(PlanError)            # "plan.failed": details step, completed, state in {"rolled_back", "partial"};
                                            # original set; never chained
-class DatabaseInUse(TabrionError)      # "postgres.database_in_use" (details sessions), "sqlite.in_use"
+class DatabaseInUse(TabrionError)      # implemented (TAB-XW-7, TAB-XW-9, contract sections 1.4, 3.10, 4.8):
+                                        # "postgres.database_in_use" (details sessions), "sqlite.in_use"
 ```
 
 - `RoleUnsafe` (exists, `postgres.role_unsafe`) gets new values in `details["reasons"]`: `createrole`,
@@ -255,39 +256,13 @@ unimportable while the package version was below 0.3 and are public since master
 
 ## A.6 `tabrion.sqlite`: `restore` and `delete_database_file` (TAB-XW-7)
 
-```python
-@dataclass(frozen=True, slots=True)
-class RestoreResult:
-    path: Path
-    pages: int
-    integrity_check: str  # "ok" or the first message
-
-
-def restore(
-    source: str | os.PathLike[str], target: str | os.PathLike[str], *, overwrite: bool = False, verify: bool = True
-) -> RestoreResult: ...
-def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = False) -> tuple[Path, ...]: ...
-```
-
-- **`restore`:** `check_path` on both; `source` must be a SQLite database (header) and pass `integrity_check`
-  before anything is written (`TabrionError("sqlite.restore_source_corrupt")`). A missing `target` is created with
-  `create_private_file` (0600); an existing one needs `overwrite=True` (`FileExistsError`). The copy uses the online
-  backup API from a read-only source connection into the target in one step, so the change is atomic for other
-  connections of the target and works in WAL mode. With `verify`, `integrity_check` on the target afterwards. The
-  same path for both raises `UsageError("sqlite.same_file")`. Restoring into a production database is the consumer's
-  lock (E-X7), as is the backup of the target before a restore.
-- **`delete_database_file`:** `check_path` (no symbolic link); the file must start with the SQLite header, else
-  `UsageError("sqlite.not_a_database")`. It takes an exclusive lock first and raises `DatabaseInUse("sqlite.in_use")`
-  when another connection holds the file; then it deletes the file and its `-wal`, `-shm` and `-journal` side files
-  and returns the deleted paths. A process that opens the file after the lock check is not prevented (documented
-  race; the consumer stops its own connections first).
-- **N-4:** the check and the delete work through a directory file descriptor opened with `O_NOFOLLOW`; device and
-  inode of the checked file are compared again right before the unlink (a swapped file is refused); side files that
-  are symbolic links are only unlinked, never followed. Tests
-  `tests/unit/test_sqlite_delete.py::test_swap_between_check_and_unlink_refused`,
-  `::test_side_file_symlink_unlinked_not_followed`.
-- **Tests:** the round trip of planning document 15 section 9.4 (backup, restore into a new file, `integrity_check`
-  `ok`, schema fingerprint equal), WAL mode, a corrupt source, the 0600 mode, a held lock, the side files.
+**Implemented (TAB-XW-7) and moved into the contract:**
+[section 3.10](contract.md#310-restore-delete_database_file-since-03-experimental-tab-xw-7) with the implementation
+notes I-170 and I-171. `restore`, `RestoreResult`, `delete_database_file` and `tabrion.errors.DatabaseInUse` are in
+`surface.json` with `"since": "0.3"` and stability `X`. N-4 is tests
+`tests/unit/test_sqlite_delete.py::test_swap_between_check_and_unlink_refused` and
+`::test_side_file_symlink_unlinked_not_followed`; the round trip of planning document 15 section 9.4 is
+`tests/sqlite/test_restore.py::test_round_trip_backup_restore_integrity_and_fingerprint`.
 
 ## A.7 `tabrion.postgres`: role DDL (TAB-XW-8)
 
@@ -391,29 +366,10 @@ def revoke_privileges(
 
 ## A.8 `tabrion.postgres`: `create_database` and `drop_database` (TAB-XW-9)
 
-```python
-def create_database(
-    connection: psycopg.Connection,
-    name: str,
-    *,
-    owner: str | None = None,
-    template: Literal["template0", "template1"] = "template1",
-    encoding: str = "UTF8",
-    locale: str | None = None,
-) -> None: ...
-def drop_database(connection: psycopg.Connection, name: str, *, force: bool = False) -> None: ...
-def database_sessions(connection: psycopg.Connection, name: str) -> int: ...  # read-only, for the preview
-```
-
-- Both need an autocommit connection that is idle (`CREATE`/`DROP DATABASE` cannot run in a transaction); Tabrion
-  never switches autocommit (T-NOTX) and raises `UsageError("postgres.autocommit_required")`.
-- `create_database` checks `rolcreatedb` (or membership of `owner` for `OWNER`) first and raises
-  `PermissionDenied`-classified driver errors unchanged otherwise. The name is checked against the 63-byte limit.
-- `drop_database` refuses the connection's own database, `template0`, `template1` and `postgres`
-  (`UsageError("postgres.database_protected")`), and a database with other sessions unless `force=True`
-  (`DatabaseInUse`, details `sessions`). `force=True` uses `WITH (FORCE)` (PostgreSQL 13 and later). The backup
-  before a drop and the typed name are the consumer's (D-13, E-X5).
-- **Tests:** create and drop round trip, each refusal, a concurrent session, missing `CREATEDB`.
+**Implemented (TAB-XW-9) and moved into the contract:**
+[section 4.8](contract.md#48-create_database-drop_database-database_sessions-since-03-experimental-tab-xw-9) with
+the implementation notes I-190..I-193. `create_database`, `drop_database` and `database_sessions` are in
+`surface.json` with `"since": "0.3"` and stability `X`; the tests are `tests/postgres/test_databases.py`.
 
 ## A.9 `tabrion.profilefile`: mode `admin` (E-X8)
 

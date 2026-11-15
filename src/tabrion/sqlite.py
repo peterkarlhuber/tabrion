@@ -40,6 +40,7 @@ from tabrion.errors import (
     BackupFailed,
     BackupRequired,
     ConfigurationError,
+    DatabaseInUse,
     Kind,
     MigrationFailed,
     MigrationMissing,
@@ -58,6 +59,7 @@ __all__ = [
     "JournalMode",
     "Migration",
     "MigrationResult",
+    "RestoreResult",
     "SQLiteDiagnosis",
     "SQLiteProfile",
     "Synchronous",
@@ -67,6 +69,7 @@ __all__ = [
     "check_path",
     "connect",
     "create_private_file",
+    "delete_database_file",
     "diagnose",
     "foreign_key_check",
     "integrity_check",
@@ -74,6 +77,7 @@ __all__ = [
     "migrate",
     "quick_check",
     "read_transaction",
+    "restore",
     "write_transaction",
 ]
 
@@ -1257,6 +1261,471 @@ def foreign_key_check(
         )
         for row in rows
     ]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Restore and file deletion (TAB-XW-7, since 0.3, experimental)
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+_HEADER = b"SQLite format 3\x00"
+"""The first 16 bytes of every SQLite database file."""
+_RESTORE_PROFILE = SQLiteProfile(busy_timeout=5.0)
+"""``restore``: the target's profile. The busy timeout bounds the wait for a lock another connection holds on the
+target; then the restore is refused (``DatabaseInUse``)."""
+_DIR_FD = {os.open, os.stat, os.unlink} <= os.supports_dir_fd and bool(_O_NOFOLLOW) and hasattr(os, "O_DIRECTORY")
+"""``delete_database_file`` works through a directory descriptor (POSIX, N-4); without one (Windows) by name."""
+
+
+@dataclass(frozen=True, slots=True)
+class RestoreResult:
+    path: Path
+    pages: int
+    integrity_check: str
+    """``"ok"``, or ``"not checked"`` with ``verify=False``. A target that fails the check raises
+    ``TabrionError("sqlite.restore_corrupt")`` instead (contract I-170)."""
+
+
+class _Busy(Exception):
+    """``restore``: the target's lock stayed taken for the busy timeout (raised from the backup's progress hook)."""
+
+
+def _abort_when_busy(status: int, remaining: int, total: int) -> None:
+    """The backup's progress hook: stop instead of retrying a lock forever (``sqlite3`` would sleep and retry)."""
+    if status in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+        raise _Busy
+
+
+def _error_code(exc: sqlite3.Error) -> int | None:
+    """The primary SQLite result code of ``exc`` (Python 3.11 and later), without the extended bits."""
+    code = getattr(exc, "sqlite_errorcode", None)
+    return code & 0xFF if isinstance(code, int) else None
+
+
+def _is_link_stat(info: os.stat_result) -> bool:
+    """``lstat`` result of a symbolic link (or, on Windows, of any reparse point such as a junction)."""
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & _REPARSE_POINT)
+
+
+def _missing_or(exc: OSError, path: str) -> Exception:
+    """``_read_header``: the error for a failed ``lstat`` or ``open`` of ``path``, without the path."""
+    if exc.errno == errno.ELOOP:
+        return _unsafe("sqlite.symlink", path)
+    if exc.errno == errno.ENOENT:
+        return FileNotFoundError(errno.ENOENT, "the database file does not exist")
+    if exc.errno in (*_DENIED, errno.ENOTDIR):
+        return _unsafe("sqlite.unsafe_path", path)
+    return exc
+
+
+def _read_header(path: str, *, dir_fd: int | None = None) -> tuple[os.stat_result, bytes]:
+    """``fstat`` and the first 16 bytes of the regular file ``path``, opened without following a link.
+
+    ``dir_fd`` makes ``path`` a name in that directory. The name is ``lstat``ed first and only a regular file is opened
+    (review L-2 of #88: opening a device can have side effects), with ``O_NOFOLLOW|O_NONBLOCK``, and the opened file
+    must be the one checked. A link is ``UnsafePath("sqlite.symlink")``, a directory, FIFO or device, a file swapped
+    between the ``lstat`` and the open and a file this user may not read ``UnsafePath("sqlite.unsafe_path")``; a
+    missing name ``FileNotFoundError`` without the path.
+    """
+    try:
+        first = os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
+    except OSError as exc:
+        raise _missing_or(exc, path) from None
+    if _is_link_stat(first):
+        raise _unsafe("sqlite.symlink", path)
+    if not stat.S_ISREG(first.st_mode):
+        raise _unsafe("sqlite.unsafe_path", path)
+    try:
+        descriptor = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_CLOEXEC | _O_BINARY, dir_fd=dir_fd)
+    except OSError as exc:
+        raise _missing_or(exc, path) from None
+    try:
+        info = os.fstat(descriptor)
+        # Identity on POSIX only: Windows may report a different file index through stat and fstat.
+        if not stat.S_ISREG(info.st_mode) or (_POSIX and first.st_ino and not _same_identity(first, info)):
+            raise _unsafe("sqlite.unsafe_path", path)
+        header = os.read(descriptor, len(_HEADER))
+    finally:
+        os.close(descriptor)
+    return info, header
+
+
+def _same_identity(first: os.stat_result, second: os.stat_result) -> bool:
+    """The same file (device and inode); ``False`` where the file system has no file index (inode 0)."""
+    return bool(first.st_ino) and (first.st_dev, first.st_ino) == (second.st_dev, second.st_ino)
+
+
+def _remove_created(path: str, created: tuple[int, int]) -> None:
+    """``restore``: remove a target it created itself (and its side files) after a failure, if the name is still it."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return
+    if (info.st_dev, info.st_ino) != created:
+        return
+    for leftover in (path, *(path + suffix for suffix in _SIDE_FILES)):
+        with contextlib.suppress(OSError):
+            os.unlink(leftover)
+
+
+def _leave_wal(connection: sqlite3.Connection) -> None:
+    """``restore``: switch the target to ``journal_mode=DELETE``; only the sole connection of a WAL file can."""
+    try:
+        mode = _str(_scalar(connection, "PRAGMA journal_mode = DELETE")).lower()
+    except sqlite3.OperationalError as exc:
+        if _error_code(exc) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+            raise DatabaseInUse("sqlite.in_use") from None
+        raise
+    if mode != "delete":
+        raise DatabaseInUse("sqlite.in_use")
+
+
+def _copy_into(reader: sqlite3.Connection, writer: sqlite3.Connection, *, verify: bool) -> tuple[int, str]:
+    """``restore``: the online backup from ``reader`` into ``writer`` in one step; ``(pages, check result)``."""
+    wal = _str(_scalar(writer, "PRAGMA journal_mode")).lower() == JournalMode.WAL.value
+    left_wal = wal and _scalar(writer, "PRAGMA page_size") != _scalar(reader, "PRAGMA page_size")
+    if left_wal:
+        # SQLite cannot change the page size of a WAL database (SQLITE_READONLY): copy in rollback mode, which needs
+        # the target to have no other connection, and switch back to WAL afterwards.
+        _leave_wal(writer)
+    try:
+        reader.backup(writer, pages=-1, progress=_abort_when_busy)
+    except _Busy:
+        raise DatabaseInUse("sqlite.in_use") from None
+    if left_wal:
+        try:
+            _rows(writer, "PRAGMA journal_mode = WAL")
+        except sqlite3.OperationalError as exc:
+            # The copy is committed. A connection that opened the target since keeps it in rollback mode for now;
+            # connect switches it back to WAL when it next opens it.
+            if _error_code(exc) not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                raise
+    pages = int(_scalar(writer, "PRAGMA page_count"))
+    if not verify:
+        return pages, _NOT_CHECKED
+    if not integrity_check(writer, max_errors=1).ok:
+        raise TabrionError("sqlite.restore_corrupt", details={"pages": pages})
+    return pages, "ok"
+
+
+def _open_target(path: str) -> sqlite3.Connection:
+    """``restore``: :func:`connect` the target; a lock another connection holds (switching it to WAL) is in use."""
+    try:
+        return connect(path, profile=_RESTORE_PROFILE, create=False)
+    except sqlite3.OperationalError as exc:
+        if _error_code(exc) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+            raise DatabaseInUse("sqlite.in_use") from None
+        raise
+
+
+@contextmanager
+def _source_errors() -> Iterator[None]:
+    """``restore``: SQLite's verdict on a damaged source (a manipulated header, such as a page count beyond the file,
+    is ``SQLITE_CORRUPT`` already while the source is opened) as Tabrion's code, without the driver's message."""
+    try:
+        yield
+    except sqlite3.DatabaseError as exc:
+        code = _error_code(exc)
+        if code == sqlite3.SQLITE_CORRUPT:
+            raise TabrionError("sqlite.restore_source_corrupt") from None
+        if code == sqlite3.SQLITE_NOTADB:
+            raise UsageError("sqlite.not_a_database") from None
+        raise
+
+
+def _open_source(origin: str) -> sqlite3.Connection:
+    """``restore``: :func:`connect` the source read-only; a source SQLite finds damaged while it opens it is
+    ``sqlite.restore_source_corrupt`` (review of #88, I-4)."""
+    with _source_errors():
+        return connect(origin, read_only=True)
+
+
+def restore(
+    source: str | os.PathLike[str], target: str | os.PathLike[str], *, overwrite: bool = False, verify: bool = True
+) -> RestoreResult:
+    """Restore the database file ``source`` (a backup) into ``target`` with SQLite's online backup API.
+
+    ``check_path`` on both; ``source`` must start with the SQLite header (``UsageError("sqlite.not_a_database")``)
+    and pass ``integrity_check`` before anything is written (``TabrionError("sqlite.restore_source_corrupt")``); the
+    check and the copy read the same snapshot of the source. A missing ``target`` is created ``0600`` (and removed
+    again if the restore fails); an existing one needs ``overwrite=True`` (``FileExistsError``) and must itself be a
+    SQLite database or empty. The same file for both is ``UsageError("sqlite.same_file")``.
+
+    The copy runs in one step from a read-only source connection into a connection of the target, so the change is
+    atomic for other connections of the target (they see the old or the new database) and works in WAL mode; the
+    target is opened as :func:`connect` opens it (WAL). When another connection holds a lock on the target for the
+    busy timeout (5 s), or the target is a WAL database with another connection and a different page size than the
+    source, nothing is written: ``DatabaseInUse("sqlite.in_use")``. With ``verify``, ``integrity_check`` runs on the
+    target afterwards (``TabrionError("sqlite.restore_corrupt")``). Taking a backup of the target first and keeping
+    a production database out of reach are the caller's (contract section 3.10, I-170).
+    """
+    origin = os.fspath(source)
+    destination = os.fspath(target)
+    if _is_memory(origin):
+        raise UsageError("sqlite.invalid_source")
+    if _is_memory(destination):
+        raise UsageError("sqlite.invalid_target")
+    check_path(origin)
+    check_path(destination)
+    origin_info, header = _read_header(origin)
+    if header != _HEADER:
+        raise UsageError("sqlite.not_a_database")
+    exists = os.path.lexists(destination)
+    if exists:
+        target_info, target_header = _read_header(destination)
+        if _same_identity(origin_info, target_info) or os.path.normcase(os.path.abspath(origin)) == os.path.normcase(
+            os.path.abspath(destination)
+        ):
+            raise UsageError("sqlite.same_file")
+        if not overwrite:
+            raise FileExistsError(errno.EEXIST, "the restore target exists")
+        if target_info.st_size and target_header != _HEADER:
+            raise UsageError("sqlite.not_a_database")
+    reader = _open_source(origin)
+    try:
+        # One read transaction: the check and the copy see the same snapshot of the source.
+        with _source_errors():
+            reader.execute("BEGIN")
+            _rows(reader, "PRAGMA schema_version")
+            sound = integrity_check(reader, max_errors=1).ok
+        if not sound:
+            raise TabrionError("sqlite.restore_source_corrupt")
+        created = None
+        if not exists:
+            created = _create(destination, _PRIVATE_MODE)
+            if created is None:
+                raise FileExistsError(errno.EEXIST, "the restore target exists")
+        try:
+            writer = _open_target(destination)
+            try:
+                if created is not None and not _same_file(destination, created, writer):
+                    raise _unsafe("sqlite.unsafe_path", destination)
+                pages, result = _copy_into(reader, writer, verify=verify)
+            finally:
+                writer.close()
+        except BaseException:
+            if created is not None:
+                _remove_created(destination, created)
+            raise
+    finally:
+        reader.close()
+    if created is not None:
+        _fsync_directory(os.path.dirname(os.path.abspath(destination)))
+    return RestoreResult(path=Path(destination), pages=pages, integrity_check=result)
+
+
+class _Entries:
+    """The entries of one directory, by base name (``delete_database_file``).
+
+    On POSIX through a descriptor of the directory opened with ``O_NOFOLLOW`` (N-4): a directory swapped for a link
+    after the open changes nothing, and no entry is followed. Without ``dir_fd`` support (Windows) by full name, each
+    entry checked for a link (``lstat``) first.
+    """
+
+    def __init__(self, directory: str) -> None:
+        self._directory = directory
+        self._fd: int | None = None
+        self.shared = False
+        """Group or others may write the directory (POSIX)."""
+        if _DIR_FD:
+            try:
+                self._fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | _O_NOFOLLOW | _O_CLOEXEC)
+            except OSError as exc:
+                # Linux reports a link opened with O_DIRECTORY|O_NOFOLLOW as ENOTDIR, other systems as ELOOP.
+                if exc.errno == errno.ELOOP or (exc.errno == errno.ENOTDIR and _is_link(directory)):
+                    raise _unsafe("sqlite.symlink", directory) from None
+                raise _directory_error(exc, directory) from None
+            try:
+                info = os.fstat(self._fd)
+            except BaseException:
+                self.close()
+                raise
+        else:
+            try:
+                info = os.stat(directory)
+            except OSError as exc:
+                raise _directory_error(exc, directory) from None
+            # Windows reports a path through a regular file as ENOENT, not ENOTDIR: check the directory itself.
+            if not stat.S_ISDIR(info.st_mode):
+                raise _unsafe("sqlite.unsafe_path", directory)
+            if not _POSIX:
+                return
+        self.shared = bool(info.st_mode & (stat.S_IWGRP | stat.S_IWOTH))
+
+    def _name(self, base: str) -> str:
+        return base if self._fd is not None else os.path.join(self._directory, base)
+
+    def lstat(self, base: str) -> os.stat_result | None:
+        try:
+            return os.stat(self._name(base), dir_fd=self._fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise _directory_error(exc, self._name(base)) from None
+
+    def read_header(self, base: str) -> tuple[os.stat_result, bytes]:
+        return _read_header(self._name(base), dir_fd=self._fd)
+
+    def unlink(self, base: str) -> None:
+        os.unlink(self._name(base), dir_fd=self._fd)
+
+    def remove_link(self, base: str) -> None:
+        """Remove a link itself, never its target (on Windows a directory link or junction needs ``rmdir``)."""
+        try:
+            self.unlink(base)
+        except (IsADirectoryError, PermissionError):
+            if self._fd is not None:
+                raise
+            os.rmdir(self._name(base))
+
+    def sync(self) -> None:
+        if self._fd is None:
+            _fsync_directory(self._directory)
+            return
+        with contextlib.suppress(OSError):
+            os.fsync(self._fd)
+
+    def close(self) -> None:
+        if self._fd is not None:
+            os.close(self._fd)
+            self._fd = None
+
+
+def _directory_error(exc: OSError, path: str) -> Exception:
+    """``delete_database_file``: the error for the directory (or, by name, an entry) without the path (review L-1 of
+    #88): missing is ``FileNotFoundError``, a component that is no directory or a directory this user may not open is
+    ``UnsafePath("sqlite.unsafe_path")``; anything else (no descriptors left) is the ``OSError`` it is."""
+    if exc.errno == errno.ENOENT:
+        return FileNotFoundError(errno.ENOENT, "the database directory does not exist")
+    if exc.errno in (*_DENIED, errno.ENOTDIR):
+        return _unsafe("sqlite.unsafe_path", path)
+    return exc
+
+
+def _refuse_if_in_use(name: str, expected: tuple[int, int]) -> None:
+    """Take SQLite's exclusive lock on the checked file and release it; ``DatabaseInUse`` when another connection
+    holds the file (a lock, or in WAL mode any open connection). SQLite must open the checked file (I-22)."""
+    probe = _open_checked(name, name=name, uri=False, timeout=0.0, check_same_thread=True, expected=expected)
+    if probe is None:
+        raise _unsafe("sqlite.unsafe_path", name)
+    try:
+        if not _same_file(name, expected, probe):
+            raise _unsafe("sqlite.unsafe_path", name)
+        try:
+            # Exclusive locking mode: in WAL mode the first read takes the file's exclusive lock, which every other
+            # open WAL connection blocks; in rollback mode BEGIN EXCLUSIVE fails while another one reads or writes.
+            probe.execute("PRAGMA locking_mode = EXCLUSIVE")
+            probe.execute("BEGIN EXCLUSIVE")
+            _rows(probe, "PRAGMA schema_version")
+        except sqlite3.DatabaseError as exc:
+            code = _error_code(exc)
+            if code in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                raise DatabaseInUse("sqlite.in_use") from None
+            if code == sqlite3.SQLITE_NOTADB:
+                raise UsageError("sqlite.not_a_database") from None
+            raise
+    finally:
+        probe.close()
+
+
+def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = False) -> tuple[Path, ...]:
+    """Delete a SQLite database file and its ``-wal``, ``-shm`` and ``-journal`` files; the deleted paths.
+
+    The file must not be a symbolic link (``UnsafePath("sqlite.symlink")``), must be a regular file of this user that
+    is not group- or world-writable (as :func:`connect` requires) and must start with the SQLite header
+    (``UsageError("sqlite.not_a_database")``). On POSIX its directory must not be group- or world-writable either,
+    sticky bit or not (``UnsafePath("sqlite.unsafe_mode")``): another user could put a ``-journal`` there that SQLite
+    rolls back into the file when it opens it for the lock check. A directory that is missing is
+    ``FileNotFoundError`` (``()`` with ``missing_ok``), one that is no directory or that this user may not open
+    ``UnsafePath("sqlite.unsafe_path")``; no error names the path. Before anything is deleted, SQLite's exclusive
+    lock is taken and released: ``DatabaseInUse("sqlite.in_use")`` when another connection holds the file (a reader
+    or writer; in WAL mode any open connection; on Windows also a file another process keeps open). An idle
+    connection in rollback mode holds no lock and is not seen, and a process that opens the file after the check is
+    not prevented: stop your own connections first. A missing file is ``FileNotFoundError`` unless ``missing_ok``
+    (then ``()``).
+
+    N-4: on POSIX the checks and the deletes go through a descriptor of the directory opened with ``O_NOFOLLOW`` (the
+    directory itself must not be a link; links in its parents are allowed), device and inode of the checked file are
+    compared again right before the unlink (a swapped file is refused, ``UnsafePath("sqlite.unsafe_path")``), and side
+    files that are symbolic links are only unlinked, never followed: they are removed before SQLite opens the file for
+    the lock, also when the delete is then refused (contract section 3.10, I-171).
+    """
+    name = os.fspath(path)
+    if _is_memory(name):
+        raise UsageError("sqlite.invalid_target")
+    directory, base = os.path.split(name)
+    if base in ("", os.curdir, os.pardir):
+        raise UsageError("sqlite.invalid_target")
+    try:
+        entries = _Entries(directory or os.curdir)
+    except FileNotFoundError:
+        if missing_ok:
+            return ()
+        raise
+    try:
+        return _delete(entries, name, base, missing_ok=missing_ok)
+    finally:
+        entries.close()
+
+
+def _delete(entries: _Entries, name: str, base: str, *, missing_ok: bool) -> tuple[Path, ...]:
+    first = entries.lstat(base)
+    if first is None:
+        if missing_ok:
+            return ()
+        raise FileNotFoundError(errno.ENOENT, "the database file does not exist")
+    if _is_link_stat(first):
+        raise _unsafe("sqlite.symlink", name)
+    if entries.shared:
+        # Review L-3 of #88: another user who may write the directory (sticky bit or not) could put a "hot"
+        # -journal next to the file between the side-file check and the lock check, and SQLite would roll it back
+        # into the database when it opens the file for that check; nothing is opened or deleted here.
+        raise _unsafe("sqlite.unsafe_mode", os.path.dirname(name) or os.curdir)
+    checked, header = entries.read_header(base)
+    if header != _HEADER:
+        raise UsageError("sqlite.not_a_database")
+    _owner_and_mode(name, checked, allow_shared_file=False)
+    links: list[str] = []
+    # Every side file there at the check is gone at the end: SQLite may remove -wal and -shm itself when the lock
+    # check's connection closes, the rest is unlinked below.
+    deleted: set[str] = set()
+    for suffix in _SIDE_FILES:
+        side = entries.lstat(base + suffix)
+        if side is None:
+            continue
+        deleted.add(suffix)
+        if _is_link_stat(side):
+            links.append(suffix)
+        elif not stat.S_ISREG(side.st_mode):
+            raise _unsafe("sqlite.unsafe_path", name + suffix)
+        else:
+            _owner_and_mode(name + suffix, side, allow_shared_file=False)
+    for suffix in links:
+        # Never followed: removed before SQLite opens the database for the lock check, which would open them.
+        entries.remove_link(base + suffix)
+    identity = (checked.st_dev, checked.st_ino)
+    _refuse_if_in_use(name, identity)
+    again = entries.lstat(base)
+    if again is None or _is_link_stat(again) or (identity[1] and (again.st_dev, again.st_ino) != identity):
+        raise _unsafe("sqlite.unsafe_path", name)  # swapped between the check and the unlink (N-4)
+    try:
+        entries.unlink(base)
+    except PermissionError:
+        if _DIR_FD:
+            raise
+        raise DatabaseInUse("sqlite.in_use") from None  # Windows: another process keeps the file open
+    deleted.add("")
+    for suffix in _SIDE_FILES:
+        side = entries.lstat(base + suffix)
+        if side is None:
+            continue
+        if _is_link_stat(side):
+            entries.remove_link(base + suffix)
+        else:
+            entries.unlink(base + suffix)
+        deleted.add(suffix)
+    entries.sync()
+    return tuple(Path(name + suffix) for suffix in ("", *_SIDE_FILES) if suffix in deleted)
 
 
 # ---------------------------------------------------------------------------------------------------------------------

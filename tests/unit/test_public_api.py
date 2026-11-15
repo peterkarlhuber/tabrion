@@ -63,6 +63,8 @@ EXPECTED: dict[str, set[str]] = {
         "UnsafePath",
         # TAB-XW-6 (CR-DBX), since 0.3, experimental.
         "RowCountMismatch",
+        # TAB-XW-7 and TAB-XW-9 (CR-DBX), since 0.3, experimental.
+        "DatabaseInUse",
     },
     "tabrion.sql": {"split_statements"},
     "tabrion.config": {"safe_url", "url_from_env"},
@@ -90,6 +92,10 @@ EXPECTED: dict[str, set[str]] = {
         "ForeignKeyViolation",
         "diagnose",
         "SQLiteDiagnosis",
+        # TAB-XW-7 (CR-DBX), since 0.3, experimental.
+        "RestoreResult",
+        "delete_database_file",
+        "restore",
     },
     "tabrion.postgres": {
         "SessionSettings",
@@ -112,6 +118,10 @@ EXPECTED: dict[str, set[str]] = {
         "try_advisory_lock",
         "wait_advisory_lock",
         "advisory_unlock",
+        # TAB-XW-9 (CR-DBX), since 0.3, experimental.
+        "create_database",
+        "database_sessions",
+        "drop_database",
     },
     "tabrion.postgres.roles": {
         "RoleInfo",

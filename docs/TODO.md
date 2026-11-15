@@ -34,6 +34,9 @@
 > (`tabrion.schema` v2, contract section 5.10 and I-111); TB-015 notes the extension; counts unchanged.
 > TAB-XW-3 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw3`): TB-149 stays in progress, TAB-XW-3 done
 > (`tabrion.ddl`, contract section 5.12 and I-123); counts unchanged.
+> TAB-XW-7 and TAB-XW-9 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw79`): TB-149 stays in progress,
+> TAB-XW-7 done (SQLite `restore`, `delete_database_file`, contract section 3.10) and TAB-XW-9 done (PostgreSQL
+> `create_database`, `drop_database`, `database_sessions`, contract section 4.8); counts unchanged.
 
 ## Summary
 
@@ -613,7 +616,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -654,6 +657,30 @@ required (owner decision of 2026-11-08 11:26Z).
   collations, `NOT VALID`, `MATCH`, exclusion constraints (`ExclusionShape`), the remaining blind spots in I-111 d;
   F3 no `catch_warnings` (SQLite uniques from the pragmas, unnamed); F4 `IndexShape.expressions`; F5 SQLite foreign
   keys from the pragma; F6 `from_json` needs an integer `format`.
+- **TAB-XW-7 done** (branch `claude/project-thread-rdo6g3-tabxw79`): `tabrion.sqlite.restore` (online backup API in
+  one step from a read-only source connection, `integrity_check` of the source in the same snapshot before and of the
+  target after, new targets `0600` and removed again on failure, a WAL target with another page size copied in
+  rollback mode, a held target `DatabaseInUse`) and `delete_database_file` (exclusive-lock check, side files, owner
+  and mode rules of `connect`; N-4: directory descriptor with `O_NOFOLLOW`, device and inode compared before the
+  unlink, side-file links unlinked before SQLite opens the file, never followed; Windows by name, where an open file
+  cannot be deleted and is reported as in use). Moved from addendum A.6 into contract section 3.10 (I-170, I-171);
+  deviation D-128. N-4 tests `tests/unit/test_sqlite_delete.py::test_swap_between_check_and_unlink_refused`,
+  `::test_side_file_symlink_unlinked_not_followed`; the round trip of planning document 15 section 9.4 is
+  `tests/sqlite/test_restore.py::test_round_trip_backup_restore_integrity_and_fingerprint`. Security review of #88
+  (planning folder `reviews/pr88-tabxw79-review.md`, ACCEPTED with conditions) folded in: L-1 no path in the errors
+  for a missing directory or a non-directory component (`test_missing_directory_names_no_path`,
+  `test_directory_component_that_is_a_file_names_no_path`); L-2 `lstat` before the open, only regular files opened
+  (`test_file_that_is_not_regular_is_never_opened`, `test_file_swapped_between_lstat_and_open_is_refused`,
+  `tests/sqlite/test_restore.py::test_fifo_is_refused_without_being_opened`); L-3 a directory the group or others may
+  write is refused (`test_directory_others_may_write_is_refused`); I-4 a header with a page count beyond the file is
+  `sqlite.restore_source_corrupt` (`test_header_with_a_page_count_beyond_the_file_is_source_corrupt`); I-1 the D-128
+  rationale corrected (SQLite 3.53.1 opens side files with `O_NOFOLLOW`).
+- **TAB-XW-9 done** (branch `claude/project-thread-rdo6g3-tabxw79`): `tabrion.postgres.create_database`,
+  `drop_database` and `database_sessions` (names through `psycopg.sql.Identifier`, option values as validated
+  literals; idle autocommit connection required, never switched; `CREATEDB` and the `SET` option on the owner checked
+  first; `postgres`, templates and the own database protected; other sessions refused unless `force=True`, also when
+  one connects after the check). Moved from addendum A.8 into contract section 4.8 (I-190..I-193); deviation D-129.
+  Tests `tests/postgres/test_databases.py`.
 - **Decided (owner, 2026-11-15 06:37Z, confirmed 06:38Z): drift blind spots, D-5 in
   [ADR 0015 section 10](adr/0015-crdbx-write-and-ddl-primitives.md#10-d-5-drift-blind-spots-of-the-level-2-fingerprint-owner-decision-of-2026-11-15)**
   (review of #85, F2; I-111 d). (1) Triggers and RLS policies go into the level-2 fingerprint with the functions they
