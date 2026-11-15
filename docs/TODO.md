@@ -527,6 +527,9 @@ required (owner decision of 2026-11-08 11:26Z).
   final (2026-11-14). G-T2 passed (planning folder `reviews/tabrion-021-review.md`): CI push run 43590132481, QA-11
   dry run 43590153478 (`previous` = `52353da`), master nightly 43590155683 with its downstream job 132432986041. The
   README examples pin it; master then builds as `0.2.2.dev0`.
+- **Patch `0.2.2`:** the version pull request sets `0.2.2` on master `78603bf` (TB-150 #77/#81, TB-036 #81, profile
+  host check #82; public names unchanged against `af0458d`); its merge commit is `v0.2.2` final, and the follow-up
+  records its SHA, the CI push run, the QA-11 dry run (`previous` = `af0458d`) and the downstream nightly.
 - **Next step:** Studio STU-010 and STU-011 then replace
   their workaround (`fetch_all` with `prepare_threshold=0`, `tabrion_compat`, TD-013) with `inspector`, `query`,
   `stream` and `cancel`.
