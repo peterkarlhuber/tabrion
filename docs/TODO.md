@@ -43,6 +43,9 @@
 > DDL with the attribute ban, also indirect, contract section 4.9; profile mode `admin`); note N-1 of the security
 > review of #88 folded in (`delete_database_file` also checks the directory's owner); security review of #90 folded in
 > (P90-01..P90-07, Studio items before G-S4 listed under TB-149); counts unchanged.
+> TAB-XW-5 2026-11-15 (branch `claude/project-thread-rdo6g3-tabxw5`): TB-149 stays in progress, TAB-XW-5 done
+> (`tabrion.plan.execute_plan`, contract section 5.13 and I-125; D-5.4, the conditions of the review of #89 for the
+> executor); counts unchanged.
 
 ## Summary
 
@@ -622,7 +625,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-8 done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; TAB-XW-8 done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -791,9 +794,38 @@ required (owner decision of 2026-11-08 11:26Z).
   (Low):** residual risks in I-124 j and SECURITY.md. **Open for G-S3 (Studio):** the preview shows the PostgreSQL
   PL/pgSQL residual of P89-02, the revision conditions of P89-06 and the fingerprint gaps of P89-04; plans stay
   server-side and are planned again before they run (P89-03).
-- **Open (follow-up work packages):** TAB-XW-5 `execute_plan`; TAB-XW-8 role DDL (PostgreSQL 16 and later, no
-  predefined `pg_*` role; TB-035 stays the consumers'), profile mode `admin`;
-  TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
+- **TAB-XW-5 done** (branch `claude/project-thread-rdo6g3-tabxw5`): `tabrion.plan.execute_plan` and
+  `ExecutionResult`, new errors `SchemaDrift` and `PlanFailed`. The executor never takes a plan (P89-03): it gets the
+  target model and the confirmation (`plan_hash`, `expected_fingerprint`, `allow`), plans again inside its own
+  transaction and runs only a plan with the confirmed hash and allowed risk classes. Refused before any statement:
+  an environment other than `"dev"`/`"test"` (D-3, no default), migration markers (read in the execution
+  transaction), drift (`SchemaDrift` with the differences from the optional preview snapshot `source`), a hash
+  mismatch. PostgreSQL (D-5.4, N-1): `READ COMMITTED`, `SET LOCAL lock_timeout`, `LOCK TABLE` of the changed tables
+  and their foreign-key neighbors, then fingerprint and plan again under the locks; a lock timeout is
+  `TransientError` with the step; `CONCURRENTLY` steps alone, in plan order (failure: `PlanFailed`, state
+  `partial`). SQLite (P89-01, K-1): foreign keys off before `BEGIN IMMEDIATE` and refused while they stay on (reason
+  `foreign_keys_on`), `trusted_schema` off, defensive mode (Python 3.12+; without it a plan that recreates a trigger
+  is refused), one statement per call under the caller's authorizer, `foreign_key_check` and `integrity_check` before
+  the commit, settings restored. Dry run = rollback on both engines. Moved from addendum A.4 into contract section
+  5.13 (I-125). Open points for the review: no `plan` parameter (new keywords `source`, `schemas`, `server_version`,
+  `concurrent_indexes`); drift before the hash check; foreign keys off for every SQLite plan; new reason
+  `foreign_keys_on` and state `unknown`; leading `CONCURRENTLY` drops run before the transactional steps (plan
+  order); SQLite dry run without a backup copy; `plan.fingerprint_mismatch` only for `source` and a malformed
+  fingerprint; private layer-B hooks `Database._schema_transaction` and `_autocommit`; `fingerprint_after` is not
+  required to equal the plan's target fingerprint (server-normalized defaults).
+  Review of #91 (planning folder `reviews/pr91-tabxw5-review.md`, ACCEPTED with conditions) folded in, in code:
+  P91-01 a plan of leading `DROP INDEX CONCURRENTLY` steps only ends with a complete result and `fingerprint_after`
+  (it raised `IndexError` after the drop); P91-02 the transaction after the leading drops reads the migration markers
+  again (`PlanFailed`, state `partial`, `check` `migration_managed`); documented in I-125: P91-03 a PostgreSQL dry
+  run consumes sequence values, P91-04 SQLite waits for `BEGIN IMMEDIATE` under `busy_timeout`, not `timeout`,
+  P91-05 `details.actual` is no confirmation, P91-06 foreign-key neighbors outside `schemas` are not locked.
+  **Open for Studio before G-S3 (STU-XW):** for a plan with `non_transactional` steps the confirmation shows that they
+  run outside the transaction and can stay partly applied (leading `CONCURRENTLY` drops run first); after
+  `PlanFailed` with state `partial` Studio forces a new preview; the run is bound to the `plan_hash` Studio stored and
+  showed, never to a value from an error's `details` (P91-05); the confirmation dialog names the residual risks of
+  I-125 i (functions cannot be locked, `CONCURRENTLY` steps without the executor's locks, the environment is a
+  declaration); a dry run on PostgreSQL may advance sequences (P91-03).
+- **Open (follow-up work packages):** TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
   its names to `surface.json` (`since` 0.3, `X`).
 - **Security review of #76 (planning folder `reviews/pr76-tabxw1-review.md`): ACCEPTED WITH CONDITIONS.** The
   conditions, decisions and notes are requirements in [ADR 0015 section 9](adr/0015-crdbx-write-and-ddl-primitives.md#9-conditions-decisions-and-notes-of-the-security-review-of-76-binding-requirements)

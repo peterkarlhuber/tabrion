@@ -2,7 +2,7 @@
 
 !!! warning "Planned 0.3, not implemented"
     Everything on this page is **planned for Tabrion 0.3 and not implemented**, except the sections marked as moved
-    into the contract (A.1, TAB-XW-2; A.2, TAB-XW-3; A.3, TAB-XW-4; A.5, TAB-XW-6; A.6, TAB-XW-7; A.7 and A.9, TAB-XW-8; A.8, TAB-XW-9). None of the other names exists in the code, in `__all__` or in
+    into the contract (A.1, TAB-XW-2; A.2, TAB-XW-3; A.3, TAB-XW-4; A.4, TAB-XW-5; A.5, TAB-XW-6; A.6, TAB-XW-7; A.7 and A.9, TAB-XW-8; A.8, TAB-XW-9). None of the other names exists in the code, in `__all__` or in
     [`surface.json`](surface.json); none may be imported or relied on. Names, signatures and
     error codes may still change until the independent API review of TAB-XW-10. When a work package implements its
     part, it moves that section into [the contract](contract.md) with implementation notes, adds the names to
@@ -24,14 +24,14 @@ Every planned name is experimental (`X`) and arrives with 0.3. No stable name ch
 |---|---|---|---|
 | `tabrion.schema` | `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `IndexShape`; new fields of `ColumnShape`, `TableShape`, `SchemaSnapshot`; `snapshot(level=)`; new `SchemaDifference.kind` values (implemented, contract section 5.10, I-111) | TAB-XW-2 | `sqlalchemy` |
 | `tabrion.ddl` (new) | `DdlStatement`, `create_statements`, `table_statements` and the in-place statements (implemented, contract section 5.12, I-123) | TAB-XW-3 | `sqlalchemy`; column statements also `migrations` |
-| `tabrion.plan` (new) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers` (implemented, contract section 5.13, I-124); `ExecutionResult`, `execute_plan` | TAB-XW-4, TAB-XW-5 | `sqlalchemy`; column steps also `migrations` |
+| `tabrion.plan` (new) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers` (implemented, contract section 5.13, I-124); `ExecutionResult`, `execute_plan` (implemented, contract section 5.13, I-125) | TAB-XW-4, TAB-XW-5 | `sqlalchemy`; column steps also `migrations` |
 | `tabrion.rowedit` (new) | `insert_row`, `update_row`, `delete_row` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
 | `tabrion` (layer B) | `Transaction.execute_checked` (implemented, contract section 5.11) | TAB-XW-6 | `sqlalchemy` |
 | `tabrion.sqlite` | `restore`, `RestoreResult`, `delete_database_file` (implemented, contract section 3.10) | TAB-XW-7 | none (standard library) |
 | `tabrion.postgres` | `RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges`, `revoke_privileges` (implemented, contract section 4.9) | TAB-XW-8 | `postgres` |
 | `tabrion.postgres` | `create_database`, `drop_database`, `database_sessions` (implemented, contract section 4.8) | TAB-XW-9 | `postgres` |
 | `tabrion.profilefile` | `ConnectionProfile.mode` value `"admin"` (implemented, contract section 5.9, I-109 e) | TAB-XW-8 (E-X8) | none |
-| `tabrion.errors` | `RowCountMismatch`, `PlanError`, `PlanMismatch`, `PlanRefused`, `DatabaseInUse` (implemented, contract section 1.4); `SchemaDrift`, `PlanFailed`; new `RoleUnsafe` reasons | TAB-XW-4..9 | none |
+| `tabrion.errors` | `RowCountMismatch`, `PlanError`, `PlanMismatch`, `PlanRefused`, `DatabaseInUse`, `SchemaDrift`, `PlanFailed` (implemented, contract section 1.4); new `RoleUnsafe` reasons | TAB-XW-4..9 | none |
 
 **Not planned** (non-goals stay, ADR 0014, ADR 0015): a `pg_dump`/`pg_restore` wrapper, an Alembic runner or
 `upgrade`, a migration version table, a feature flag, gate or "writes enabled" setting, upsert or merge helpers, role
@@ -44,18 +44,21 @@ class RowCountMismatch(TabrionError)   # implemented (TAB-XW-6, contract section
                                         # "transaction.rowcount_mismatch" (details expected, actual)
                                         # "transaction.too_many_rows" (details limit, actual)
 class PlanError(TabrionError)          # implemented (TAB-XW-4, contract sections 1.4 and 5.13): base of the plan errors
-    class PlanMismatch(PlanError)          # implemented with "plan.invalid" (details field); TAB-XW-5 adds
-                                           # "plan.hash_mismatch", "plan.fingerprint_mismatch"
-    class SchemaDrift(PlanError)           # "plan.drift": details expected, actual (fingerprints), differences (count)
+    class PlanMismatch(PlanError)          # implemented with "plan.invalid" (details field); TAB-XW-5 added
+                                           # "plan.hash_mismatch", "plan.fingerprint_mismatch" (implemented)
+    class SchemaDrift(PlanError)           # implemented (TAB-XW-5, contract I-125): "plan.drift": details expected,
+                                           # actual (fingerprints), differences (count)
                                            # .differences: tuple[SchemaDifference, ...]
     class PlanRefused(PlanError)           # "plan.refused": details reason in
                                            # {"environment", "migration_managed", "risk_not_allowed",
                                            #  "dialect_mismatch", "engine_unsupported", "unsafe_schema_sql",
                                            #  "unsupported_feature"}, markers (comma list); implemented
                                            # (TAB-XW-4) with the last four, "unsupported_feature" added for
-                                           # ADR 0015 D-5
-    class PlanFailed(PlanError)            # "plan.failed": details step, completed, state in {"rolled_back", "partial"};
-                                           # original set; never chained
+                                           # ADR 0015 D-5; TAB-XW-5 implemented the first three and
+                                           # added "foreign_keys_on" (contract I-125)
+    class PlanFailed(PlanError)            # implemented (TAB-XW-5, contract I-125): "plan.failed": details step,
+                                           # completed, state in {"rolled_back", "partial", "unknown"}; original set;
+                                           # never chained
 class DatabaseInUse(TabrionError)      # implemented (TAB-XW-7, TAB-XW-9, contract sections 1.4, 3.10, 4.8):
                                         # "postgres.database_in_use" (details sessions), "sqlite.in_use"
 ```
@@ -136,72 +139,29 @@ Changes from the planned text, each the safe reading of ADR 0015:
 
 ## A.4 `tabrion.plan.execute_plan` (TAB-XW-5)
 
-```python
-@dataclass(frozen=True, slots=True)
-class ExecutionResult:
-    plan_hash: str
-    dry_run: bool
-    steps_run: int
-    untested_steps: tuple[int, ...]  # dry run: the non-transactional steps that did not run
-    fingerprint_after: str | None  # None for a dry run
+**Implemented (TAB-XW-5) and moved into the contract:**
+[section 5.13](contract.md#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4) with
+the implementation note I-125. `tabrion.plan.ExecutionResult`, `execute_plan` and `tabrion.errors.SchemaDrift`,
+`PlanFailed` are in `surface.json` with `"since": "0.3"` and stability `X`. Changes from the planned text, each the
+safe reading of ADR 0015 and of the review of #89:
 
-
-def execute_plan(
-    database: Database,
-    plan: MigrationPlan,
-    *,
-    plan_hash: str,
-    expected_fingerprint: str,
-    environment: Literal["dev", "test"],
-    allow: Iterable[RiskClass] = (RiskClass.ADDITIVE,),
-    dry_run: bool = False,
-    lock_timeout: float = 5.0,
-    timeout: float | None = None,
-) -> ExecutionResult: ...
-```
-
-Order of checks, each before any statement runs:
-
-1. `environment` is `"dev"` or `"test"`, else `PlanRefused` (reason `environment`).
-2. `migration_markers(database)` is empty, else `PlanRefused` (reason `migration_managed`, details `markers`).
-3. The plan's recomputed hash equals `plan.plan_hash` and `plan_hash`, else `PlanMismatch("plan.hash_mismatch")`;
-   `plan.source_fingerprint == expected_fingerprint`, else `PlanMismatch("plan.fingerprint_mismatch")`.
-4. Every risk of every step is in `allow`, else `PlanRefused` (reason `risk_not_allowed`).
-5. The database's dialect equals `plan.dialect`, else `PlanRefused` (reason `dialect_mismatch`).
-6. **Drift check:** a level-2 snapshot taken inside the execution transaction (PostgreSQL) or under
-   `BEGIN IMMEDIATE` (SQLite) has the fingerprint `expected_fingerprint`, else `SchemaDrift`. **N-1:** on PostgreSQL
-   the executor first locks the plan's target tables (`LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE` or the stronger
-   mode a step needs, under `lock_timeout`) and only then computes the fingerprint. Tests
-   `tests/postgres/test_plan_execute_postgres.py::test_locks_taken_before_drift_fingerprint`,
-   `::test_concurrent_ddl_after_check_blocked`.
-
-- **D-3:** `environment` has no default and is typed `Literal["dev", "test"]`; it is a guard rail, not a boundary.
-  Studio fills it from the user-local stored profile, never from the request (Studio #109 K-1). Tests
-  `tests/unit/test_plan_execute.py::test_environment_is_required_keyword_without_default`,
-  `::test_environment_other_values_refused`.
-- **K-1 at execution:** each recreated `sqlite_schema` text runs as one statement on the caller's connection under
-  the caller's authorizer, with `trusted_schema = OFF` and defensive mode (`SQLITE_DBCONFIG_DEFENSIVE`; Studio
-  TX-16). Test `tests/unit/test_plan_sqlite_rebuild.py::test_rebuild_runs_under_authorizer_and_defensive`.
-
-- **Execution and dry run:** as [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) section 4. On PostgreSQL
-  `SET LOCAL lock_timeout`, one transaction for the transactional steps, then each non-transactional step alone; a
-  lock timeout raises `TransientError` with the step in `details`, after a rollback. On SQLite the rebuild runs with
-  `foreign_keys` off outside the transaction and `foreign_key_check` before the commit; a violation rolls back and
-  raises `PlanFailed` (state `rolled_back`, details `violations` as a count).
-- `database` is a layer-B `Database` the caller owns; the executor opens its own transactions (an open Tabrion
-  transaction of the same thread raises `UsageError("database.nested_transaction")`). It never retries a write
-  (R-NORETRY).
-- **Review of #89 (binding for TAB-XW-5):** (P89-01) a SQLite plan with a rebuild or table drop runs with
-  `foreign_keys` off, set before `BEGIN`, and the executor refuses to start on a connection where it is still on;
-  `foreign_key_check` and `integrity_check` run before the commit; test "foreign keys on: refused, no row lost".
-  (P89-02) The `SELECT * FROM <view> LIMIT 0` statements a plan carries run in the transaction like every other
-  statement. (P89-03) The executor never takes a plan from a client, a file or an import: it plans again from the
-  snapshot taken under the locks of D-5.4 and the target held server-side, compares the new `plan_hash` with the hash
-  the user confirmed in the preview (not one that came with the plan) and checks the risk classes of the new plan
-  against `allow`; the "swapped plan" test is written exactly so. See contract I-124 a, f, h.
-- **Tests:** each refusal above as a negative test, a swapped and an edited plan, drift injected between preview and
-  execution, dry run leaves the fingerprint unchanged on both engines, a lock timeout, a failing non-transactional
-  step reports `partial`, SQLite rebuild golden tests (R-X2).
+- **No `plan` parameter (P89-03).** The executor takes the target model (`target`) instead of a plan and plans again
+  itself, inside its transaction and under the locks of D-5.4; it runs only a plan whose hash is the `plan_hash` the
+  user confirmed, and checks the risk classes of that plan. New keywords: `schemas` (the scope of the snapshot, as in
+  the preview), `server_version` and `concurrent_indexes` (the options of the preview's `plan`), and `source` (the
+  preview's snapshot, optional: it must have `expected_fingerprint`, else `PlanMismatch("plan.fingerprint_mismatch")`,
+  and `SchemaDrift.differences` names the differences from it).
+- **Order of checks.** Drift comes before the hash check, because the new plan is made from the snapshot it checks;
+  the markers are read inside the execution transaction (I-125 b).
+- **New reason `foreign_keys_on`** (P89-01): SQLite foreign keys are turned off before `BEGIN` for every SQLite plan,
+  read back, and the executor refuses to start while they stay on. `foreign_key_check` and `integrity_check` run
+  before every SQLite commit. Without defensive mode (Python 3.11) a plan that recreates a trigger is refused (reason
+  `engine_unsupported`, `feature` `sqlite_defensive`).
+- **`PlanFailed` state `unknown`** for a `COMMIT` that may have run (connection lost), and details `check` and
+  `violations` for a failed check.
+- **`CONCURRENTLY` steps in plan order:** the leading drops before the transactional steps (which then plan again
+  under new locks and must be exactly the remaining steps), the creations after the commit (I-125 e).
+- **SQLite dry run** is the rollback of the execution transaction, not a run on a backup copy (I-125 f).
 
 ## A.5 Guided write transaction (TAB-XW-6)
 

@@ -1020,6 +1020,13 @@ class Database(_DatabaseV02):
 
     @contextmanager
     def _begin(self, *, read: bool, timeout: float | None, isolation: str | None) -> Iterator[Transaction]:
+        with self._connection_for(read=read) as connection:
+            yield from self._run_transaction(connection, read=read, timeout=timeout, isolation=isolation)
+
+    @contextmanager
+    def _connection_for(self, *, read: bool) -> Iterator[sqlalchemy.Connection]:
+        """A checked-out connection under the rules of every transaction: open database, no nesting in the thread,
+        no write under a read-only profile, the serial lock of an in-memory database."""
         self._check_open()
         if getattr(self._local, "active", False):
             raise UsageError("database.nested_transaction")
@@ -1032,13 +1039,100 @@ class Database(_DatabaseV02):
         try:
             connection = self._checkout()
             try:
-                yield from self._run_transaction(connection, read=read, timeout=timeout, isolation=isolation)
+                yield connection
             finally:
                 connection.close()
         finally:
             self._local.active = False
             if serial is not None:
                 serial.release()
+
+    # Schema change execution (TAB-XW-5, contract I-125). tabrion.plan may not import this module (import contract
+    # "plan-sqlalchemy-only"); execute_plan reaches these two private methods through the Database it is given.
+
+    @contextmanager
+    def _schema_transaction(
+        self,
+        *,
+        timeout: float | None,
+        prepare: Callable[[Any], None],
+        restore: Callable[[Any], None],
+    ) -> Iterator[Transaction]:
+        """A write transaction for ``tabrion.plan.execute_plan`` (TAB-XW-5). ``prepare`` gets the DBAPI connection
+        after the checkout and **before** ``BEGIN`` (SQLite: ``PRAGMA foreign_keys`` has no effect inside a
+        transaction); ``restore`` gets it once the transaction ended, committed or rolled back. A ``prepare`` or
+        ``restore`` that fails leaves the connection in an unknown state: it is invalidated (PostgreSQL, a SQLite
+        file), so the pool never lends it again; a driver error is translated.
+        PostgreSQL runs in ``READ COMMITTED`` whatever the session default is, so a statement after ``LOCK TABLE``
+        sees the catalog as the lock holds it."""
+        seconds = _optional_seconds(timeout)
+        isolation = "read_committed" if self._dialect == "postgresql" else None
+        with self._connection_for(read=False) as connection:
+            error: TabrionError | None = None
+            try:
+                prepare(connection.connection.dbapi_connection)
+            except Exception as exc:
+                self._discard(connection)
+                if not _is_database_error(exc):
+                    raise
+                error = _translate(exc, sent=True)
+            if error is not None:
+                raise error from None
+            failed = False
+            try:
+                yield from self._run_transaction(connection, read=False, timeout=seconds, isolation=isolation)
+            except BaseException:
+                failed = True
+                raise
+            finally:
+                try:
+                    if not (connection.closed or connection.invalidated):
+                        restore(connection.connection.dbapi_connection)
+                except Exception as exc:
+                    self._discard(connection)
+                    if not failed:  # the transaction's own error wins; the connection is gone either way
+                        if not _is_database_error(exc):
+                            raise
+                        error = _translate(exc)
+                if error is not None:
+                    raise error from None
+
+    def _discard(self, connection: sqlalchemy.Connection) -> None:
+        """Invalidate a connection whose session state is unknown (PostgreSQL, a SQLite file; the one connection of an
+        in-memory database is the database itself and stays)."""
+        if self._dialect == "postgresql" or _sqlite_file_backed(connection):
+            with contextlib.suppress(Exception):
+                connection.invalidate()
+
+    def _autocommit(self, statement: str, *, timeout: float | None, lock_timeout: float) -> None:
+        """PostgreSQL, for ``tabrion.plan.execute_plan`` (TAB-XW-5): one statement outside a transaction block
+        (``CREATE``/``DROP INDEX CONCURRENTLY``) with the session's ``lock_timeout`` and, when given,
+        ``statement_timeout``. The statement text is sent as it is (no bind parameters, no ``%`` formatting). The
+        connection is invalidated afterwards, so the session settings never reach the next user of the pool. A driver
+        error is translated (``raise ... from None``)."""
+        if self._dialect != "postgresql":
+            raise UsageError("database.unsupported_dialect")
+        seconds = _optional_seconds(timeout)
+        lock_ms = min(_MAX_TIMEOUT_MS, max(1, math.ceil(_seconds(lock_timeout, "lock_timeout") * 1000)))
+        with self._connection_for(read=False) as connection:
+            error: TabrionError | None = None
+            try:
+                plain = connection.execution_options(isolation_level="AUTOCOMMIT", no_parameters=True)
+                plain.exec_driver_sql(f"SET lock_timeout = {lock_ms}")
+                if seconds is not None:
+                    milliseconds = min(_MAX_TIMEOUT_MS, max(1, math.ceil(seconds * 1000)))
+                    plain.exec_driver_sql(f"SET statement_timeout = {milliseconds}")
+                plain.exec_driver_sql(statement)
+            except Exception as exc:
+                if not _is_database_error(exc):
+                    raise
+                error = _translate(exc, statement=statement)
+            finally:
+                with contextlib.suppress(Exception):
+                    connection.invalidate()
+            if error is not None:
+                del statement  # I-76
+                raise error from None
 
     def _run_transaction(
         self, connection: sqlalchemy.Connection, *, read: bool, timeout: float | None, isolation: str | None

@@ -69,6 +69,9 @@ EXPECTED: dict[str, set[str]] = {
         "PlanError",
         "PlanMismatch",
         "PlanRefused",
+        # TAB-XW-5 (CR-DBX), since 0.3, experimental.
+        "PlanFailed",
+        "SchemaDrift",
     },
     "tabrion.sql": {"split_statements"},
     "tabrion.config": {"safe_url", "url_from_env"},
@@ -205,7 +208,17 @@ EXPECTED: dict[str, set[str]] = {
         "table_statements",
     },
     # TAB-XW-4 (CR-DBX), since 0.3, experimental.
-    "tabrion.plan": {"MigrationPlan", "PlanStep", "RiskClass", "migration_markers", "plan", "revision_text"},
+    "tabrion.plan": {
+        "MigrationPlan",
+        "PlanStep",
+        "RiskClass",
+        "migration_markers",
+        "plan",
+        "revision_text",
+        # TAB-XW-5 (CR-DBX), since 0.3, experimental.
+        "ExecutionResult",
+        "execute_plan",
+    },
     "tabrion.testing": {
         "configure",
         "profiles",

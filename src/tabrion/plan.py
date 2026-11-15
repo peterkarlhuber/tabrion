@@ -5,8 +5,10 @@ do; TAB-XW-4, CR-DBX).
 Contract section 5.13 and implementation note I-124; ADR 0015 sections 2 to 4, 9 (K-1, K-3, N-2) and 10 (D-5).
 :func:`plan` turns two level-2 snapshots of :mod:`tabrion.schema` (the database as it is and the target model) into
 a :class:`MigrationPlan`: numbered steps, each with the DDL of :mod:`tabrion.ddl`, its risk classes and whether it
-runs in a transaction, bound to both fingerprints by a ``plan_hash``. Nothing here connects or executes, except
-:func:`migration_markers`, which only reads the catalog; the executor is ``execute_plan`` (TAB-XW-5)::
+runs in a transaction, bound to both fingerprints by a ``plan_hash``. :func:`plan` and :func:`revision_text` only
+compute and :func:`migration_markers` only reads the catalog; :func:`execute_plan` (TAB-XW-5) is the one function
+that runs a change, on a declared DEV or TEST database without migration management, after it planned again under
+its locks and found the hash the user confirmed::
 
     with db.inspector() as inspector:
         current = tabrion.schema.snapshot(inspector, level=2)
@@ -29,7 +31,9 @@ refuses to run with foreign keys on and checks them before the commit.
 **Schema SQL from the file (K-1).** A SQLite rebuild recreates the table's triggers from the text ``sqlite_schema``
 holds, which in a hostile file is attacker data. Each text becomes exactly one statement, must be one complete
 statement with nothing after it (``sqlite3.complete_statement``) and must start with ``CREATE TRIGGER`` and the
-trigger's own name; otherwise ``plan`` refuses (reason ``unsafe_schema_sql``). The executor checks again.
+trigger's own name; otherwise ``plan`` refuses (reason ``unsafe_schema_sql``). The executor plans again in its
+transaction, so the check runs again there, and runs each text as one statement under the caller's authorizer with
+``trusted_schema = OFF`` and defensive mode.
 
 **Revision text (K-3).** :func:`revision_text` writes the plan's statements into an Alembic revision as a string. The
 module docstring is fixed, and ``revision``, ``down_revision``, the message, the fingerprints and every statement are
@@ -45,6 +49,7 @@ from dataclasses import dataclass
 import enum
 import hashlib
 import json
+import math
 import re
 import sqlite3
 from typing import TYPE_CHECKING, Any, Literal
@@ -58,11 +63,20 @@ except ImportError:
         " (Tabrion is not on PyPI: pin the commit you use)"
     ) from None
 
+from sqlalchemy.dialects.postgresql.base import PGDialect
 from sqlalchemy.dialects.sqlite.base import SQLiteDialect
 
 from tabrion import ddl
 from tabrion.ddl import DdlStatement
-from tabrion.errors import PlanMismatch, PlanRefused, UsageError
+from tabrion.errors import (
+    PlanFailed,
+    PlanMismatch,
+    PlanRefused,
+    SchemaDrift,
+    TabrionError,
+    TransientError,
+    UsageError,
+)
 from tabrion.schema import (
     CheckShape,
     ColumnShape,
@@ -74,16 +88,20 @@ from tabrion.schema import (
     UniqueShape,
     ViewShape,
     _canonical,
+    compare,
     fingerprint,
+    snapshot,
 )
 
 if TYPE_CHECKING:
     from tabrion._sa.database import Database
 
 __all__ = [
+    "ExecutionResult",
     "MigrationPlan",
     "PlanStep",
     "RiskClass",
+    "execute_plan",
     "migration_markers",
     "plan",
     "revision_text",
@@ -1183,19 +1201,575 @@ def migration_markers(database: Database) -> tuple[str, ...]:
     read: Callable[[], Any] | None = getattr(database, "read", None)
     if dialect not in _DIALECTS or read is None:
         raise TypeError("database must be a tabrion.Database")
-    found: set[str] = set()
     with read() as transaction:
-        if dialect == "postgresql":
-            found.update(str(row[0]) for row in transaction.fetch_all(_PG_MARKERS))
+        return _read_markers(transaction, dialect)
+
+
+# --- execution (TAB-XW-5) -------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionResult:
+    """What :func:`execute_plan` did (contract I-125): the ``plan_hash`` of the plan it ran (the one the user
+    confirmed), whether it was a ``dry_run``, how many steps ran (``steps_run``; in a dry run the transactional steps,
+    rolled back afterwards), the indexes of the non-transactional steps a dry run did not run (``untested_steps``)
+    and the level-2 fingerprint of the schema afterwards (``fingerprint_after``, ``None`` for a dry run)."""
+
+    plan_hash: str
+    dry_run: bool
+    steps_run: int
+    untested_steps: tuple[int, ...]
+    fingerprint_after: str | None
+
+
+_ENVIRONMENTS = frozenset({"dev", "test"})
+_MAX_LOCK_TIMEOUT = 3600.0
+"""Longest ``lock_timeout`` (seconds)."""
+_ACCESS_EXCLUSIVE = "ACCESS EXCLUSIVE"
+_SHARE_ROW_EXCLUSIVE = "SHARE ROW EXCLUSIVE"
+_DEFENSIVE = "SQLITE_DBCONFIG_DEFENSIVE"
+
+
+class _Rollback(Exception):
+    """Ends a dry run's transaction without a commit (a signal, not an error); carries the result."""
+
+    def __init__(self, result: ExecutionResult) -> None:
+        super().__init__()
+        self.result = result
+
+
+def execute_plan(
+    database: Database,
+    target: SchemaSnapshot,
+    *,
+    plan_hash: str,
+    expected_fingerprint: str,
+    environment: Literal["dev", "test"],
+    allow: Iterable[RiskClass] = (RiskClass.ADDITIVE,),
+    source: SchemaSnapshot | None = None,
+    schemas: Iterable[str] | None = None,
+    server_version: tuple[int, ...] | None = None,
+    concurrent_indexes: bool = False,
+    dry_run: bool = False,
+    lock_timeout: float = 5.0,
+    timeout: float | None = None,
+) -> ExecutionResult:
+    """Run the schema change that turns ``database`` into the level-2 model ``target``, exactly as the user confirmed
+    it in the preview, or nothing (ADR 0015 sections 3, 4 and 10; contract I-125).
+
+    The plan is never taken from the caller (review of #89, P89-03): inside the execution transaction the executor
+    takes a level-2 snapshot of ``schemas`` (as :func:`tabrion.schema.snapshot`; ``None`` is the default schema),
+    plans again with :func:`plan` (``server_version`` and ``concurrent_indexes`` as in the preview) and runs that
+    plan only when its hash is ``plan_hash``, the hash the user confirmed. Every check comes before the first
+    statement:
+
+    1. ``environment`` is ``"dev"`` or ``"test"`` (``PlanRefused``, reason ``environment``; a guard rail, not a
+       boundary: pass the value from the user's own stored profile, never from a request; D-3).
+    2. ``target`` is of the database's dialect (reason ``dialect_mismatch``); ``source``, when given, is the preview's
+       snapshot and has the fingerprint ``expected_fingerprint`` (``PlanMismatch("plan.fingerprint_mismatch")``).
+    3. Inside the transaction: no migration management (:func:`migration_markers`, reason ``migration_managed``,
+       details ``markers``); SQLite: ``PRAGMA foreign_keys`` was turned off before ``BEGIN`` (reason
+       ``foreign_keys_on`` when it is still on).
+    4. The snapshot has the fingerprint ``expected_fingerprint`` (``SchemaDrift``, with the differences from
+       ``source`` when given), the new plan's hash is ``plan_hash`` (``PlanMismatch("plan.hash_mismatch")``) and
+       every risk class of every step is in ``allow`` (reason ``risk_not_allowed``).
+    5. PostgreSQL (D-5.4, N-1): ``SET LOCAL lock_timeout``, ``LOCK TABLE`` of every existing table a step changes
+       (``ACCESS EXCLUSIVE``; ``SHARE ROW EXCLUSIVE`` for one that only gets an index, and for the tables their
+       foreign keys connect them with), then the snapshot, the drift check and the plan again under the locks. A
+       lock not granted within ``lock_timeout`` raises ``TransientError`` with ``details`` ``step``. Functions cannot
+       be locked: one changed after this check is a residual risk (contract I-124 j).
+
+    SQLite runs under ``BEGIN IMMEDIATE`` with foreign keys off (set before ``BEGIN``), ``trusted_schema = OFF`` and
+    defensive mode (``SQLITE_DBCONFIG_DEFENSIVE``, Python 3.12 or later; without it a plan that recreates a trigger
+    is refused, reason ``engine_unsupported``), each statement on its own under the caller's authorizer (K-1), and
+    ends with ``PRAGMA foreign_key_check`` and ``PRAGMA integrity_check``; the settings are restored afterwards.
+    PostgreSQL runs the transactional steps in one ``READ COMMITTED`` transaction; a ``CREATE``/``DROP INDEX
+    CONCURRENTLY`` step runs alone outside it, in plan order (drops before, creations after), and a failure there
+    leaves the database partly changed. ``dry_run=True`` runs the transactional steps and rolls them back; the
+    non-transactional steps are reported in ``untested_steps``.
+
+    A failing step or check raises ``PlanFailed`` (``details`` ``step``, ``completed``, ``state``). The executor never
+    retries a statement (R-NORETRY). ``database`` is a layer-B :class:`tabrion.Database` the caller owns; an open
+    Tabrion transaction of the same thread raises ``UsageError("database.nested_transaction")``. Tabrion does not
+    ask the user: passing ``plan_hash``, ``expected_fingerprint`` and ``allow`` is the confirmation (ADR 0015
+    section 4)."""
+    runner = _Executor(
+        database,
+        target,
+        plan_hash=plan_hash,
+        expected_fingerprint=expected_fingerprint,
+        environment=environment,
+        allow=allow,
+        source=source,
+        schemas=schemas,
+        server_version=server_version,
+        concurrent_indexes=concurrent_indexes,
+        dry_run=dry_run,
+        lock_timeout=lock_timeout,
+        timeout=timeout,
+    )
+    return runner.run()
+
+
+def _allowed(allow: object) -> frozenset[RiskClass]:
+    if isinstance(allow, str | bytes) or not isinstance(allow, Iterable):
+        raise TypeError("allow must be an iterable of RiskClass values")
+    out = set()
+    for item in allow:
+        if not isinstance(item, str):
+            raise TypeError("allow must be an iterable of RiskClass values")
+        out.add(RiskClass(item))  # ValueError for an unknown class
+    return frozenset(out)
+
+
+def _schemas(schemas: object) -> tuple[str, ...] | None:
+    if schemas is None:
+        return None
+    if isinstance(schemas, str | bytes) or not isinstance(schemas, Iterable):
+        raise TypeError("schemas must be an iterable of schema names or None")
+    names = tuple(schemas)
+    if not all(type(name) is str for name in names):
+        raise TypeError("schemas must be an iterable of schema names or None")
+    return names
+
+
+def _seconds(value: object, name: str, limit: float | None = None) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(f"{name} must be a number of seconds")
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds <= 0 or (limit is not None and seconds > limit):
+        raise ValueError(
+            f"{name} must be a positive, finite number of seconds" + (f", at most {limit:g}" if limit else "")
+        )
+    return seconds
+
+
+class _Executor:
+    """One run of :func:`execute_plan`."""
+
+    def __init__(
+        self,
+        database: Database,
+        target: SchemaSnapshot,
+        *,
+        plan_hash: object,
+        expected_fingerprint: object,
+        environment: object,
+        allow: object,
+        source: object,
+        schemas: object,
+        server_version: tuple[int, ...] | None,
+        concurrent_indexes: bool,
+        dry_run: object,
+        lock_timeout: object,
+        timeout: object,
+    ) -> None:
+        if type(environment) is not str or environment not in _ENVIRONMENTS:
+            raise _refused("environment")  # D-3: any other value, also one of another type
+        dialect = getattr(database, "dialect", None)
+        if dialect not in _DIALECTS or not callable(getattr(database, "_schema_transaction", None)):
+            raise TypeError("database must be a tabrion.Database")
+        if not isinstance(target, SchemaSnapshot):
+            raise TypeError("target must be a SchemaSnapshot")
+        if target.level != 2:
+            raise UsageError("plan.level_required")
+        if type(plan_hash) is not str:
+            raise TypeError("plan_hash must be a str")
+        if type(expected_fingerprint) is not str:
+            raise TypeError("expected_fingerprint must be a str")
+        if not isinstance(dry_run, bool):
+            raise TypeError("dry_run must be a bool")
+        if source is not None and not isinstance(source, SchemaSnapshot):
+            raise TypeError("source must be a SchemaSnapshot or None")
+        self.allowed = _allowed(allow)
+        self.schemas = _schemas(schemas)
+        self.lock_timeout = _seconds(lock_timeout, "lock_timeout", _MAX_LOCK_TIMEOUT)
+        self.timeout = None if timeout is None else _seconds(timeout, "timeout")
+        if target.dialect != dialect:
+            raise _refused("dialect_mismatch")
+        if source is not None and (source.dialect != dialect or fingerprint(source) != expected_fingerprint):
+            raise PlanMismatch("plan.fingerprint_mismatch", details={"field": "source"})
+        if not _FINGERPRINT.fullmatch(expected_fingerprint):
+            raise PlanMismatch("plan.fingerprint_mismatch", details={"field": "expected_fingerprint"})
+        self.database = database
+        self.dialect: str = dialect
+        self.target = target
+        self.plan_hash = plan_hash
+        self.expected = expected_fingerprint
+        self.source: SchemaSnapshot | None = source
+        self.server_version = server_version
+        self.concurrent = concurrent_indexes
+        self.dry_run = dry_run
+        self.completed = 0  # steps that ran and stay applied
+        self.sqlite_state: dict[str, int | None] = {}
+
+    @property
+    def postgres(self) -> bool:
+        return self.dialect == "postgresql"
+
+    # the run ---------------------------------------------------------------------------------------------------------
+
+    def run(self) -> ExecutionResult:
+        if self.postgres:
+            return self.run_postgres()
+        return self.run_sqlite()
+
+    def run_sqlite(self) -> ExecutionResult:
+        committing: MigrationPlan | None = None
+        try:
+            with self.transaction() as transaction:
+                change = self.verify(transaction)
+                self.run_steps(transaction, change.steps)
+                self.sqlite_checks(transaction, change)
+                if self.dry_run:
+                    raise _Rollback(ExecutionResult(change.plan_hash, True, len(change.steps), (), None))
+                after = fingerprint(self.snapshot(transaction))
+                committing = change
+                # the COMMIT runs when the block ends: an error there is a commit failure
+                return ExecutionResult(change.plan_hash, False, len(change.steps), (), after)
+        except _Rollback as rollback:
+            return rollback.result
+        except TabrionError as exc:
+            if committing is None:
+                raise
+            raise self.commit_failed(committing, exc) from None
+
+    def run_postgres(self) -> ExecutionResult:
+        committing: MigrationPlan | None = None
+        after: str | None = None
+        try:
+            with self.transaction() as transaction:
+                change = self.verify(transaction)
+                leading, middle, trailing = _split(change)
+                if self.dry_run:
+                    self.run_steps(transaction, middle)
+                    untested = tuple(step.index for step in (*leading, *trailing))
+                    raise _Rollback(ExecutionResult(change.plan_hash, True, len(middle), untested, None))
+                if not leading:
+                    self.run_steps(transaction, middle)
+                    if not trailing:
+                        after = fingerprint(self.snapshot(transaction))
+                    committing = change
+                # with leading CONCURRENTLY steps, this transaction only checked: it ran nothing
+        except _Rollback as rollback:
+            return rollback.result
+        except TabrionError as exc:
+            if committing is None:
+                raise
+            raise self.commit_failed(committing, exc) from None
+        if committing is not None:
+            self.completed += len(middle)
         else:
-            preparer = SQLiteDialect().identifier_preparer
-            names = [str(row[0]) for row in transaction.fetch_all("SELECT name FROM pragma_database_list")]
-            for name in names:
-                quoted = preparer.quote_identifier(name)
-                rows = transaction.fetch_all(
-                    f"SELECT lower(name) FROM {quoted}.sqlite_master WHERE type IN ('table', 'view')",  # noqa: S608
+            for step in leading:
+                self.run_alone(step)
+            if self.completed < len(change.steps):  # review of #91, P91-01: a plan of drops only ends here
+                self.run_rest(change, middle)
+        for step in trailing:
+            self.run_alone(step)
+        if after is None:
+            with self.database.inspector() as inspector:
+                after = fingerprint(snapshot(inspector, schemas=self.schemas, level=2))
+        return ExecutionResult(change.plan_hash, False, len(change.steps), (), after)
+
+    def run_rest(self, change: MigrationPlan, middle: list[PlanStep]) -> None:
+        """After the leading ``DROP INDEX CONCURRENTLY`` steps, when steps are left: the migration markers again, then
+        the transactional steps (there may be none) in a transaction of their own, after the locks, a new snapshot and
+        a new plan, which must be exactly the steps left of the confirmed plan (else ``PlanFailed``, state
+        ``partial``: the leading steps stay; ``check`` ``migration_managed`` or ``drift``). The trailing steps run
+        only after this check."""
+        first = change.steps[self.completed]
+        finished = False
+        try:
+            with self.transaction() as transaction:
+                markers = _read_markers(transaction, self.dialect)
+                if markers:  # review of #91, P91-02: as in the first transaction
+                    raise self.failed(
+                        first, None, state="partial", check="migration_managed", markers=",".join(markers)
+                    )
+                self.set_lock_timeout(transaction)
+                current = self.snapshot(transaction)
+                self.lock(transaction, middle, current)
+                current = self.snapshot(transaction)
+                again = plan(
+                    current, self.target, server_version=self.server_version, concurrent_indexes=self.concurrent
                 )
-                found.update(str(row[0]) for row in rows if str(row[0]) in _MARKER_TABLES)
-                if int(transaction.fetch_scalar(f"PRAGMA {quoted}.user_version") or 0) > 0:
-                    found.add("sqlite_user_version")
+                left = change.steps[self.completed :]
+                if [_content(s) for s in again.steps] != [_content(s) for s in left]:
+                    raise self.failed(first, None, state="partial", check="drift")
+                self.run_steps(transaction, middle)
+                finished = True
+            self.completed += len(middle)
+        except TabrionError as exc:
+            if isinstance(exc, PlanFailed):
+                raise
+            if not finished:
+                raise self.failed(first, exc, state="partial") from None
+            raise self.commit_failed(change, exc) from None
+
+    # checks ----------------------------------------------------------------------------------------------------------
+
+    def transaction(self) -> Any:
+        """The execution transaction (SQLite: foreign keys off, ``trusted_schema`` off and defensive mode set before
+        ``BEGIN IMMEDIATE`` and restored afterwards)."""
+        hooks: Any = self.database
+        if self.postgres:
+            return hooks._schema_transaction(timeout=self.timeout, prepare=_nothing, restore=_nothing)
+        return hooks._schema_transaction(timeout=self.timeout, prepare=self.sqlite_prepare, restore=self.sqlite_restore)
+
+    def verify(self, transaction: Any) -> MigrationPlan:
+        markers = _read_markers(transaction, self.dialect)
+        if markers:
+            raise _refused("migration_managed", markers=",".join(markers))
+        if not self.postgres and self.sqlite_state.get("foreign_keys_now") != 0:
+            raise _refused("foreign_keys_on")  # review of #89, P89-01: never start with them on
+        if self.postgres:
+            self.set_lock_timeout(transaction)
+        current = self.snapshot(transaction)
+        change = self.check(current)
+        if self.postgres:
+            # ADR 0015 D-5.4, N-1: lock, then fingerprint and plan again under the locks
+            self.lock(transaction, [s for s in change.steps if s.transactional], current)
+            change = self.check(self.snapshot(transaction))
+        elif self.sqlite_state.get("defensive_now") != 1 and any(
+            _HEAD.match(statement.sql) for step in change.steps for statement in step.statements
+        ):
+            # K-1 at execution: a trigger text from sqlite_schema runs only in defensive mode
+            raise _refused("engine_unsupported", feature="sqlite_defensive")
+        return change
+
+    def check(self, current: SchemaSnapshot) -> MigrationPlan:
+        actual = fingerprint(current)
+        if actual != self.expected:
+            differences = compare(self.source, current) if self.source is not None else ()
+            raise SchemaDrift(
+                "plan.drift",
+                differences=differences,
+                details={"expected": self.expected, "actual": actual, "differences": len(differences)},
+            )
+        change = plan(current, self.target, server_version=self.server_version, concurrent_indexes=self.concurrent)
+        if change.plan_hash != self.plan_hash:
+            raise PlanMismatch("plan.hash_mismatch", details={"expected": self.plan_hash, "actual": change.plan_hash})
+        refused = sorted(set(change.risks) - self.allowed)
+        if refused:
+            raise _refused("risk_not_allowed", risks=",".join(risk.value for risk in refused))
+        return change
+
+    def snapshot(self, transaction: Any) -> SchemaSnapshot:
+        """A level-2 snapshot on the transaction's connection (a new inspector each time: an inspector caches)."""
+        return snapshot(sqlalchemy.inspect(transaction.connection), schemas=self.schemas, level=2)
+
+    def set_lock_timeout(self, transaction: Any) -> None:
+        milliseconds = max(1, round(self.lock_timeout * 1000))
+        transaction.execute(sqlalchemy.text(f"SET LOCAL lock_timeout = {milliseconds}"))
+
+    def lock(self, transaction: Any, steps: Sequence[PlanStep], current: SchemaSnapshot) -> None:
+        """``LOCK TABLE`` in name order (ADR 0015 D-5.4): ``ACCESS EXCLUSIVE`` on every existing table a step changes,
+        ``SHARE ROW EXCLUSIVE`` on one that only gets an index and on the existing tables a foreign key of such a
+        table (before or after) refers to or that refer to it. A lock not granted within ``lock_timeout`` raises
+        ``TransientError`` with ``details`` ``step`` (the first step that needed it)."""
+        for table, (mode, step) in sorted(_locks(steps, current, self.target).items()):
+            schema_name, _, name = table.rpartition(".")
+            quoted = f"{_PG_PREPARER.quote_identifier(schema_name)}.{_PG_PREPARER.quote_identifier(name)}"
+            try:
+                transaction.execute(sqlalchemy.text(f"LOCK TABLE {quoted} IN {mode} MODE"))
+            except TransientError as exc:
+                raise _with_step(exc, step) from None
+
+    # steps -----------------------------------------------------------------------------------------------------------
+
+    def run_steps(self, transaction: Any, steps: Sequence[PlanStep]) -> None:
+        """Each statement on its own through the transaction (K-1: one statement per call, the caller's authorizer
+        stays; ``:`` escaped so nothing binds, ``%`` written as the driver needs)."""
+        for step in steps:
+            for statement in step.statements:
+                try:
+                    transaction.execute(sqlalchemy.text(_escape_colons(statement.sql)))
+                except TabrionError as exc:
+                    if isinstance(exc, TransientError) and self.completed == 0:
+                        raise _with_step(exc, step.index) from None
+                    state = "rolled_back" if self.completed == 0 else "partial"
+                    raise self.failed(step, exc, state=state) from None
+
+    def run_alone(self, step: PlanStep) -> None:
+        """A non-transactional step (``CREATE``/``DROP INDEX CONCURRENTLY``): one statement outside any transaction.
+        A failure leaves the database partly changed (an invalid index can stay behind)."""
+        hooks: Any = self.database
+        for statement in step.statements:
+            try:
+                hooks._autocommit(statement.sql, timeout=self.timeout, lock_timeout=self.lock_timeout)
+            except TabrionError as exc:
+                raise self.failed(step, exc, state="partial") from None
+        self.completed += 1
+
+    def sqlite_checks(self, transaction: Any, change: MigrationPlan) -> None:
+        """Before the commit (review of #89, P89-01): no foreign key may refer to a missing row and the file must be
+        intact; else ``PlanFailed`` (state ``rolled_back``, ``check``, ``violations``)."""
+        last = change.steps[-1] if change.steps else None
+        for check, sql in (
+            ("foreign_key_check", "SELECT count(*) FROM pragma_foreign_key_check"),
+            ("integrity_check", "SELECT count(*) FROM pragma_integrity_check WHERE integrity_check <> 'ok'"),
+        ):
+            count = int(transaction.fetch_scalar(sql) or 0)
+            if count:
+                raise self.failed(last, None, state="rolled_back", check=check, violations=count)
+
+    # errors ----------------------------------------------------------------------------------------------------------
+
+    def failed(
+        self,
+        step: PlanStep | None,
+        error: TabrionError | None,
+        *,
+        state: str,
+        check: str | None = None,
+        violations: int | None = None,
+        markers: str | None = None,
+    ) -> PlanFailed:
+        details: dict[str, str | int | None] = {
+            "step": step.index if step is not None else None,
+            "completed": self.completed,
+            "state": state,
+        }
+        if check is not None:
+            details["check"] = check
+        if violations is not None:
+            details["violations"] = violations
+        if markers is not None:
+            details["markers"] = markers
+        return PlanFailed(
+            "plan.failed",
+            classification=error.classification if error is not None else None,
+            original=error,
+            details=details,
+        )
+
+    def commit_failed(self, change: MigrationPlan, error: TabrionError) -> PlanFailed:
+        """The ``COMMIT`` failed: rolled back, or ``unknown`` when it may have run (the connection was lost)."""
+        unknown = error.classification is not None and error.classification.outcome_unknown
+        state = "unknown" if unknown else ("rolled_back" if self.completed == 0 else "partial")
+        transactional = [step for step in change.steps if step.transactional]
+        return self.failed(transactional[-1] if transactional else None, error, state=state)
+
+    # SQLite connection settings ------------------------------------------------------------------------------------
+
+    def sqlite_prepare(self, connection: sqlite3.Connection) -> None:
+        """Before ``BEGIN``: foreign keys off (read back: ``verify`` refuses to start while they are on),
+        ``trusted_schema`` off and defensive mode on where Python offers it (3.12 and later)."""
+        state = self.sqlite_state
+        state["foreign_keys"] = _pragma(connection, "foreign_keys")
+        state["trusted_schema"] = _pragma(connection, "trusted_schema")
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("PRAGMA trusted_schema = OFF")
+        state["foreign_keys_now"] = _pragma(connection, "foreign_keys")
+        flag = getattr(sqlite3, _DEFENSIVE, None)
+        getconfig = getattr(connection, "getconfig", None)
+        setconfig = getattr(connection, "setconfig", None)
+        state["defensive"] = state["defensive_now"] = None
+        if flag is not None and getconfig is not None and setconfig is not None:
+            state["defensive"] = int(bool(getconfig(flag)))
+            setconfig(flag, True)
+            state["defensive_now"] = int(bool(getconfig(flag)))
+
+    def sqlite_restore(self, connection: sqlite3.Connection) -> None:
+        """After the transaction: the settings as they were before (R-CR-5)."""
+        state = self.sqlite_state
+        if state.get("defensive") is not None:
+            setconfig = getattr(connection, "setconfig")  # noqa: B009 - Python 3.12 and later; typeshed for 3.11 lacks it
+            setconfig(getattr(sqlite3, _DEFENSIVE), bool(state["defensive"]))
+        if state.get("trusted_schema") is not None:
+            connection.execute(f"PRAGMA trusted_schema = {'ON' if state['trusted_schema'] else 'OFF'}")
+        if state.get("foreign_keys") is not None:
+            connection.execute(f"PRAGMA foreign_keys = {'ON' if state['foreign_keys'] else 'OFF'}")
+
+
+_PG_PREPARER = PGDialect().identifier_preparer  # type: ignore[no-untyped-call]
+
+
+def _nothing(connection: object) -> None:
+    """PostgreSQL needs no session change before ``BEGIN``."""
+
+
+def _pragma(connection: sqlite3.Connection, name: str) -> int:
+    row = connection.execute(f"PRAGMA {name}").fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _content(step: PlanStep) -> tuple[Any, ...]:
+    """A step without its index: what it does."""
+    return (step.operation, step.target, step.statements, step.risks, step.transactional)
+
+
+def _split(change: MigrationPlan) -> tuple[list[PlanStep], list[PlanStep], list[PlanStep]]:
+    """The leading non-transactional steps (``DROP INDEX CONCURRENTLY``), the transactional steps and the trailing
+    non-transactional steps (``CREATE INDEX CONCURRENTLY``); :func:`plan` orders them so (contract I-124 d). Any
+    other order is not a plan of :func:`plan` and is refused (``PlanMismatch("plan.invalid")``)."""
+    steps = list(change.steps)
+    first = next((i for i, step in enumerate(steps) if step.transactional), len(steps))
+    last = max((i for i, step in enumerate(steps) if step.transactional), default=first - 1)
+    leading, middle, trailing = steps[:first], steps[first : last + 1], steps[last + 1 :]
+    if not all(step.transactional for step in middle):
+        raise _invalid("transactional")
+    if not leading and not middle:
+        return [], [], trailing
+    if leading and not middle:  # only CONCURRENTLY steps: drops first, then creations
+        drops = [s for s in leading if s.operation == "drop_index"]
+        return drops, [], leading[len(drops) :]
+    return leading, middle, trailing
+
+
+def _locks(steps: Sequence[PlanStep], current: SchemaSnapshot, target: SchemaSnapshot) -> dict[str, tuple[str, int]]:
+    """``{table: (mode, first step)}`` for the existing tables the transactional ``steps`` change or depend on."""
+    existing = {table.name: table for table in current.tables}
+    wanted = {table.name: table for table in target.tables}
+    locks: dict[str, tuple[str, int]] = {}
+
+    def put(name: str, mode: str, step: int) -> None:
+        if name not in existing:
+            return
+        held = locks.get(name)
+        if held is None:
+            locks[name] = (mode, step)
+        elif held[0] != _ACCESS_EXCLUSIVE and mode == _ACCESS_EXCLUSIVE:
+            locks[name] = (mode, held[1])
+
+    for step in steps:
+        name = step.target
+        put(name, _SHARE_ROW_EXCLUSIVE if step.operation == "create_index" else _ACCESS_EXCLUSIVE, step.index)
+        related: set[str] = set()
+        for shape in (existing.get(name), wanted.get(name)):
+            if shape is not None:
+                related.update(key.referred_table for key in shape.foreign_keys)
+        related.update(t.name for t in current.tables if any(k.referred_table == name for k in t.foreign_keys))
+        for other in sorted(related - {name}):
+            put(other, _SHARE_ROW_EXCLUSIVE, step.index)
+    return locks
+
+
+def _with_step(error: TransientError, step: int) -> TransientError:
+    """The same lock error with ``details`` ``step`` (contract I-125)."""
+    return TransientError(
+        error.code,
+        classification=error.classification,
+        original=error.original,
+        statement=error.statement,
+        details={**error.details, "step": step},
+    )
+
+
+def _read_markers(transaction: Any, dialect: str) -> tuple[str, ...]:
+    """The markers of :func:`migration_markers`, read in ``transaction``."""
+    found: set[str] = set()
+    if dialect == "postgresql":
+        found.update(str(row[0]) for row in transaction.fetch_all(_PG_MARKERS))
+    else:
+        preparer = SQLiteDialect().identifier_preparer
+        names = [str(row[0]) for row in transaction.fetch_all("SELECT name FROM pragma_database_list")]
+        for name in names:
+            quoted = preparer.quote_identifier(name)
+            rows = transaction.fetch_all(
+                f"SELECT lower(name) FROM {quoted}.sqlite_master WHERE type IN ('table', 'view')",  # noqa: S608
+            )
+            found.update(str(row[0]) for row in rows if str(row[0]) in _MARKER_TABLES)
+            if int(transaction.fetch_scalar(f"PRAGMA {quoted}.user_version") or 0) > 0:
+                found.add("sqlite_user_version")
     return tuple(marker for marker in (*_MARKER_TABLES, "sqlite_user_version") if marker in found)

@@ -661,6 +661,14 @@
       "since": "0.3",
       "stability": "X"
     },
+    "tabrion.errors.PlanFailed": {
+      "kind": "exception",
+      "bases": [
+        "PlanError"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.errors.PlanMismatch": {
       "kind": "exception",
       "bases": [
@@ -706,6 +714,20 @@
       "bases": [
         "TabrionError"
       ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.errors.SchemaDrift": {
+      "kind": "exception",
+      "bases": [
+        "PlanError"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.errors.SchemaDrift.__init__": {
+      "kind": "method",
+      "signature": "(self, code: str, /, *, differences: tuple[SchemaDifference, ...] = (), classification: Classification | None = None, original: BaseException | None = None, statement: str | None = None, details: Mapping[str, str | int | None] | None = None) -> None",
       "since": "0.3",
       "stability": "X"
     },
@@ -830,6 +852,25 @@
       "since": "0.1",
       "stability": "S"
     },
+    "tabrion.plan.ExecutionResult": {
+      "kind": "dataclass",
+      "frozen": true,
+      "fields": [
+        "plan_hash: str",
+        "dry_run: bool",
+        "steps_run: int",
+        "untested_steps: tuple[int, ...]",
+        "fingerprint_after: str | None"
+      ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.ExecutionResult.__init__": {
+      "kind": "method",
+      "signature": "(self, plan_hash: str, dry_run: bool, steps_run: int, untested_steps: tuple[int, ...], fingerprint_after: str | None) -> None",
+      "since": "0.3",
+      "stability": "X"
+    },
     "tabrion.plan.MigrationPlan": {
       "kind": "dataclass",
       "frozen": true,
@@ -900,6 +941,12 @@
         "LOCKING = 'locking'",
         "NON_TRANSACTIONAL = 'non_transactional'"
       ],
+      "since": "0.3",
+      "stability": "X"
+    },
+    "tabrion.plan.execute_plan": {
+      "kind": "function",
+      "signature": "(database: Database, target: SchemaSnapshot, *, plan_hash: str, expected_fingerprint: str, environment: Literal['dev', 'test'], allow: Iterable[RiskClass] = (<RiskClass.ADDITIVE: 'additive'>,), source: SchemaSnapshot | None = None, schemas: Iterable[str] | None = None, server_version: tuple[int, ...] | None = None, concurrent_indexes: bool = False, dry_run: bool = False, lock_timeout: float = 5.0, timeout: float | None = None) -> ExecutionResult",
       "since": "0.3",
       "stability": "X"
     },

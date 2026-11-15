@@ -98,6 +98,10 @@ Accepted residual risks (documented, not vulnerabilities):
     steps before it (P89-06): apply a revision only to the database it was planned for;
   - `MigrationPlan.from_json` proves integrity, not authenticity (N-2): keep plans server-side, plan again before
     running one and compare the hash the user confirmed (P89-03).
+  - `execute_plan` (TAB-XW-5, contract I-125 i): a function cannot be locked, so a trigger or policy function
+    changed after the drift check under the locks runs in its new form; a `CONCURRENTLY` step runs without the
+    executor's locks; `environment` is the caller's declaration, a guard rail behind the consumer's own production
+    lock, not a boundary (ADR 0015 D-3).
 - Layer-B timeouts bound the database's work, not every wait: a SQLite lock wait is bounded by the busy timeout, a
   wait for a pool connection by `pool_timeout`, a network that stops answering by the connection's TCP settings
   (contract I-40, I-44; TODO TB-056).
