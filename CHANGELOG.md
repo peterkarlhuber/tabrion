@@ -17,7 +17,12 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
   exclusive-lock check, refuses links and files that are not SQLite databases, and works through a directory
   descriptor opened with `O_NOFOLLOW` with a device and inode check right before the unlink (ADR 0015 N-4); side files
   that are links are removed as links. Standard library only. New error class `tabrion.errors.DatabaseInUse`
-  (`sqlite.in_use`, `postgres.database_in_use`).
+  (`sqlite.in_use`, `postgres.database_in_use`). Security review of #88 folded in: `delete_database_file` refuses a
+  database whose directory the group or others may write, sticky bit or not (`sqlite.unsafe_mode`), and reports a
+  missing directory (`FileNotFoundError`, `()` with `missing_ok`) or a path component that is no directory
+  (`sqlite.unsafe_path`) without the path; both functions `lstat` a file before they open it and never open a
+  directory, FIFO or device; `restore` reports a source that SQLite finds damaged while opening it (such as a header
+  with a page count beyond the file) as `sqlite.restore_source_corrupt` instead of the driver's `DatabaseError`.
 - **Experimental, 0.3** (TABRION TAB-XW-9, CR-DBX; contract section 4.8, I-190..I-193, moved from addendum A.8):
   `tabrion.postgres.create_database` and `tabrion.postgres.drop_database` compose `CREATE DATABASE`/`DROP DATABASE`
   with `psycopg.sql.Identifier` and validated literals, need an idle autocommit connection (never switched), check

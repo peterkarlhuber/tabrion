@@ -664,7 +664,15 @@ required (owner decision of 2026-11-08 11:26Z).
   cannot be deleted and is reported as in use). Moved from addendum A.6 into contract section 3.10 (I-170, I-171);
   deviation D-128. N-4 tests `tests/unit/test_sqlite_delete.py::test_swap_between_check_and_unlink_refused`,
   `::test_side_file_symlink_unlinked_not_followed`; the round trip of planning document 15 section 9.4 is
-  `tests/sqlite/test_restore.py::test_round_trip_backup_restore_integrity_and_fingerprint`.
+  `tests/sqlite/test_restore.py::test_round_trip_backup_restore_integrity_and_fingerprint`. Security review of #88
+  (planning folder `reviews/pr88-tabxw79-review.md`, ACCEPTED with conditions) folded in: L-1 no path in the errors
+  for a missing directory or a non-directory component (`test_missing_directory_names_no_path`,
+  `test_directory_component_that_is_a_file_names_no_path`); L-2 `lstat` before the open, only regular files opened
+  (`test_file_that_is_not_regular_is_never_opened`, `test_file_swapped_between_lstat_and_open_is_refused`,
+  `tests/sqlite/test_restore.py::test_fifo_is_refused_without_being_opened`); L-3 a directory the group or others may
+  write is refused (`test_directory_others_may_write_is_refused`); I-4 a header with a page count beyond the file is
+  `sqlite.restore_source_corrupt` (`test_header_with_a_page_count_beyond_the_file_is_source_corrupt`); I-1 the D-128
+  rationale corrected (SQLite 3.53.1 opens side files with `O_NOFOLLOW`).
 - **TAB-XW-9 done** (branch `claude/project-thread-rdo6g3-tabxw79`): `tabrion.postgres.create_database`,
   `drop_database` and `database_sessions` (names through `psycopg.sql.Identifier`, option values as validated
   literals; idle autocommit connection required, never switched; `CREATEDB` and the `SET` option on the owner checked

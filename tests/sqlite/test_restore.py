@@ -421,3 +421,72 @@ def test_symbolic_links_are_refused(tmp_path: Path, which: str) -> None:
     assert str(tmp_path) not in str(caught.value)
     assert digest(tmp_path / "victim.db") == before
     assert not (tmp_path / "elsewhere").exists()
+
+
+@pytest.mark.security
+@pytest.mark.parametrize("pages", [0x7FFFFFFF, 0xFFFFFFFF, 1_000_000])
+def test_header_with_a_page_count_beyond_the_file_is_source_corrupt(tmp_path: Path, pages: int) -> None:
+    """Review of #88, I-4: SQLite reports such a header as ``SQLITE_CORRUPT`` while it opens the source; that is
+    ``sqlite.restore_source_corrupt``, not the driver's ``DatabaseError``, and nothing is written."""
+    source = tmp_path / "source.db"
+    make_database(source)
+    content = bytearray(source.read_bytes())
+    content[28:32] = pages.to_bytes(4, "big")
+    source.write_bytes(bytes(content))
+    make_database(tmp_path / "target.db")
+    before = digest(tmp_path / "target.db")
+    for target, overwrite in ((tmp_path / "target.db", True), (tmp_path / "new.db", False)):
+        with pytest.raises(TabrionError) as caught:
+            ts.restore(source, target, overwrite=overwrite)
+        assert caught.value.code == "sqlite.restore_source_corrupt"
+        assert caught.value.__cause__ is None and caught.value.__suppress_context__
+    assert digest(tmp_path / "target.db") == before
+    assert not (tmp_path / "new.db").exists()
+
+
+def test_other_driver_error_of_the_source_check_propagates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only ``SQLITE_CORRUPT`` and ``SQLITE_NOTADB`` are mapped; another error of the source is raised as it is."""
+    make_database(tmp_path / "source.db")
+    error: sqlite3.Error = sqlite3.OperationalError("disk I/O error")
+    error.sqlite_errorcode = sqlite3.SQLITE_IOERR
+
+    def fail(*args: object, **kwargs: object) -> sqlite3.Connection:
+        raise error
+
+    monkeypatch.setattr(ts, "connect", fail)
+    with pytest.raises(sqlite3.OperationalError) as caught:
+        ts.restore(tmp_path / "source.db", tmp_path / "target.db")
+    assert caught.value is error
+    notadb = sqlite3.DatabaseError("file is not a database")
+    notadb.sqlite_errorcode = sqlite3.SQLITE_NOTADB
+    error = notadb
+    with pytest.raises(UsageError) as refused:
+        ts.restore(tmp_path / "source.db", tmp_path / "target.db")
+    assert refused.value.code == "sqlite.not_a_database"
+    assert files(tmp_path) == ["source.db"]
+
+
+@posix_only
+@pytest.mark.security
+@pytest.mark.parametrize("which", ["source", "target"])
+def test_fifo_is_refused_without_being_opened(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, which: str) -> None:
+    """Review L-2 of #88: source and target are ``lstat``ed first; a FIFO or device is never opened."""
+    make_database(tmp_path / "real.db")
+    os.mkfifo(tmp_path / "pipe.db", 0o600)
+    source, target = (
+        (tmp_path / "pipe.db", tmp_path / "real.db")
+        if which == "source"
+        else (tmp_path / "real.db", tmp_path / "pipe.db")
+    )
+    real = os.open
+    opened: list[str] = []
+
+    def record(path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+        opened.append(os.path.basename(path))
+        return real(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", record)
+    with pytest.raises(UnsafePath) as caught:
+        ts.restore(source, target, overwrite=True)
+    assert caught.value.code == "sqlite.unsafe_path"
+    assert "pipe.db" not in opened

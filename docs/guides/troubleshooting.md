@@ -8,7 +8,7 @@ Look up the `code` of the `TabrionError` you got, or the `kind` of `classify(exc
 | Code or kind | Cause | Fix |
 |---|---|---|
 | `sqlite.symlink` | the path or a `-wal`/`-shm`/`-journal` file is a symlink | open the real path; Tabrion never follows links |
-| `sqlite.unsafe_owner`, `sqlite.unsafe_mode` | the existing file belongs to another user, or group/others may write it | `chmod 600` and `chown` the file and its side files; `allow_shared_file=True` only if you really share it |
+| `sqlite.unsafe_owner`, `sqlite.unsafe_mode` | the existing file belongs to another user, or group/others may write it; for `delete_database_file` also a directory group/others may write | `chmod 600` and `chown` the file and its side files; `allow_shared_file=True` only if you really share it; move the database to a directory only you can write |
 | `sqlite.unsafe_path` | not a regular file (directory, FIFO, device), or the file changed while it was opened | check the path |
 | `sqlite.nested_transaction` | `write_transaction`/`read_transaction`/`migrate` inside an open transaction | end the transaction first, or keep a reentrancy counter and open Tabrion's transaction only at the outermost level |
 | `sqlite.not_autocommit` | a connection with driver-managed transactions (`isolation_level` not `None`) | open it with `tabrion.sqlite.connect`, or set `isolation_level = None` |

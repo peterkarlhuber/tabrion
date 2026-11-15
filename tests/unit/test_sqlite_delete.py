@@ -367,3 +367,116 @@ def test_unreadable_file_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         monkeypatch.undo()
         monkeypatch.setattr(ts, "_DIR_FD", not by_name and ts._DIR_FD)
     assert files(tmp_path) == ["app.db"]
+
+
+@pytest.mark.security
+def test_missing_directory_names_no_path(tmp_path: Path, by_name: bool) -> None:
+    """Review L-1 of #88: a missing directory is ``FileNotFoundError`` without the path (``()`` with ``missing_ok``)."""
+    target = tmp_path / "nodir" / "app.db"
+    with pytest.raises(FileNotFoundError) as caught:
+        ts.delete_database_file(target)
+    assert str(tmp_path) not in str(caught.value)
+    assert caught.value.filename is None
+    assert ts.delete_database_file(target, missing_ok=True) == ()
+
+
+@pytest.mark.security
+def test_directory_component_that_is_a_file_names_no_path(tmp_path: Path, by_name: bool) -> None:
+    """Review L-1 of #88: a path through a regular file (``ENOTDIR``) is ``UnsafePath`` without the path."""
+    (tmp_path / "plain").write_text("a file, not a directory")
+    with pytest.raises(UnsafePath) as caught:
+        ts.delete_database_file(tmp_path / "plain" / "app.db")
+    assert caught.value.code == "sqlite.unsafe_path"
+    assert str(tmp_path) not in str(caught.value)
+    assert files(tmp_path) == ["plain"]
+
+
+@posix_only
+@pytest.mark.security
+@pytest.mark.parametrize("kind", ["fifo", "directory"])
+def test_file_that_is_not_regular_is_never_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str, by_name: bool
+) -> None:
+    """Review L-2 of #88: the name is ``lstat``ed first; a FIFO, device or directory is refused without an open (opening
+    a device can have side effects)."""
+    if kind == "fifo":
+        os.mkfifo(tmp_path / "app.db", 0o600)
+    else:
+        (tmp_path / "app.db").mkdir()
+    real = os.open
+    opened: list[str] = []
+
+    def record(path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+        opened.append(os.path.basename(path))
+        return real(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", record)
+    with pytest.raises(UnsafePath) as caught:
+        ts.delete_database_file(tmp_path / "app.db")
+    assert caught.value.code == "sqlite.unsafe_path"
+    assert "app.db" not in opened
+    assert files(tmp_path) == ["app.db"]
+
+
+@posix_only
+@pytest.mark.security
+def test_file_swapped_between_lstat_and_open_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review L-2 of #88: the opened file must be the one the ``lstat`` saw."""
+    _rollback_database(tmp_path / "app.db")
+    _rollback_database(tmp_path / "other.db")
+    real = os.open
+    swapped: list[bool] = []
+
+    def swap(path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+        if os.path.basename(path) == "app.db" and not swapped:
+            swapped.append(True)
+            os.replace(tmp_path / "other.db", tmp_path / "app.db")
+        return real(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", swap)
+    with pytest.raises(UnsafePath) as caught:
+        ts.delete_database_file(tmp_path / "app.db")
+    assert caught.value.code == "sqlite.unsafe_path"
+    assert files(tmp_path) == ["app.db"]
+
+
+@posix_only
+@pytest.mark.security
+@pytest.mark.parametrize("directory_mode", [0o770, 0o707, 0o777, 0o1777, 0o1770])
+def test_directory_others_may_write_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, directory_mode: int, by_name: bool
+) -> None:
+    """Review L-3 of #88: in a directory the group or others may write (sticky bit or not), another user could put a
+    hot ``-journal`` next to the file that SQLite would roll back into it during the lock check; refused before
+    SQLite opens anything, and a missing file there is still just missing."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    _rollback_database(shared / "app.db")
+    _private(shared / "app.db-journal", b"")
+    before = digest(shared / "app.db")
+    shared.chmod(directory_mode)
+
+    def never(name: str, expected: tuple[int, int]) -> None:
+        raise AssertionError("SQLite must not open the file")
+
+    monkeypatch.setattr(ts, "_refuse_if_in_use", never)
+    try:
+        with pytest.raises(UnsafePath) as caught:
+            ts.delete_database_file(shared / "app.db")
+        assert caught.value.code == "sqlite.unsafe_mode"
+        assert str(tmp_path) not in str(caught.value)
+        assert files(shared) == ["app.db", "app.db-journal"]
+        assert digest(shared / "app.db") == before
+        assert ts.delete_database_file(shared / "missing.db", missing_ok=True) == ()
+    finally:
+        shared.chmod(0o700)
+
+
+@posix_only
+def test_directory_only_the_owner_may_write_is_accepted(tmp_path: Path, by_name: bool) -> None:
+    """Review L-3 of #88: group- and world-readable is fine, only write access for others is refused."""
+    shared = tmp_path / "readable"
+    shared.mkdir()
+    _rollback_database(shared / "app.db")
+    shared.chmod(0o755)
+    assert ts.delete_database_file(shared / "app.db") == (shared / "app.db",)

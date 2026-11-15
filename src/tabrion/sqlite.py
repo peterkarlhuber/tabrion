@@ -1307,28 +1307,42 @@ def _is_link_stat(info: os.stat_result) -> bool:
     return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & _REPARSE_POINT)
 
 
+def _missing_or(exc: OSError, path: str) -> Exception:
+    """``_read_header``: the error for a failed ``lstat`` or ``open`` of ``path``, without the path."""
+    if exc.errno == errno.ELOOP:
+        return _unsafe("sqlite.symlink", path)
+    if exc.errno == errno.ENOENT:
+        return FileNotFoundError(errno.ENOENT, "the database file does not exist")
+    if exc.errno in (*_DENIED, errno.ENOTDIR):
+        return _unsafe("sqlite.unsafe_path", path)
+    return exc
+
+
 def _read_header(path: str, *, dir_fd: int | None = None) -> tuple[os.stat_result, bytes]:
     """``fstat`` and the first 16 bytes of the regular file ``path``, opened without following a link.
 
-    ``dir_fd`` makes ``path`` a name in that directory. A link is ``UnsafePath("sqlite.symlink")``, a directory, FIFO
-    or device and a file this user may not read ``UnsafePath("sqlite.unsafe_path")``; a missing name
-    ``FileNotFoundError`` without the path.
+    ``dir_fd`` makes ``path`` a name in that directory. The name is ``lstat``ed first and only a regular file is opened
+    (review L-2 of #88: opening a device can have side effects), with ``O_NOFOLLOW|O_NONBLOCK``, and the opened file
+    must be the one checked. A link is ``UnsafePath("sqlite.symlink")``, a directory, FIFO or device, a file swapped
+    between the ``lstat`` and the open and a file this user may not read ``UnsafePath("sqlite.unsafe_path")``; a
+    missing name ``FileNotFoundError`` without the path.
     """
-    if not _O_NOFOLLOW and _is_link(path):
-        raise _unsafe("sqlite.symlink", path)  # Windows: no O_NOFOLLOW; the name is checked right before the open
+    try:
+        first = os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
+    except OSError as exc:
+        raise _missing_or(exc, path) from None
+    if _is_link_stat(first):
+        raise _unsafe("sqlite.symlink", path)
+    if not stat.S_ISREG(first.st_mode):
+        raise _unsafe("sqlite.unsafe_path", path)
     try:
         descriptor = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_CLOEXEC | _O_BINARY, dir_fd=dir_fd)
     except OSError as exc:
-        if exc.errno == errno.ELOOP:
-            raise _unsafe("sqlite.symlink", path) from None
-        if exc.errno == errno.ENOENT:
-            raise FileNotFoundError(errno.ENOENT, "the database file does not exist") from None
-        if exc.errno in _DENIED:
-            raise _unsafe("sqlite.unsafe_path", path) from None
-        raise
+        raise _missing_or(exc, path) from None
     try:
         info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode):
+        # Identity on POSIX only: Windows may report a different file index through stat and fstat.
+        if not stat.S_ISREG(info.st_mode) or (_POSIX and first.st_ino and not _same_identity(first, info)):
             raise _unsafe("sqlite.unsafe_path", path)
         header = os.read(descriptor, len(_HEADER))
     finally:
@@ -1404,6 +1418,28 @@ def _open_target(path: str) -> sqlite3.Connection:
         raise
 
 
+@contextmanager
+def _source_errors() -> Iterator[None]:
+    """``restore``: SQLite's verdict on a damaged source (a manipulated header, such as a page count beyond the file,
+    is ``SQLITE_CORRUPT`` already while the source is opened) as Tabrion's code, without the driver's message."""
+    try:
+        yield
+    except sqlite3.DatabaseError as exc:
+        code = _error_code(exc)
+        if code == sqlite3.SQLITE_CORRUPT:
+            raise TabrionError("sqlite.restore_source_corrupt") from None
+        if code == sqlite3.SQLITE_NOTADB:
+            raise UsageError("sqlite.not_a_database") from None
+        raise
+
+
+def _open_source(origin: str) -> sqlite3.Connection:
+    """``restore``: :func:`connect` the source read-only; a source SQLite finds damaged while it opens it is
+    ``sqlite.restore_source_corrupt`` (review of #88, I-4)."""
+    with _source_errors():
+        return connect(origin, read_only=True)
+
+
 def restore(
     source: str | os.PathLike[str], target: str | os.PathLike[str], *, overwrite: bool = False, verify: bool = True
 ) -> RestoreResult:
@@ -1445,12 +1481,14 @@ def restore(
             raise FileExistsError(errno.EEXIST, "the restore target exists")
         if target_info.st_size and target_header != _HEADER:
             raise UsageError("sqlite.not_a_database")
-    reader = connect(origin, read_only=True)
+    reader = _open_source(origin)
     try:
         # One read transaction: the check and the copy see the same snapshot of the source.
-        reader.execute("BEGIN")
-        _rows(reader, "PRAGMA schema_version")
-        if not integrity_check(reader, max_errors=1).ok:
+        with _source_errors():
+            reader.execute("BEGIN")
+            _rows(reader, "PRAGMA schema_version")
+            sound = integrity_check(reader, max_errors=1).ok
+        if not sound:
             raise TabrionError("sqlite.restore_source_corrupt")
         created = None
         if not exists:
@@ -1487,6 +1525,8 @@ class _Entries:
     def __init__(self, directory: str) -> None:
         self._directory = directory
         self._fd: int | None = None
+        self.shared = False
+        """Group or others may write the directory (POSIX)."""
         if _DIR_FD:
             try:
                 self._fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | _O_NOFOLLOW | _O_CLOEXEC)
@@ -1494,7 +1534,20 @@ class _Entries:
                 # Linux reports a link opened with O_DIRECTORY|O_NOFOLLOW as ENOTDIR, other systems as ELOOP.
                 if exc.errno == errno.ELOOP or (exc.errno == errno.ENOTDIR and _is_link(directory)):
                     raise _unsafe("sqlite.symlink", directory) from None
+                raise _directory_error(exc, directory) from None
+            try:
+                info = os.fstat(self._fd)
+            except BaseException:
+                self.close()
                 raise
+        elif _POSIX:
+            try:
+                info = os.stat(directory)
+            except OSError as exc:
+                raise _directory_error(exc, directory) from None
+        else:
+            return
+        self.shared = bool(info.st_mode & (stat.S_IWGRP | stat.S_IWOTH))
 
     def _name(self, base: str) -> str:
         return base if self._fd is not None else os.path.join(self._directory, base)
@@ -1504,6 +1557,8 @@ class _Entries:
             return os.stat(self._name(base), dir_fd=self._fd, follow_symlinks=False)
         except FileNotFoundError:
             return None
+        except OSError as exc:
+            raise _directory_error(exc, self._name(base)) from None
 
     def read_header(self, base: str) -> tuple[os.stat_result, bytes]:
         return _read_header(self._name(base), dir_fd=self._fd)
@@ -1531,6 +1586,17 @@ class _Entries:
         if self._fd is not None:
             os.close(self._fd)
             self._fd = None
+
+
+def _directory_error(exc: OSError, path: str) -> Exception:
+    """``delete_database_file``: the error for the directory (or, by name, an entry) without the path (review L-1 of
+    #88): missing is ``FileNotFoundError``, a component that is no directory or a directory this user may not open is
+    ``UnsafePath("sqlite.unsafe_path")``; anything else (no descriptors left) is the ``OSError`` it is."""
+    if exc.errno == errno.ENOENT:
+        return FileNotFoundError(errno.ENOENT, "the database directory does not exist")
+    if exc.errno in (*_DENIED, errno.ENOTDIR):
+        return _unsafe("sqlite.unsafe_path", path)
+    return exc
 
 
 def _refuse_if_in_use(name: str, expected: tuple[int, int]) -> None:
@@ -1564,11 +1630,16 @@ def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = Fal
 
     The file must not be a symbolic link (``UnsafePath("sqlite.symlink")``), must be a regular file of this user that
     is not group- or world-writable (as :func:`connect` requires) and must start with the SQLite header
-    (``UsageError("sqlite.not_a_database")``). Before anything is deleted, SQLite's exclusive lock is taken and
-    released: ``DatabaseInUse("sqlite.in_use")`` when another connection holds the file (a reader or writer; in WAL
-    mode any open connection; on Windows also a file another process keeps open). An idle connection in rollback
-    mode holds no lock and is not seen, and a process that opens the file after the check is not prevented: stop
-    your own connections first. A missing file is ``FileNotFoundError`` unless ``missing_ok`` (then ``()``).
+    (``UsageError("sqlite.not_a_database")``). On POSIX its directory must not be group- or world-writable either,
+    sticky bit or not (``UnsafePath("sqlite.unsafe_mode")``): another user could put a ``-journal`` there that SQLite
+    rolls back into the file when it opens it for the lock check. A directory that is missing is
+    ``FileNotFoundError`` (``()`` with ``missing_ok``), one that is no directory or that this user may not open
+    ``UnsafePath("sqlite.unsafe_path")``; no error names the path. Before anything is deleted, SQLite's exclusive
+    lock is taken and released: ``DatabaseInUse("sqlite.in_use")`` when another connection holds the file (a reader
+    or writer; in WAL mode any open connection; on Windows also a file another process keeps open). An idle
+    connection in rollback mode holds no lock and is not seen, and a process that opens the file after the check is
+    not prevented: stop your own connections first. A missing file is ``FileNotFoundError`` unless ``missing_ok``
+    (then ``()``).
 
     N-4: on POSIX the checks and the deletes go through a descriptor of the directory opened with ``O_NOFOLLOW`` (the
     directory itself must not be a link; links in its parents are allowed), device and inode of the checked file are
@@ -1582,7 +1653,12 @@ def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = Fal
     directory, base = os.path.split(name)
     if base in ("", os.curdir, os.pardir):
         raise UsageError("sqlite.invalid_target")
-    entries = _Entries(directory or os.curdir)
+    try:
+        entries = _Entries(directory or os.curdir)
+    except FileNotFoundError:
+        if missing_ok:
+            return ()
+        raise
     try:
         return _delete(entries, name, base, missing_ok=missing_ok)
     finally:
@@ -1597,6 +1673,11 @@ def _delete(entries: _Entries, name: str, base: str, *, missing_ok: bool) -> tup
         raise FileNotFoundError(errno.ENOENT, "the database file does not exist")
     if _is_link_stat(first):
         raise _unsafe("sqlite.symlink", name)
+    if entries.shared:
+        # Review L-3 of #88: another user who may write the directory (sticky bit or not) could put a "hot"
+        # -journal next to the file between the side-file check and the lock check, and SQLite would roll it back
+        # into the database when it opens the file for that check; nothing is opened or deleted here.
+        raise _unsafe("sqlite.unsafe_mode", os.path.dirname(name) or os.curdir)
     checked, header = entries.read_header(base)
     if header != _HEADER:
         raise UsageError("sqlite.not_a_database")
