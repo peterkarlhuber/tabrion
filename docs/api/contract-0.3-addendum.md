@@ -76,10 +76,10 @@ class DatabaseInUse(TabrionError)      # implemented (TAB-XW-7, TAB-XW-9, contra
 ## A.1 `tabrion.schema` v2 (TAB-XW-2)
 
 **Implemented (TAB-XW-2) and moved into the contract:**
-[section 5.10](contract.md#510-schema-fingerprint-tabrionschema-since-02-experimental-extra-sqlalchemy-tab-cr-2) with
+[section 5.10](contract.md#510-schema-fingerprint-tabrionschema-since-02-extra-sqlalchemy-tab-cr-2) with
 the implementation note I-111. `tabrion.schema.ForeignKeyShape`, `UniqueShape`, `CheckShape`, `IndexShape` and (added after the review of #85)
 `ExclusionShape` are in
-`surface.json` with `"since": "0.3"` and stability `X`; the new fields of `ColumnShape` (`default`), `TableShape`
+`surface.json` with `"since": "0.3"` and stability `X` (`S` since TB-149, before the G-T2 review); the new fields of `ColumnShape` (`default`), `TableShape`
 (`foreign_keys`, `unique_constraints`, `check_constraints`, `indexes`), `SchemaSnapshot` (`level`) and
 `SchemaDifference` (`name`, the new `kind` values) and `snapshot(level=)` have defaults that keep the 0.2 behavior.
 `ConnectionProfile.schema_fingerprint` accepts `v1:` and `v2:` (I-109 e). D-4 is
@@ -96,12 +96,12 @@ elements. The remaining blind spots are listed in I-111 d, with a decision due b
 ## A.2 `tabrion.ddl` (TAB-XW-3)
 
 **Implemented (TAB-XW-3) and moved into the contract:**
-[section 5.12](contract.md#512-ddl-from-the-schema-model-tabrionddl-since-03-experimental-extra-sqlalchemy-tab-xw-3) with
+[section 5.12](contract.md#512-ddl-from-the-schema-model-tabrionddl-since-03-extra-sqlalchemy-tab-xw-3) with
 the implementation note I-123. `tabrion.ddl.DdlStatement`, `create_statements` and `table_statements` keep the planned
 signatures (`transactional` got the default `True`); added in the implementation, so the plan of TAB-XW-4 has a
 statement for each of its operations: `drop_table_statement`, `add_column_statement`, `drop_column_statement`,
 `alter_column_statements`, `add_constraint_statement`, `drop_constraint_statement`, `create_index_statement` and
-`drop_index_statement` (with `concurrently`), all in `surface.json` with `"since": "0.3"` and stability `X`. Column
+`drop_index_statement` (with `concurrently`), all in `surface.json` with `"since": "0.3"` and stability `X` (`S` since TB-149, before the G-T2 review). Column
 statements use Alembic's DDL constructs and need the extra `migrations` as well (ADR 0015 section 1). Error codes
 beyond the planned `ddl.unsupported_type`, `ddl.identifier_too_long` and `ddl.level_required`:
 `ddl.unsupported_dialect`, `ddl.dialect_mismatch`, `ddl.invalid_shape`, `ddl.unsafe_sql_text` (a default, check,
@@ -113,10 +113,10 @@ SQLite cannot make). The tests named in A.2 (golden DDL, round trip, quoting) ar
 ## A.3 `tabrion.plan`: diff, plan and revision text (TAB-XW-4)
 
 **Implemented (TAB-XW-4) and moved into the contract:**
-[section 5.13](contract.md#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4) with
+[section 5.13](contract.md#513-schema-change-plans-tabrionplan-since-03-extra-sqlalchemy-tab-xw-4) with
 the implementation note I-124; the D-5 parts of the schema model are I-111 i. `RiskClass`, `PlanStep`,
 `MigrationPlan`, `plan`, `revision_text`, `migration_markers`, `PlanError`, `PlanMismatch`, `PlanRefused`,
-`TriggerShape`, `PolicyShape` and `FunctionShape` are in `surface.json` with `"since": "0.3"` and stability `X`.
+`TriggerShape`, `PolicyShape` and `FunctionShape` are in `surface.json` with `"since": "0.3"` and stability `X` (`S` since TB-149, before the G-T2 review).
 Changes from the planned text, each the safe reading of ADR 0015:
 
 - `plan` has the new keyword `concurrent_indexes=False`; without it no step could be `non_transactional`.
@@ -140,9 +140,9 @@ Changes from the planned text, each the safe reading of ADR 0015:
 ## A.4 `tabrion.plan.execute_plan` (TAB-XW-5)
 
 **Implemented (TAB-XW-5) and moved into the contract:**
-[section 5.13](contract.md#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4) with
+[section 5.13](contract.md#513-schema-change-plans-tabrionplan-since-03-extra-sqlalchemy-tab-xw-4) with
 the implementation note I-125. `tabrion.plan.ExecutionResult`, `execute_plan` and `tabrion.errors.SchemaDrift`,
-`PlanFailed` are in `surface.json` with `"since": "0.3"` and stability `X`. Changes from the planned text, each the
+`PlanFailed` are in `surface.json` with `"since": "0.3"` and stability `X` (`S` since TB-149, before the G-T2 review). Changes from the planned text, each the
 safe reading of ADR 0015 and of the review of #89:
 
 - **No `plan` parameter (P89-03).** The executor takes the target model (`target`) instead of a plan and plans again
@@ -175,9 +175,9 @@ they were `X` until then, and `old` and `new` became keyword-only); they were un
 ## A.6 `tabrion.sqlite`: `restore` and `delete_database_file` (TAB-XW-7)
 
 **Implemented (TAB-XW-7) and moved into the contract:**
-[section 3.10](contract.md#310-restore-delete_database_file-since-03-experimental-tab-xw-7) with the implementation
+[section 3.10](contract.md#310-restore-delete_database_file-since-03-tab-xw-7) with the implementation
 notes I-170 and I-171. `restore`, `RestoreResult`, `delete_database_file` and `tabrion.errors.DatabaseInUse` are in
-`surface.json` with `"since": "0.3"` and stability `X`. N-4 is tests
+`surface.json` with `"since": "0.3"` and stability `X` (`S` since TB-149, before the G-T2 review). N-4 is tests
 `tests/unit/test_sqlite_delete.py::test_swap_between_check_and_unlink_refused` and
 `::test_side_file_symlink_unlinked_not_followed`; the round trip of planning document 15 section 9.4 is
 `tests/sqlite/test_restore.py::test_round_trip_backup_restore_integrity_and_fingerprint`.
@@ -185,10 +185,10 @@ notes I-170 and I-171. `restore`, `RestoreResult`, `delete_database_file` and `t
 ## A.7 `tabrion.postgres`: role DDL (TAB-XW-8)
 
 **Implemented (TAB-XW-8) and moved into the contract:**
-[section 4.9](contract.md#49-role-ddl-role_privileges-create_role-alter_role-drop_role-memberships-privileges-since-03-experimental-tab-xw-8)
+[section 4.9](contract.md#49-role-ddl-role_privileges-create_role-alter_role-drop_role-memberships-privileges-since-03-tab-xw-8)
 with the implementation notes I-180..I-186. `RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`,
 `alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges` and `revoke_privileges` are in
-`surface.json` with `"since": "0.3"` and stability `X`. The named tests are in `tests/postgres/test_role_ddl.py`: D-1
+`surface.json` with `"since": "0.3"` and stability `X` (`S` since TB-149, before the G-T2 review). The named tests are in `tests/postgres/test_role_ddl.py`: D-1
 `::test_role_ddl_refused_before_16`, `::test_createrole_pre16_reported_dangerous`; N-3
 `::test_admin_option_on_dangerous_role_counts_as_reachable`; D-2 `::test_membership_in_any_predefined_role_refused`,
 `::test_existing_predefined_membership_reported_broad`; K-2 `::test_trigger_privilege_not_grantable`,
@@ -198,9 +198,9 @@ with the implementation notes I-180..I-186. `RoleOptions`, `RolePrivileges`, `ro
 ## A.8 `tabrion.postgres`: `create_database` and `drop_database` (TAB-XW-9)
 
 **Implemented (TAB-XW-9) and moved into the contract:**
-[section 4.8](contract.md#48-create_database-drop_database-database_sessions-since-03-experimental-tab-xw-9) with
+[section 4.8](contract.md#48-create_database-drop_database-database_sessions-since-03-tab-xw-9) with
 the implementation notes I-190..I-193. `create_database`, `drop_database` and `database_sessions` are in
-`surface.json` with `"since": "0.3"` and stability `X`; the tests are `tests/postgres/test_databases.py`.
+`surface.json` with `"since": "0.3"` and stability `X` (`S` since TB-149, before the G-T2 review); the tests are `tests/postgres/test_databases.py`.
 
 ## A.9 `tabrion.profilefile`: mode `admin` (E-X8)
 

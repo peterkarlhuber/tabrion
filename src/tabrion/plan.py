@@ -1,4 +1,4 @@
-"""Schema change plans: diff, risk classes, SQLite rebuild and Alembic revision text (since 0.3, experimental, extra
+"""Schema change plans: diff, risk classes, SQLite rebuild and Alembic revision text (since 0.3, stable, extra
 ``sqlalchemy``; a plan with column steps also needs ``migrations``, as the column statements of :mod:`tabrion.ddl`
 do; TAB-XW-4, CR-DBX).
 
@@ -12,7 +12,7 @@ its locks and found the hash the user confirmed::
 
     with db.inspector() as inspector:
         current = tabrion.schema.snapshot(inspector, level=2)
-    change = tabrion.plan.plan(current, target)
+    change = tabrion.plan.plan(current=current, target=target)
     for step in change.steps:
         print(step.index, step.operation, step.target, [r.value for r in step.risks])
 
@@ -411,13 +411,14 @@ def _from_dict(data: object) -> MigrationPlan:
 
 
 def plan(
+    *,
     current: SchemaSnapshot,
     target: SchemaSnapshot,
-    *,
     server_version: tuple[int, ...] | None = None,
     concurrent_indexes: bool = False,
 ) -> MigrationPlan:
-    """The steps that turn the database of the level-2 snapshot ``current`` into the level-2 model ``target``.
+    """The steps that turn the database of the level-2 snapshot ``current`` into the level-2 model ``target``. Both
+    are keyword-only, so the two snapshots cannot be swapped by position (a swapped call plans the reverse change).
 
     Both must be level 2 (``UsageError("plan.level_required")``) and of the same dialect (``PlanRefused``, reason
     ``dialect_mismatch``), SQLite or PostgreSQL (reason ``engine_unsupported``). Tables are matched by
@@ -656,7 +657,7 @@ class _Planner:
             statement = ddl.drop_column_statement(old, column.name, dialect=self.dialect)
             self.add(_COLUMNS, "drop_column", old.name, [statement], RiskClass.DESTRUCTIVE, *lock)
         for before, after in diff.altered:
-            statements = ddl.alter_column_statements(old, before, after, dialect=self.dialect)
+            statements = ddl.alter_column_statements(old, old=before, new=after, dialect=self.dialect)
             self.add(_COLUMNS, "alter_column", old.name, statements, *_column_risks(before, after), *lock)
         for column in diff.added:
             statement = ddl.add_column_statement(old, column, dialect=self.dialect)
@@ -1491,7 +1492,10 @@ class _Executor:
                 self.lock(transaction, middle, current)
                 current = self.snapshot(transaction)
                 again = plan(
-                    current, self.target, server_version=self.server_version, concurrent_indexes=self.concurrent
+                    current=current,
+                    target=self.target,
+                    server_version=self.server_version,
+                    concurrent_indexes=self.concurrent,
                 )
                 left = change.steps[self.completed :]
                 if [_content(s) for s in again.steps] != [_content(s) for s in left]:
@@ -1540,13 +1544,15 @@ class _Executor:
     def check(self, current: SchemaSnapshot) -> MigrationPlan:
         actual = fingerprint(current)
         if actual != self.expected:
-            differences = compare(self.source, current) if self.source is not None else ()
+            differences = compare(expected=self.source, actual=current) if self.source is not None else ()
             raise SchemaDrift(
                 "plan.drift",
                 differences=differences,
                 details={"expected": self.expected, "actual": actual, "differences": len(differences)},
             )
-        change = plan(current, self.target, server_version=self.server_version, concurrent_indexes=self.concurrent)
+        change = plan(
+            current=current, target=self.target, server_version=self.server_version, concurrent_indexes=self.concurrent
+        )
         if change.plan_hash != self.plan_hash:
             raise PlanMismatch("plan.hash_mismatch", details={"expected": self.plan_hash, "actual": change.plan_hash})
         refused = sorted(set(change.risks) - self.allowed)

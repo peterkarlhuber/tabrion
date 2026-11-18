@@ -9,7 +9,7 @@ Tabrion has **no PostgreSQL migration runner** and does not merge the existing o
 | a Python application on SQLite or PostgreSQL with Alembic | Alembic to migrate, `tabrion.migrations` to **check** the state at start-up |
 | statements that cannot run in a transaction | `tabrion.sql.split_statements` ([Splitting SQL scripts](sql.md)) |
 | one migrating process at a time on PostgreSQL | `wait_advisory_lock` or `SessionLock` ([PostgreSQL](postgresql.md#advisory-locks)) |
-| a reviewed DDL plan from the schema you have to the one you want, or its Alembic revision text (0.3, experimental) | `tabrion.plan` ([below](#schema-change-plans-03-experimental)) |
+| a reviewed DDL plan from the schema you have to the one you want, or its Alembic revision text (0.3) | `tabrion.plan` ([below](#schema-change-plans-03)) |
 
 This page covers the Alembic gate. It needs the extra `migrations` (`tabrion[migrations]`, which brings
 `tabrion[sqlalchemy]` and Alembic). Contract: [section 5.5](../api/contract.md#55-health-diagnosis-inspection-schema-gate)
@@ -222,18 +222,19 @@ tabrion.errors.SchemaNotCurrent: migrations.not_current (current=0002, head=0003
 
 It works under `Profile.readonly()` too, so a read-only tool can refuse a database of the wrong version.
 
-## Schema change plans (0.3, experimental)
+## Schema change plans (0.3)
 
 `tabrion.plan` (extra `sqlalchemy`; a plan with column steps also `migrations`; contract
-[section 5.13](../api/contract.md#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4))
+[section 5.13](../api/contract.md#513-schema-change-plans-tabrionplan-since-03-extra-sqlalchemy-tab-xw-4))
 computes the change from the schema a database has to the schema you want, as a reviewed list of DDL statements.
 `plan` never runs them. On a DEV or TEST database without migration management, `execute_plan` runs the confirmed
 change ([below](#running-a-confirmed-change-execute_plan)); an Alembic project gets the plan as revision **text**
 that you add to the project and run with Alembic yourself
 ([ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) sections 2 and 3).
 
-The input is two level-2 snapshots of [`tabrion.schema`](profiles-and-schema.md): the database as it is and the
-target model, which you build with `dataclasses.replace` (or `SchemaSnapshot.from_json`):
+The input is two level-2 snapshots of [`tabrion.schema`](profiles-and-schema.md): the database as it is (`current`)
+and the target model (`target`), which you build with `dataclasses.replace` (or `SchemaSnapshot.from_json`). Both are
+keyword-only, so they cannot be swapped by position:
 
 ```pycon
 >>> import dataclasses
@@ -252,7 +253,7 @@ target model, which you build with `dataclasses.replace` (or `SchemaSnapshot.fro
 >>> parts = current.table("main.parts")
 >>> qty = ts.ColumnShape("qty", "INTEGER", True, default="0")
 >>> target = dataclasses.replace(current, tables=(dataclasses.replace(parts, columns=(*parts.columns, qty)),))
->>> change = tp.plan(current, target, server_version=sqlite3.sqlite_version_info)
+>>> change = tp.plan(current=current, target=target, server_version=sqlite3.sqlite_version_info)
 >>> for step in change.steps:
 ...     print(step.index, step.operation, step.target, [risk.value for risk in step.risks])
 0 add_column main.parts ['additive', 'data_changing']
@@ -278,7 +279,7 @@ SQLite checks views and triggers itself:
 
 ```pycon
 >>> shorter = dataclasses.replace(parts, columns=(parts.columns[0], ts.ColumnShape("code", "VARCHAR(5)", True)))
->>> rebuild = tp.plan(current, dataclasses.replace(current, tables=(shorter,)))
+>>> rebuild = tp.plan(current=current, target=dataclasses.replace(current, tables=(shorter,)))
 >>> [(step.operation, [risk.value for risk in step.risks]) for step in rebuild.steps]
 [('rebuild_table', ['data_changing', 'destructive', 'rebuild'])]
 ```
@@ -330,7 +331,11 @@ functions before you drop a column or table.
 >>> parts_now = with_view.table("main.parts")
 >>> no_code = dataclasses.replace(parts_now, columns=parts_now.columns[:1])
 >>> try:
-...     tp.plan(with_view, dataclasses.replace(with_view, tables=(no_code,)), server_version=sqlite3.sqlite_version_info)
+...     tp.plan(
+...         current=with_view,
+...         target=dataclasses.replace(with_view, tables=(no_code,)),
+...         server_version=sqlite3.sqlite_version_info,
+...     )
 ... except PlanRefused as error:
 ...     print(dict(error.details))
 {'reason': 'dependent_object', 'table': 'main.parts', 'object': 'main.part_codes'}
@@ -352,7 +357,7 @@ rebuild of a table whose `CREATE TABLE` holds what the shape does not (`STRICT`,
 >>> tags = tags_now.table("main.tags")
 >>> loose = dataclasses.replace(tags, columns=(tags.columns[0], ts.ColumnShape("name", "TEXT", True)))
 >>> try:
-...     tp.plan(tags_now, dataclasses.replace(tags_now, tables=(loose,)))
+...     tp.plan(current=tags_now, target=dataclasses.replace(tags_now, tables=(loose,)))
 ... except PlanRefused as error:
 ...     print(error.code, dict(error.details))
 plan.refused {'reason': 'unsupported_feature', 'table': 'main.tags', 'feature': 'strict'}
@@ -383,7 +388,7 @@ preview), plans again and runs only a plan with the confirmed hash (`PlanMismatc
 ...     wanted = dataclasses.replace(
 ...         preview_source, tables=(dataclasses.replace(parts_now, columns=(*parts_now.columns, qty)),)
 ...     )
-...     preview = tp.plan(preview_source, wanted)  # shown to the user, who confirms its hash and risks
+...     preview = tp.plan(current=preview_source, target=wanted)  # shown to the user, who confirms its hash and risks
 ...     result = tp.execute_plan(
 ...         shop,
 ...         wanted,

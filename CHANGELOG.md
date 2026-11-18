@@ -176,6 +176,36 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ### Changed
 
+- **Stable, 0.3** (TB-149, before the G-T2 review of 0.3, TAB-XW-10; contract sections 0, 3.10, 4.8, 4.9, 5.10,
+  5.12 and 5.13): the remaining experimental (X) names of the CR-DBX building blocks change to stable (S) in
+  `docs/api/surface.json`, with their error codes, `details` keys and refusal reasons. They change from now on only
+  after a `DeprecationWarning` (S-3):
+  - `tabrion.sqlite.restore`, `tabrion.sqlite.RestoreResult`, `tabrion.sqlite.delete_database_file` (section 3.10);
+  - `tabrion.postgres.create_database`, `tabrion.postgres.drop_database`, `tabrion.postgres.database_sessions` and
+    `tabrion.errors.DatabaseInUse` (section 4.8);
+  - the role DDL `tabrion.postgres.RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`,
+    `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges` and `revoke_privileges` (section 4.9);
+  - every name of `tabrion.schema` (section 5.10), including the 0.2 names (`ColumnShape`, `TableShape`,
+    `SchemaSnapshot`, `SchemaDifference`, `snapshot`, `fingerprint`, `compare`);
+  - every name of `tabrion.ddl` (section 5.12);
+  - every name of `tabrion.plan` (`RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`,
+    `migration_markers`, `ExecutionResult`, `execute_plan`) and `tabrion.errors.PlanError`, `PlanMismatch`,
+    `PlanRefused`, `SchemaDrift` and `PlanFailed` (section 5.13).
+
+  Still experimental (X), unchanged: `tabrion.Database.run_transaction`, `tabrion.Database.on_begin`,
+  `tabrion.Transaction.savepoint` and `tabrion.profilefile`. `tests/unit/test_api_surface.py::test_cr_dbx_names_are_stable`
+  pins the promotion in `surface.json` and contract section 0.
+- **Breaking for `0.3.0.dev0` callers** (TB-149, before the promotion above; the rule of the G-S2 follow-up 7A: two
+  parameters of the same type, where a swap changes the result without an error, are both keyword-only). A
+  positional call raises `TypeError`; nothing else changes (no behavior, check or error code):
+  - `tabrion.plan.plan(*, current, target, server_version=None, concurrent_indexes=False)` (before:
+    `plan(current, target, *, ...)`; a swap planned the reverse change);
+  - `tabrion.ddl.alter_column_statements(table, *, old, new, dialect)` (before: `(table, old, new, *, dialect)`; a
+    swap wrote the reverse column change);
+  - `tabrion.sqlite.restore(*, source, target, overwrite=False, verify=True)` (before: `(source, target, *, ...)`; a
+    swap with `overwrite=True` overwrote the backup with the database);
+  - `tabrion.schema.compare(*, expected, actual)` (before: `(expected, actual)`, since 0.2 and experimental; a swap
+    turned a missing name into an added one, which is not `breaking`).
 - **Stable, 0.3** (G-S2 follow-up 7A, owner decision before the Studio 1.1 release; contract sections 0 and 5.11,
   I-120..I-122): `tabrion.Transaction.execute_checked`, `tabrion.rowedit.insert_row`, `tabrion.rowedit.update_row`,
   `tabrion.rowedit.delete_row` and `tabrion.errors.RowCountMismatch` change from experimental (X) to stable (S) in

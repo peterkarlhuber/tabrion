@@ -72,7 +72,7 @@ def test_cr2_tables_selects_and_reports_missing(db: Database) -> None:
     only = take(db, tables=["invoices"])
     assert [t.name for t in only.tables] == ["main.invoices"]
     expected = take(db, tables=["invoices", "customers"])
-    assert ts.compare(expected, only) == (ts.SchemaDifference("table_missing", "main.customers"),)
+    assert ts.compare(expected=expected, actual=only) == (ts.SchemaDifference("table_missing", "main.customers"),)
 
 
 def test_cr2_compare_names_each_difference(db: Database, tmp_path: Path) -> None:
@@ -81,7 +81,7 @@ def test_cr2_compare_names_each_difference(db: Database, tmp_path: Path) -> None
     db.execute("CREATE TABLE extra (x INTEGER)")
     db.execute("ALTER TABLE invoices DROP COLUMN total_cents")
     db.execute("ALTER TABLE invoices ADD COLUMN paid INTEGER")
-    differences = ts.compare(expected, take(db))
+    differences = ts.compare(expected=expected, actual=take(db))
     assert [str(d) for d in differences] == [
         "table_missing: main.customers",
         "table_added: main.extra",
@@ -89,7 +89,16 @@ def test_cr2_compare_names_each_difference(db: Database, tmp_path: Path) -> None
         "column_added: main.invoices.paid",
     ]
     assert [d.breaking for d in differences] == [True, False, True, False]
-    assert ts.compare(expected, expected) == ()
+    assert ts.compare(expected=expected, actual=expected) == ()
+
+
+def test_expected_and_actual_are_keyword_only() -> None:
+    """TB-149: ``expected`` and ``actual`` are keyword-only: swapped, a missing column would read as an added one,
+    which is not ``breaking``."""
+    snapshot = ts.SchemaSnapshot("sqlite", ())
+    with pytest.raises(TypeError, match="positional argument"):
+        ts.compare(snapshot, snapshot)  # type: ignore[call-arg]
+    assert ts.compare(expected=snapshot, actual=snapshot) == ()
 
 
 def test_cr2_type_nullable_and_primary_key_changes() -> None:
@@ -100,12 +109,17 @@ def test_cr2_type_nullable_and_primary_key_changes() -> None:
     retyped = table(ts.ColumnShape("id", "INTEGER", False), ts.ColumnShape("v", "INTEGER", True))
     narrowed = table(ts.ColumnShape("id", "INTEGER", False), ts.ColumnShape("v", "TEXT", False))
     rekeyed = table(ts.ColumnShape("id", "INTEGER", False), ts.ColumnShape("v", "TEXT", True), pk=("v",))
-    assert ts.compare(base, retyped) == (ts.SchemaDifference("column_type", "main.t", "v"),)
-    assert ts.compare(base, narrowed) == (ts.SchemaDifference("column_nullable", "main.t", "v"),)
-    assert ts.compare(base, rekeyed) == (ts.SchemaDifference("primary_key", "main.t"),)
-    assert all(d.breaking for d in ts.compare(base, retyped) + ts.compare(base, narrowed) + ts.compare(base, rekeyed))
+    assert ts.compare(expected=base, actual=retyped) == (ts.SchemaDifference("column_type", "main.t", "v"),)
+    assert ts.compare(expected=base, actual=narrowed) == (ts.SchemaDifference("column_nullable", "main.t", "v"),)
+    assert ts.compare(expected=base, actual=rekeyed) == (ts.SchemaDifference("primary_key", "main.t"),)
+    assert all(
+        d.breaking
+        for d in ts.compare(expected=base, actual=retyped)
+        + ts.compare(expected=base, actual=narrowed)
+        + ts.compare(expected=base, actual=rekeyed)
+    )
     with pytest.raises(UsageError) as info:
-        ts.compare(base, ts.SchemaSnapshot("postgresql", base.tables))
+        ts.compare(expected=base, actual=ts.SchemaSnapshot("postgresql", base.tables))
     assert info.value.code == "schema.dialect_mismatch"
 
 
@@ -144,10 +158,12 @@ def test_cr2_column_order_is_named() -> None:
     first = ts.SchemaSnapshot("sqlite", (ts.TableShape("main.t", (a, b), ()),))
     swapped = ts.SchemaSnapshot("sqlite", (ts.TableShape("main.t", (b, a), ()),))
     assert ts.fingerprint(first) != ts.fingerprint(swapped)
-    (difference,) = ts.compare(first, swapped)
+    (difference,) = ts.compare(expected=first, actual=swapped)
     assert (str(difference), difference.breaking) == ("column_order: main.t", False)
     added = ts.SchemaSnapshot("sqlite", (ts.TableShape("main.t", (ts.ColumnShape("c", "TEXT", True), a, b), ()),))
-    assert [d.kind for d in ts.compare(first, added)] == ["column_added"]  # an added column alone is no reorder
+    assert [d.kind for d in ts.compare(expected=first, actual=added)] == [
+        "column_added"
+    ]  # an added column alone is no reorder
 
 
 def test_cr2_from_json_refuses_deep_nesting_and_loose_types() -> None:

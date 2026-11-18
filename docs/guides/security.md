@@ -12,11 +12,11 @@ What Tabrion protects against, what it does not, and what is left to you. The bi
   must not be writable by group or others.
 - Backups are written as a `0600` temporary file next to the target, checked with `quick_check` and renamed
   atomically; an existing target is never replaced unless you ask.
-- `restore()` (since 0.3, experimental) checks the source with `integrity_check` before it writes anything, copies
+- `restore()` (since 0.3) checks the source with `integrity_check` before it writes anything, copies
   with SQLite's online backup API in one step (other connections see the old or the new database, never a mix),
   creates a new target `0600`, never overwrites a file that is not a SQLite database, and checks the target after
   the copy. Back up the target first: Tabrion does not.
-- `delete_database_file()` (since 0.3, experimental) refuses a link, a file that is not a SQLite database and a
+- `delete_database_file()` (since 0.3) refuses a link, a file that is not a SQLite database and a
   database another connection holds (SQLite's exclusive lock). It works through a directory descriptor opened with
   `O_NOFOLLOW` and compares device and inode right before the unlink, so a file swapped in after the check is not
   deleted; side files that are links are removed as links, never followed. An idle connection in rollback mode holds
@@ -87,13 +87,13 @@ TAB-PG-011 (no TLS). Layer A enforces nothing on connections you open yourself.
 - `check_role` does not see predefined roles or `CREATEROLE`; run `tabrion.check` too: TAB-PG-013
   (superuser-equivalent roles, `CREATEROLE` before PostgreSQL 16) and TAB-PG-014 (other predefined roles).
 - Tabrion needs no superuser rights itself; `tabrion.testing` needs `CREATEROLE`/`CREATEDB` for throwaway objects.
-- `create_database` and `drop_database` (since 0.3, experimental) quote every name with `psycopg.sql.Identifier` and
+- `create_database` and `drop_database` (since 0.3) quote every name with `psycopg.sql.Identifier` and
   send option values as validated literals. `drop_database` refuses `postgres`, `template0`, `template1`, any
   template and the connection's own database, and a database with other sessions unless you pass `force=True`.
   Tabrion asks for no confirmation: the typed name, the backup before a drop and the decision to call are yours. A
   `pg_dump` archive is **not a complete backup**: global roles, role memberships, tablespaces and other cluster
   objects are not in it.
-- The role DDL (since 0.3, experimental) never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, also not
+- The role DDL (since 0.3) never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, also not
   through membership in a role that has them (`INHERIT`, `SET` or `ADMIN` option), nor membership in a predefined
   `pg_*` role, `TRIGGER`, `EXECUTE` on another role's `SECURITY DEFINER` function or `CREATE` on `public` or another
   role's schema. Run it from a separate admin profile with `CREATEROLE` only, on PostgreSQL 16 or later: a session

@@ -245,6 +245,73 @@ def test_studio_data_editor_names_are_stable(path: str) -> None:
     assert _overview_stability(module, short) == {"S"}, path
 
 
+# --- TB-149: the CR-DBX names are stable before the G-T2 review of 0.3 ------------------------------------------------
+
+CR_DBX_MODULES = ("tabrion.schema", "tabrion.ddl", "tabrion.plan")
+"""Every name of these modules is stable."""
+
+CR_DBX_NAMES = {
+    "tabrion.sqlite": ("restore", "RestoreResult", "delete_database_file"),
+    "tabrion.postgres": (
+        "create_database",
+        "drop_database",
+        "database_sessions",
+        "RoleOptions",
+        "RolePrivileges",
+        "role_privileges",
+        "create_role",
+        "alter_role",
+        "drop_role",
+        "grant_membership",
+        "revoke_membership",
+        "grant_privileges",
+        "revoke_privileges",
+    ),
+    "tabrion.errors": ("DatabaseInUse", "PlanError", "PlanMismatch", "PlanRefused", "SchemaDrift", "PlanFailed"),
+}
+"""The names of other modules, as section 0 of the contract lists them."""
+
+STILL_EXPERIMENTAL = ("tabrion.Database.on_begin", "tabrion.Database.run_transaction", "tabrion.Transaction.savepoint")
+"""With every name of ``tabrion.profilefile``, the only experimental names left (outside the promotion of TB-149)."""
+
+
+def _cr_dbx_paths() -> list[tuple[str, str]]:
+    """(module, short name) of every top-level CR-DBX name: the module names of ``surface.json`` (read, not
+    imported, so collection needs no extra) of the three modules, and the list."""
+    names = json.loads(SURFACE.read_text(encoding="utf-8"))["names"]
+    pairs = [
+        (module, key[len(module) + 1 :])
+        for module in CR_DBX_MODULES
+        for key in names
+        if key.startswith(module + ".") and "." not in key[len(module) + 1 :]
+    ]
+    pairs += [(module, name) for module, names in CR_DBX_NAMES.items() for name in names]
+    return sorted(pairs)
+
+
+@pytest.mark.parametrize(("module", "short"), _cr_dbx_paths())
+def test_cr_dbx_names_are_stable(module: str, short: str) -> None:
+    """TB-149: before the G-T2 review of 0.3, the CR-DBX names (sections 3.10, 4.8, 4.9, 5.10, 5.12, 5.13) are stable
+    in ``surface.json`` (with their methods and constructors) and in contract section 0. A change back to ``X`` must
+    change this test, which ``api_surface.py --base`` alone would not notice (TODO TB-094)."""
+    names = json.loads(SURFACE.read_text(encoding="utf-8"))["names"]
+    path = f"{module}.{short}"
+    entries = {key: entry for key, entry in names.items() if key == path or key.startswith(path + ".")}
+    assert path in entries, path
+    for key, entry in entries.items():
+        assert entry["stability"] == "S", (key, entry)
+        assert "deprecated" not in entry, (key, entry)
+    assert _overview_stability(module, short) == {"S"}, path
+
+
+def test_only_the_listed_names_stay_experimental() -> None:
+    """TB-149: after the promotion, ``X`` is left only on the layer-B helpers of section 5.6 (``on_begin`` is the
+    hook of Axentra's ``DbScope``, out of scope) and on ``tabrion.profilefile`` (section 5.9)."""
+    names = json.loads(SURFACE.read_text(encoding="utf-8"))["names"]
+    experimental = {key for key, entry in names.items() if entry["stability"] == "X"}
+    assert {key for key in experimental if not key.startswith("tabrion.profilefile.")} == set(STILL_EXPERIMENTAL)
+
+
 # --- TB-022: the release check ``--no-stubs`` -------------------------------------------------------------------------
 
 

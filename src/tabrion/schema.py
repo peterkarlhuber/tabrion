@@ -8,7 +8,7 @@ differs between an expected and an actual snapshot. Use it with ``Database.inspe
         snapshot = tabrion.schema.snapshot(inspector, tables=["public.invoices"])
 
 Level 1 (the default, since 0.2) holds columns with type and nullability and the primary key; its fingerprint starts
-with ``v1:``. Level 2 (since 0.3, experimental, TAB-XW-2; ``snapshot(..., level=2)``) adds column defaults, foreign
+with ``v1:``. Level 2 (since 0.3, TAB-XW-2; ``snapshot(..., level=2)``) adds column defaults, foreign
 keys, unique and check constraints and indexes; its fingerprint starts with ``v2:``. A level-1 fingerprint is
 byte-identical to the one 0.2 computed (ADR 0015 D-4). Since TAB-XW-4 level 2 also holds triggers, row-level
 security policies and the functions they call directly, and marks table features the shape does not describe
@@ -421,7 +421,7 @@ def snapshot(
 
     A table of ``tables`` that does not exist or is a view is left out, so :func:`compare` reports it as
     ``table_missing``. Views are not included. Raises ``UsageError("schema.too_many_tables")`` above 10 000 tables.
-    ``level=2`` (since 0.3, experimental) also reads defaults, identity and generated columns, foreign keys, unique,
+    ``level=2`` (since 0.3) also reads defaults, identity and generated columns, foreign keys, unique,
     check and exclusion constraints, indexes, triggers, policies, the functions they call and the table features
     of contract I-111 i; ``level=1`` stays the default (ADR 0015 D-4). At
     level 2 a schema or table name with a dot raises ``UsageError("schema.unsupported_name")``, as ``schema.table``
@@ -509,8 +509,9 @@ def fingerprint(snapshot: SchemaSnapshot) -> str:
     return prefix + hashlib.sha256(snapshot.to_json().encode("ascii")).hexdigest()
 
 
-def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDifference, ...]:
-    """What ``actual`` lacks or has in addition, compared with ``expected``, in table and column order.
+def compare(*, expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDifference, ...]:
+    """What ``actual`` lacks or has in addition, compared with ``expected``, in table and column order. Both are
+    keyword-only (since 0.3): swapped, a missing name would read as an added one and lose its ``breaking`` flag.
 
     Each difference names a table and a column (and at level 2 a constraint or index name), never data. Different
     dialects raise ``UsageError("schema.dialect_mismatch")``, different levels ``UsageError("schema.level_mismatch")``.

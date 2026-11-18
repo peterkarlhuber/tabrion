@@ -2,9 +2,9 @@
 
 Two small building blocks for tools that hand databases to each other, such as Tabrion Studio and Nodestro
 (change request CR-DB): a **connection profile file format** that holds no secret, and a **schema fingerprint**
-that tells whether a database still has the tables a release expects. Both are experimental in 0.2. Contract:
+that tells whether a database still has the tables a release expects. The profile file format is experimental; the schema fingerprint is stable since 0.3. Contract:
 [section 5.9](../api/contract.md#59-connection-profile-files-tabrionprofilefile-since-02-experimental-tab-cr-1)
-and [section 5.10](../api/contract.md#510-schema-fingerprint-tabrionschema-since-02-experimental-extra-sqlalchemy-tab-cr-2).
+and [section 5.10](../api/contract.md#510-schema-fingerprint-tabrionschema-since-02-extra-sqlalchemy-tab-cr-2).
 
 ## Connection profile files
 
@@ -83,7 +83,8 @@ version 1) is a valid profile file.
 ## Schema fingerprints
 
 `tabrion.schema` (extra `sqlalchemy`) takes a snapshot of some tables through `Database.inspector()`: column names,
-types and nullability, and the primary key, never data. `fingerprint` hashes it; `compare` names each difference.
+types and nullability, and the primary key, never data. `fingerprint` hashes it; `compare` names each difference
+(`expected` and `actual` are keyword-only, since 0.3).
 
 ```pycon
 >>> from tabrion import Database, schema
@@ -101,7 +102,7 @@ True
 ...     now = schema.snapshot(inspector, tables=["invoices"])
 >>> schema.fingerprint(now) == schema.fingerprint(released)
 False
->>> [(str(d), d.breaking) for d in schema.compare(schema.SchemaSnapshot.from_json(stored), now)]
+>>> [(str(d), d.breaking) for d in schema.compare(expected=schema.SchemaSnapshot.from_json(stored), actual=now)]
 [('column_missing: main.invoices.total_cents', True)]
 >>> db.close()
 ```
@@ -111,7 +112,7 @@ missing table or column, a changed type or nullability and a changed primary key
 upgrade can change a fingerprint without a schema change; `compare` then names the column, and the consumer records
 the new fingerprint.
 
-### Level 2: constraints, indexes and defaults (0.3, experimental)
+### Level 2: constraints, indexes and defaults (0.3)
 
 `snapshot(..., level=2)` also reads column defaults, foreign keys, unique and check constraints and indexes (contract
 I-111). Its fingerprint starts with `v2:`; level 1 stays the default, and a stored `v1:` fingerprint keeps its value.
@@ -132,7 +133,7 @@ True
 0
 >>> with db.inspector() as inspector:
 ...     now = schema.snapshot(inspector, level=2)
->>> [(str(d), d.breaking) for d in schema.compare(released, now)]
+>>> [(str(d), d.breaking) for d in schema.compare(expected=released, actual=now)]
 [('index_added: main.items.price (items_price)', False)]
 >>> db.close()
 ```
@@ -144,16 +145,17 @@ generated columns are part of the shape. Since TAB-XW-4 so are triggers, row-lev
 functions they call directly (with their body), and `features` marks what the shape does not describe (PostgreSQL
 partitioning, inheritance, rules, foreign tables, domain columns, `UNLOGGED` ...; SQLite `STRICT`, `AUTOINCREMENT`
 ...; I-111 i): a change of any of them changes the `v2:` fingerprint, and
-[`tabrion.plan`](migrations.md#schema-change-plans-03-experimental) refuses to change a marked table. Still not in
+[`tabrion.plan`](migrations.md#schema-change-plans-03) refuses to change a marked table. Still not in
 the shape (I-111 d): index storage parameters, sequences, comments and PostgreSQL views (SQLite views are, since
 the review of #89). At level 2 a schema or table name with a dot is refused
 (`schema.unsupported_name`), as `schema.table` would not say which table it is.
 
-### DDL from the model (0.3, experimental)
+### DDL from the model (0.3)
 
 `tabrion.ddl` (contract section 5.12, I-123) turns a level-2 model into DDL text for SQLite or PostgreSQL: a
 `CREATE TABLE` per table (referred tables first) and its indexes, or one statement per change (`add_column_statement`,
-`alter_column_statements`, `create_index_statement` and so on; the column statements need the extra `migrations`).
+`alter_column_statements` with the keyword-only `old` and `new`, `create_index_statement` and so on; the column
+statements need the extra `migrations`).
 SQLAlchemy compiles the text and quotes the identifiers; nothing runs. Each `DdlStatement` is one statement, the text
 a preview shows and a plan (TAB-XW-4) runs.
 

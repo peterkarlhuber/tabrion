@@ -72,7 +72,7 @@ def test_cr2_postgres_drift(db: Database, names: str, tabrion_postgres_url: str)
         conn.execute(f"ALTER TABLE {names}.invoices ALTER COLUMN at SET NOT NULL")
     actual = take(db, schemas=[names])
     assert ts.fingerprint(actual) != print_before
-    assert [str(d) for d in ts.compare(expected, actual)] == [
+    assert [str(d) for d in ts.compare(expected=expected, actual=actual)] == [
         f"column_missing: {names}.invoices.total_cents",
         f"column_type: {names}.invoices.note",
         f"column_nullable: {names}.invoices.at",
@@ -177,7 +177,7 @@ def test_xw2_postgres_level2_drift(db: Database, constrained: str, tabrion_postg
     actual = take(db, schemas=[name], level=2)
     assert ts.fingerprint(take(db, schemas=[name])) == level1  # level 1 sees none of it
     assert ts.fingerprint(actual) != ts.fingerprint(expected)
-    differences = ts.compare(expected, actual)
+    differences = ts.compare(expected=expected, actual=actual)
     assert [str(d) for d in differences] == [
         f"column_default: {name}.invoices.total_cents",
         f"foreign_key_missing: {name}.invoices.other (fk_other)",
@@ -302,7 +302,7 @@ def test_xw2_postgres_detail_changes_the_v2_fingerprint(
     after1, after2 = take(db, schemas=[name]), take(db, schemas=[name], level=2)
     assert ts.fingerprint(after1) == ts.fingerprint(before1)  # level 1 does not see it
     assert ts.fingerprint(after2) != ts.fingerprint(before2)
-    assert [d.kind for d in ts.compare(before2, after2)] == kinds
+    assert [d.kind for d in ts.compare(expected=before2, actual=after2)] == kinds
     table = after2.table(f"{name}.t")
     assert table is not None
     elements: tuple[Any, ...] = (*table.indexes, *table.unique_constraints, *table.foreign_keys)
@@ -394,7 +394,7 @@ def test_xw2_postgres_review_detail_changes_the_v2_fingerprint(
     table = after2.table(f"{name}.t")
     assert table is not None
     assert ts.fingerprint(after2) != ts.fingerprint(before2)
-    assert [d.kind for d in ts.compare(before2, after2)] == kinds
+    assert [d.kind for d in ts.compare(expected=before2, actual=after2)] == kinds
     elements: tuple[Any, ...] = (
         *table.indexes,
         *table.unique_constraints,
@@ -488,7 +488,7 @@ def test_xw3_postgres_identity_generated_and_collation(
         conn.execute(f'ALTER TABLE {name}.g ALTER COLUMN f TYPE text COLLATE "C"')
     after = take(db, schemas=[name], level=2)
     assert ts.fingerprint(after) != ts.fingerprint(before)
-    assert [str(d) for d in ts.compare(before, after)] == [
+    assert [str(d) for d in ts.compare(expected=before, actual=after)] == [
         f"column_identity: {name}.g.id",
         f"column_identity: {name}.g.n",
         f"column_generated: {name}.g.b",

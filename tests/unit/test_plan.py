@@ -121,11 +121,21 @@ def usage(code: str, call: Any, **details: Any) -> UsageError:
 
 def test_xw4_empty_plan_for_equal_snapshots(db: Database) -> None:
     current = take(db)
-    plan = tp.plan(current, current)
+    plan = tp.plan(current=current, target=current)
     assert plan.steps == () and plan.risks == ()
     assert plan.dialect == "sqlite"
     assert plan.source_fingerprint == plan.target_fingerprint == ts.fingerprint(current)
     assert plan.plan_hash.startswith("sha256:") and len(plan.plan_hash) == 71
+
+
+def test_current_and_target_are_keyword_only(db: Database) -> None:
+    """TB-149: ``current`` and ``target`` are keyword-only, so a swap of the two snapshots cannot happen by position
+    (a swapped call plans the reverse change)."""
+    current = take(db)
+    with pytest.raises(TypeError, match="positional argument"):
+        tp.plan(current, current)  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="positional argument"):
+        tp.plan(current, target=current)  # type: ignore[call-arg]
 
 
 def test_xw4_plan_is_deterministic(db: Database) -> None:
@@ -133,21 +143,23 @@ def test_xw4_plan_is_deterministic(db: Database) -> None:
     current = take(db)
     target = replace_table(current, "main.invoices", columns=(*table_of(current, "main.invoices").columns, column("x")))
     target = dataclasses.replace(target, tables=(*target.tables, ts.TableShape("main.new", (column("id"),), ("id",))))
-    first = tp.plan(current, target, server_version=VERSION)
+    first = tp.plan(current=current, target=target, server_version=VERSION)
     again = tp.plan(
-        ts.SchemaSnapshot.from_json(current.to_json()),
-        ts.SchemaSnapshot.from_json(target.to_json()),
+        current=ts.SchemaSnapshot.from_json(current.to_json()),
+        target=ts.SchemaSnapshot.from_json(target.to_json()),
         server_version=VERSION,
     )
     assert first == again and first.plan_hash == again.plan_hash
     assert first.to_json() == again.to_json()
-    assert tp.plan(current, target, server_version=(3, 30, 0)).plan_hash == first.plan_hash  # no drop: same plan
+    assert (
+        tp.plan(current=current, target=target, server_version=(3, 30, 0)).plan_hash == first.plan_hash
+    )  # no drop: same plan
 
 
 def test_xw4_json_round_trip_and_canonical_form(db: Database) -> None:
     current = take(db)
     target = replace_table(current, "main.invoices", indexes=())
-    plan = tp.plan(current, target)
+    plan = tp.plan(current=current, target=target)
     text = plan.to_json()
     assert json.loads(text)["plan_hash"] == plan.plan_hash
     assert tp.MigrationPlan.from_json(text) == plan
@@ -163,7 +175,7 @@ def edited(text: str, change: Any) -> str:
 def test_xw4_from_json_refuses_an_edited_plan(db: Database) -> None:
     """An edited statement, risk, step or fingerprint no longer matches the hash: ``plan.invalid``."""
     current = take(db)
-    plan = tp.plan(current, replace_table(current, "main.invoices", indexes=()))
+    plan = tp.plan(current=current, target=replace_table(current, "main.invoices", indexes=()))
     text = plan.to_json()
     edits = [
         lambda d: d["steps"][0]["statements"][0].update(sql="DROP TABLE customers"),
@@ -243,7 +255,7 @@ def test_xw4_planned_steps_pass_the_step_check(db: Database) -> None:
         replace_table(current, "main.invoices", indexes=()),
         dataclasses.replace(current, tables=()),
     ):
-        made = tp.plan(current, change)
+        made = tp.plan(current=current, target=change)
         assert tp.MigrationPlan.from_json(made.to_json()) == made
 
 
@@ -271,7 +283,7 @@ def test_xw4_from_json_refuses_what_is_not_a_plan(text: str) -> None:
 
 def test_xw4_from_json_refuses_loose_types(db: Database) -> None:
     current = take(db)
-    text = tp.plan(current, replace_table(current, "main.invoices", indexes=())).to_json()
+    text = tp.plan(current=current, target=replace_table(current, "main.invoices", indexes=())).to_json()
     for change in (
         lambda d: d["steps"][0].update(index=True),
         lambda d: d["steps"][0].update(transactional=1),
@@ -296,7 +308,7 @@ def test_from_json_docstring_states_integrity_only() -> None:
 
 def test_xw4_constructor_checks_the_hash(db: Database) -> None:
     current = take(db)
-    plan = tp.plan(current, replace_table(current, "main.invoices", indexes=()))
+    plan = tp.plan(current=current, target=replace_table(current, "main.invoices", indexes=()))
     with pytest.raises(PlanMismatch):
         dataclasses.replace(plan, plan_hash="sha256:" + "0" * 64)
     step = dataclasses.replace(plan.steps[0], risks=(RiskClass.ADDITIVE,))
@@ -328,22 +340,22 @@ def test_xw4_dataclasses_frozen_slotted() -> None:
 def test_xw4_level_dialect_and_engine(db: Database) -> None:
     current = take(db)
     level1 = ts.SchemaSnapshot("sqlite", ())
-    usage("plan.level_required", lambda: tp.plan(level1, current))
-    usage("plan.level_required", lambda: tp.plan(current, level1))
-    refused("dialect_mismatch", lambda: tp.plan(current, ts.SchemaSnapshot("postgresql", (), level=2)))
+    usage("plan.level_required", lambda: tp.plan(current=level1, target=current))
+    usage("plan.level_required", lambda: tp.plan(current=current, target=level1))
+    refused("dialect_mismatch", lambda: tp.plan(current=current, target=ts.SchemaSnapshot("postgresql", (), level=2)))
     other = ts.SchemaSnapshot("mysql", (), level=2)
-    refused("engine_unsupported", lambda: tp.plan(other, other))
+    refused("engine_unsupported", lambda: tp.plan(current=other, target=other))
     with pytest.raises(TypeError):
-        tp.plan(current, current.to_json())  # type: ignore[arg-type]
+        tp.plan(current=current, target=current.to_json())  # type: ignore[arg-type]
     with pytest.raises(TypeError):
-        tp.plan(current, current, server_version="3.45")  # type: ignore[arg-type]
+        tp.plan(current=current, target=current, server_version="3.45")  # type: ignore[arg-type]
     with pytest.raises(TypeError):
-        tp.plan(current, current, server_version=(3, True))
+        tp.plan(current=current, target=current, server_version=(3, True))
     with pytest.raises(TypeError):
-        tp.plan(current, current, concurrent_indexes=1)  # type: ignore[arg-type]
+        tp.plan(current=current, target=current, concurrent_indexes=1)  # type: ignore[arg-type]
     usage(
         "plan.unsupported_option",
-        lambda: tp.plan(current, current, concurrent_indexes=True),
+        lambda: tp.plan(current=current, target=current, concurrent_indexes=True),
         option="concurrent_indexes",
     )
 
@@ -351,7 +363,12 @@ def test_xw4_level_dialect_and_engine(db: Database) -> None:
 def test_xw4_target_referring_to_a_dropped_table(db: Database) -> None:
     current = take(db)
     target = dataclasses.replace(current, tables=(table_of(current, "main.invoices"),))
-    usage("plan.invalid_target", lambda: tp.plan(current, target), table="main.invoices", field="foreign_keys")
+    usage(
+        "plan.invalid_target",
+        lambda: tp.plan(current=current, target=target),
+        table="main.invoices",
+        field="foreign_keys",
+    )
 
 
 PG_T = ts.TableShape(
@@ -387,19 +404,25 @@ def test_xw4_postgres_table_feature_refuses_every_change(feature: str) -> None:
     """ADR 0015 D-5.2, D-5.3: a table with a feature marker is never changed, dropped or altered."""
     current = pg(dataclasses.replace(PG_T, features=(feature,)))
     added = pg(dataclasses.replace(PG_T, features=(feature,), columns=(*PG_T.columns, column("x"))))
-    error = refused("unsupported_feature", lambda: tp.plan(current, added), table="public.t", feature=feature)
+    error = refused(
+        "unsupported_feature", lambda: tp.plan(current=current, target=added), table="public.t", feature=feature
+    )
     assert feature in str(error)
-    refused("unsupported_feature", lambda: tp.plan(current, pg()), table="public.t", feature=feature)
-    assert tp.plan(current, current).steps == ()  # nothing to change: nothing refused
+    refused("unsupported_feature", lambda: tp.plan(current=current, target=pg()), table="public.t", feature=feature)
+    assert tp.plan(current=current, target=current).steps == ()  # nothing to change: nothing refused
     other = ts.TableShape("public.o", (column("id"),), ())
-    assert [s.operation for s in tp.plan(current, pg(current.tables[0], other)).steps] == ["create_table"]
+    assert [s.operation for s in tp.plan(current=current, target=pg(current.tables[0], other)).steps] == [
+        "create_table"
+    ]
 
 
 def test_xw4_event_trigger_refuses_every_change() -> None:
     current = pg(PG_T, features=("event_trigger:audit",))
     target = pg(PG_T, ts.TableShape("public.o", (column("id"),), ()), features=("event_trigger:audit",))
-    refused("unsupported_feature", lambda: tp.plan(current, target), table="", feature="event_trigger:audit")
-    assert tp.plan(current, current).steps == ()
+    refused(
+        "unsupported_feature", lambda: tp.plan(current=current, target=target), table="", feature="event_trigger:audit"
+    )
+    assert tp.plan(current=current, target=current).steps == ()
 
 
 TRIGGER = ts.TriggerShape(
@@ -417,7 +440,7 @@ def test_xw4_trigger_function_language_refused(language: str, definition: str) -
     function = ts.FunctionShape("public.f()", language, definition)
     table = dataclasses.replace(PG_T, triggers=(TRIGGER,), functions=(function,))
     target = dataclasses.replace(table, columns=(*table.columns, column("x")))
-    refused("unsupported_feature", lambda: tp.plan(pg(table), pg(target)), feature="function_language")
+    refused("unsupported_feature", lambda: tp.plan(current=pg(table), target=pg(target)), feature="function_language")
 
 
 def test_xw4_plpgsql_trigger_and_policy_allow_changes() -> None:
@@ -428,11 +451,11 @@ def test_xw4_plpgsql_trigger_and_policy_allow_changes() -> None:
         PG_T, triggers=(TRIGGER,), policies=(policy,), functions=(FUNCTION, function), row_security=True
     )
     target = dataclasses.replace(table, columns=(*table.columns, column("x")))
-    plan = tp.plan(pg(table), pg(target))
+    plan = tp.plan(current=pg(table), target=pg(target))
     assert [(s.operation, s.statements[0].sql) for s in plan.steps] == [
         ("add_column", "ALTER TABLE public.t ADD COLUMN x INTEGER")
     ]
-    assert plan.source_fingerprint != tp.plan(pg(PG_T), pg(PG_T)).source_fingerprint
+    assert plan.source_fingerprint != tp.plan(current=pg(PG_T), target=pg(PG_T)).source_fingerprint
 
 
 @pytest.mark.parametrize(
@@ -447,24 +470,32 @@ def test_xw4_plpgsql_trigger_and_policy_allow_changes() -> None:
 )
 def test_xw4_plan_never_creates_or_changes_triggers_policies_or_features(change: dict[str, Any], feature: str) -> None:
     """The plan makes no trigger, policy, function, row-level security or feature change (contract I-124 e)."""
-    refused("unsupported_feature", lambda: tp.plan(pg(PG_T), pg(dataclasses.replace(PG_T, **change))), feature=feature)
+    refused(
+        "unsupported_feature",
+        lambda: tp.plan(current=pg(PG_T), target=pg(dataclasses.replace(PG_T, **change))),
+        feature=feature,
+    )
     new = dataclasses.replace(PG_T, name="public.n", **change)
-    refused("unsupported_feature", lambda: tp.plan(pg(), pg(new)), table="public.n", feature=feature)
+    refused("unsupported_feature", lambda: tp.plan(current=pg(), target=pg(new)), table="public.n", feature=feature)
 
 
 def test_xw4_postgres_unsupported_changes() -> None:
     usage(
         "plan.unsupported_change",
-        lambda: tp.plan(pg(PG_T), pg(dataclasses.replace(PG_T, primary_key=("id", "note")))),
+        lambda: tp.plan(current=pg(PG_T), target=pg(dataclasses.replace(PG_T, primary_key=("id", "note")))),
         change="primary_key",
     )
     reordered = dataclasses.replace(PG_T, columns=(PG_T.columns[0], column("x"), PG_T.columns[1]))
-    usage("plan.unsupported_change", lambda: tp.plan(pg(PG_T), pg(reordered)), change="column_order")
+    usage("plan.unsupported_change", lambda: tp.plan(current=pg(PG_T), target=pg(reordered)), change="column_order")
     exclusion = dataclasses.replace(
         PG_T, exclusion_constraints=(ts.ExclusionShape("ex", "EXCLUDE USING gist (id WITH =)"),)
     )
-    usage("ddl.unsupported_feature", lambda: tp.plan(pg(PG_T), pg(exclusion)), feature="exclusion_constraint")
-    assert [s.operation for s in tp.plan(pg(exclusion), pg(PG_T)).steps] == ["drop_constraint"]
+    usage(
+        "ddl.unsupported_feature",
+        lambda: tp.plan(current=pg(PG_T), target=pg(exclusion)),
+        feature="exclusion_constraint",
+    )
+    assert [s.operation for s in tp.plan(current=pg(exclusion), target=pg(PG_T)).steps] == ["drop_constraint"]
 
 
 # --- risk classes ---------------------------------------------------------------------------------------------------
@@ -524,7 +555,7 @@ def steps(plan: tp.MigrationPlan) -> list[tuple[str, str, list[str]]]:
 def test_xw4_postgres_risk_classes(change: dict[str, Any], expected: list[tuple[str, list[str]]]) -> None:
     current = pg(PARENT, CHILD)
     target = pg(PARENT, dataclasses.replace(CHILD, **change))
-    plan = tp.plan(current, target)
+    plan = tp.plan(current=current, target=target)
     assert [(op, risks) for op, _, risks in steps(plan)] == expected
     assert all(target_ == "public.c" for _, target_, _ in steps(plan))
     assert plan.risks == tuple(sorted({RiskClass(r) for _, _, risks in steps(plan) for r in risks}))
@@ -534,8 +565,8 @@ def test_xw4_every_risk_class() -> None:
     """Each class occurs: additive and locking (above), data changing, destructive, rebuild (SQLite) and non
     transactional (``concurrent_indexes``)."""
     concurrent = tp.plan(
-        pg(PARENT, CHILD),
-        pg(PARENT, dataclasses.replace(CHILD, indexes=(ts.IndexShape("c_qty_ix", ("qty",)),))),
+        current=pg(PARENT, CHILD),
+        target=pg(PARENT, dataclasses.replace(CHILD, indexes=(ts.IndexShape("c_qty_ix", ("qty",)),))),
         concurrent_indexes=True,
     )
     assert steps(concurrent) == [
@@ -549,11 +580,13 @@ def test_xw4_every_risk_class() -> None:
     ]
     sqlite_current = ts.SchemaSnapshot("sqlite", (dataclasses.replace(CHILD, name="main.c", foreign_keys=()),), level=2)
     narrowed = replace_table(sqlite_current, "main.c", columns=(*CHILD.columns[:3], column("note", "VARCHAR(5)")))
-    rebuild = tp.plan(sqlite_current, narrowed)
+    rebuild = tp.plan(current=sqlite_current, target=narrowed)
     assert steps(rebuild) == [("rebuild_table", "main.c", ["data_changing", "destructive", "rebuild"])]
     seen = {r for p in (concurrent, rebuild) for r in p.risks}
-    seen |= set(tp.plan(pg(PARENT, CHILD), pg(PARENT, dataclasses.replace(CHILD, check_constraints=()))).risks)
-    seen |= set(tp.plan(pg(PARENT), pg(PARENT, CHILD)).risks)
+    seen |= set(
+        tp.plan(current=pg(PARENT, CHILD), target=pg(PARENT, dataclasses.replace(CHILD, check_constraints=()))).risks
+    )
+    seen |= set(tp.plan(current=pg(PARENT), target=pg(PARENT, CHILD)).risks)
     assert seen == set(RiskClass)
 
 
@@ -619,7 +652,7 @@ def test_xw4_postgres_order_holds_dependencies() -> None:
     )
     current = pg(a, b, PARENT, CHILD, x, y)
     target = pg(new_child, q)
-    plan = tp.plan(current, target)
+    plan = tp.plan(current=current, target=target)
     assert steps(plan) == [
         ("drop_constraint", "public.c", ["destructive", "locking"]),  # c_p into p
         ("drop_constraint", "public.a", ["destructive", "locking"]),  # the a-b cycle
@@ -633,7 +666,7 @@ def test_xw4_postgres_order_holds_dependencies() -> None:
         ("add_constraint", "public.c", ["additive", "locking"]),  # c_p into q
     ]
     # two new tables that refer to each other: both created, then the keys
-    plan = tp.plan(pg(), pg(a, b))
+    plan = tp.plan(current=pg(), target=pg(a, b))
     assert steps(plan) == [
         ("create_table", "public.a", ["additive"]),
         ("create_table", "public.b", ["additive"]),
@@ -642,7 +675,9 @@ def test_xw4_postgres_order_holds_dependencies() -> None:
     ]
     assert "REFERENCES" not in plan.steps[0].statements[0].sql
     # a new table referring to an existing one keeps the key inline and locks the existing table
-    assert steps(tp.plan(pg(PARENT), pg(PARENT, CHILD))) == [("create_table", "public.c", ["additive", "locking"])]
+    assert steps(tp.plan(current=pg(PARENT), target=pg(PARENT, CHILD))) == [
+        ("create_table", "public.c", ["additive", "locking"])
+    ]
 
 
 def test_xw4_drop_and_add_of_a_changed_constraint_and_index() -> None:
@@ -651,7 +686,7 @@ def test_xw4_drop_and_add_of_a_changed_constraint_and_index() -> None:
         check_constraints=(ts.CheckShape("c_qty", "qty > 0"),),
         indexes=(ts.IndexShape("c_note", ("note",), unique=True),),
     )
-    plan = tp.plan(pg(PARENT, CHILD), pg(PARENT, changed))
+    plan = tp.plan(current=pg(PARENT, CHILD), target=pg(PARENT, changed))
     assert [(s.operation, s.statements[0].sql) for s in plan.steps] == [
         ("drop_constraint", "ALTER TABLE public.c DROP CONSTRAINT c_qty"),
         ("drop_index", "DROP INDEX public.c_note"),
@@ -667,7 +702,7 @@ def test_xw4_identity_column_does_not_block_a_constraint() -> None:
         PG_T, columns=(ts.ColumnShape("id", "INTEGER", False, identity="ALWAYS"), PG_T.columns[1])
     )
     target = dataclasses.replace(identity, indexes=(ts.IndexShape("t_note", ("note",)),))
-    assert [s.operation for s in tp.plan(pg(identity), pg(target)).steps] == ["create_index"]
+    assert [s.operation for s in tp.plan(current=pg(identity), target=pg(target)).steps] == ["create_index"]
 
 
 # --- SQLite in place ------------------------------------------------------------------------------------------------
@@ -687,7 +722,7 @@ def test_xw4_sqlite_in_place_round_trip(db: Database, tmp_path: Path) -> None:
     target = dataclasses.replace(
         target, tables=(*target.tables, ts.TableShape("main.notes", (column("id", nullable=False),), ("id",)))
     )
-    plan = tp.plan(current, target, server_version=VERSION)
+    plan = tp.plan(current=current, target=target, server_version=VERSION)
     assert steps(plan) == [
         ("drop_index", "main.invoices", ["destructive"]),
         ("drop_column", "main.invoices", ["destructive"]),
@@ -698,7 +733,7 @@ def test_xw4_sqlite_in_place_round_trip(db: Database, tmp_path: Path) -> None:
     ]
     db.close()
     after = execute(tmp_path / "plan.db", plan)
-    assert ts.compare(target, after) == ()
+    assert ts.compare(expected=target, actual=after) == ()
     assert ts.fingerprint(after) == plan.target_fingerprint
     reopened = Database.from_url(f"sqlite:///{tmp_path / 'plan.db'}")
     try:
@@ -715,9 +750,13 @@ def test_xw4_sqlite_in_place_round_trip(db: Database, tmp_path: Path) -> None:
 def test_xw4_sqlite_drop_column_needs_335(db: Database) -> None:
     current = take(db)
     target = replace_table(current, "main.invoices", columns=table_of(current, "main.invoices").columns[:4])
-    assert [s.operation for s in tp.plan(current, target, server_version=(3, 35, 0)).steps] == ["drop_column"]
-    assert [s.operation for s in tp.plan(current, target, server_version=(3, 34, 1)).steps] == ["rebuild_table"]
-    assert [s.operation for s in tp.plan(current, target).steps] == ["rebuild_table"]
+    assert [s.operation for s in tp.plan(current=current, target=target, server_version=(3, 35, 0)).steps] == [
+        "drop_column"
+    ]
+    assert [s.operation for s in tp.plan(current=current, target=target, server_version=(3, 34, 1)).steps] == [
+        "rebuild_table"
+    ]
+    assert [s.operation for s in tp.plan(current=current, target=target).steps] == ["rebuild_table"]
 
 
 @pytest.mark.parametrize(
@@ -739,14 +778,14 @@ def test_xw4_sqlite_add_column_in_place_or_rebuild(
     current = take(db)
     customers = table_of(current, "main.customers")
     target = replace_table(current, "main.customers", columns=(*customers.columns, added))
-    plan = tp.plan(current, target, server_version=VERSION)
+    plan = tp.plan(current=current, target=target, server_version=VERSION)
     assert [s.operation for s in plan.steps] == (["add_column"] if in_place else ["rebuild_table"])
     db.close()
     if not in_place and not added.nullable and added.default in (None, "NULL"):
         with pytest.raises(sqlite3.IntegrityError):  # existing rows have no value: rolled back, loud
             execute(tmp_path / "plan.db", plan)
         return
-    assert ts.compare(target, execute(tmp_path / "plan.db", plan)) == ()
+    assert ts.compare(expected=target, actual=execute(tmp_path / "plan.db", plan)) == ()
 
 
 def test_xw4_sqlite_column_order_change_rebuilds(db: Database, tmp_path: Path) -> None:
@@ -755,11 +794,11 @@ def test_xw4_sqlite_column_order_change_rebuilds(db: Database, tmp_path: Path) -
     target = replace_table(
         current, "main.customers", columns=(customers.columns[0], column("x", "TEXT"), *customers.columns[1:])
     )
-    plan = tp.plan(current, target, server_version=VERSION)
+    plan = tp.plan(current=current, target=target, server_version=VERSION)
     assert [s.operation for s in plan.steps] == ["rebuild_table"]
     db.close()
     after = execute(tmp_path / "plan.db", plan)
-    assert ts.compare(target, after) == ()
+    assert ts.compare(expected=target, actual=after) == ()
 
 
 # --- migration markers ----------------------------------------------------------------------------------------------

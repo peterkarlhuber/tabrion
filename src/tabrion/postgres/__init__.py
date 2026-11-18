@@ -2,7 +2,7 @@
 
 Contract: ``docs/api/contract.md`` section 4. ``configure``, ``session_configurator``, ``ping``, ``diagnose`` and
 ``extension_status`` are implemented (TAB-015), the reading role functions too (TAB-016, ``tabrion.postgres.roles``);
-``grant_runtime_role`` (TAB-031) and the locks (TAB-030) are still stubs. Since 0.3 (experimental, TAB-XW-9) also
+``grant_runtime_role`` (TAB-031) and the locks (TAB-030) are still stubs. Since 0.3 (stable, TAB-XW-9) also
 ``create_database``, ``drop_database`` and ``database_sessions`` (section 4.8; private module ``_databases``) and, with
 TAB-XW-8, the role DDL ``RoleOptions``, ``RolePrivileges``, ``role_privileges``, ``create_role``, ``alter_role``,
 ``drop_role``, ``grant_membership``, ``revoke_membership``, ``grant_privileges`` and ``revoke_privileges`` (section

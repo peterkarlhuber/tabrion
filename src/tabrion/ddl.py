@@ -1,4 +1,4 @@
-"""DDL statements from a level-2 schema model (since 0.3, experimental, extra ``sqlalchemy``; TAB-XW-3, CR-DBX).
+"""DDL statements from a level-2 schema model (since 0.3, stable, extra ``sqlalchemy``; TAB-XW-3, CR-DBX).
 
 Contract section 5.12 and implementation note I-123; ADR 0015 sections 1 and 10. The functions turn the shapes of
 :mod:`tabrion.schema` (level 2) into DDL for SQLite and PostgreSQL and return it as :class:`DdlStatement` values:
@@ -195,13 +195,14 @@ def drop_column_statement(table: TableShape, column: str, *, dialect: Literal["s
 
 
 def alter_column_statements(
-    table: TableShape, old: ColumnShape, new: ColumnShape, *, dialect: Literal["sqlite", "postgresql"]
+    table: TableShape, *, old: ColumnShape, new: ColumnShape, dialect: Literal["sqlite", "postgresql"]
 ) -> tuple[DdlStatement, ...]:
     """The statements that turn column ``old`` of ``table`` into ``new``, in this order: rename, type, nullability,
     default (extra ``migrations``: Alembic's ``ColumnName``, ``ColumnType``, ``ColumnNullable``, ``ColumnDefault``);
     empty when nothing differs. The type is changed without ``USING``: a type PostgreSQL cannot cast by assignment
     fails when the statement runs. SQLite can only rename a column in place; any other change raises
-    ``UsageError("ddl.rebuild_required")`` (the plan rebuilds the table, TAB-XW-4)."""
+    ``UsageError("ddl.rebuild_required")`` (the plan rebuilds the table, TAB-XW-4). ``old`` and ``new`` are
+    keyword-only, so the two columns cannot be swapped by position."""
     name = _dialect_name(dialect)
     builder = _Builder(name)
     shape = _table_shape(table)

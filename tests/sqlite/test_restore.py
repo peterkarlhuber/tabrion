@@ -83,7 +83,7 @@ def test_round_trip_backup_restore_integrity_and_fingerprint(tmp_path: Path, ope
     ts.backup(live, tmp_path / "backup.db")
     live.execute("INSERT INTO parent (id, secret) VALUES (1000, 'after the backup')")
 
-    result = ts.restore(tmp_path / "backup.db", tmp_path / "restored.db")
+    result = ts.restore(source=tmp_path / "backup.db", target=tmp_path / "restored.db")
     assert result == ts.RestoreResult(path=tmp_path / "restored.db", pages=result.pages, integrity_check="ok")
     assert result.pages > 0
     restored = opened(ts.connect(tmp_path / "restored.db"))
@@ -103,6 +103,18 @@ def test_round_trip_backup_restore_integrity_and_fingerprint(tmp_path: Path, ope
         assert fingerprint(tmp_path / "restored.db", level) == fingerprint(original, level)
 
 
+def test_source_and_target_are_keyword_only(tmp_path: Path) -> None:
+    """TB-149: ``source`` and ``target`` are keyword-only, so the backup and the database it replaces cannot be
+    swapped by position; the refused call touches no file."""
+    make_database(tmp_path / "source.db")
+    with pytest.raises(TypeError, match="positional argument"):
+        ts.restore(tmp_path / "source.db", tmp_path / "target.db")  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="positional argument"):
+        ts.restore(tmp_path / "source.db", target=tmp_path / "target.db")  # type: ignore[call-arg]
+    assert not (tmp_path / "target.db").exists()
+    assert ts.restore(source=tmp_path / "source.db", target=tmp_path / "target.db").integrity_check == "ok"
+
+
 def test_restore_reads_uncheckpointed_wal_content(tmp_path: Path, opened: Opened) -> None:
     """A source in WAL mode whose last commits are only in its ``-wal`` file: they are restored too."""
     source = tmp_path / "source.db"
@@ -111,7 +123,7 @@ def test_restore_reads_uncheckpointed_wal_content(tmp_path: Path, opened: Opened
     writer.execute("PRAGMA wal_autocheckpoint = 0")
     writer.execute("INSERT INTO parent (id, secret) VALUES (99, 'in the wal')")
     assert (tmp_path / "source.db-wal").stat().st_size > 0
-    ts.restore(source, tmp_path / "target.db")
+    ts.restore(source=source, target=tmp_path / "target.db")
     assert (99, "in the wal") in _rows(tmp_path / "target.db")
 
 
@@ -124,7 +136,7 @@ def test_restore_into_a_live_wal_database_is_atomic_for_its_connections(tmp_path
     live.execute("DELETE FROM parent")
     other = opened(ts.connect(tmp_path / "live.db"))
     assert other.execute("SELECT count(*) FROM parent").fetchone() == (0,)
-    result = ts.restore(tmp_path / "backup.db", tmp_path / "live.db", overwrite=True)
+    result = ts.restore(source=tmp_path / "backup.db", target=tmp_path / "live.db", overwrite=True)
     assert result.integrity_check == "ok"
     assert other.execute("SELECT count(*) FROM parent").fetchone() == (5,)
     assert live.execute("SELECT count(*) FROM parent").fetchone() == (5,)
@@ -140,7 +152,7 @@ def test_restore_changes_the_page_size_of_a_wal_target(tmp_path: Path, opened: O
     connection.execute("INSERT INTO t VALUES (1)")
     connection.close()
     make_database(tmp_path / "target.db")
-    ts.restore(source, tmp_path / "target.db", overwrite=True)
+    ts.restore(source=source, target=tmp_path / "target.db", overwrite=True)
     target = opened(ts.connect(tmp_path / "target.db"))
     assert target.execute("PRAGMA page_size").fetchone() == (1024,)
     assert target.execute("PRAGMA journal_mode").fetchone() == ("wal",)
@@ -157,7 +169,7 @@ def test_page_size_change_with_another_connection_is_refused(tmp_path: Path, ope
     other = opened(ts.connect(tmp_path / "target.db"))
     before = other.execute("SELECT count(*) FROM parent").fetchone()
     with pytest.raises(DatabaseInUse) as caught:
-        ts.restore(source, tmp_path / "target.db", overwrite=True)
+        ts.restore(source=source, target=tmp_path / "target.db", overwrite=True)
     assert caught.value.code == "sqlite.in_use"
     assert other.execute("SELECT count(*) FROM parent").fetchone() == before
 
@@ -183,7 +195,7 @@ def test_switch_back_to_wal_that_is_busy_keeps_the_restore(tmp_path: Path, monke
         return real(conn, statement, limit)
 
     monkeypatch.setattr(ts, "_rows", busy_switch)
-    assert ts.restore(source, tmp_path / "target.db").integrity_check == "ok"
+    assert ts.restore(source=source, target=tmp_path / "target.db").integrity_check == "ok"
     monkeypatch.undo()
     raw = plain(tmp_path / "target.db")
     assert raw.execute("PRAGMA journal_mode").fetchone() == ("delete",)
@@ -211,7 +223,7 @@ def test_other_error_of_the_switch_back_propagates(tmp_path: Path, monkeypatch: 
 
     monkeypatch.setattr(ts, "_rows", failing)
     with pytest.raises(sqlite3.OperationalError):
-        ts.restore(source, tmp_path / "target.db")
+        ts.restore(source=source, target=tmp_path / "target.db")
     assert not any(name.startswith("target.db") for name in files(tmp_path))  # a new target is removed again
 
 
@@ -229,7 +241,7 @@ def test_held_lock_on_the_target_is_refused(tmp_path: Path, opened: Opened, monk
     reader.execute("SELECT count(*) FROM parent").fetchall()
     before = digest(target)
     with pytest.raises(DatabaseInUse) as caught:
-        ts.restore(tmp_path / "source.db", target, overwrite=True)
+        ts.restore(source=tmp_path / "source.db", target=target, overwrite=True)
     assert caught.value.code == "sqlite.in_use"
     assert caught.value.__cause__ is None
     reader.execute("ROLLBACK")
@@ -246,7 +258,7 @@ def test_writer_on_a_wal_target_is_refused(tmp_path: Path, opened: Opened, monke
     writer.execute("BEGIN IMMEDIATE")
     writer.execute("INSERT INTO parent (id, secret) VALUES (70, 'pending')")
     with pytest.raises(DatabaseInUse) as caught:
-        ts.restore(tmp_path / "source.db", tmp_path / "target.db", overwrite=True)
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "target.db", overwrite=True)
     assert caught.value.code == "sqlite.in_use"
     writer.execute("COMMIT")
     assert len(_rows(tmp_path / "target.db")) == 8
@@ -257,7 +269,7 @@ def test_existing_target_needs_overwrite(tmp_path: Path) -> None:
     make_database(tmp_path / "target.db", rows=9)
     before = digest(tmp_path / "target.db")
     with pytest.raises(FileExistsError) as caught:
-        ts.restore(tmp_path / "source.db", tmp_path / "target.db")
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "target.db")
     assert str(tmp_path) not in str(caught.value)
     assert digest(tmp_path / "target.db") == before
 
@@ -265,7 +277,7 @@ def test_existing_target_needs_overwrite(tmp_path: Path) -> None:
 def test_empty_existing_target_is_restored(tmp_path: Path) -> None:
     make_database(tmp_path / "source.db", rows=4)
     ts.create_private_file(tmp_path / "target.db")
-    ts.restore(tmp_path / "source.db", tmp_path / "target.db", overwrite=True)
+    ts.restore(source=tmp_path / "source.db", target=tmp_path / "target.db", overwrite=True)
     assert len(_rows(tmp_path / "target.db")) == 4
 
 
@@ -276,7 +288,7 @@ def test_corrupt_source_is_refused_before_anything_is_written(tmp_path: Path) ->
     before = digest(tmp_path / "target.db")
     for target, overwrite in ((tmp_path / "target.db", True), (tmp_path / "new.db", False)):
         with pytest.raises(TabrionError) as caught:
-            ts.restore(source, target, overwrite=overwrite)
+            ts.restore(source=source, target=target, overwrite=overwrite)
         assert caught.value.code == "sqlite.restore_source_corrupt"
         assert CANARY not in str(caught.value) and CANARY not in repr(caught.value)
     assert digest(tmp_path / "target.db") == before
@@ -287,7 +299,7 @@ def test_corrupt_source_is_refused_before_anything_is_written(tmp_path: Path) ->
 def test_source_that_is_no_database_is_refused(tmp_path: Path, content: bytes) -> None:
     (tmp_path / "source.db").write_bytes(content)
     with pytest.raises(UsageError) as caught:
-        ts.restore(tmp_path / "source.db", tmp_path / "target.db")
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "target.db")
     assert caught.value.code == "sqlite.not_a_database"
     assert files(tmp_path) == ["source.db"]
 
@@ -296,7 +308,7 @@ def test_target_that_is_no_database_is_never_overwritten(tmp_path: Path) -> None
     make_database(tmp_path / "source.db")
     (tmp_path / "notes.txt").write_text("my notes")
     with pytest.raises(UsageError) as caught:
-        ts.restore(tmp_path / "source.db", tmp_path / "notes.txt", overwrite=True)
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "notes.txt", overwrite=True)
     assert caught.value.code == "sqlite.not_a_database"
     assert (tmp_path / "notes.txt").read_text() == "my notes"
 
@@ -305,7 +317,7 @@ def test_same_file_is_refused(tmp_path: Path) -> None:
     make_database(tmp_path / "a.db")
     for target in (tmp_path / "a.db", tmp_path / "." / "a.db"):
         with pytest.raises(UsageError) as caught:
-            ts.restore(tmp_path / "a.db", target, overwrite=True)
+            ts.restore(source=tmp_path / "a.db", target=target, overwrite=True)
         assert caught.value.code == "sqlite.same_file"
     try:
         os.link(tmp_path / "a.db", tmp_path / "hard.db")
@@ -314,13 +326,13 @@ def test_same_file_is_refused(tmp_path: Path) -> None:
     if not (tmp_path / "a.db").stat().st_ino:
         return  # no file index on this file system
     with pytest.raises(UsageError) as caught:
-        ts.restore(tmp_path / "a.db", tmp_path / "hard.db", overwrite=True)
+        ts.restore(source=tmp_path / "a.db", target=tmp_path / "hard.db", overwrite=True)
     assert caught.value.code == "sqlite.same_file"
 
 
 def test_missing_source(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError) as caught:
-        ts.restore(tmp_path / "missing.db", tmp_path / "target.db")
+        ts.restore(source=tmp_path / "missing.db", target=tmp_path / "target.db")
     assert str(tmp_path) not in str(caught.value)
     assert files(tmp_path) == []
 
@@ -330,13 +342,16 @@ def test_missing_source(tmp_path: Path) -> None:
 )
 def test_memory_names_are_refused(tmp_path: Path, source: str, target: str, code: str) -> None:
     with pytest.raises(UsageError) as caught:
-        ts.restore(source, target)
+        ts.restore(source=source, target=target)
     assert caught.value.code == f"sqlite.{code}"
 
 
 def test_verify_false_reports_not_checked(tmp_path: Path) -> None:
     make_database(tmp_path / "source.db")
-    assert ts.restore(tmp_path / "source.db", tmp_path / "t.db", verify=False).integrity_check == "not checked"
+    assert (
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "t.db", verify=False).integrity_check
+        == "not checked"
+    )
 
 
 def test_target_failing_the_check_is_reported_and_a_new_one_removed(
@@ -354,7 +369,7 @@ def test_target_failing_the_check_is_reported_and_a_new_one_removed(
 
     monkeypatch.setattr(ts, "integrity_check", second_fails)
     with pytest.raises(TabrionError) as caught:
-        ts.restore(tmp_path / "source.db", tmp_path / "new.db")
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "new.db")
     assert caught.value.code == "sqlite.restore_corrupt"
     assert set(caught.value.details) == {"pages"}
     assert not any(name.startswith("new.db") for name in files(tmp_path))
@@ -374,7 +389,7 @@ def test_created_target_swapped_before_the_copy_is_refused(tmp_path: Path, monke
 
     monkeypatch.setattr(ts, "_create", create_then_swap)
     with pytest.raises(UnsafePath):
-        ts.restore(tmp_path / "source.db", tmp_path / "new.db")
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "new.db")
     assert len(_rows(tmp_path / "new.db")) == 1  # the swapped-in file is not the restore's to remove
 
 
@@ -384,7 +399,7 @@ def test_created_target_swapped_before_the_copy_is_refused(tmp_path: Path, monke
 def test_new_target_is_0600(tmp_path: Path, mask: int) -> None:
     make_database(tmp_path / "source.db")
     with umask(mask):
-        ts.restore(tmp_path / "source.db", tmp_path / "target.db")
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "target.db")
     assert mode(tmp_path / "target.db") == 0o600
 
 
@@ -395,7 +410,7 @@ def test_group_writable_target_is_refused(tmp_path: Path) -> None:
     make_database(tmp_path / "target.db")
     (tmp_path / "target.db").chmod(0o664)
     with pytest.raises(UnsafePath) as caught:
-        ts.restore(tmp_path / "source.db", tmp_path / "target.db", overwrite=True)
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "target.db", overwrite=True)
     assert caught.value.code == "sqlite.unsafe_mode"
 
 
@@ -416,7 +431,7 @@ def test_symbolic_links_are_refused(tmp_path: Path, which: str) -> None:
         (tmp_path / "victim.db-wal").symlink_to(tmp_path / "elsewhere")
         source, target = tmp_path / "real.db", tmp_path / "victim.db"
     with pytest.raises(UnsafePath) as caught:
-        ts.restore(source, target, overwrite=True)
+        ts.restore(source=source, target=target, overwrite=True)
     assert caught.value.code == "sqlite.symlink"
     assert str(tmp_path) not in str(caught.value)
     assert digest(tmp_path / "victim.db") == before
@@ -437,7 +452,7 @@ def test_header_with_a_page_count_beyond_the_file_is_source_corrupt(tmp_path: Pa
     before = digest(tmp_path / "target.db")
     for target, overwrite in ((tmp_path / "target.db", True), (tmp_path / "new.db", False)):
         with pytest.raises(TabrionError) as caught:
-            ts.restore(source, target, overwrite=overwrite)
+            ts.restore(source=source, target=target, overwrite=overwrite)
         assert caught.value.code == "sqlite.restore_source_corrupt"
         assert caught.value.__cause__ is None and caught.value.__suppress_context__
     assert digest(tmp_path / "target.db") == before
@@ -455,13 +470,13 @@ def test_other_driver_error_of_the_source_check_propagates(tmp_path: Path, monke
 
     monkeypatch.setattr(ts, "connect", fail)
     with pytest.raises(sqlite3.OperationalError) as caught:
-        ts.restore(tmp_path / "source.db", tmp_path / "target.db")
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "target.db")
     assert caught.value is error
     notadb = sqlite3.DatabaseError("file is not a database")
     notadb.sqlite_errorcode = sqlite3.SQLITE_NOTADB
     error = notadb
     with pytest.raises(UsageError) as refused:
-        ts.restore(tmp_path / "source.db", tmp_path / "target.db")
+        ts.restore(source=tmp_path / "source.db", target=tmp_path / "target.db")
     assert refused.value.code == "sqlite.not_a_database"
     assert files(tmp_path) == ["source.db"]
 
@@ -487,6 +502,6 @@ def test_fifo_is_refused_without_being_opened(tmp_path: Path, monkeypatch: pytes
 
     monkeypatch.setattr(os, "open", record)
     with pytest.raises(UnsafePath) as caught:
-        ts.restore(source, target, overwrite=True)
+        ts.restore(source=source, target=target, overwrite=True)
     assert caught.value.code == "sqlite.unsafe_path"
     assert "pipe.db" not in opened

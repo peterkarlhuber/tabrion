@@ -31,7 +31,10 @@ subject of the API freeze **G-T1** (TAB-002). Implementation follows in TAB-010.
     Since master builds as
     `0.3.0.dev0` they are public ([I-122](#511-guided-write-transaction-since-03-tab-xw-6)); `0.3.0.dev0` is not a
     release, and the consumers' range `tabrion>=0.2,<0.3` excludes it. Schema change plans (`tabrion.plan`,
-    TAB-XW-4) are in [section 5.13](#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4).
+    TAB-XW-4) are in [section 5.13](#513-schema-change-plans-tabrionplan-since-03-extra-sqlalchemy-tab-xw-4).
+    Since the promotion before the G-T2 review of 0.3 (TB-149), every 0.3 name of CR-DBX is stable (S): sections
+    3.10, 4.8, 4.9, 5.10, 5.12 and 5.13. Still experimental: `run_transaction`, `on_begin`, `savepoint` (section
+    5.6) and `tabrion.profilefile` (section 5.9).
 
 !!! note "M2 status"
     `tabrion.errors` (TAB-010), `tabrion.sql` (TAB-011) and `tabrion.config` (TAB-012) are implemented; what the
@@ -112,14 +115,16 @@ This applies to every layer A function that takes a connection
 | `tabrion` (layer B) | `Database.run_transaction`, `Database.on_begin`, `Transaction.savepoint` | 0.2 | X | apps |
 | `tabrion` (layer B) | `Transaction.execute_checked` (section 5.11) | 0.3 | S | Studio (STU-026) |
 | `tabrion.rowedit` (extra `sqlalchemy`) | `insert_row`, `update_row`, `delete_row` (section 5.11) | 0.3 | S | Studio (STU-026) |
-| `tabrion.ddl` (extra `sqlalchemy`; column statements also `migrations`) | `DdlStatement`, `create_statements`, `table_statements`, `drop_table_statement`, `add_column_statement`, `drop_column_statement`, `alter_column_statements`, `add_constraint_statement`, `drop_constraint_statement`, `create_index_statement`, `drop_index_statement` (section 5.12) | 0.3 | X | Studio (STU-CR-4, STU-XSD), `tabrion.plan` |
+| `tabrion.ddl` (extra `sqlalchemy`; column statements also `migrations`) | `DdlStatement`, `create_statements`, `table_statements`, `drop_table_statement`, `add_column_statement`, `drop_column_statement`, `alter_column_statements`, `add_constraint_statement`, `drop_constraint_statement`, `create_index_statement`, `drop_index_statement` (section 5.12) | 0.3 | S | Studio (STU-CR-4, STU-XSD), `tabrion.plan` |
 | `tabrion.errors` | `RowCountMismatch` (section 1.4) | 0.3 | S | Studio (STU-026) |
-| `tabrion.plan` (extra `sqlalchemy`; column steps also `migrations`) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers`, `ExecutionResult`, `execute_plan` (section 5.13) | 0.3 | X | Studio (STU-XSD, STU-XW) |
-| `tabrion.schema` (extra `sqlalchemy`) | `TriggerShape`, `PolicyShape`, `FunctionShape`, `ViewShape` and the D-5 fields of `TableShape` and `SchemaSnapshot` (section 5.10, I-111 i) | 0.3 | X | Studio, `tabrion.plan` |
-| `tabrion.errors` | `PlanError`, `PlanMismatch`, `PlanRefused`, `SchemaDrift`, `PlanFailed` (section 1.4) | 0.3 | X | Studio |
-| `tabrion.sqlite` | `restore`, `RestoreResult`, `delete_database_file` (section 3.10) | 0.3 | X | Studio (STU-XDM-2, STU-XDM-3) |
-| `tabrion.postgres` | `create_database`, `drop_database`, `database_sessions` (section 4.8) | 0.3 | X | Studio (STU-CR-3, STU-XDM-3) |
-| `tabrion.errors` | `DatabaseInUse` (section 1.4) | 0.3 | X | Studio |
+| `tabrion.plan` (extra `sqlalchemy`; column steps also `migrations`) | `RiskClass`, `PlanStep`, `MigrationPlan`, `plan`, `revision_text`, `migration_markers`, `ExecutionResult`, `execute_plan` (section 5.13) | 0.3 | S | Studio (STU-XSD, STU-XW) |
+| `tabrion.schema` (extra `sqlalchemy`) | `ColumnShape`, `TableShape`, `SchemaSnapshot`, `SchemaDifference`, `snapshot`, `fingerprint`, `compare` (section 5.10) | 0.2 | S | Studio, Nodestro (NOD-CR-5), `tabrion.plan` |
+| `tabrion.schema` (extra `sqlalchemy`) | `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `ExclusionShape`, `IndexShape`, `TriggerShape`, `PolicyShape`, `FunctionShape`, `ViewShape`, level 2 and the D-5 fields of `TableShape` and `SchemaSnapshot` (section 5.10, I-111) | 0.3 | S | Studio, `tabrion.plan` |
+| `tabrion.errors` | `PlanError`, `PlanMismatch`, `PlanRefused`, `SchemaDrift`, `PlanFailed` (section 1.4) | 0.3 | S | Studio |
+| `tabrion.sqlite` | `restore`, `RestoreResult`, `delete_database_file` (section 3.10) | 0.3 | S | Studio (STU-XDM-2, STU-XDM-3) |
+| `tabrion.postgres` | `create_database`, `drop_database`, `database_sessions` (section 4.8) | 0.3 | S | Studio (STU-CR-3, STU-XDM-3) |
+| `tabrion.postgres` | `RoleOptions`, `RolePrivileges`, `role_privileges`, `create_role`, `alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges`, `revoke_privileges` (section 4.9) | 0.3 | S | Studio (STU-XW, G-S4) |
+| `tabrion.errors` | `DatabaseInUse` (section 1.4) | 0.3 | S | Studio |
 | `tabrion.testing` | `configure`, fixtures (section 6) including a database per session, `RoleSetup`, `truncate_tables`, roles without superuser, `require_extension`, `profiles.*` | 0.1 | S | **AX**, **N**, **O** (dev extra), apps |
 | *(internal)* | Vectors `conformance/` and the loader `tests/support/conformance.py` (sections 10, 11) | - | internal | Tabrion's own tests **only** (K-35) |
 
@@ -142,10 +147,10 @@ The `__all__` lists in the code (frozen by `tests/unit/test_public_api.py`) are:
 | `tabrion.check` | `check`, `Finding`, `Severity` |
 | `tabrion.migrations` | `status`, `require_current`, `SchemaStatus` |
 | `tabrion.profilefile` (since 0.2, experimental) | `FORMAT_VERSION`, `ConnectionProfile`, `ProfileFile`, `ProfileFileError`, `ProfileIssue`, `SecretRef`, `parse`, `load`, `dump` (section 5.9) |
-| `tabrion.schema` (since 0.2, experimental, extra `sqlalchemy`) | `ColumnShape`, `TableShape`, `SchemaSnapshot`, `SchemaDifference`, `snapshot`, `fingerprint`, `compare`; since 0.3 also `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `ExclusionShape`, `IndexShape`, `TriggerShape`, `PolicyShape`, `FunctionShape`, `ViewShape` (section 5.10) |
+| `tabrion.schema` (since 0.2, extra `sqlalchemy`) | `ColumnShape`, `TableShape`, `SchemaSnapshot`, `SchemaDifference`, `snapshot`, `fingerprint`, `compare`; since 0.3 also `ForeignKeyShape`, `UniqueShape`, `CheckShape`, `ExclusionShape`, `IndexShape`, `TriggerShape`, `PolicyShape`, `FunctionShape`, `ViewShape` (section 5.10) |
 | `tabrion.rowedit` (since 0.3, extra `sqlalchemy`) | `delete_row`, `insert_row`, `update_row` (section 5.11) |
-| `tabrion.ddl` (since 0.3, experimental, extra `sqlalchemy`) | `DdlStatement`, `add_column_statement`, `add_constraint_statement`, `alter_column_statements`, `create_index_statement`, `create_statements`, `drop_column_statement`, `drop_constraint_statement`, `drop_index_statement`, `drop_table_statement`, `table_statements` (section 5.12) |
-| `tabrion.plan` (since 0.3, experimental, extra `sqlalchemy`) | `ExecutionResult`, `MigrationPlan`, `PlanStep`, `RiskClass`, `execute_plan`, `migration_markers`, `plan`, `revision_text` (section 5.13) |
+| `tabrion.ddl` (since 0.3, extra `sqlalchemy`) | `DdlStatement`, `add_column_statement`, `add_constraint_statement`, `alter_column_statements`, `create_index_statement`, `create_statements`, `drop_column_statement`, `drop_constraint_statement`, `drop_index_statement`, `drop_table_statement`, `table_statements` (section 5.12) |
+| `tabrion.plan` (since 0.3, extra `sqlalchemy`) | `ExecutionResult`, `MigrationPlan`, `PlanStep`, `RiskClass`, `execute_plan`, `migration_markers`, `plan`, `revision_text` (section 5.13) |
 | `tabrion.testing` | `configure`, `profiles`, the fixtures of section 6 (including `tabrion_role_setup`), `postgres_server_version`, `truncate_tables`, `require_extension`, `RoleSetup`, `TestRoles`, `PostgresSchema`, `PostgresDatabaseHandle` |
 | `tabrion.testing.profiles` | `SQLiteConnect`, `ProfileCase`, `PortabilityCase`, `sqlite_profile_cases`, `portability_cases` |
 
@@ -349,9 +354,9 @@ class RoleUnsafe(TabrionError)              # "postgres.role_unsafe", details re
 class UnsafePath(TabrionError)              # "sqlite.symlink" / "sqlite.unsafe_path" / "sqlite.unsafe_owner" / "sqlite.unsafe_mode"
 class RowCountMismatch(TabrionError)        # 0.3, S: "transaction.rowcount_mismatch" (details expected, actual)
                                             # and "transaction.too_many_rows" (details limit, actual); section 5.11
-class DatabaseInUse(TabrionError)           # 0.3, X: "postgres.database_in_use" (details sessions), "sqlite.in_use";
+class DatabaseInUse(TabrionError)           # 0.3, S: "postgres.database_in_use" (details sessions), "sqlite.in_use";
                                             # sections 3.10 and 4.8
-class PlanError(TabrionError)               # 0.3, X: base of the plan errors (section 5.13)
+class PlanError(TabrionError)               # 0.3, S: base of the plan errors (section 5.13)
     class PlanMismatch(PlanError)                # "plan.invalid" (details field); execute_plan (TAB-XW-5):
                                                  # "plan.hash_mismatch" (details expected, actual),
                                                  # "plan.fingerprint_mismatch" (details field)
@@ -722,7 +727,7 @@ Every `UsageError` and `ConfigurationError` below carries only the code and valu
 | I-30 | 3.8 | `path` is the name SQLite opened (`PRAGMA database_list`); SQLite's unix VFS has already resolved links in it. `file_mode` is `None` on Windows, where POSIX modes say nothing. `is_symlink` covers the file and its `-wal`, `-shm` and `-journal` files. `secure_delete` is true only for `ON` (1), not for `FAST` (2). `compile_options` keeps `DEFAULT_FOREIGN_KEYS`, `DEFAULT_WAL_SYNCHRONOUS`, `ENABLE_DBSTAT_VTAB`, `ENABLE_FTS3/4/5`, `ENABLE_JSON1`, `ENABLE_LOAD_EXTENSION`, `ENABLE_MATH_FUNCTIONS`, `ENABLE_RTREE`, `OMIT_LOAD_EXTENSION`, `SECURE_DELETE`, `TEMP_STORE` and `THREADSAFE`. When the database directory is writable by others and has no sticky bit (POSIX, TM-03), `diagnose` logs a WARNING on the logger `tabrion.sqlite` that another user can replace the database file; when the group or others can write it otherwise, sticky or not, the WARNING says that other users can create files next to the database (side files, #4 re-review DL-1); neither names the path (the path at DEBUG): the frozen `SQLiteDiagnosis` has no field for it, the field is TB-043 (review M-2, deviation D-40) |
 | I-31 | Conventions | T-NOTX for SQLite (`tests/sqlite/test_notx.py`): every function that takes a connection leaves `in_transaction`, `isolation_level`, `row_factory`, `text_factory` and `query_only` as it found them, idle and inside the caller's transaction; the checks and `diagnose` read inside the caller's transaction or in a short `read_transaction` of their own |
 
-### 3.10 `restore`, `delete_database_file` (since 0.3, experimental; TAB-XW-7)
+### 3.10 `restore`, `delete_database_file` (since 0.3; TAB-XW-7)
 
 Change request CR-DBX (planning document 15, [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) section 6,
 moved here from section A.6 of the contract addendum 0.3): the SQLite building blocks under Studio's backup, restore
@@ -739,10 +744,18 @@ class RestoreResult:
 
 
 def restore(
-    source: str | os.PathLike[str], target: str | os.PathLike[str], *, overwrite: bool = False, verify: bool = True
-) -> RestoreResult: ...  # 0.3, X
-def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = False) -> tuple[Path, ...]: ...  # 0.3, X
+    *, source: str | os.PathLike[str], target: str | os.PathLike[str], overwrite: bool = False, verify: bool = True
+) -> RestoreResult: ...  # 0.3, S
+def delete_database_file(path: str | os.PathLike[str], *, missing_ok: bool = False) -> tuple[Path, ...]: ...  # 0.3, S
 ```
+
+**Stability (TB-149, before the G-T2 review of 0.3).** `restore`, `RestoreResult` and `delete_database_file` are
+**stable** (S, `surface.json`), with the error codes, `details` keys and `DatabaseInUse` of this section and of I-170
+and I-171. They change from now on only after a `DeprecationWarning` (S-3 of the [API stability
+policy](../development/api-stability.md)). Before the promotion, on the `0.3.0.dev0` pre-release, `source` and
+`target` of `restore` became keyword-only (`restore(*, source, target, overwrite=False, verify=True)`), so the backup
+and the database it replaces cannot be swapped by position; Studio's backup wizard (STU-XDM-2, STU-XDM-3) uses both
+functions.
 
 - **`restore`:** `check_path` on both; `source` must start with the SQLite header
   (`UsageError("sqlite.not_a_database")`) and pass `integrity_check` before anything is written
@@ -1098,7 +1111,7 @@ def advisory_unlock(connection: psycopg.Connection, key: int) -> bool
 `pg_terminate_backend` gives `holds()=False`, polling timeout, no active statement while waiting per
 `pg_stat_activity`, close, fork).
 
-### 4.8 `create_database`, `drop_database`, `database_sessions` (since 0.3, experimental; TAB-XW-9)
+### 4.8 `create_database`, `drop_database`, `database_sessions` (since 0.3; TAB-XW-9)
 
 Change request CR-DBX (planning document 15, [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) sections 1 and
 7, moved here from section A.8 of the contract addendum 0.3): the PostgreSQL building blocks under Studio's create and
@@ -1116,10 +1129,15 @@ def create_database(
     template: Literal["template0", "template1"] = "template1",
     encoding: str = "UTF8",
     locale: str | None = None,
-) -> None: ...  # 0.3, X
-def drop_database(connection: psycopg.Connection, name: str, *, force: bool = False) -> None: ...  # 0.3, X
-def database_sessions(connection: psycopg.Connection, name: str) -> int: ...  # 0.3, X; read-only, for the preview
+) -> None: ...  # 0.3, S
+def drop_database(connection: psycopg.Connection, name: str, *, force: bool = False) -> None: ...  # 0.3, S
+def database_sessions(connection: psycopg.Connection, name: str) -> int: ...  # 0.3, S; read-only, for the preview
 ```
+
+**Stability (TB-149, before the G-T2 review of 0.3).** `create_database`, `drop_database`, `database_sessions` and
+`tabrion.errors.DatabaseInUse` are **stable** (S, `surface.json`), with the error codes, `details` keys and checks of
+this section and of I-190..I-193; every option is already keyword-only. They change from now on only after a
+`DeprecationWarning` (S-3 of the [API stability policy](../development/api-stability.md)).
 
 - `create_database` and `drop_database` need an autocommit connection that is idle (`CREATE`/`DROP DATABASE` cannot
   run in a transaction); Tabrion never switches autocommit (T-NOTX) and raises
@@ -1140,7 +1158,7 @@ def database_sessions(connection: psycopg.Connection, name: str) -> int: ...  # 
 | I-192 | **`drop_database`.** (a) `force=True` on a server before PostgreSQL 13 is `UsageError("postgres.force_requires_13")`. (b) `postgres`, `template0` and `template1` by name, every database with `datistemplate`, and the connection's own database (`current_database()`) are `UsageError("postgres.database_protected")`, with or without `force`; a name that is not in `pg_database` is `UsageError("postgres.database_missing")`. (c) Without `force`, the other sessions on the database are counted (`pg_stat_activity`, every session but this connection's; every role sees `datname`): more than 0 is `DatabaseInUse("postgres.database_in_use")`, details `sessions`. A session that connects between that count and the statement makes the server refuse with SQLSTATE 55006 (`ObjectInUse`): that is raised as the same `DatabaseInUse` with the sessions counted again and the driver error as `original`, raised outside the `except` block (no `__cause__`, no `__context__`). (d) `force=True` sends `DROP DATABASE <Identifier> WITH (FORCE)`, which terminates the other sessions; the connecting role needs the right to signal them (the owner of the sessions, `pg_signal_backend` or superuser), otherwise the server's error propagates. Any other driver error (not the owner: `InsufficientPrivilege`) propagates unchanged. (e) Nothing is retried (R-NORETRY) |
 | I-193 | **`database_sessions`.** Read-only through the shared reading helper (contract section 4, I-16): any transaction state, a savepoint inside the caller's transaction, a rollback of its own implicit transaction. Counts the sessions on `name` other than this connection's from `pg_stat_activity`; `0` for a database without sessions and for one that does not exist. Same name check as I-190. For a preview only: the number can change before a later `drop_database` |
 
-### 4.9 Role DDL: `role_privileges`, `create_role`, `alter_role`, `drop_role`, memberships, privileges (since 0.3, experimental; TAB-XW-8)
+### 4.9 Role DDL: `role_privileges`, `create_role`, `alter_role`, `drop_role`, memberships, privileges (since 0.3; TAB-XW-8)
 
 Change request CR-DBX (planning document 15, [ADR 0015](../adr/0015-crdbx-write-and-ddl-primitives.md) section 5,
 moved here from section A.7 of the contract addendum 0.3, with the conditions K-2, D-1, D-2 and N-3 of the security
@@ -1158,7 +1176,7 @@ behavior to it, so the consumer's rules for an `admin` profile are at least thos
 
 ```python
 @dataclass(frozen=True, slots=True)
-class RoleOptions:  # 0.3, X
+class RoleOptions:  # 0.3, S
     login: bool = False
     inherit: bool = True
     create_db: bool = False
@@ -1168,7 +1186,7 @@ class RoleOptions:  # 0.3, X
 
 
 @dataclass(frozen=True, slots=True)
-class RolePrivileges:  # 0.3, X
+class RolePrivileges:  # 0.3, S
     role: str
     attributes: tuple[str, ...]  # "login", "inherit", "createdb", "createrole", "replication", "superuser", ...
     member_of: tuple[str, ...]  # direct memberships, sorted
@@ -1187,16 +1205,16 @@ class RolePrivileges:  # 0.3, X
     def as_dict(self) -> dict[str, object]: ...
 
 
-def role_privileges(connection: psycopg.Connection, role: str) -> RolePrivileges: ...  # 0.3, X; read-only
+def role_privileges(connection: psycopg.Connection, role: str) -> RolePrivileges: ...  # 0.3, S; read-only
 def create_role(
     connection: psycopg.Connection, role: str, *, options: RoleOptions = RoleOptions(), password: str | None = None
-) -> RolePrivileges: ...  # 0.3, X
+) -> RolePrivileges: ...  # 0.3, S
 def alter_role(
     connection: psycopg.Connection, role: str, *, options: RoleOptions | None = None, password: str | None = None
-) -> RolePrivileges: ...  # 0.3, X
-def drop_role(connection: psycopg.Connection, role: str) -> None: ...  # 0.3, X
-def grant_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...  # 0.3, X
-def revoke_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...  # 0.3, X
+) -> RolePrivileges: ...  # 0.3, S
+def drop_role(connection: psycopg.Connection, role: str) -> None: ...  # 0.3, S
+def grant_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...  # 0.3, S
+def revoke_membership(connection: psycopg.Connection, role: str, *, member: str) -> RolePrivileges: ...  # 0.3, S
 def grant_privileges(
     connection: psycopg.Connection,
     role: str,
@@ -1208,7 +1226,7 @@ def grant_privileges(
     ],  # no TRIGGER (K-2)
     on: Literal["table", "sequence", "function", "schema", "database"],
     objects: Sequence[str],
-) -> RolePrivileges: ...  # 0.3, X
+) -> RolePrivileges: ...  # 0.3, S
 def revoke_privileges(
     connection: psycopg.Connection,
     role: str,
@@ -1216,8 +1234,16 @@ def revoke_privileges(
     privileges: Sequence[str],
     on: Literal["table", "sequence", "function", "schema", "database"],
     objects: Sequence[str],
-) -> RolePrivileges: ...  # 0.3, X
+) -> RolePrivileges: ...  # 0.3, S
 ```
+
+**Stability (TB-149, before the G-T2 review of 0.3).** `RoleOptions`, `RolePrivileges`, `role_privileges`,
+`create_role`, `alter_role`, `drop_role`, `grant_membership`, `revoke_membership`, `grant_privileges` and
+`revoke_privileges` are **stable** (S, `surface.json`), with the error codes, the `reasons` of `RoleUnsafe`, the
+finding prefixes of `RolePrivileges` and the rules of I-180..I-186; `member`, `options`, `password`, `privileges`,
+`on` and `objects` are already keyword-only. They change from now on only after a `DeprecationWarning` (S-3 of the
+[API stability policy](../development/api-stability.md)). New reasons and finding prefixes may still be added (S-4): a
+consumer treats an unknown one as a refusal or a finding.
 
 - **D-1:** every function except `role_privileges` raises `UsageError("postgres.role_ddl_requires_16")` on
   PostgreSQL 15 and earlier; `role_privileges` reports CREATEROLE before 16 as `createrole_pre16`.
@@ -1609,7 +1635,7 @@ included), a `?`, `#` or `%` in a SQLite `path`, and `/`, `?`,
 | i | Tests: `tests/unit/test_profilefile.py` (Studio's example, the change request 14 fields, plain-password canaries, every invalid value, network paths, file-level rules, syntax errors, unknown keys, round trip, `load` refusals, frame locals of `load` and `dump`) |
 | j | **Consumer rule for files from elsewhere** (review of #64, C-3; TM-DB-05). A file may come from a repository the user does not control, and it names both the host and the secret source. A consumer (Tabrion Studio STU-CR-6, Nodestro NOD-CR-3) therefore resolves a secret reference of an imported or untrusted file only after the user has confirmed the pair (host, reference); it never resolves `file:` or `env:` references of such a file on its own; and for a remote host it did not configure itself it requires `require_auth=scram-sha-256` (or a stronger method) and an `sslmode` of `verify-ca` or `verify-full`, whatever the file says. Tabrion never resolves a reference, so it cannot enforce this; `dump` and `parse` do not change it. A `file:` target is not refused as a device (`/dev/...`, `/proc/...`): the consumer opens it as `load` does (no symbolic link, a regular file, a size cap) |
 
-### 5.10 Schema fingerprint: `tabrion.schema` (since 0.2, experimental, extra `sqlalchemy`; TAB-CR-2)
+### 5.10 Schema fingerprint: `tabrion.schema` (since 0.2, extra `sqlalchemy`; TAB-CR-2)
 
 A schema fingerprint and comparison over an inspector, so Nodestro's `database` node (NOD-CR-5) can store the shape
 of the tables a release uses and report drift at start-up (change request 14, TM-DB-09). It reads the catalog only,
@@ -1747,8 +1773,18 @@ def snapshot(
     level: Literal[1, 2] = 1,  # since 0.3
 ) -> SchemaSnapshot: ...
 def fingerprint(snapshot: SchemaSnapshot) -> str: ...  # "v1:sha256:<64 hex>" (level 1), "v2:sha256:<64 hex>" (level 2)
-def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDifference, ...]: ...
+def compare(
+    *, expected: SchemaSnapshot, actual: SchemaSnapshot
+) -> tuple[SchemaDifference, ...]: ...  # keyword-only since 0.3
 ```
+
+**Stability (TB-149, before the G-T2 review of 0.3).** Every name of `tabrion.schema`, the 0.2 names and the level-2
+shapes of 0.3, is **stable** (S, `surface.json`), with the snapshot JSON formats 1 and 2, the `v1:` and `v2:`
+fingerprints (I-110, I-111), the difference kinds and the error codes of this section. They change from now on only
+after a `DeprecationWarning` (S-3 of the [API stability policy](../development/api-stability.md)). Before the
+promotion, on the `0.3.0.dev0` pre-release, `expected` and `actual` of `compare` became keyword-only (`compare(*,
+expected, actual)`): swapped, a missing name read as an added one, which is not `breaking`. New difference kinds,
+feature markers and shape fields at the end may still be added (S-4).
 
 | I-110 | Rule |
 |---|---|
@@ -1757,7 +1793,7 @@ def compare(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDif
 | c | `compare` refuses snapshots of different dialects (`UsageError("schema.dialect_mismatch")`); a difference names a table and a column, never data. `from_json` refuses anything but a format-1 snapshot (since 0.3 also format 2, I-111 e), including deep nesting and a `primary_key` that is not a list (`UsageError("schema.invalid_snapshot")`, no `__context__`) |
 | d | Tests: `tests/unit/test_schema.py` (SQLite: shape, stable and sensitive fingerprint, selection, every difference kind including `column_order`, views left out, JSON round trip and refusals, read-only inspector, table cap) and `tests/postgres/test_schema_postgres.py` (types such as `TEXT[]` and `TIMESTAMP WITH TIME ZONE`, a composite primary key, drift) |
 
-**Level 2 (since 0.3, experimental; TAB-XW-2, CR-DBX, moved from addendum A.1).** A level-2 snapshot adds what the
+**Level 2 (since 0.3; TAB-XW-2, CR-DBX, moved from addendum A.1).** A level-2 snapshot adds what the
 Schema Designer (Studio STU-CR-4) shows and edits and what `tabrion.ddl` (TAB-XW-3) and `tabrion.plan` (TAB-XW-4)
 take as the target model; a consumer builds or edits it with `dataclasses.replace` or `from_json`. There is no
 separate model.
@@ -1843,7 +1879,7 @@ empty `new` became `UsageError("rowedit.new_required")` (before: a `ValueError` 
 | I-121 | **`tabrion.rowedit`.** (a) `table` must be a `sqlalchemy.Table` (`TypeError`); `values`, `key`, `old` and `new` are mappings of column keys (`str`) of that table: another key raises `ValueError` whose message names neither the key nor a value. `key` must name exactly the primary key columns (also a composite key), and its values must not be `None` (`ValueError`); `old` names at least one column (`UsageError("rowedit.old_required")`; an empty `old` would turn the optimistic check off, review L-1 of #78), and callers pass every column they displayed; `new` names at least one column (`UsageError("rowedit.new_required")`); `old` and `new` are keyword-only; an empty `values` inserts the defaults. (b) Identifiers are quoted by the dialect's compiler; every value is a `bindparam` of the column's type, or SQL `NULL` for `None` (also for a JSON column, never the JSON text `null`); a SQL construct passed as a value is bound as a parameter, never compiled into the text. (c) The predicate of each `old` column is a SQLAlchemy construct compiled per dialect: PostgreSQL `IS NOT DISTINCT FROM`, SQLite `IS` (both NULL-safe: `None` matches only `NULL`). Text columns (`String` and its subclasses, not `Enum`) compare under a binary collation, PostgreSQL `COLLATE "C"`, SQLite `COLLATE BINARY`, so a case-insensitive or nondeterministic collation cannot hide a concurrent change that only that collation ignores. PostgreSQL `json` columns, which have no equality operator, compare as `jsonb` (both sides cast; key order, blanks and duplicate keys do not count). On PostgreSQL a floating-point value is cast to the column's type, so a `real` column compares `real` with `real` (psycopg sends a Python `float` as `float8`, and `0.1::real` never equals `0.1::float8`). (d) **Residual risk (N-5):** the comparison is otherwise exact as stored. A floating-point value that was rounded or formatted on its way through the client, a SQLite JSON column whose stored text differs from SQLAlchemy's serialization of the value read (blanks, key order, number form), a SQLite `NaN` (stored as `NULL`), a PostgreSQL `real` value at a double-rounding edge and a column type without an equality operator (`xml`, `point`: `StatementError`) report a false conflict or an error: nothing is written. A type with its own case-insensitive equality operator (`citext`) is compared by that operator, so a concurrent change of only the case is not detected there; leave such columns out of `old` or compare them yourself. (e) The functions only build statements; run them with `execute_checked(statement, expect_rowcount=1)`. Tests: `tests/unit/test_rowedit.py` (with `test_float_and_json_old_values_may_conflict`, ADR 0015 section 9), `tests/postgres/test_rowedit_postgres.py` |
 | I-122 | **Staged until 0.3, public since 0.3, stable since the G-S2 follow-up 7A** (ADR 0015 Consequences; the mechanism of I-106). The implementation lives in private modules: the mixin `tabrion._sa._v03._TransactionV03`, the functions in `tabrion._sa._rowedit`. While the version was 0.2, `tabrion._since.released("0.3")` (which reads `tabrion._version.__version__`) kept `Transaction` from inheriting the mixin, kept `tabrion.errors` from binding `RowCountMismatch` and made `import tabrion.rowedit` raise `ImportError`; `scripts/api_surface.py` checked both states and Tabrion's own tests used private staged classes. The 0.3 switch (master `0.3.0.dev0`, after the 0.2.x base, TODO TB-013) removed those gates as TAB-042 did for 0.2: `Transaction` inherits the mixin, `tabrion.errors.RowCountMismatch` is an ordinary exported class, `tabrion.rowedit` imports, `surface.json` has no `staged` key, and the private test-only module `tabrion._sa._staged` is gone. `tabrion._since` stays, unused, for a name planned for a later minor than the package's; `tests/unit/test_api_surface.py` probes that check. The G-S2 follow-up 7A set `execute_checked`, `insert_row`, `update_row`, `delete_row` and `RowCountMismatch` to S in `surface.json`, after making `old` and `new` keyword-only and adding `rowedit.new_required`; `tests/unit/test_api_surface.py::test_studio_data_editor_names_are_stable` pins that stability in `surface.json` and in section 0 |
 
-### 5.12 DDL from the schema model: `tabrion.ddl` (since 0.3, experimental, extra `sqlalchemy`; TAB-XW-3)
+### 5.12 DDL from the schema model: `tabrion.ddl` (since 0.3, extra `sqlalchemy`; TAB-XW-3)
 
 Change request CR-DBX (planning document 15, ADR 0015 sections 1 and 10, moved from addendum A.2): the DDL that the
 Schema Designer previews and that `tabrion.plan` (TAB-XW-4) puts into a plan, generated from the level-2 shapes of
@@ -1866,7 +1902,7 @@ def drop_table_statement(table: TableShape, *, dialect: Dialect) -> DdlStatement
 def add_column_statement(table: TableShape, column: ColumnShape, *, dialect: Dialect) -> DdlStatement: ...
 def drop_column_statement(table: TableShape, column: str, *, dialect: Dialect) -> DdlStatement: ...
 def alter_column_statements(
-    table: TableShape, old: ColumnShape, new: ColumnShape, *, dialect: Dialect
+    table: TableShape, *, old: ColumnShape, new: ColumnShape, dialect: Dialect
 ) -> tuple[DdlStatement, ...]: ...
 def add_constraint_statement(
     table: TableShape, constraint: ForeignKeyShape | UniqueShape | CheckShape, *, dialect: Dialect
@@ -1880,6 +1916,12 @@ def drop_index_statement(
 ) -> DdlStatement: ...
 ```
 
+**Stability (TB-149, before the G-T2 review of 0.3).** Every name of `tabrion.ddl` is **stable** (S, `surface.json`),
+with the error codes and `details` of I-123. They change from now on only after a `DeprecationWarning` (S-3 of the
+[API stability policy](../development/api-stability.md)). Before the promotion, on the `0.3.0.dev0` pre-release, `old`
+and `new` of `alter_column_statements` became keyword-only (`alter_column_statements(table, *, old, new, dialect)`),
+so the two columns cannot be swapped by position.
+
 | I-123 | Rule |
 |---|---|
 | a | **Built on SQLAlchemy and Alembic (ADR 0015 section 1, E-X3).** `CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`, `DROP INDEX` and `ADD`/`DROP CONSTRAINT` are SQLAlchemy Core constructs (`CreateTable`, `DropTable`, `CreateIndex`, `DropIndex`, `AddConstraint`, `DropConstraint`); column statements are Alembic's DDL constructs (`AddColumn`, `DropColumn`, `ColumnName`, `ColumnType`, `ColumnNullable`, `ColumnDefault`), so they need the extra `migrations` (`ImportError` with the install hint without it; the rest needs only `sqlalchemy`). Each is compiled against `PGDialect` (named paramstyle, so a `%` in a literal is not doubled) or `SQLiteDialect`, without a connection. Identifiers are quoted by the dialect's preparer, never formatted into the text. Only the text is returned: it is what a preview shows, a plan hashes (ADR 0015 section 4) and an executor runs, one statement per `execute` |
@@ -1892,7 +1934,7 @@ def drop_index_statement(
 | h | **Round trip.** A level-2 model reflected by `snapshot` gives the same model (and the same `v2:` fingerprint) when its statements run on an empty database and it is reflected again, on SQLite and PostgreSQL 16, with the floor and the current SQLAlchemy; SQLite keeps no unique constraint name, so those are `None` on both sides. Not generated: storage parameters, triggers, policies, comments, PostgreSQL `UNLOGGED` and partitioning, SQLite `STRICT`, `ON CONFLICT` and a column collation (since TAB-XW-4 in the shape or a marker, I-111 i, and refused by rule e). Identity and generated columns are in the shape and refused (rule e). The PostgreSQL column collation is read from the catalog (I-111 b), so a collated column and a unique constraint on it round-trip on the floor too |
 | i | Tests: `tests/unit/test_ddl.py` (SQLite round trip, determinism, golden SQLite and PostgreSQL text, quoting of reserved words, mixed case, blanks, quotes and non-ASCII, serial columns, a foreign key cycle, in-place statements run on SQLite, `rebuild_required`, `concurrently`, the unique options by SQLAlchemy version, every refusal of rules b to e including the injections `1; DROP TABLE t`, `E'\'' ; ...` and `$$'$$; ...`, the allowlist hook, the Alembic extra; review of #87: `test_xw3_a_name_with_two_dots_is_refused`, `test_xw3_identity_and_generated_columns_are_refused`) and `tests/postgres/test_ddl_postgres.py` (round trip on PostgreSQL 16 with serial columns, index collations, operator classes, access methods, `INCLUDE`, `NULLS NOT DISTINCT`, partial and expression indexes, `MATCH FULL`, deferrable keys, a foreign key cycle and quoted names; unique options by SQLAlchemy version; a collated unique constraint round-trips on the floor and current SQLAlchemy (`test_xw3_postgres_unique_collation_of_the_column`, review of #87 L-1); the reviewer's identity and generated probe refused (`test_xw3_postgres_identity_and_generated_columns_are_refused`); every in-place statement run and reflected, `CONCURRENTLY` outside a transaction; a literal with `;`, `:` and `%` written once and run unchanged) |
 
-### 5.13 Schema change plans: `tabrion.plan` (since 0.3, experimental, extra `sqlalchemy`; TAB-XW-4)
+### 5.13 Schema change plans: `tabrion.plan` (since 0.3, extra `sqlalchemy`; TAB-XW-4)
 
 Change request CR-DBX (planning document 15, ADR 0015 sections 2 to 4, 9 and 10, moved from addendum A.3): the diff
 of two level-2 snapshots (section 5.10) into a `MigrationPlan` of numbered steps with the DDL of `tabrion.ddl`
@@ -1941,9 +1983,9 @@ class MigrationPlan:
 
 
 def plan(
+    *,
     current: SchemaSnapshot,
     target: SchemaSnapshot,
-    *,
     server_version: tuple[int, ...] | None = None,
     concurrent_indexes: bool = False,
 ) -> MigrationPlan: ...
@@ -1977,6 +2019,14 @@ def execute_plan(  # TAB-XW-5
     timeout: float | None = None,
 ) -> ExecutionResult: ...
 ```
+
+**Stability (TB-149, before the G-T2 review of 0.3).** Every name of `tabrion.plan` and the errors `PlanError`,
+`PlanMismatch`, `PlanRefused`, `SchemaDrift` and `PlanFailed` are **stable** (S, `surface.json`), with the plan JSON
+format, the `plan_hash`, the risk classes, the refusal reasons, the error codes and `details` of I-124 and I-125. They
+change from now on only after a `DeprecationWarning` (S-3 of the [API stability
+policy](../development/api-stability.md)). Before the promotion, on the `0.3.0.dev0` pre-release, `current` and
+`target` of `plan` became keyword-only (`plan(*, current, target, server_version=None, concurrent_indexes=False)`):
+swapped, a call planned the reverse change. `execute_plan` keeps `target` positional next to its `database`.
 
 | I-124 | Rule |
 |---|---|

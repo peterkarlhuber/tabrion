@@ -110,7 +110,7 @@ def run(
     db: Database, s: str, current: ts.SchemaSnapshot, target: ts.SchemaSnapshot, **options: Any
 ) -> tp.ExecutionResult:
     concurrent = bool(options.get("concurrent_indexes", False))
-    preview = tp.plan(current, target, concurrent_indexes=concurrent)
+    preview = tp.plan(current=current, target=target, concurrent_indexes=concurrent)
     arguments: dict[str, Any] = {
         "plan_hash": preview.plan_hash,
         "expected_fingerprint": ts.fingerprint(current),
@@ -152,7 +152,10 @@ def test_run_reaches_the_target_and_keeps_rows_trigger_and_policy(
     assert result.dry_run is False
     after = take(db, s)
     assert result.fingerprint_after == ts.fingerprint(after)
-    assert [d.kind for d in ts.compare(target, after)] in ([], ["column_default"])  # the server writes '...'::text
+    assert [d.kind for d in ts.compare(expected=target, actual=after)] in (
+        [],
+        ["column_default"],
+    )  # the server writes '...'::text
     assert rows(tabrion_postgres_url, s) == before
     with psycopg.connect(tabrion_postgres_url) as conn:
         assert conn.execute(f"SELECT DISTINCT note FROM {s}.parts").fetchall() == [("50%: n/a",)]
@@ -190,7 +193,7 @@ def test_failing_step_rolls_back_data_unchanged(db: Database, shop: str, tabrion
     error = caught.value
     assert error.details["state"] == "rolled_back"
     assert error.details["completed"] == 0
-    step = tp.plan(current, target).steps[error.details["step"]]  # type: ignore[index]
+    step = tp.plan(current=current, target=target).steps[error.details["step"]]  # type: ignore[index]
     assert step.operation == "alter_column"
     assert error.__cause__ is None
     assert SECRET not in str(error)
@@ -221,7 +224,7 @@ def test_drift_between_preview_and_execution_refused(
     s = shop
     current = take(db, s)
     target = with_note(current, s)
-    preview = tp.plan(current, target)
+    preview = tp.plan(current=current, target=target)
     ddl(tabrion_postgres_url, change.format(s=s))
     drifted = take(db, s)
     before = rows(tabrion_postgres_url, s)
@@ -230,7 +233,7 @@ def test_drift_between_preview_and_execution_refused(
     error = caught.value
     assert error.details["expected"] == ts.fingerprint(current)
     assert error.details["actual"] == ts.fingerprint(drifted)
-    assert error.differences == ts.compare(current, drifted)
+    assert error.differences == ts.compare(expected=current, actual=drifted)
     assert error.differences
     if kind is not None:
         assert kind in {d.kind for d in error.differences}
@@ -347,7 +350,7 @@ def test_hash_mismatch_refused(db: Database, shop: str, tabrion_postgres_url: st
     """The user confirmed the plan without the default; the target held for execution has one."""
     s = shop
     current = take(db, s)
-    confirmed = tp.plan(current, with_note(current, s, default=None))
+    confirmed = tp.plan(current=current, target=with_note(current, s, default=None))
     with pytest.raises(PlanMismatch) as caught:
         run(db, s, current, with_note(current, s), plan_hash=confirmed.plan_hash)
     assert caught.value.code == "plan.hash_mismatch"
@@ -384,7 +387,7 @@ def test_concurrent_index_steps_run_alone_in_plan_order(db: Database, shop: str,
     s = shop
     current = take(db, s)
     target = with_changed_index(with_note(current, s, default=None), s)
-    preview = tp.plan(current, target, concurrent_indexes=True)
+    preview = tp.plan(current=current, target=target, concurrent_indexes=True)
     assert [(step.operation, step.transactional) for step in preview.steps] == [
         ("drop_index", False),
         ("add_column", True),
@@ -396,7 +399,7 @@ def test_concurrent_index_steps_run_alone_in_plan_order(db: Database, shop: str,
     result = run(db, s, current, target, concurrent_indexes=True)
     assert result.steps_run == 3
     after = take(db, s)
-    assert ts.compare(target, after) == ()
+    assert ts.compare(expected=target, actual=after) == ()
     assert result.fingerprint_after == ts.fingerprint(after)
     assert [i.valid for i in table(after, f"{s}.parts").indexes] == [True]
 
@@ -433,7 +436,7 @@ def test_only_concurrent_steps(
     s = shop
     current = take(db, s)
     target = change(current, s)
-    preview = tp.plan(current, target, concurrent_indexes=True)
+    preview = tp.plan(current=current, target=target, concurrent_indexes=True)
     assert [(step.operation, step.transactional) for step in preview.steps] == [(o, False) for o in operations]
     every = tuple(range(len(operations)))
     dry = run(db, s, current, target, concurrent_indexes=True, dry_run=True)
@@ -442,7 +445,7 @@ def test_only_concurrent_steps(
     result = run(db, s, current, target, concurrent_indexes=True)
     after = take(db, s)
     assert result == tp.ExecutionResult(preview.plan_hash, False, len(operations), (), ts.fingerprint(after))
-    assert ts.compare(target, after) == ()
+    assert ts.compare(expected=target, actual=after) == ()
 
 
 def test_failing_non_transactional_step_reports_partial(db: Database, shop: str, tabrion_postgres_url: str) -> None:

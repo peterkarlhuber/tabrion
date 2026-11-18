@@ -404,73 +404,73 @@
         "transactional: bool = True"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.DdlStatement.__init__": {
       "kind": "method",
       "signature": "(self, sql: str, target: str, transactional: bool = True) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.add_column_statement": {
       "kind": "function",
       "signature": "(table: TableShape, column: ColumnShape, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.add_constraint_statement": {
       "kind": "function",
       "signature": "(table: TableShape, constraint: ForeignKeyShape | UniqueShape | CheckShape, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.alter_column_statements": {
       "kind": "function",
-      "signature": "(table: TableShape, old: ColumnShape, new: ColumnShape, *, dialect: Literal['sqlite', 'postgresql']) -> tuple[DdlStatement, ...]",
+      "signature": "(table: TableShape, *, old: ColumnShape, new: ColumnShape, dialect: Literal['sqlite', 'postgresql']) -> tuple[DdlStatement, ...]",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.create_index_statement": {
       "kind": "function",
       "signature": "(table: TableShape, index: IndexShape, *, dialect: Literal['sqlite', 'postgresql'], concurrently: bool = False) -> DdlStatement",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.create_statements": {
       "kind": "function",
       "signature": "(model: SchemaSnapshot, *, dialect: Literal['sqlite', 'postgresql']) -> tuple[DdlStatement, ...]",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.drop_column_statement": {
       "kind": "function",
       "signature": "(table: TableShape, column: str, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.drop_constraint_statement": {
       "kind": "function",
       "signature": "(table: TableShape, name: str, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.drop_index_statement": {
       "kind": "function",
       "signature": "(table: TableShape, name: str, *, dialect: Literal['sqlite', 'postgresql'], concurrently: bool = False) -> DdlStatement",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.drop_table_statement": {
       "kind": "function",
       "signature": "(table: TableShape, *, dialect: Literal['sqlite', 'postgresql']) -> DdlStatement",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.ddl.table_statements": {
       "kind": "function",
       "signature": "(table: TableShape, *, dialect: Literal['sqlite', 'postgresql']) -> tuple[DdlStatement, ...]",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.errors.BackupFailed": {
       "kind": "exception",
@@ -556,7 +556,7 @@
         "TabrionError"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.errors.DbErrorRedactionFilter": {
       "kind": "class",
@@ -659,7 +659,7 @@
         "TabrionError"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.errors.PlanFailed": {
       "kind": "exception",
@@ -667,7 +667,7 @@
         "PlanError"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.errors.PlanMismatch": {
       "kind": "exception",
@@ -675,7 +675,7 @@
         "PlanError"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.errors.PlanRefused": {
       "kind": "exception",
@@ -683,7 +683,7 @@
         "PlanError"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.errors.ReadOnlyViolation": {
       "kind": "exception",
@@ -723,13 +723,13 @@
         "PlanError"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.errors.SchemaDrift.__init__": {
       "kind": "method",
       "signature": "(self, code: str, /, *, differences: tuple[SchemaDifference, ...] = (), classification: Classification | None = None, original: BaseException | None = None, statement: str | None = None, details: Mapping[str, str | int | None] | None = None) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.errors.SchemaNotCurrent": {
       "kind": "exception",
@@ -863,13 +863,13 @@
         "fingerprint_after: str | None"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.ExecutionResult.__init__": {
       "kind": "method",
       "signature": "(self, plan_hash: str, dry_run: bool, steps_run: int, untested_steps: tuple[int, ...], fingerprint_after: str | None) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.MigrationPlan": {
       "kind": "dataclass",
@@ -882,31 +882,31 @@
         "plan_hash: str"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.MigrationPlan.__init__": {
       "kind": "method",
       "signature": "(self, dialect: str, source_fingerprint: str, target_fingerprint: str, steps: tuple[PlanStep, ...], plan_hash: str) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.MigrationPlan.from_json": {
       "kind": "classmethod",
       "signature": "(cls, text: str) -> MigrationPlan",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.MigrationPlan.risks": {
       "kind": "property",
       "signature": "(self) -> tuple[RiskClass, ...]",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.MigrationPlan.to_json": {
       "kind": "method",
       "signature": "(self) -> str",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.PlanStep": {
       "kind": "dataclass",
@@ -920,13 +920,13 @@
         "transactional: bool"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.PlanStep.__init__": {
       "kind": "method",
       "signature": "(self, index: int, operation: str, target: str, statements: tuple[DdlStatement, ...], risks: tuple[RiskClass, ...], transactional: bool) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.RiskClass": {
       "kind": "enum",
@@ -942,31 +942,31 @@
         "NON_TRANSACTIONAL = 'non_transactional'"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.execute_plan": {
       "kind": "function",
       "signature": "(database: Database, target: SchemaSnapshot, *, plan_hash: str, expected_fingerprint: str, environment: Literal['dev', 'test'], allow: Iterable[RiskClass] = (<RiskClass.ADDITIVE: 'additive'>,), source: SchemaSnapshot | None = None, schemas: Iterable[str] | None = None, server_version: tuple[int, ...] | None = None, concurrent_indexes: bool = False, dry_run: bool = False, lock_timeout: float = 5.0, timeout: float | None = None) -> ExecutionResult",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.migration_markers": {
       "kind": "function",
       "signature": "(database: Database) -> tuple[str, ...]",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.plan": {
       "kind": "function",
-      "signature": "(current: SchemaSnapshot, target: SchemaSnapshot, *, server_version: tuple[int, ...] | None = None, concurrent_indexes: bool = False) -> MigrationPlan",
+      "signature": "(*, current: SchemaSnapshot, target: SchemaSnapshot, server_version: tuple[int, ...] | None = None, concurrent_indexes: bool = False) -> MigrationPlan",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.plan.revision_text": {
       "kind": "function",
       "signature": "(plan: MigrationPlan, *, revision: str, down_revision: str | None, message: str) -> str",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.ExtensionStatus": {
       "kind": "dataclass",
@@ -1073,13 +1073,13 @@
         "valid_until: datetime.datetime | None = None"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.RoleOptions.__init__": {
       "kind": "method",
       "signature": "(self, login: bool = False, inherit: bool = True, create_db: bool = False, connection_limit: int | None = None, valid_until: datetime.datetime | None = None) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.RolePrivileges": {
       "kind": "dataclass",
@@ -1096,25 +1096,25 @@
         "default_privileges: int"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.RolePrivileges.__init__": {
       "kind": "method",
       "signature": "(self, role: str, attributes: tuple[str, ...], member_of: tuple[str, ...], reachable: tuple[str, ...], dangerous: tuple[str, ...], broad: tuple[str, ...], public_definers: tuple[str, ...], owned_objects: int, default_privileges: int) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.RolePrivileges.as_dict": {
       "kind": "method",
       "signature": "(self) -> dict[str, object]",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.RolePrivileges.safe": {
       "kind": "property",
       "signature": "(self) -> bool",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.RoleReport": {
       "kind": "dataclass",
@@ -1249,7 +1249,7 @@
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], role: str, *, options: RoleOptions | None = None, password: str | None = None) -> RolePrivileges",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.check_role": {
       "kind": "function",
@@ -1267,19 +1267,19 @@
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], name: str, *, owner: str | None = None, template: Literal['template0', 'template1'] = 'template1', encoding: str = 'UTF8', locale: str | None = None) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.create_role": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], role: str, *, options: RoleOptions = RoleOptions(login=False, inherit=True, create_db=False, connection_limit=None, valid_until=None), password: str | None = None) -> RolePrivileges",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.database_sessions": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], name: str) -> int",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.diagnose": {
       "kind": "function",
@@ -1291,13 +1291,13 @@
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], name: str, *, force: bool = False) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.drop_role": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], role: str) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.extension_status": {
       "kind": "function",
@@ -1309,13 +1309,13 @@
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], role: str, *, member: str) -> RolePrivileges",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.grant_privileges": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], role: str, *, privileges: Sequence[Literal['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'USAGE', 'CREATE', 'CONNECT', 'EXECUTE']], on: Literal['table', 'sequence', 'function', 'schema', 'database'], objects: Sequence[str]) -> RolePrivileges",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.grant_runtime_role": {
       "kind": "function",
@@ -1375,13 +1375,13 @@
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], role: str, *, member: str) -> RolePrivileges",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.revoke_privileges": {
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], role: str, *, privileges: Sequence[str], on: Literal['table', 'sequence', 'function', 'schema', 'database'], objects: Sequence[str]) -> RolePrivileges",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.role_info": {
       "kind": "function",
@@ -1393,7 +1393,7 @@
       "kind": "function",
       "signature": "(connection: psycopg.Connection[Any], role: str) -> RolePrivileges",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.postgres.roles.RoleInfo": {
       "kind": "reexport",
@@ -1619,13 +1619,13 @@
         "validated: bool = True"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.CheckShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str | None, sqltext: str, validated: bool = True) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.ColumnShape": {
       "kind": "dataclass",
@@ -1640,13 +1640,13 @@
         "generation_expression: str | None = None"
       ],
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.ColumnShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str, type: str, nullable: bool, default: str | None = None, identity: str | None = None, generated: str | None = None, generation_expression: str | None = None) -> None",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.ExclusionShape": {
       "kind": "dataclass",
@@ -1656,13 +1656,13 @@
         "definition: str"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.ExclusionShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str, definition: str) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.ForeignKeyShape": {
       "kind": "dataclass",
@@ -1680,13 +1680,13 @@
         "validated: bool = True"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.ForeignKeyShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str | None, columns: tuple[str, ...], referred_table: str, referred_columns: tuple[str, ...], on_delete: str | None = None, on_update: str | None = None, deferrable: bool = False, initially_deferred: bool = False, match: str | None = None, validated: bool = True) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.FunctionShape": {
       "kind": "dataclass",
@@ -1697,13 +1697,13 @@
         "definition: str"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.FunctionShape.__init__": {
       "kind": "method",
       "signature": "(self, signature: str, language: str, definition: str) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.IndexShape": {
       "kind": "dataclass",
@@ -1723,13 +1723,13 @@
         "valid: bool = True"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.IndexShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str, columns: tuple[str, ...], unique: bool = False, ordering: tuple[str, ...] = (), where: str | None = None, include: tuple[str, ...] = (), nulls_not_distinct: bool = False, expressions: tuple[int, ...] = (), collations: tuple[str, ...] = (), opclasses: tuple[str, ...] = (), method: str | None = None, valid: bool = True) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.PolicyShape": {
       "kind": "dataclass",
@@ -1743,13 +1743,13 @@
         "check: str | None = None"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.PolicyShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str, command: str, permissive: bool, roles: tuple[str, ...], using: str | None = None, check: str | None = None) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.SchemaDifference": {
       "kind": "dataclass",
@@ -1761,19 +1761,19 @@
         "name: str | None = None"
       ],
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.SchemaDifference.__init__": {
       "kind": "method",
       "signature": "(self, kind: DifferenceKind, table: str, column: str | None = None, name: str | None = None) -> None",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.SchemaDifference.breaking": {
       "kind": "property",
       "signature": "(self) -> bool",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.SchemaSnapshot": {
       "kind": "dataclass",
@@ -1786,31 +1786,31 @@
         "views: tuple[ViewShape, ...] = ()"
       ],
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.SchemaSnapshot.__init__": {
       "kind": "method",
       "signature": "(self, dialect: str, tables: tuple[TableShape, ...], level: Literal[1, 2] = 1, features: tuple[str, ...] = (), views: tuple[ViewShape, ...] = ()) -> None",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.SchemaSnapshot.from_json": {
       "kind": "classmethod",
       "signature": "(cls, text: str) -> SchemaSnapshot",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.SchemaSnapshot.table": {
       "kind": "method",
       "signature": "(self, name: str) -> TableShape | None",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.SchemaSnapshot.to_json": {
       "kind": "method",
       "signature": "(self) -> str",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.TableShape": {
       "kind": "dataclass",
@@ -1832,13 +1832,13 @@
         "features: tuple[str, ...] = ()"
       ],
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.TableShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str, columns: tuple[ColumnShape, ...], primary_key: tuple[str, ...], foreign_keys: tuple[ForeignKeyShape, ...] = (), unique_constraints: tuple[UniqueShape, ...] = (), check_constraints: tuple[CheckShape, ...] = (), indexes: tuple[IndexShape, ...] = (), exclusion_constraints: tuple[ExclusionShape, ...] = (), triggers: tuple[TriggerShape, ...] = (), policies: tuple[PolicyShape, ...] = (), functions: tuple[FunctionShape, ...] = (), row_security: bool = False, force_row_security: bool = False, features: tuple[str, ...] = ()) -> None",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.TriggerShape": {
       "kind": "dataclass",
@@ -1849,13 +1849,13 @@
         "enabled: str | None = None"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.TriggerShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str, definition: str, enabled: str | None = None) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.UniqueShape": {
       "kind": "dataclass",
@@ -1870,13 +1870,13 @@
         "collations: tuple[str, ...] = ()"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.UniqueShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str | None, columns: tuple[str, ...], include: tuple[str, ...] = (), nulls_not_distinct: bool = False, deferrable: bool = False, initially_deferred: bool = False, collations: tuple[str, ...] = ()) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.ViewShape": {
       "kind": "dataclass",
@@ -1886,31 +1886,31 @@
         "definition: str"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.ViewShape.__init__": {
       "kind": "method",
       "signature": "(self, name: str, definition: str) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.compare": {
       "kind": "function",
-      "signature": "(expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDifference, ...]",
+      "signature": "(*, expected: SchemaSnapshot, actual: SchemaSnapshot) -> tuple[SchemaDifference, ...]",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.fingerprint": {
       "kind": "function",
       "signature": "(snapshot: SchemaSnapshot) -> str",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.schema.snapshot": {
       "kind": "function",
       "signature": "(inspector: sqlalchemy.Inspector, *, tables: Iterable[str] | None = None, schemas: Iterable[str] | None = None, level: Literal[1, 2] = 1) -> SchemaSnapshot",
       "since": "0.2",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.sql.split_statements": {
       "kind": "function",
@@ -2016,13 +2016,13 @@
         "integrity_check: str"
       ],
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.sqlite.RestoreResult.__init__": {
       "kind": "method",
       "signature": "(self, path: Path, pages: int, integrity_check: str) -> None",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.sqlite.SQLiteDiagnosis": {
       "kind": "dataclass",
@@ -2144,7 +2144,7 @@
       "kind": "function",
       "signature": "(path: str | os.PathLike[str], *, missing_ok: bool = False) -> tuple[Path, ...]",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.sqlite.diagnose": {
       "kind": "function",
@@ -2190,9 +2190,9 @@
     },
     "tabrion.sqlite.restore": {
       "kind": "function",
-      "signature": "(source: str | os.PathLike[str], target: str | os.PathLike[str], *, overwrite: bool = False, verify: bool = True) -> RestoreResult",
+      "signature": "(*, source: str | os.PathLike[str], target: str | os.PathLike[str], overwrite: bool = False, verify: bool = True) -> RestoreResult",
       "since": "0.3",
-      "stability": "X"
+      "stability": "S"
     },
     "tabrion.sqlite.write_transaction": {
       "kind": "function",

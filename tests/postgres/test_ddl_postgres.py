@@ -96,7 +96,7 @@ def round_trip(db: Database, url: str, schema: str) -> tuple[ts.SchemaSnapshot, 
     assert take(db, schema).tables == ()
     run(url, statements)
     copy = take(db, schema)
-    assert [str(d) for d in ts.compare(model, copy)] == []
+    assert [str(d) for d in ts.compare(expected=model, actual=copy)] == []
     assert copy == model
     assert ts.fingerprint(copy) == ts.fingerprint(model)
     return model, statements
@@ -201,7 +201,7 @@ def test_xw3_postgres_in_place_changes(
     assert t.columns[-1] == ts.ColumnShape("Big", "JSONB", False, "'{}'::jsonb")
     old = t.columns[1]
     new = ts.ColumnShape("memo", "TEXT", False, "'y'::text")
-    run(url, ddl.alter_column_statements(t, old, new, dialect="postgresql"))
+    run(url, ddl.alter_column_statements(t, old=old, new=new, dialect="postgresql"))
     t = shape()
     assert t.columns[1] == new
     unique = ts.UniqueShape("t_memo_key", ("memo",), deferrable=True)
