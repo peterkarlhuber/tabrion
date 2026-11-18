@@ -72,7 +72,8 @@ cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 foll
 progress, counts unchanged; predefined-role pull request #77: TB-150 new, P2 from 10 to 11; TB-036/TB-150 follow-up pull request (owner order
 2026-11-14 23:56Z): TB-036 and TB-150 done, P2 from 11 to 9; psycopg floor pull request: TB-152 new, P3 from 43 to 44;
 G-S2 follow-up 7A pull request: TB-149 records the stable guided write transaction, counts unchanged;
-CR-DBX promotion pull request: TB-149 records the stable CR-DBX names, counts unchanged).
+CR-DBX promotion pull request: TB-149 records the stable CR-DBX names, counts unchanged; `0.3.0` version pull
+request: TB-149 records TAB-XW-10 (G-T2 passed with conditions) and the release commit, counts unchanged).
 
 | Priority | Count |
 |---|---|
@@ -631,7 +632,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; TAB-XW-8 done; G-S2 follow-up 7A done; CR-DBX promotion to S done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; TAB-XW-8 done; G-S2 follow-up 7A done; CR-DBX promotion to S done; TAB-XW-10 G-T2 passed with conditions, `0.3.0` version pull request open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -831,8 +832,17 @@ required (owner decision of 2026-11-08 11:26Z).
   showed, never to a value from an error's `details` (P91-05); the confirmation dialog names the residual risks of
   I-125 i (functions cannot be locked, `CONCURRENTLY` steps without the executor's locks, the environment is a
   declaration); a dry run on PostgreSQL may advance sequences (P91-03).
-- **Open (follow-up work packages):** TAB-XW-10 G-T2 for 0.3 with an independent API review. Each moves its addendum section into the contract and adds
-  its names to `surface.json` (`since` 0.3, `X`).
+- **TAB-XW-10, G-T2 for 0.3:** the independent review of master `bfba25e` (planning folder
+  `reviews/g-t2-0.3-review.md`, 2026-11-18) passed with conditions: no finding of Medium or above, the review chain of
+  every merge since `5bc690e` complete, 312 public names consistent, no stubs. Findings A-1 (SECURITY.md still said
+  "experimental" for `tabrion.plan` and the role DDL), A-2 (the stale "still stubs" note in `tabrion.postgres`) and
+  A-3 (the label of the CR-DBX row of STATUS) are fixed in the `0.3.0` version pull request (branch
+  `claude/project-thread-rdo6g3-tab030`, condition C-2), which sets `0.3.0` and the CHANGELOG section
+  `[0.3.0] - 2026-11-18`; its merge commit is `v0.3.0` final. **Open:** C-1 (CI push run on `bfba25e`), the reviewer's
+  check of the version pull request, C-3 (after the merge: CI push run, nightly within 36 h, QA-11 dry run with the
+  full SHA, no publication), C-4 (a tag `v0.3.0` only with the owner's explicit approval; PyPI only through G-R),
+  C-5 (Studio pins the final 0.3 commit); the follow-up pull request records the release SHA and moves master to the
+  next `.dev0` version. G-S3, G-S4, H-2 and G-R are not granted by the review.
 - **Security review of #76 (planning folder `reviews/pr76-tabxw1-review.md`): ACCEPTED WITH CONDITIONS.** The
   conditions, decisions and notes are requirements in [ADR 0015 section 9](adr/0015-crdbx-write-and-ddl-primitives.md#9-conditions-decisions-and-notes-of-the-security-review-of-76-binding-requirements)
   and at each function of the addendum, each with a named test of the implementing package:
