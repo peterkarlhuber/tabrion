@@ -6,6 +6,24 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-18
+
+TABRION TAB-XW-10, gate G-T2 (passed with conditions, planning folder `reviews/g-t2-0.3-review.md`): `v0.3.0` final,
+the CR-DBX release (TAB-XW-1..TAB-XW-9, TB-149). The release commit is the merge commit of the pull request that sets
+this version; its full SHA is recorded by the follow-up pull request that moves master on (ADR 0009, amendment of
+2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.3.0` on it is an optional label and
+needs the owner's explicit approval. No PyPI upload, no GitHub release and no announcement (G-R). It satisfies
+`tabrion>=0.3,<0.4` and not `>=0.2,<0.3`, so Axentra, Nodestro and Orkexa stay on `0.2.2` until they move their
+range. **New names:** the guided write transaction (`Transaction.execute_checked`, `tabrion.rowedit`,
+`RowCountMismatch`), `tabrion.schema` level 2, `tabrion.ddl`, `tabrion.plan` with `execute_plan`, SQLite `restore`
+and `delete_database_file`, PostgreSQL `create_database`, `drop_database`, `database_sessions` and the role DDL, all
+**stable (S)** at this release, although the entries below were written while they were experimental (see Changed,
+TB-149 and 7A). 312 public names (`scripts/api_surface.py --base 5bc690e` consistent, no stubs); still experimental
+(X): `Database.run_transaction`, `Database.on_begin`, `Transaction.savepoint` and `tabrion.profilefile`. **No 0.2
+stable name changes**; `tabrion.schema.compare` (experimental in 0.2) takes `expected` and `actual` by keyword only.
+The psycopg floor of the extras is `>=3.2.3`. Between `0.2.2` and this release master built as `0.3.0.dev0` (from the
+0.3 switch after `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f`).
+
 ### Added
 
 - **Experimental, 0.3** (TABRION TAB-XW-5, CR-DBX; contract section 5.13, I-125, moved from addendum A.4): the

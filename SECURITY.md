@@ -85,7 +85,7 @@ Accepted residual risks (documented, not vulnerabilities):
   the host's own included, and `close()` does not undo them; a read-only profile is refused there (contract I-37).
 - `tabrion.migrations.status` never runs `env.py`, but Alembic imports every revision file of the script directory,
   so module-level code in a revision file runs: point it only at a trusted script directory (contract I-57).
-- Schema change plans (`tabrion.plan`, 0.3, experimental; contract I-124 j, review of #89):
+- Schema change plans (`tabrion.plan`, since 0.3; contract I-124 j, review of #89):
   - the level-2 fingerprint does not cover the owner or `EXECUTE` privileges of a function (relevant with
     `SECURITY DEFINER`), the owner of a table (who bypasses row-level security that is not forced), table and column
     privileges, publication membership, extended statistics, column storage and statistics settings, comments,
@@ -184,7 +184,7 @@ Accepted residual risks (documented, not vulnerabilities):
   Check the returned report: `can_create=True` (`CREATE` on the schema, granted by someone else and kept) lets the
   role plant objects that shadow others on a `search_path`, although `restricted` holds; `connect=False` means the
   owner could not grant `CONNECT` (PostgreSQL only warns).
-- The role DDL of `tabrion.postgres` (since 0.3, experimental; contract section 4.9) never grants SUPERUSER,
+- The role DDL of `tabrion.postgres` (since 0.3; contract section 4.9) never grants SUPERUSER,
   BYPASSRLS, CREATEROLE or REPLICATION, neither directly nor through membership, nor membership in a predefined
   role, TRIGGER, `WITH ADMIN OPTION` or `WITH GRANT OPTION`; it runs on PostgreSQL 16 and later only. **This holds
   only for a caller without SUPERUSER, BYPASSRLS and REPLICATION**, and Tabrion enforces that: every change refuses a

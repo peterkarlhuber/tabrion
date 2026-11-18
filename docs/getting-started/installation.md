@@ -11,14 +11,17 @@ pip install "tabrion @ git+https://github.com/peterkarlhuber/tabrion@<commit-sha
 ## Final versions
 
 A final version is the merge commit of the version-bump pull request that sets a final package version; `v0.1.0`
-final (TABRION TAB-040) is the one that sets `0.1.0`, `v0.2.0` final (TAB-042) the one that sets `0.2.0`, 
-`v0.2.1` final (patch) the one that sets `0.2.1` and `v0.2.2` final (patch) the one that sets `0.2.2`. Its full SHA is recorded here, in the CHANGELOG section of the
-version and in `docs/program/STATUS.md` (TAB-040, TAB-042), and the next pull request bumps master to the next
-`.dev0` version (`0.1.1.dev0`, `0.2.1.dev0`, `0.2.2.dev0`, ...), so no other commit builds as that version. Consumers pin
-that commit by its full SHA; a tag (`v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.2.2`) on it is an optional label, never what a pin names.
+final (TABRION TAB-040) is the one that sets `0.1.0`, `v0.2.0` final (TAB-042) the one that sets `0.2.0`,
+`v0.2.1` final (patch) the one that sets `0.2.1`, `v0.2.2` final (patch) the one that sets `0.2.2` and `v0.3.0`
+final (TAB-XW-10) the one that sets `0.3.0`. Its full SHA is recorded here, in the CHANGELOG section of the
+version and in `docs/program/STATUS.md` (TAB-040, TAB-042, TAB-XW-10), and the next pull request bumps master to the
+next `.dev0` version (`0.1.1.dev0`, `0.2.1.dev0`, `0.2.2.dev0`, ...), so no other commit builds as that version.
+Consumers pin that commit by its full SHA; a tag (`v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.2.2`, `v0.3.0`) on it is an
+optional label, never what a pin names.
 
 | Version | Release commit (full SHA) | Date |
 |---|---|---|
+| `0.3.0` | the merge commit of the version pull request that sets `0.3.0`; its SHA is recorded by the follow-up pull request | 2026-11-18 |
 | `0.2.2` | `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` | 2026-11-15 |
 | `0.2.1` | `af0458d54467571abfc1afdd44d76e1f4d727c06` | 2026-11-14 |
 | `0.2.0` | `52353daee6cd6e37a7efc45b74061a48beb2b280` | 2026-11-13 |
@@ -37,14 +40,22 @@ refuse more: `grant_runtime_role` refuses a runtime role in a predefined role, o
 tables after the grant and, before PostgreSQL 16, one with `CREATEROLE`; `tabrion.check` reports such roles; profile
 files refuse more `host` values. A consumer that maps `RoleUnsafe` reasons should know the new values.
 
+`0.3.0` adds the CR-DBX building blocks for Studio (CHANGELOG `[0.3.0]`): the guided write transaction
+(`Transaction.execute_checked`, `tabrion.rowedit`), `tabrion.schema` level 2, `tabrion.ddl`, `tabrion.plan` with
+`execute_plan`, SQLite `restore` and `delete_database_file`, PostgreSQL `create_database`, `drop_database` and the
+role DDL, all stable. No 0.2 stable name changes; the experimental `tabrion.schema.compare` takes `expected` and
+`actual` by keyword only, and the psycopg floor of the extras is 3.2.3. It is outside `>=0.2,<0.3`: a consumer that
+needs a 0.3 name declares `tabrion[...]>=0.3,<0.4` and pins the `0.3.0` release commit; one on `>=0.2,<0.3` stays
+on `0.2.2`.
+
 Pin only a recorded release commit. pip does not check that: it accepts a pin on any master commit whose version is
 inside the range, for example `0.1.1.dev0`; only the architecture check AC-6 (planned, QA-15) refuses it. Always
 supply the pin: Tabrion is not on PyPI, so an install without it would ask the package index for the name `tabrion`.
 
-Since the 0.3 switch master builds as `0.3.0.dev0` (internal development of the 0.3 names, not a
-release). That version is outside `>=0.2,<0.3` (PEP 440: `<0.3` excludes the pre-releases of 0.3), so pip refuses a
-pin on a master commit after the switch for a consumer on the 0.2 range. The last master commit of the 0.2 line, the
-0.2.x base, is recorded in TODO TB-013.
+From the 0.3 switch to the `0.3.0` release commit master built as `0.3.0.dev0` (internal development of the 0.3
+names, not a release). That version is outside `>=0.2,<0.3` (PEP 440: `<0.3` excludes the pre-releases of 0.3), so
+pip refuses a pin on such a commit for a consumer on the 0.2 range. The last master commit of the 0.2 line, the 0.2.x
+base, is recorded in TODO TB-013.
 
 A consumer's CI installs Tabrion from that pin (for a library, the requirements file
 `requirements/tabrion.txt`, installed with `-r`; ADR 0009), not from PyPI:
