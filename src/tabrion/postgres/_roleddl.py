@@ -1,4 +1,4 @@
-"""Role DDL with the attribute ban, also indirect (since 0.3, experimental; TAB-XW-8).
+"""Role DDL with the attribute ban, also indirect (since 0.3, stable; TAB-XW-8).
 
 Contract section 4.9 and notes I-180..I-186; ADR 0015 section 5 and the conditions K-2, D-1, D-2 and N-3 of the
 security review of #76. Re-exported by ``tabrion.postgres``; this module is private.

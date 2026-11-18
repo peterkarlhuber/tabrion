@@ -104,7 +104,7 @@ def test_xw3_sqlite_round_trip(source: Database, tmp_path: Path) -> None:
     statements = ddl.create_statements(model, dialect="sqlite")
     assert all(s.transactional for s in statements)
     copy = run(tmp_path / "copy.db", statements)
-    assert ts.compare(model, copy) == ()
+    assert ts.compare(expected=model, actual=copy) == ()
     assert copy == model
     assert ts.fingerprint(copy) == ts.fingerprint(model)
 
@@ -156,7 +156,9 @@ def test_xw3_sqlite_column_index_and_table_statements(tmp_path: Path) -> None:
         added = ddl.add_column_statement(shape, column("Big Note", "TEXT", default="'x'"), dialect="sqlite")
         assert added.sql == "ALTER TABLE t ADD COLUMN \"Big Note\" TEXT DEFAULT ('x')"
         assert added.target == "main.t.Big Note"
-        renamed = ddl.alter_column_statements(shape, column("note", "TEXT"), column("memo", "TEXT"), dialect="sqlite")
+        renamed = ddl.alter_column_statements(
+            shape, old=column("note", "TEXT"), new=column("memo", "TEXT"), dialect="sqlite"
+        )
         index = ts.IndexShape("t_memo", ("memo",), unique=True)
         for statement in (added, *renamed):
             db.execute(statement.sql)
@@ -177,6 +179,16 @@ def test_xw3_sqlite_column_index_and_table_statements(tmp_path: Path) -> None:
         db.close()
 
 
+def test_old_and_new_are_keyword_only() -> None:
+    """TB-149: ``old`` and ``new`` of ``alter_column_statements`` are keyword-only, so the two columns cannot be
+    swapped by position; ``table`` stays positional."""
+    old, new = column("note", "TEXT"), column("memo", "TEXT")
+    with pytest.raises(TypeError, match="positional argument"):
+        ddl.alter_column_statements(T, old, new, dialect="sqlite")  # type: ignore[call-arg]
+    (renamed,) = ddl.alter_column_statements(T, old=old, new=new, dialect="sqlite")
+    assert "RENAME" in renamed.sql and renamed.sql.index("note") < renamed.sql.index("memo")
+
+
 def test_xw3_sqlite_alter_in_place_only_renames() -> None:
     """SQLite has no ALTER COLUMN and no ADD/DROP CONSTRAINT: the plan rebuilds the table (TAB-XW-4)."""
     old = column("note", "TEXT")
@@ -185,8 +197,10 @@ def test_xw3_sqlite_alter_in_place_only_renames() -> None:
         column("note", "TEXT", nullable=False),
         column("note", "TEXT", default="1"),
     ):
-        refused("ddl.rebuild_required", lambda new=new: ddl.alter_column_statements(T, old, new, dialect="sqlite"))
-    assert ddl.alter_column_statements(T, old, old, dialect="sqlite") == ()
+        refused(
+            "ddl.rebuild_required", lambda new=new: ddl.alter_column_statements(T, old=old, new=new, dialect="sqlite")
+        )
+    assert ddl.alter_column_statements(T, old=old, new=old, dialect="sqlite") == ()
     for constraint in (ts.CheckShape("ck", "n > 0"), ts.UniqueShape(None, ("n",))):
         refused(
             "ddl.rebuild_required",
@@ -315,13 +329,13 @@ def test_xw3_postgres_cycle_is_added_after_the_tables() -> None:
 def test_xw3_postgres_alter_statements() -> None:
     old = column("note", "VARCHAR(20)", True, "'x'::character varying")
     new = column("Memo", "TEXT", False, None)
-    assert [s.sql for s in ddl.alter_column_statements(PG, old, new, dialect="postgresql")] == [
+    assert [s.sql for s in ddl.alter_column_statements(PG, old=old, new=new, dialect="postgresql")] == [
         'ALTER TABLE public.t RENAME note TO "Memo"',
         'ALTER TABLE public.t ALTER COLUMN "Memo" TYPE TEXT',
         'ALTER TABLE public.t ALTER COLUMN "Memo" SET NOT NULL',
         'ALTER TABLE public.t ALTER COLUMN "Memo" DROP DEFAULT',
     ]
-    back = ddl.alter_column_statements(PG, new, column("Memo", "TEXT", True, "'y'"), dialect="postgresql")
+    back = ddl.alter_column_statements(PG, old=new, new=column("Memo", "TEXT", True, "'y'"), dialect="postgresql")
     assert [s.sql for s in back] == [
         'ALTER TABLE public.t ALTER COLUMN "Memo" DROP NOT NULL',
         "ALTER TABLE public.t ALTER COLUMN \"Memo\" SET DEFAULT ('y')",
@@ -712,9 +726,11 @@ def test_xw3_identity_and_generated_columns_are_refused(
         lambda: ddl.create_statements(model, dialect=dialect),
         lambda: ddl.table_statements(table, dialect=dialect),
         lambda: ddl.add_column_statement(plain, dataclasses.replace(special, name="x"), dialect=dialect),
-        lambda: ddl.alter_column_statements(plain, IDENTITY, special, dialect=dialect),
-        lambda: ddl.alter_column_statements(table, special, IDENTITY, dialect=dialect),
-        lambda: ddl.alter_column_statements(table, special, dataclasses.replace(special, name="n"), dialect=dialect),
+        lambda: ddl.alter_column_statements(plain, old=IDENTITY, new=special, dialect=dialect),
+        lambda: ddl.alter_column_statements(table, old=special, new=IDENTITY, dialect=dialect),
+        lambda: ddl.alter_column_statements(
+            table, old=special, new=dataclasses.replace(special, name="n"), dialect=dialect
+        ),
     ]
     for call in calls:
         refused("ddl.unsupported_feature", call, table="main.t", feature=feature)

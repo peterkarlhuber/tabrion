@@ -62,8 +62,8 @@ Tabrion itself depends on **no** Levuvo platform (P6). Edges are allowed only to
 
 **Clarification for CR-DBX (TAB-XW-1; owner decisions of 2026-11-13, planning document 15 E-X3..E-X6 and section
 3.1; [ADR 0014](adr/0014-crdbx-tabrion-scope.md), [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md)).** The
-non-goals above apply unchanged to Tabrion 0.2. Under CR-DBX only, Tabrion 0.3 adds experimental modules (TAB-XW-2..
-TAB-XW-9; planned surface in the [contract addendum 0.3](api/contract-0.3-addendum.md)); a consumer such as Studio
+non-goals above apply unchanged to Tabrion 0.2. Under CR-DBX only, Tabrion 0.3 adds modules (TAB-XW-2..
+TAB-XW-9, stable since TB-149; planned surface in the [contract addendum 0.3](api/contract-0.3-addendum.md)); a consumer such as Studio
 uses them only after its own area gate (G-S2, G-S3, G-S4), and Tabrion itself enables nothing:
 
 - DDL, diff and a migration plan **composed from SQLAlchemy Core and Alembic operations**. This is not an own query
@@ -74,10 +74,10 @@ uses them only after its own area gate (G-S2, G-S3, G-S4), and Tabrion itself en
   declared DEV or TEST environment, bound to the plan hash and the schema fingerprint and after a drift check. It is
   **not a migration runner** and writes no version table; the row "PostgreSQL migration runner in 0.x" stays (E-X4,
   [ADR 0007](adr/0007-no-shared-migration-runner.md)).
-- SQLite `restore()` and `delete_database_file` (TAB-XW-7, implemented: [contract section 3.10](api/contract.md#310-restore-delete_database_file-since-03-experimental-tab-xw-7)),
-  PostgreSQL `create_database`/`drop_database` (TAB-XW-9, implemented: [contract section 4.8](api/contract.md#48-create_database-drop_database-database_sessions-since-03-experimental-tab-xw-9))
+- SQLite `restore()` and `delete_database_file` (TAB-XW-7, implemented: [contract section 3.10](api/contract.md#310-restore-delete_database_file-since-03-tab-xw-7)),
+  PostgreSQL `create_database`/`drop_database` (TAB-XW-9, implemented: [contract section 4.8](api/contract.md#48-create_database-drop_database-database_sessions-since-03-tab-xw-9))
   and database role DDL that never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, also not through
-  membership (TAB-XW-8, implemented: [contract section 4.9](api/contract.md#49-role-ddl-role_privileges-create_role-alter_role-drop_role-memberships-privileges-since-03-experimental-tab-xw-8)). Database role DDL is not a tenant or user model; that row stays (E-X6). Restoring a SQLite
+  membership (TAB-XW-8, implemented: [contract section 4.9](api/contract.md#49-role-ddl-role_privileges-create_role-alter_role-drop_role-memberships-privileges-since-03-tab-xw-8)). Database role DDL is not a tenant or user model; that row stays (E-X6). Restoring a SQLite
   file is not PostgreSQL backup orchestration, and creating or dropping a database is no migration runner.
 - Unchanged non-goals: `pg_dump`/`pg_restore` wrappers and PostgreSQL backup orchestration. Studio runs the verified
   system tools; a `pg_dump` archive holds no global roles, role memberships, tablespaces or other cluster objects
@@ -113,10 +113,10 @@ tabrion/                     package; layer B in the package root (importable on
 │   └── _v02.py              0.2 methods of Database and Transaction (mixins the public classes inherit since 0.2)
 ├── schema.py                layer B, extra [sqlalchemy]: snapshot, fingerprint, compare (since 0.2, TAB-CR-2)
 ├── ddl.py                   extra [sqlalchemy] (column statements also [migrations]): DDL text from the level-2
-│                            schema model, generation only (since 0.3, experimental, TAB-XW-3)
+│                            schema model, generation only (since 0.3, TAB-XW-3)
 ├── plan.py                  extra [sqlalchemy] (column steps also [migrations]): diff into a MigrationPlan, risk
 │                            classes, SQLite rebuild, Alembic revision text, migration markers (since 0.3,
-│                            experimental, TAB-XW-4); execute_plan on declared DEV/TEST databases (TAB-XW-5)
+│                            TAB-XW-4); execute_plan on declared DEV/TEST databases (TAB-XW-5)
 ├── migrations.py            layer B, extra [migrations]: status, require_current, SchemaStatus (without env.py)
 └── testing/                 extra [testing] (pytest); pytest plugin only on explicit request (pytest_plugins)
     ├── __init__.py          configure(), fixtures
@@ -365,7 +365,7 @@ Reasons:
 |---|---|---|
 | SQLite | `backup()` as online backup API (like Nodestro's snapshot), target `0600` and atomic, with `quick_check` of the result; `integrity_check`, `quick_check`, `foreign_key_check`; backup required before `migrate` | schedules, rotation, encryption, Litestream |
 | PostgreSQL | diagnosis only: `diagnose()` reports `archive_mode`, `wal_level`, whether a role with `pg_read_all_data` exists (findings `TAB-PG-020..022`) | `pg_dump`/`pg_restore`, PITR with pgBackRest/WAL-G, restore drill. The documentation takes over the kit baseline; version rule: restore only to the same or a newer major (finding PG16 ↔ PG17) |
-| SQLite restore | `restore()` is **not** included in 0.1 and 0.2: replacing an open database is product-specific (Nodestro `maintenance()`); the documentation shows the pattern. *Since 0.3 under CR-DBX only (experimental):* `restore()` (online backup API in one step, atomic for other connections, new targets 0600, `integrity_check` of the source before and of the target after, with a round-trip restore test) and `delete_database_file` (exclusive-lock check, side files, N-4) (TAB-XW-7, [contract section 3.10](api/contract.md#310-restore-delete_database_file-since-03-experimental-tab-xw-7)) | — |
+| SQLite restore | `restore()` is **not** included in 0.1 and 0.2: replacing an open database is product-specific (Nodestro `maintenance()`); the documentation shows the pattern. *Since 0.3 under CR-DBX only:* `restore()` (online backup API in one step, atomic for other connections, new targets 0600, `integrity_check` of the source before and of the target after, with a round-trip restore test) and `delete_database_file` (exclusive-lock check, side files, N-4) (TAB-XW-7, [contract section 3.10](api/contract.md#310-restore-delete_database_file-since-03-tab-xw-7)) | — |
 
 ---
 

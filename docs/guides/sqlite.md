@@ -246,20 +246,21 @@ MigrationResult(previous=2, current=3, backed_up=True)
 >>> backup_conn.close()
 ```
 
-## Restore and delete (0.3, experimental)
+## Restore and delete (0.3)
 
-`restore` (since 0.3, experimental) copies a backup file back with the same online backup API, in one step, so other
+`restore` (since 0.3) copies a backup file back with the same online backup API, in one step, so other
 connections of the target see the old or the new database and never a mix. It checks the source with
 `integrity_check` before it writes anything and the target after the copy; a new target is created `0600`, an
 existing one needs `overwrite=True` and must itself be a SQLite database. A target that another connection holds
-(a transaction, for longer than 5 s) raises `DatabaseInUse` and stays as it was. Back up the target first: Tabrion
-does not.
+(a transaction, for longer than 5 s) raises `DatabaseInUse` and stays as it was. `source` and `target` are
+keyword-only, so the backup and the database it replaces cannot be swapped by position. Back up the target first:
+Tabrion does not.
 
 ```pycon
->>> restored = sqlite.restore("shop-backup.db", "shop-restored.db")
+>>> restored = sqlite.restore(source="shop-backup.db", target="shop-restored.db")
 >>> restored.integrity_check, restored.path.name
 ('ok', 'shop-restored.db')
->>> sqlite.restore("shop-backup.db", "shop-restored.db")
+>>> sqlite.restore(source="shop-backup.db", target="shop-restored.db")
 Traceback (most recent call last):
   ...
 FileExistsError: ...

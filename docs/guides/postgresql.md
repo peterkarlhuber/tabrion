@@ -177,10 +177,10 @@ psycopg.errors.InsufficientPrivilege: permission denied for table app_schema_mig
 
 The function is idempotent; run it after every migration. `inspect_role` reads the same report without granting.
 
-## Creating and dropping databases (0.3, experimental)
+## Creating and dropping databases (0.3)
 
 `create_database(conn, name, owner=..., template=..., encoding=..., locale=...)` and `drop_database(conn, name,
-force=...)` (since 0.3, experimental) run `CREATE DATABASE` and `DROP DATABASE` with every name quoted by
+force=...)` (since 0.3) run `CREATE DATABASE` and `DROP DATABASE` with every name quoted by
 `psycopg.sql.Identifier`. Both statements cannot run inside a transaction, so both functions need a connection in
 autocommit mode that is idle; Tabrion never switches it for you. `create_database` checks `CREATEDB` (and that you may
 become `owner`) first and raises `PermissionDenied`. `drop_database` refuses `postgres`, `template0`, `template1`, any
@@ -205,9 +205,9 @@ tabrion.errors.UsageError: postgres.autocommit_required
 Tabrion asks for no confirmation: the typed name and the backup before a drop are your application's. A `pg_dump`
 archive is not a complete backup: global roles, role memberships, tablespaces and other cluster objects are not in it.
 
-## Managing roles (0.3, experimental)
+## Managing roles (0.3)
 
-`role_privileges(conn, role)` (since 0.3, experimental) reads what a role can do: its attributes, its direct
+`role_privileges(conn, role)` (since 0.3) reads what a role can do: its attributes, its direct
 memberships, every role it can reach through membership (with `INHERIT`, `SET` or the `ADMIN` option, which lets it
 grant the membership to itself), and two kinds of findings. `dangerous` names a reachable SUPERUSER, BYPASSRLS,
 CREATEROLE or REPLICATION role (`"superuser:<role>"` ...), CREATEROLE before PostgreSQL 16 and the escalation grants

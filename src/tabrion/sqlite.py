@@ -1264,7 +1264,7 @@ def foreign_key_check(
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Restore and file deletion (TAB-XW-7, since 0.3, experimental)
+# Restore and file deletion (TAB-XW-7, since 0.3, stable)
 # ---------------------------------------------------------------------------------------------------------------------
 
 
@@ -1441,9 +1441,10 @@ def _open_source(origin: str) -> sqlite3.Connection:
 
 
 def restore(
-    source: str | os.PathLike[str], target: str | os.PathLike[str], *, overwrite: bool = False, verify: bool = True
+    *, source: str | os.PathLike[str], target: str | os.PathLike[str], overwrite: bool = False, verify: bool = True
 ) -> RestoreResult:
-    """Restore the database file ``source`` (a backup) into ``target`` with SQLite's online backup API.
+    """Restore the database file ``source`` (a backup) into ``target`` with SQLite's online backup API. Both are
+    keyword-only, so the backup and the database it replaces cannot be swapped by position.
 
     ``check_path`` on both; ``source`` must start with the SQLite header (``UsageError("sqlite.not_a_database")``)
     and pass ``integrity_check`` before anything is written (``TabrionError("sqlite.restore_source_corrupt")``); the

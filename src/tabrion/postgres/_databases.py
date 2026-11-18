@@ -1,4 +1,4 @@
-"""``create_database``, ``drop_database`` and ``database_sessions`` (since 0.3, experimental; TAB-XW-9).
+"""``create_database``, ``drop_database`` and ``database_sessions`` (since 0.3, stable; TAB-XW-9).
 
 Contract section 4.8 and notes I-190..I-193; ADR 0015 sections 1 and 7. Re-exported by ``tabrion.postgres``; this
 module is private. ``CREATE DATABASE`` and ``DROP DATABASE`` cannot run inside a transaction block, so both functions

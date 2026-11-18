@@ -1328,7 +1328,7 @@ class RoleUnsafe(TabrionError):
     """Code ``postgres.role_unsafe``; details ``reasons``.
 
     A comma list of ``superuser``, ``bypass_rls`` and ``table_owner``; ``grant_runtime_role`` may add
-    ``predefined_role`` (TB-150) and ``createrole``. The role DDL of ``tabrion.postgres`` (since 0.3, experimental,
+    ``predefined_role`` (TB-150) and ``createrole``. The role DDL of ``tabrion.postgres`` (since 0.3, stable,
     contract section 4.9) adds ``createrole``, ``replication``, ``reachable_superuser``, ``reachable_bypass_rls``,
     ``reachable_createrole``, ``reachable_replication``, ``reachable_server_access``, ``owns_objects``,
     ``current_user``, ``trigger``, ``security_definer``, ``schema_create``, ``system_object`` and ``object_owner``.
@@ -1355,13 +1355,13 @@ class RowCountMismatch(TabrionError):
 class DatabaseInUse(TabrionError):
     """Codes ``postgres.database_in_use`` (details ``sessions``, the number of other sessions on the database) and
     ``sqlite.in_use`` (another connection holds the database file), raised by ``tabrion.postgres.drop_database`` and
-    ``tabrion.sqlite.restore`` and ``delete_database_file`` (since 0.3, experimental; contract sections 3.10 and
+    ``tabrion.sqlite.restore`` and ``delete_database_file`` (since 0.3, stable; contract sections 3.10 and
     4.8). Nothing was changed.
     """
 
 
 class PlanError(TabrionError):
-    """Base class of the errors of a schema change plan (``tabrion.plan``, since 0.3, experimental; contract section
+    """Base class of the errors of a schema change plan (``tabrion.plan``, since 0.3, stable; contract section
     5.13). Nothing was changed, except where :class:`PlanFailed` says so."""
 
 
@@ -1381,7 +1381,7 @@ class PlanRefused(PlanError):
 
 
 class SchemaDrift(PlanError):
-    """Code ``plan.drift`` (``tabrion.plan.execute_plan``, since 0.3, experimental; contract I-125): the database's
+    """Code ``plan.drift`` (``tabrion.plan.execute_plan``, since 0.3, stable; contract I-125): the database's
     schema no longer has the fingerprint the preview was made against. Details ``expected`` and ``actual`` (the two
     fingerprints, not secrets) and ``differences`` (their number); :attr:`differences` names them (tables, columns,
     constraint and index names, never data) when the caller passed the preview's snapshot, else it is empty. Nothing
@@ -1415,7 +1415,7 @@ def _rebuild_drift(
 
 
 class PlanFailed(PlanError):
-    """Code ``plan.failed`` (``tabrion.plan.execute_plan``, since 0.3, experimental; contract I-125): a step failed
+    """Code ``plan.failed`` (``tabrion.plan.execute_plan``, since 0.3, stable; contract I-125): a step failed
     or a check before the commit found a problem. Details ``step`` (the plan index of the failing step), ``completed``
     (the steps that ran and stay applied) and ``state``: ``rolled_back`` (nothing of the plan stays),
     ``partial`` (a step outside the transaction ran or started: the database is partly changed) or ``unknown`` (the

@@ -112,20 +112,20 @@ def test_xw4_postgres_plan_round_trip(db: Database, shop: str, tabrion_postgres_
         ),
         level=2,
     )
-    change = tp.plan(current, target)
+    change = tp.plan(current=current, target=target)
     assert change.source_fingerprint == ts.fingerprint(current)
     assert change.target_fingerprint == ts.fingerprint(target)
     assert {r.value for r in change.risks} >= {"destructive", "locking"}
     assert tp.MigrationPlan.from_json(change.to_json()) == change
     run_in_one_transaction(tabrion_postgres_url, change)
     after = take(db, schemas=[s])
-    assert ts.compare(target, after) == ()
+    assert ts.compare(expected=target, actual=after) == ()
     assert ts.fingerprint(after) == change.target_fingerprint
     with psycopg.connect(tabrion_postgres_url) as conn:
         assert conn.execute(f"SELECT id, part, note, qty FROM {s}.moves").fetchall() == [(1, 1, "x", 0)]
         conn.execute(f"INSERT INTO {s}.parts VALUES (2, 'lower')")
         assert conn.execute(f"SELECT code FROM {s}.parts WHERE id = 2").fetchone() == ("LOWER",)
-    assert tp.plan(after, target).steps == ()
+    assert tp.plan(current=after, target=target).steps == ()
 
 
 def test_xw4_function_body_changes_the_fingerprint(db: Database, shop: str, tabrion_postgres_url: str) -> None:
@@ -137,13 +137,13 @@ def test_xw4_function_body_changes_the_fingerprint(db: Database, shop: str, tabr
     )
     after = take(db, schemas=[shop])
     assert ts.fingerprint(before) != ts.fingerprint(after)
-    assert [(d.kind, d.name) for d in ts.compare(before, after)] == [
+    assert [(d.kind, d.name) for d in ts.compare(expected=before, actual=after)] == [
         ("function_missing", f"{shop}.touch()"),
         ("function_added", f"{shop}.touch()"),
     ]
     ddl(tabrion_postgres_url, f"ALTER TABLE {shop}.parts DISABLE TRIGGER parts_touch")
     disabled = take(db, schemas=[shop])
-    assert [d.kind for d in ts.compare(after, disabled)] == ["trigger_missing", "trigger_added"]
+    assert [d.kind for d in ts.compare(expected=after, actual=disabled)] == ["trigger_missing", "trigger_added"]
     trigger = disabled.table(f"{shop}.parts")
     assert trigger is not None and trigger.triggers[0].enabled == "DISABLED"
 
@@ -161,12 +161,15 @@ def test_xw4_policies_and_row_security(db: Database, shop: str, tabrion_postgres
     assert [(p.name, p.command, p.permissive, p.roles) for p in moves.policies] == [
         ("own", "SELECT", False, ("PUBLIC",))
     ]
-    assert [(d.kind, d.name) for d in ts.compare(before, after)] == [("policy_added", "own"), ("row_security", None)]
+    assert [(d.kind, d.name) for d in ts.compare(expected=before, actual=after)] == [
+        ("policy_added", "own"),
+        ("row_security", None),
+    ]
     # A plan keeps a table with a SQL-only policy changeable, and never adds or drops a policy itself.
-    change = tp.plan(after, add_column(after, f"{shop}.moves", column("qty")))
+    change = tp.plan(current=after, target=add_column(after, f"{shop}.moves", column("qty")))
     assert [step.operation for step in change.steps] == ["add_column"]
     with pytest.raises(PlanRefused) as caught:
-        tp.plan(before, after)
+        tp.plan(current=before, target=after)
     assert caught.value.details == {"reason": "unsupported_feature", "table": f"{shop}.moves", "feature": "policy"}
 
 
@@ -182,14 +185,14 @@ def test_xw4_internal_function_refuses_the_plan(db: Database, shop: str, tabrion
     assert moves is not None
     assert [(f.signature, f.language) for f in moves.functions] == [(f"{shop}.size_of(text)", "internal")]
     with pytest.raises(PlanRefused) as caught:
-        tp.plan(current, add_column(current, f"{shop}.moves", column("qty")))
+        tp.plan(current=current, target=add_column(current, f"{shop}.moves", column("qty")))
     assert caught.value.details == {
         "reason": "unsupported_feature",
         "table": f"{shop}.moves",
         "feature": "function_language",
     }
     # The other tables stay changeable.
-    assert tp.plan(current, add_column(current, f"{shop}.old", column("qty"))).steps
+    assert tp.plan(current=current, target=add_column(current, f"{shop}.old", column("qty"))).steps
 
 
 @pytest.mark.parametrize(
@@ -230,13 +233,13 @@ def test_xw4_table_feature_refuses_the_plan(
     stripped = dataclasses.replace(table, features=tuple(f for f in table.features if f != feature))
     assert ts.fingerprint(current) != ts.fingerprint(dataclasses.replace(current, tables=(stripped,)))
     with pytest.raises(PlanRefused) as caught:
-        tp.plan(current, add_column(current, f"{s}.x", column("extra")))
+        tp.plan(current=current, target=add_column(current, f"{s}.x", column("extra")))
     assert caught.value.details["reason"] == "unsupported_feature"
     assert caught.value.details["table"] == f"{s}.x"
     assert caught.value.details["feature"] in table.features
     with pytest.raises(PlanRefused):
-        tp.plan(current, dataclasses.replace(current, tables=()))  # nor dropped
-    assert tp.plan(current, current).steps == ()
+        tp.plan(current=current, target=dataclasses.replace(current, tables=()))  # nor dropped
+    assert tp.plan(current=current, target=current).steps == ()
 
 
 def test_xw4_foreign_table_refuses_the_plan(
@@ -255,7 +258,7 @@ def test_xw4_foreign_table_refuses_the_plan(
         table = current.table(f"{s}.x")
         assert table is not None and "foreign_table" in table.features
         with pytest.raises(PlanRefused) as caught:
-            tp.plan(current, add_column(current, f"{s}.x", column("extra")))
+            tp.plan(current=current, target=add_column(current, f"{s}.x", column("extra")))
         assert caught.value.details["feature"] == "foreign_table"
     finally:
         ddl(
@@ -277,10 +280,10 @@ def test_xw4_event_trigger_refuses_every_change(scratch_database: str) -> None:
     try:
         current = take(database)
         assert current.features == ("event_trigger:audit_ddl",)
-        assert ts.compare(current, current) == ()
-        assert tp.plan(current, current).steps == ()
+        assert ts.compare(expected=current, actual=current) == ()
+        assert tp.plan(current=current, target=current).steps == ()
         with pytest.raises(PlanRefused) as caught:
-            tp.plan(current, add_column(current, "public.t", column("v")))
+            tp.plan(current=current, target=add_column(current, "public.t", column("v")))
         assert caught.value.details == {
             "reason": "unsupported_feature",
             "table": "",
@@ -314,7 +317,7 @@ def test_xw4_revision_runs_on_postgres_with_concurrent_indexes(
             for t in current.tables
         ),
     )
-    change = tp.plan(current, target, concurrent_indexes=True)
+    change = tp.plan(current=current, target=target, concurrent_indexes=True)
     assert any(not step.transactional for step in change.steps)
     text = tp.revision_text(change, revision="a1b2c3", down_revision=None, message="note: index")
     assert "autocommit_block" in text

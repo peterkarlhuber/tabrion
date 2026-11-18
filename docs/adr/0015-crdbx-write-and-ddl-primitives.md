@@ -210,7 +210,7 @@ repeats each requirement at its function.
 ### 10. D-5: drift blind spots of the level-2 fingerprint (owner decision of 2026-11-15)
 
 The review of #85 (planning folder `reviews/pr85-tabxw2-review.md`, F2) found schema features that the `v2:`
-fingerprint of `tabrion.schema` does not see ([contract I-111 d](../api/contract.md#510-schema-fingerprint-tabrionschema-since-02-experimental-extra-sqlalchemy-tab-cr-2)),
+fingerprint of `tabrion.schema` does not see ([contract I-111 d](../api/contract.md#510-schema-fingerprint-tabrionschema-since-02-extra-sqlalchemy-tab-cr-2)),
 so a plan bound to a fingerprint (section 4) would not notice them changing. The owner decided how to close them on
 2026-11-15 at 06:37Z (confirmed 06:38Z). The decision is binding for TAB-XW-3..TAB-XW-5; TAB-XW-2 (#85) only records
 it. **G-S3 stays locked** until the implementation is in place, independently reviewed and tested.
@@ -229,11 +229,11 @@ it cannot be locked.
 
 **Split between TAB-XW-4 and TAB-XW-5 (recorded by TAB-XW-4).** TAB-XW-4 delivers everything D-5 needs at plan time:
 the fingerprint inputs of D-5.1 (triggers, policies, row-level security and the directly referenced functions in the
-level-2 shape, [contract I-111 i](../api/contract.md#510-schema-fingerprint-tabrionschema-since-02-experimental-extra-sqlalchemy-tab-cr-2)),
+level-2 shape, [contract I-111 i](../api/contract.md#510-schema-fingerprint-tabrionschema-since-02-extra-sqlalchemy-tab-cr-2)),
 the detection of D-5.2 and D-5.3 as feature markers (partitioning, domain columns, inheritance, rules, foreign
 tables, unknown relation kinds and properties, event triggers, and the SQLite `CREATE TABLE` clauses a rebuild would
 lose), and the refusal of a plan that would change an affected table (`PlanRefused`, reason `unsupported_feature`,
-[contract I-124 e](../api/contract.md#513-schema-change-plans-tabrionplan-since-03-experimental-extra-sqlalchemy-tab-xw-4)).
+[contract I-124 e](../api/contract.md#513-schema-change-plans-tabrionplan-since-03-extra-sqlalchemy-tab-xw-4)).
 TAB-XW-5 delivers what needs a connection at execution: D-5.4 (lock the target tables, then repeat the drift check
 in the execution transaction, so the D-5 inputs are compared again right before the first step) and the K-1 check
 again under the caller's authorizer and defensive mode. A plan is safe to show from TAB-XW-4 on; it is safe to run

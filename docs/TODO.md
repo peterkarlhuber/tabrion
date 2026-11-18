@@ -71,7 +71,8 @@ cases open; CR-DBX planning pull request: TB-149 new, P3 from 43 to 44; D-2 foll
 `0.2.1` release commit `af0458d`: TB-013 records its SHA and the G-T2 runs; TAB-XW-1 pull request: TB-149 in
 progress, counts unchanged; predefined-role pull request #77: TB-150 new, P2 from 10 to 11; TB-036/TB-150 follow-up pull request (owner order
 2026-11-14 23:56Z): TB-036 and TB-150 done, P2 from 11 to 9; psycopg floor pull request: TB-152 new, P3 from 43 to 44;
-G-S2 follow-up 7A pull request: TB-149 records the stable guided write transaction, counts unchanged).
+G-S2 follow-up 7A pull request: TB-149 records the stable guided write transaction, counts unchanged;
+CR-DBX promotion pull request: TB-149 records the stable CR-DBX names, counts unchanged).
 
 | Priority | Count |
 |---|---|
@@ -630,7 +631,7 @@ required (owner decision of 2026-11-08 11:26Z).
 
 ### TB-149 · CR-DBX building blocks for Studio 1.1-1.3 (TABRION TAB-XW-1..TAB-XW-10)
 
-- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; TAB-XW-8 done; G-S2 follow-up 7A done; the others open) · **Refs:** planning
+- **Priority:** P3 Low · **Status:** In progress (TAB-XW-1 done, #76; TAB-XW-6 done, #78; 0.3 switch done; TAB-XW-2 done, #85; TAB-XW-3 done; TAB-XW-7 and TAB-XW-9 done; TAB-XW-4 done; TAB-XW-5 done; TAB-XW-8 done; G-S2 follow-up 7A done; CR-DBX promotion to S done; the others open) · **Refs:** planning
   document 15 sections 3, 3.1, 5, 9.1, 9.4; [ADR 0014](adr/0014-crdbx-tabrion-scope.md),
   [ADR 0015](adr/0015-crdbx-write-and-ddl-primitives.md), [contract addendum 0.3](api/contract-0.3-addendum.md);
   [STATUS.md](program/STATUS.md#change-request-cr-dbx-planning-document-15); E-X3, E-X4, E-X5, E-X6, E-X9, E-X11
@@ -870,6 +871,24 @@ required (owner decision of 2026-11-08 11:26Z).
   `tabrion.postgres.create_database` (`X`, Schema Designer, not the Data Editor), outside 7A. (5) The error codes are
   not in `surface.json` (TB-091), and an `S` to `X` downgrade still passes `--base` (TB-094); the new test covers
   these five names only.
+- **CR-DBX promotion to S done** (branch `claude/project-thread-rdo6g3-tabxstab`, before the G-T2 review of 0.3,
+  TAB-XW-10): every remaining experimental name of CR-DBX is stable (S) in `surface.json` and contract section 0:
+  `tabrion.sqlite.restore`, `RestoreResult`, `delete_database_file` (section 3.10); `tabrion.postgres.create_database`,
+  `drop_database`, `database_sessions`, `tabrion.errors.DatabaseInUse` (section 4.8); the role DDL (section 4.9); every
+  name of `tabrion.schema` (section 5.10, also the 0.2 names), `tabrion.ddl` (section 5.12) and `tabrion.plan` with
+  `PlanError`, `PlanMismatch`, `PlanRefused`, `SchemaDrift`, `PlanFailed` (section 5.13). Each section has a stability
+  paragraph; codes, `details`, reasons and the JSON formats are stable with the names. Signature review, the rule of
+  7A (two parameters of one type whose swap changes the result without an error are both keyword-only), breaking for
+  `0.3.0.dev0` callers: `plan(*, current, target, ...)`, `alter_column_statements(table, *, old, new, dialect)`,
+  `restore(*, source, target, ...)`, `compare(*, expected, actual)`; nothing else changed (no behavior, check or
+  code). Every other signature already had its options keyword-only. Section 0 gained rows for the role DDL and the
+  0.2 names of `tabrion.schema`. `tests/unit/test_api_surface.py::test_cr_dbx_names_are_stable` and
+  `::test_only_the_listed_names_stay_experimental` pin the state; the keyword-only tests are in `test_plan.py`,
+  `test_ddl.py`, `test_schema.py` and `tests/sqlite/test_restore.py`. **Still experimental (X), on purpose:**
+  `Database.run_transaction`, `Database.on_begin` (the hook of Axentra's `DbScope`, R-SET, out of scope),
+  `Transaction.savepoint` (section 5.6) and `tabrion.profilefile` (section 5.9, with the profile mode `admin`): no
+  CR-DBX name and no Studio Schema Designer or Database Manager use. **Open:** the G-T2 review of 0.3 (TAB-XW-10);
+  Studio adapts its calls (`plan`, `sqlite.restore`) when it repins; TB-091 and TB-094 unchanged.
 - **0.3 switch done** (branch `claude/project-thread-rdo6g3-tab03dev`, for Studio STU-026): master builds as
   `0.3.0.dev0` (not a release: no tag, no publication). `Transaction` inherits the 0.3 mixin, `RowCountMismatch` is
   exported, `tabrion.rowedit` imports, the `staged` keys and `tabrion._sa._staged` are gone, and the tests run on the

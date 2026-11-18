@@ -132,7 +132,7 @@ def test_xw4_rebuild_golden(path: Path) -> None:
     """R-X2: the rebuild copies the rows aside, recreates the table from the target, copies them back and recreates
     the indexes (from the target) and the triggers (from ``sqlite_schema``); views stay, as no table is renamed."""
     current = current_of(path)
-    plan = tp.plan(current, narrowed(current))
+    plan = tp.plan(current=current, target=narrowed(current))
     assert [(s.operation, s.target, [r.value for r in s.risks]) for s in plan.steps] == [
         ("rebuild_table", "main.parts", ["additive", "data_changing", "destructive", "rebuild"])
     ]
@@ -143,12 +143,12 @@ def test_xw4_rebuild_golden(path: Path) -> None:
 def test_xw4_rebuild_round_trip_keeps_rows_triggers_views_and_children(path: Path) -> None:
     current = current_of(path)
     target = narrowed(current)
-    plan = tp.plan(current, target)
+    plan = tp.plan(current=current, target=target)
     run(path, plan)
     database = Database.from_url(f"sqlite:///{path}")
     try:
         after = take(database)
-        assert ts.compare(target, after) == ()
+        assert ts.compare(expected=target, actual=after) == ()
         assert ts.fingerprint(after) == plan.target_fingerprint
         assert [tuple(r) for r in database.fetch_all("SELECT id, code, qty, note FROM parts ORDER BY id")] == [
             (1, "a", 4, None),  # 2 + two moves (moves_log)
@@ -170,7 +170,7 @@ def test_xw4_rebuild_fails_closed_on_a_lost_value(path: Path) -> None:
     current = current_of(path)
     parts = parts_of(current)
     target = with_parts(current, columns=(*parts.columns, ts.ColumnShape("must", "INTEGER", False)))
-    plan = tp.plan(current, target)
+    plan = tp.plan(current=current, target=target)
     with pytest.raises(sqlite3.IntegrityError):
         run(path, plan)
     assert ts.fingerprint(current_of(path)) == plan.source_fingerprint
@@ -180,7 +180,7 @@ def test_xw4_rebuild_holder_name_never_collides(path: Path) -> None:
     database = make(path, ["CREATE TABLE _tabrion_old_parts (x INTEGER)"])
     database.close()
     current = current_of(path)
-    statements = tp.plan(current, narrowed(current)).steps[0].statements
+    statements = tp.plan(current=current, target=narrowed(current)).steps[0].statements
     assert statements[0].sql.startswith("CREATE TABLE _tabrion_old_parts_ (")
 
 
@@ -211,11 +211,11 @@ def test_xw4_rebuild_refuses_what_the_shape_would_lose(tmp_path: Path, statement
     assert feature in table.features
     rebuilt = dataclasses.replace(table, check_constraints=(ts.CheckShape(None, "id > 0"),))
     with pytest.raises(PlanRefused) as info:
-        tp.plan(current, dataclasses.replace(current, tables=(rebuilt,)))
+        tp.plan(current=current, target=dataclasses.replace(current, tables=(rebuilt,)))
     assert info.value.details["reason"] == "unsupported_feature"
     assert info.value.details["feature"] == table.features[0]
     added = dataclasses.replace(table, columns=(*table.columns, ts.ColumnShape("extra", "TEXT", True)))
-    plan = tp.plan(current, dataclasses.replace(current, tables=(added,)))
+    plan = tp.plan(current=current, target=dataclasses.replace(current, tables=(added,)))
     assert [s.operation for s in plan.steps] == ["add_column"]
 
 
@@ -249,7 +249,7 @@ def model_with_trigger(definition: str, name: str = "tr") -> tuple[ts.SchemaSnap
 def unsafe(definition: str, name: str = "tr") -> PlanRefused:
     current, target = model_with_trigger(definition, name)
     with pytest.raises(PlanRefused) as info:
-        tp.plan(current, target)
+        tp.plan(current=current, target=target)
     assert info.value.code == "plan.refused"
     assert info.value.details == {"reason": "unsafe_schema_sql", "table": "main.t", "object": "trigger"}
     assert SECRET not in str(info.value) and SECRET not in repr(info.value)
@@ -262,7 +262,7 @@ GOOD = "CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; SELECT 2; END"
 
 def test_xw4_k1_good_trigger_text_is_one_statement() -> None:
     current, target = model_with_trigger(GOOD)
-    statements = tp.plan(current, target).steps[0].statements
+    statements = tp.plan(current=current, target=target).steps[0].statements
     assert statements[-1].sql == GOOD
     assert sqlite3.complete_statement(GOOD + ";")
 
@@ -319,7 +319,7 @@ def test_rebuild_refuses_type_or_name_mismatch(definition: str, name: str) -> No
 )
 def test_xw4_k1_quoted_names_match(definition: str, name: str) -> None:
     current, target = model_with_trigger(definition, name)
-    assert tp.plan(current, target).steps[0].statements[-1].sql == definition
+    assert tp.plan(current=current, target=target).steps[0].statements[-1].sql == definition
 
 
 def test_xw4_k1_hostile_file(tmp_path: Path) -> None:
@@ -348,7 +348,7 @@ def test_xw4_k1_hostile_file(tmp_path: Path) -> None:
         current, tables=(dataclasses.replace(table, columns=(table.columns[0], ts.ColumnShape("v", "TEXT", True))),)
     )
     with pytest.raises(PlanRefused) as info:
-        tp.plan(current, target)
+        tp.plan(current=current, target=target)
     assert info.value.details["reason"] == "unsafe_schema_sql"
 
 
@@ -358,7 +358,7 @@ def test_rebuild_never_uses_executescript(path: Path) -> None:
     source = inspect.getsource(tp)
     assert "executescript" not in source.replace("never ``executescript``", "")
     current = current_of(path)
-    plan = tp.plan(current, narrowed(current))
+    plan = tp.plan(current=current, target=narrowed(current))
     connection = sqlite3.connect(path, isolation_level=None)
     try:
         connection.execute("PRAGMA foreign_keys = OFF")
@@ -415,7 +415,7 @@ def test_xw4_dropping_a_column_that_a_view_or_trigger_names_is_refused(
     finally:
         database.close()
     with pytest.raises(PlanRefused) as caught:
-        tp.plan(current, without_b(current), server_version=server_version)
+        tp.plan(current=current, target=without_b(current), server_version=server_version)
     assert caught.value.details == {"reason": "dependent_object", "table": "main.parent", "object": owner}
 
 
@@ -426,7 +426,7 @@ def test_xw4_a_view_without_the_dropped_column_allows_the_rebuild_and_is_checked
     make(file, [*DEPENDENTS, "CREATE VIEW v AS SELECT id, a FROM parent", "CREATE VIEW w AS SELECT 1 AS one"]).close()
     current = current_of(file)
     assert [v.name for v in current.views] == ["main.v", "main.w"]
-    plan = tp.plan(current, without_b(current))
+    plan = tp.plan(current=current, target=without_b(current))
     assert [s.sql for s in plan.steps[0].statements][-2:] == [
         'SELECT * FROM "v" LIMIT 0',
         'SELECT * FROM "w" LIMIT 0',
@@ -442,7 +442,7 @@ def test_xw4_a_broken_view_fails_the_rebuild_transaction(tmp_path: Path) -> None
     file = tmp_path / "broken.db"
     make(file, [*DEPENDENTS, "CREATE VIEW v AS SELECT id, a FROM parent"]).close()
     current = current_of(file)
-    plan = tp.plan(current, without_b(current))
+    plan = tp.plan(current=current, target=without_b(current))
     connection = sqlite3.connect(file, isolation_level=None)
     try:  # make the view depend on b behind the snapshot's back, as a stale snapshot would
         connection.execute("DROP VIEW v")
@@ -477,7 +477,7 @@ def test_xw4_dropping_a_table_that_a_view_or_trigger_names_is_refused(
         database.close()
     target = dataclasses.replace(current, tables=tuple(t for t in current.tables if t.name != "main.parent"))
     with pytest.raises(PlanRefused) as caught:
-        tp.plan(current, target)
+        tp.plan(current=current, target=target)
     assert caught.value.details == {"reason": "dependent_object", "table": "main.parent", "object": owner}
 
 
@@ -486,7 +486,7 @@ def test_xw4_a_dropped_tables_own_trigger_does_not_refuse(tmp_path: Path) -> Non
     make(file, [*DEPENDENTS, "CREATE TRIGGER p_tr AFTER INSERT ON parent BEGIN SELECT new.b; END"]).close()
     current = current_of(file)
     target = dataclasses.replace(current, tables=tuple(t for t in current.tables if t.name != "main.parent"))
-    assert [s.operation for s in tp.plan(current, target).steps] == ["drop_table"]
+    assert [s.operation for s in tp.plan(current=current, target=target).steps] == ["drop_table"]
 
 
 def test_xw4_a_plan_never_changes_a_view(tmp_path: Path) -> None:
@@ -495,7 +495,7 @@ def test_xw4_a_plan_never_changes_a_view(tmp_path: Path) -> None:
     current = current_of(file)
     for views in ((), (ts.ViewShape("main.v", "CREATE VIEW v AS SELECT a FROM parent"),)):
         with pytest.raises(PlanRefused) as caught:
-            tp.plan(current, dataclasses.replace(without_b(current), views=views))
+            tp.plan(current=current, target=dataclasses.replace(without_b(current), views=views))
         assert caught.value.details == {"reason": "unsupported_feature", "table": "main.v", "feature": "view"}
 
 
@@ -525,7 +525,7 @@ def test_rebuild_runs_under_authorizer_and_defensive(path: Path) -> None:
     try:
         current = take(database)
         target = narrowed(current)
-        preview = tp.plan(current, target)
+        preview = tp.plan(current=current, target=target)
         arguments: dict[str, Any] = {
             "plan_hash": preview.plan_hash,
             "expected_fingerprint": ts.fingerprint(current),
@@ -550,7 +550,7 @@ def test_rebuild_runs_under_authorizer_and_defensive(path: Path) -> None:
         assert result.steps_run == 1
         assert sorted(str(name) for name, _ in seen) == ['parts "ins"', "parts_log"]
         assert all(defensive is True for _, defensive in seen)
-        assert ts.compare(target, take(database)) == ()
+        assert ts.compare(expected=target, actual=take(database)) == ()
         with database.transaction() as transaction:  # defensive mode is off again on the pooled connection
             raw: Any = transaction.connection.connection.dbapi_connection
             assert raw.getconfig(flag) is False

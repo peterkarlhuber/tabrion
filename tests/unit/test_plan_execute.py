@@ -117,7 +117,7 @@ def db(path: Path) -> Iterator[Database]:
 
 def execute(db: Database, target: ts.SchemaSnapshot, current: ts.SchemaSnapshot, **options: Any) -> tp.ExecutionResult:
     """Preview (plan, hash, fingerprint) and run, as Studio does; ``options`` override the confirmation."""
-    preview = tp.plan(current, target, server_version=options.pop("preview_version", None))
+    preview = tp.plan(current=current, target=target, server_version=options.pop("preview_version", None))
     arguments: dict[str, Any] = {
         "plan_hash": preview.plan_hash,
         "expected_fingerprint": ts.fingerprint(current),
@@ -164,7 +164,7 @@ def test_dev_and_test_run(db: Database, environment: str) -> None:
     assert result.dry_run is False
     assert result.untested_steps == ()
     assert result.fingerprint_after == ts.fingerprint(take(db))
-    assert ts.compare(target, take(db)) == ()
+    assert ts.compare(expected=target, actual=take(db)) == ()
 
 
 # --- P89-03: plan again, compare with the confirmed hash ----------------------------------------------------------
@@ -200,7 +200,7 @@ def test_swapped_plan_refused(db: Database) -> None:
     again at execution has another hash and nothing runs."""
     current = take(db)
     data = rows(db)
-    confirmed = tp.plan(current, added(current))
+    confirmed = tp.plan(current=current, target=added(current))
     swapped = dataclasses.replace(current, tables=tuple(t for t in current.tables if t.name != "main.child"))
     with pytest.raises(PlanMismatch) as caught:
         tp.execute_plan(
@@ -213,7 +213,7 @@ def test_swapped_plan_refused(db: Database) -> None:
         )
     assert caught.value.code == "plan.hash_mismatch"
     assert caught.value.details["expected"] == confirmed.plan_hash
-    assert caught.value.details["actual"] == tp.plan(current, swapped).plan_hash
+    assert caught.value.details["actual"] == tp.plan(current=current, target=swapped).plan_hash
     unchanged(db, current, data)
 
 
@@ -233,7 +233,7 @@ def test_other_planning_options_change_the_hash(db: Database) -> None:
     current = take(db)
     parent = table(current, "main.parent")
     target = replace_table(current, "main.parent", columns=parent.columns[:2])
-    in_place = tp.plan(current, target, server_version=(3, 45, 0))
+    in_place = tp.plan(current=current, target=target, server_version=(3, 45, 0))
     with pytest.raises(PlanMismatch):
         tp.execute_plan(
             db,
@@ -268,7 +268,7 @@ def test_risk_classes_come_from_the_new_plan(db: Database) -> None:
         tp.execute_plan(
             db,
             target,
-            plan_hash=tp.plan(current, target).plan_hash,
+            plan_hash=tp.plan(current=current, target=target).plan_hash,
             expected_fingerprint=ts.fingerprint(current),
             environment="dev",
         )
@@ -295,7 +295,7 @@ def test_risk_classes_come_from_the_new_plan(db: Database) -> None:
 def test_drift_between_preview_and_execution_refused(path: Path, db: Database, change: list[str]) -> None:
     current = take(db)
     target = added(current)
-    preview = tp.plan(current, target)
+    preview = tp.plan(current=current, target=target)
     with contextlib.closing(sqlite3.connect(path, isolation_level=None)) as connection:
         for statement in change:
             connection.execute(statement)
@@ -317,14 +317,14 @@ def test_drift_between_preview_and_execution_refused(path: Path, db: Database, c
     assert error.details["expected"] == ts.fingerprint(current)
     assert error.details["actual"] == ts.fingerprint(drifted)
     assert error.details["differences"] == len(error.differences)
-    assert error.differences == ts.compare(current, drifted)
+    assert error.differences == ts.compare(expected=current, actual=drifted)
     unchanged(db, drifted, data)
 
 
 def test_drift_without_source_names_no_differences(path: Path, db: Database) -> None:
     current = take(db)
     target = added(current)
-    preview = tp.plan(current, target)
+    preview = tp.plan(current=current, target=target)
     with contextlib.closing(sqlite3.connect(path, isolation_level=None)) as connection:
         connection.execute("DROP TRIGGER child_log")
     with pytest.raises(SchemaDrift) as caught:
@@ -410,7 +410,7 @@ def test_rebuild_with_foreign_keys_on_keeps_child_rows(db: Database) -> None:
     target = retyped(current)
     result = execute(db, target, current)
     assert result.steps_run == 1
-    assert ts.compare(target, take(db)) == ()
+    assert ts.compare(expected=target, actual=take(db)) == ()
     assert db.fetch_scalar("SELECT count(*) FROM child") == 2
     assert db.fetch_scalar("PRAGMA foreign_keys") == 1
     assert db.fetch_scalar("PRAGMA trusted_schema") == 0
@@ -500,7 +500,7 @@ def test_dry_run_leaves_the_file_unchanged(db: Database) -> None:
     data = rows(db)
     target = retyped(current)
     result = execute(db, target, current, dry_run=True)
-    assert result == tp.ExecutionResult(tp.plan(current, target).plan_hash, True, 1, (), None)
+    assert result == tp.ExecutionResult(tp.plan(current=current, target=target).plan_hash, True, 1, (), None)
     unchanged(db, current, data)
     assert db.fetch_scalar("PRAGMA foreign_keys") == 1
 
@@ -557,7 +557,7 @@ def test_rebuild_with_a_trigger_by_python_version(db: Database) -> None:
         unchanged(db, current, data)
         return
     assert execute(db, target, current).steps_run == 1
-    assert ts.compare(target, take(db)) == ()
+    assert ts.compare(expected=target, actual=take(db)) == ()
     assert rows(db) == data
     db.execute("UPDATE child SET pid = pid WHERE id = 1")  # the trigger was recreated
     assert db.fetch_scalar("SELECT count(*) FROM log") == 1

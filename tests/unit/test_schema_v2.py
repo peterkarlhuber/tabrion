@@ -157,7 +157,7 @@ def test_level2_constraint_order_does_not_count() -> None:
     one = model(ts.TableShape("main.t", (column,), (), unique_constraints=(a, b), indexes=(i, j)))
     two = model(ts.TableShape("main.t", (column,), (), unique_constraints=(b, a), indexes=(j, i)))
     assert one.to_json() == two.to_json() and ts.fingerprint(one) == ts.fingerprint(two)
-    assert ts.compare(one, two) == ()
+    assert ts.compare(expected=one, actual=two) == ()
     assert ts.SchemaSnapshot.from_json(two.to_json()) == ts.SchemaSnapshot.from_json(one.to_json())
 
 
@@ -207,11 +207,11 @@ def test_level2_each_difference_kind(
 ) -> None:
     before = ts.SchemaSnapshot("sqlite", (_base(),), level=2)
     after = ts.SchemaSnapshot("sqlite", (dataclasses.replace(_base(), **change),), level=2)
-    differences = ts.compare(before, after)
+    differences = ts.compare(expected=before, actual=after)
     assert [(d.kind, d.column, d.name, d.breaking) for d in differences] == expected
     assert all(d.table == "main.t" for d in differences)
     assert ts.fingerprint(before) != ts.fingerprint(after)
-    assert ts.compare(before, before) == ()
+    assert ts.compare(expected=before, actual=before) == ()
 
 
 def test_level2_difference_text_names_the_constraint() -> None:
@@ -235,7 +235,7 @@ def test_level2_reflected_drift(db: Database, tmp_path: Path) -> None:
         actual = take(changed, level=2)
     finally:
         changed.close()
-    assert [str(d) for d in ts.compare(expected, actual)] == [
+    assert [str(d) for d in ts.compare(expected=expected, actual=actual)] == [
         "column_default: main.customers.created",
         "foreign_key_missing: main.invoices.customer",
         "foreign_key_added: main.invoices.customer",
@@ -247,7 +247,7 @@ def test_level2_reflected_drift(db: Database, tmp_path: Path) -> None:
 
 def test_level_checks() -> None:
     with pytest.raises(UsageError) as info:
-        ts.compare(ts.SchemaSnapshot("sqlite", ()), ts.SchemaSnapshot("sqlite", (), level=2))
+        ts.compare(expected=ts.SchemaSnapshot("sqlite", ()), actual=ts.SchemaSnapshot("sqlite", (), level=2))
     assert info.value.code == "schema.level_mismatch"
     for bad in (0, 3, True, "2", 2.0):
         with pytest.raises(UsageError) as info:
@@ -323,7 +323,9 @@ def test_level2_target_model_by_replace(db: Database) -> None:
     assert customers is not None
     edited = dataclasses.replace(customers, indexes=(ts.IndexShape("customers_email", ("email",)),))
     target = dataclasses.replace(snap, tables=tuple(edited if t is customers else t for t in snap.tables))
-    assert [str(d) for d in ts.compare(snap, target)] == ["index_added: main.customers.email (customers_email)"]
+    assert [str(d) for d in ts.compare(expected=snap, actual=target)] == [
+        "index_added: main.customers.email (customers_email)"
+    ]
 
 
 def test_level2_with_an_engine_inspector(tmp_path: Path) -> None:
@@ -419,7 +421,7 @@ def test_level2_detail_changes_the_v2_fingerprint(part: str, change: dict[str, A
         changed = dataclasses.replace(base, foreign_keys=(dataclasses.replace(base.foreign_keys[0], **change),))
     before, after = (ts.SchemaSnapshot("sqlite", (t,), level=2) for t in (base, changed))
     assert ts.fingerprint(before) != ts.fingerprint(after)
-    assert [d.kind for d in ts.compare(before, after)] == kinds
+    assert [d.kind for d in ts.compare(expected=before, actual=after)] == kinds
     assert ts.SchemaSnapshot.from_json(after.to_json()) == after
 
 
@@ -427,7 +429,7 @@ def test_level2_default_ordering_is_canonical() -> None:
     # ("", "") and () both mean "every element in the default order": same JSON, same fingerprint, no difference.
     one = ts.SchemaSnapshot("sqlite", (_detail_table(ordering=("", "")),), level=2)
     two = ts.SchemaSnapshot("sqlite", (_detail_table(),), level=2)
-    assert one.to_json() == two.to_json() and ts.compare(one, two) == ()
+    assert one.to_json() == two.to_json() and ts.compare(expected=one, actual=two) == ()
 
 
 SQLITE_DETAIL = (
@@ -462,7 +464,10 @@ def test_sqlite_index_detail(tmp_path: Path, statements: tuple[str, ...], expect
     table = after.table("main.t")
     assert table is not None and table.indexes == (expected,)
     assert ts.fingerprint(before) != ts.fingerprint(after)
-    assert [str(d) for d in ts.compare(before, after)] == ["index_missing: main.t (ix)", "index_added: main.t (ix)"]
+    assert [str(d) for d in ts.compare(expected=before, actual=after)] == [
+        "index_missing: main.t (ix)",
+        "index_added: main.t (ix)",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -547,7 +552,7 @@ def test_sqlite_column_and_expression_of_the_same_text_differ(tmp_path: Path) ->
     column, expression = snap('CREATE INDEX i ON t ("lower(a)")'), snap("CREATE INDEX i ON t (lower(a) )")
     assert column.tables[0].indexes[0].columns == expression.tables[0].indexes[0].columns == ("lower(a)",)
     assert ts.fingerprint(column) != ts.fingerprint(expression)
-    assert [d.kind for d in ts.compare(column, expression)] == ["index_missing", "index_added"]
+    assert [d.kind for d in ts.compare(expected=column, actual=expression)] == ["index_missing", "index_added"]
 
 
 def test_sqlite_collations_of_unique_index_and_constraint(tmp_path: Path) -> None:
@@ -570,7 +575,7 @@ def test_sqlite_collations_of_unique_index_and_constraint(tmp_path: Path) -> Non
     assert nocase.tables[0].unique_constraints == (ts.UniqueShape(None, ("a",), collations=("NOCASE",)),)
     assert nocase.tables[0].indexes == (ts.IndexShape("i", ("b",), unique=True, collations=("NOCASE",)),)
     assert ts.fingerprint(plain) != ts.fingerprint(nocase)
-    assert [d.kind for d in ts.compare(plain, nocase)] == [
+    assert [d.kind for d in ts.compare(expected=plain, actual=nocase)] == [
         "unique_missing",
         "unique_added",
         "index_missing",
@@ -740,7 +745,7 @@ def test_sqlite_generated_columns(tmp_path: Path) -> None:
     )
     other = ts.SchemaSnapshot("sqlite", (plain,), level=2)
     assert ts.fingerprint(other) != ts.fingerprint(snap)
-    assert [str(d) for d in ts.compare(snap, other)] == [
+    assert [str(d) for d in ts.compare(expected=snap, actual=other)] == [
         "column_generated: main.g.b",
         "column_generated: main.g.V, v",
     ]
@@ -778,7 +783,7 @@ def test_level2_identity_and_generated_change_the_v2_fingerprint(change: dict[st
     changed = dataclasses.replace(base, columns=(dataclasses.replace(base.columns[0], **change), base.columns[1]))
     before, after = (ts.SchemaSnapshot("postgresql", (t,), level=2) for t in (base, changed))
     assert ts.fingerprint(before) != ts.fingerprint(after)
-    assert [(d.kind, d.column, d.breaking) for d in ts.compare(before, after)] == [(kind, "id", True)]
+    assert [(d.kind, d.column, d.breaking) for d in ts.compare(expected=before, actual=after)] == [(kind, "id", True)]
     assert ts.SchemaSnapshot.from_json(after.to_json()) == after
 
 
@@ -809,7 +814,7 @@ def test_sqlite_triggers_reflected(tmp_path: Path) -> None:
         assert take(database).tables[0].triggers == ()  # level 1 never reads them
         database.execute("DROP TRIGGER t_log")
         after = take(database, level=2)
-        assert [(d.kind, d.name) for d in ts.compare(snapshot, after)] == [("trigger_missing", "t_log")]
+        assert [(d.kind, d.name) for d in ts.compare(expected=snapshot, actual=after)] == [("trigger_missing", "t_log")]
         assert ts.fingerprint(snapshot) != ts.fingerprint(after)
     finally:
         database.close()
@@ -887,10 +892,10 @@ def _d5_table(**change: Any) -> ts.TableShape:
 def test_level2_d5_difference_kinds(change: dict[str, Any], expected: list[tuple[str, str | None]]) -> None:
     before = ts.SchemaSnapshot("postgresql", (_base(),), level=2)
     after = ts.SchemaSnapshot("postgresql", (_d5_table(**change),), level=2)
-    differences = ts.compare(before, after)
+    differences = ts.compare(expected=before, actual=after)
     assert [(d.kind, d.name) for d in differences] == expected
     assert all(d.breaking and d.table == "main.t" for d in differences)
-    assert [(d.kind.replace("_added", "_missing"), d.name) for d in ts.compare(after, before)] == [
+    assert [(d.kind.replace("_added", "_missing"), d.name) for d in ts.compare(expected=after, actual=before)] == [
         (k.replace("_added", "_missing"), n) for k, n in expected
     ]
     assert ts.fingerprint(before) != ts.fingerprint(after)
@@ -907,7 +912,7 @@ def test_level2_changed_trigger_or_function_body_is_a_difference() -> None:
         functions=(ts.FunctionShape("public.f()", "plpgsql", "BODY 2"),),
     )
     a, b = (ts.SchemaSnapshot("postgresql", (t,), level=2) for t in (one, two))
-    assert [(d.kind, d.name) for d in ts.compare(a, b)] == [
+    assert [(d.kind, d.name) for d in ts.compare(expected=a, actual=b)] == [
         ("trigger_missing", "tr"),
         ("trigger_added", "tr"),
         ("function_missing", "public.f()"),
@@ -919,10 +924,10 @@ def test_level2_changed_trigger_or_function_body_is_a_difference() -> None:
 def test_level2_database_features() -> None:
     plain = ts.SchemaSnapshot("postgresql", (_base(),), level=2)
     hooked = ts.SchemaSnapshot("postgresql", (_base(),), level=2, features=("event_trigger:audit",))
-    assert [(d.kind, d.table, d.name) for d in ts.compare(plain, hooked)] == [
+    assert [(d.kind, d.table, d.name) for d in ts.compare(expected=plain, actual=hooked)] == [
         ("feature_added", "", "event_trigger:audit")
     ]
-    assert [(d.kind, d.table, d.name) for d in ts.compare(hooked, plain)] == [
+    assert [(d.kind, d.table, d.name) for d in ts.compare(expected=hooked, actual=plain)] == [
         ("feature_missing", "", "event_trigger:audit")
     ]
     assert ts.fingerprint(plain) != ts.fingerprint(hooked)
@@ -1001,7 +1006,7 @@ def test_sqlite_views_reflected_and_in_the_fingerprint(tmp_path: Path) -> None:
         database.execute("DROP VIEW v")
         database.execute("CREATE VIEW v AS SELECT a FROM t")
         after = take(database, level=2)
-        assert [(d.kind, d.table, d.breaking) for d in ts.compare(before, after)] == [
+        assert [(d.kind, d.table, d.breaking) for d in ts.compare(expected=before, actual=after)] == [
             ("view_missing", "main.v", True),
             ("view_added", "main.v", True),
         ]

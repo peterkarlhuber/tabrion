@@ -55,7 +55,7 @@ def pg_plan() -> tp.MigrationPlan:
     parent = dataclasses.replace(PARENT, columns=(PARENT.columns[0], column("code", "VARCHAR(20)")))
     log = ts.TableShape("public.log", (column("id", nullable=False), column("what", "TEXT")), ("id",))
     target = ts.SchemaSnapshot("postgresql", (parent, child, log), level=2)
-    return tp.plan(current, target, concurrent_indexes=True)
+    return tp.plan(current=current, target=target, concurrent_indexes=True)
 
 
 def sqlite_plan() -> tp.MigrationPlan:
@@ -68,7 +68,7 @@ def sqlite_plan() -> tp.MigrationPlan:
     old = ts.TableShape("main.old", (column("id"),), ())
     current = ts.SchemaSnapshot("sqlite", (old, table), level=2)
     changed = dataclasses.replace(table, columns=(table.columns[0], column("code", "TEXT", False)))
-    return tp.plan(current, ts.SchemaSnapshot("sqlite", (changed,), level=2))
+    return tp.plan(current=current, target=ts.SchemaSnapshot("sqlite", (changed,), level=2))
 
 
 def render(plan: tp.MigrationPlan, **kwargs: Any) -> str:
@@ -242,8 +242,11 @@ def test_revision_text_ast_has_only_literals() -> None:
     plans = [
         pg_plan(),
         sqlite_plan(),
-        tp.plan(ts.SchemaSnapshot("sqlite", (), level=2), ts.SchemaSnapshot("sqlite", (), level=2)),
-        tp.plan(ts.SchemaSnapshot("postgresql", (), level=2), ts.SchemaSnapshot("postgresql", (hostile,), level=2)),
+        tp.plan(current=ts.SchemaSnapshot("sqlite", (), level=2), target=ts.SchemaSnapshot("sqlite", (), level=2)),
+        tp.plan(
+            current=ts.SchemaSnapshot("postgresql", (), level=2),
+            target=ts.SchemaSnapshot("postgresql", (hostile,), level=2),
+        ),
     ]
     for plan in plans:
         for message in ("m", '""" + __import__("os").getcwd() + """', "x');\nimport os\n#"):
@@ -257,7 +260,10 @@ def test_xw4_injection_in_a_table_name_is_inert(tmp_path: Path) -> None:
     """The table ``x"); import os; ("`` is quoted by the dialect inside a string literal; loading the revision runs
     nothing but the assignments."""
     hostile = ts.TableShape('public.x"); import os; ("', (column("id"),), ())
-    plan = tp.plan(ts.SchemaSnapshot("postgresql", (), level=2), ts.SchemaSnapshot("postgresql", (hostile,), level=2))
+    plan = tp.plan(
+        current=ts.SchemaSnapshot("postgresql", (), level=2),
+        target=ts.SchemaSnapshot("postgresql", (hostile,), level=2),
+    )
     text = render(plan)
     assert 'CREATE TABLE public."x""); import os; (""" (' in plan.steps[0].statements[0].sql
     namespace: dict[str, Any] = {}
@@ -350,7 +356,7 @@ def test_xw4_revision_runs_on_sqlite_and_reaches_the_target(tmp_path: Path) -> N
             (dataclasses.replace(parts, columns=(parts.columns[0], column("code", "TEXT", False, "'x:y'"))),),
             level=2,
         )
-        plan = tp.plan(current, target)
+        plan = tp.plan(current=current, target=target)
         assert [s.operation for s in plan.steps] == ["rebuild_table", "drop_table"]
         text = render(plan)
         with engine.connect() as connection:
@@ -410,7 +416,9 @@ def retyped_parent_plan(database: Any) -> tp.MigrationPlan:
         current = ts.snapshot(inspector, level=2, tables=["main.parent"])
     parent = current.tables[0]
     columns = (parent.columns[0], dataclasses.replace(parent.columns[1], type="VARCHAR(5)"), parent.columns[2])
-    return tp.plan(current, dataclasses.replace(current, tables=(dataclasses.replace(parent, columns=columns),)))
+    return tp.plan(
+        current=current, target=dataclasses.replace(current, tables=(dataclasses.replace(parent, columns=columns),))
+    )
 
 
 def upgrade_in_one_transaction(database: Any, text: str) -> None:
@@ -469,7 +477,7 @@ def test_xw4_revision_foreign_key_check_rolls_back(tmp_path: Path) -> None:
     try:
         with database.inspector() as inspector:
             current = ts.snapshot(inspector, level=2, tables=["main.parent"])
-        plan = tp.plan(current, dataclasses.replace(current, tables=()))
+        plan = tp.plan(current=current, target=dataclasses.replace(current, tables=()))
         assert [s.operation for s in plan.steps] == ["drop_table"]
         with pytest.raises(RuntimeError, match="foreign key refers to a missing row"):
             upgrade_in_one_transaction(database, render(plan))
@@ -485,4 +493,4 @@ def test_xw4_postgres_and_in_place_revisions_have_no_foreign_key_guard() -> None
     added = dataclasses.replace(
         current, tables=(dataclasses.replace(current.tables[0], columns=(*current.tables[0].columns, column("v"))),)
     )
-    assert "PRAGMA" not in render(tp.plan(current, added, server_version=(3, 45, 0)))
+    assert "PRAGMA" not in render(tp.plan(current=current, target=added, server_version=(3, 45, 0)))
