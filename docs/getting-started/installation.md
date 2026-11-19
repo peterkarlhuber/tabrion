@@ -15,13 +15,13 @@ final (TABRION TAB-040) is the one that sets `0.1.0`, `v0.2.0` final (TAB-042) t
 `v0.2.1` final (patch) the one that sets `0.2.1`, `v0.2.2` final (patch) the one that sets `0.2.2` and `v0.3.0`
 final (TAB-XW-10) the one that sets `0.3.0`. Its full SHA is recorded here, in the CHANGELOG section of the
 version and in `docs/program/STATUS.md` (TAB-040, TAB-042, TAB-XW-10), and the next pull request bumps master to the
-next `.dev0` version (`0.1.1.dev0`, `0.2.1.dev0`, `0.2.2.dev0`, ...), so no other commit builds as that version.
+next `.dev0` version (`0.1.1.dev0`, `0.2.1.dev0`, `0.2.2.dev0`, `0.4.0.dev0`, ...), so no other commit builds as that version.
 Consumers pin that commit by its full SHA; a tag (`v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.2.2`, `v0.3.0`) on it is an
 optional label, never what a pin names.
 
 | Version | Release commit (full SHA) | Date |
 |---|---|---|
-| `0.3.0` | the merge commit of the version pull request that sets `0.3.0`; its SHA is recorded by the follow-up pull request | 2026-11-18 |
+| `0.3.0` | `7488c764327ae428718ffc9492a6aaed73a06cef` | 2026-11-18 |
 | `0.2.2` | `5bc690e2de74a92cd44bb4522cf2533cc2c8d14f` | 2026-11-15 |
 | `0.2.1` | `af0458d54467571abfc1afdd44d76e1f4d727c06` | 2026-11-14 |
 | `0.2.0` | `52353daee6cd6e37a7efc45b74061a48beb2b280` | 2026-11-13 |
@@ -55,7 +55,8 @@ supply the pin: Tabrion is not on PyPI, so an install without it would ask the p
 From the 0.3 switch to the `0.3.0` release commit master built as `0.3.0.dev0` (internal development of the 0.3
 names, not a release). That version is outside `>=0.2,<0.3` (PEP 440: `<0.3` excludes the pre-releases of 0.3), so
 pip refuses a pin on such a commit for a consumer on the 0.2 range. The last master commit of the 0.2 line, the 0.2.x
-base, is recorded in TODO TB-013.
+base, is recorded in TODO TB-013. Since the `0.3.0` release commit master builds as `0.4.0.dev0`, outside
+`>=0.3,<0.4` for the same reason.
 
 A consumer's CI installs Tabrion from that pin (for a library, the requirements file
 `requirements/tabrion.txt`, installed with `-r`; ADR 0009), not from PyPI:

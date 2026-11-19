@@ -1,3 +1,3 @@
 """The package version (read by hatchling, ``[tool.hatch.version]``)."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0.dev0"

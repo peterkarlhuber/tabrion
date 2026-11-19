@@ -6,12 +6,19 @@ with the 0.x rules of the specification (section 10) and ADR 0009.
 
 ## [Unreleased]
 
+### Changed
+
+- Master builds as `0.4.0.dev0` after the `0.3.0` release commit `7488c764327ae428718ffc9492a6aaed73a06cef` (the TB-053 pattern), so
+  later commits never build as `0.3.0`. The release commit's full SHA is recorded in `[0.3.0]` below, in the
+  installation guide and in STATUS G-T2. `0.4.0.dev0` is outside `>=0.3,<0.4` (PEP 440: `<0.4` excludes the
+  pre-releases of 0.4), so a consumer on the 0.3 range never resolves to this master.
+
 ## [0.3.0] - 2026-11-18
 
 TABRION TAB-XW-10, gate G-T2 (passed with conditions, planning folder `reviews/g-t2-0.3-review.md`): `v0.3.0` final,
 the CR-DBX release (TAB-XW-1..TAB-XW-9, TB-149). The release commit is the merge commit of the pull request that sets
-this version; its full SHA is recorded by the follow-up pull request that moves master on (ADR 0009, amendment of
-2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.3.0` on it is an optional label and
+this version (#95): `7488c764327ae428718ffc9492a6aaed73a06cef` (recorded by the follow-up pull request #96; ADR 0009,
+amendment of 2026-11-08). Consumers pin that commit by its full SHA via `git+https`; a tag `v0.3.0` on it is an optional label and
 needs the owner's explicit approval. No PyPI upload, no GitHub release and no announcement (G-R). It satisfies
 `tabrion>=0.3,<0.4` and not `>=0.2,<0.3`, so Axentra, Nodestro and Orkexa stay on `0.2.2` until they move their
 range. **New names:** the guided write transaction (`Transaction.execute_checked`, `tabrion.rowedit`,
